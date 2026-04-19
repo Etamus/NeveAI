@@ -1,4 +1,6 @@
-# Neve AI
+<img width="1400" height="350" alt="1776513530968" src="https://github.com/user-attachments/assets/abfd31c4-4ba6-4790-8f64-61c83ac0fdfc" />
+
+---
 
 **Neve AI** é um ecossistema de orquestração de IA privacy-first, desenvolvido para oferecer uma experiência de inferência local de alta performance com soberania total de dados. A plataforma integra um backend assíncrono em FastAPI a uma interface reativa em SvelteKit 5, utilizando o motor llama.cpp para viabilizar o suporte a modelos GGUF com aceleração de hardware (CUDA/Vulkan). O projeto consolida funcionalidades avançadas de nível empresarial em um ambiente 100% offline, incluindo um pipeline de RAG híbrido (ChromaDB/BM25), execução de código em sandbox via Pyodide, automação de busca web e ferramentas de produtividade, eliminando qualquer dependência de APIs externas ou serviços de terceiros.
 
@@ -23,6 +25,10 @@
 | Inferência local | llama.cpp (binários baixados pelo instalador) |
 | Porta padrão | 8080 |
 | OS | Windows (principal); Linux/macOS somente com adaptações |
+
+---
+
+<img width="1128" height="191" alt="neveai_cover" src="https://github.com/user-attachments/assets/09383a14-20c2-48fb-9eff-753ec710cff9" />
 
 ---
 
