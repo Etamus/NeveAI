@@ -150,7 +150,7 @@
 				<!-- svelte-ignore a11y-no-static-element-interactions -->
 				<div
 					id="sidebar-folder-button"
-					class=" w-full group rounded-xl relative flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800 transition {buttonClassName}"
+					class=" w-full group rounded-lg relative flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800 transition {buttonClassName}"
 				>
 					<button class="w-full py-1.5 pl-2 pr-2 flex items-center justify-between text-xs font-medium">
 						<div class="translate-y-[0.5px] pl-0.5">

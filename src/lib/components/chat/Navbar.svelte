@@ -61,7 +61,7 @@
 
 <ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
 
-<Modal size="md" className="bg-white dark:bg-gray-900 rounded-xl w-[40rem]!" bind:show={$showLocalModelsModal}>
+<Modal size="md" className="bg-white dark:bg-gray-900 rounded-xl w-[36rem]!" bind:show={$showLocalModelsModal}>
 	<UnifiedModels />
 </Modal>
 

@@ -24,8 +24,9 @@
 	};
 
 	let showFiles = getOpen('files');
-	let showSystemPrompt = getOpen('systemPrompt');
 	let showAdvancedParams = getOpen('advancedParams');
+	let showSystemPromptField = false;
+	$: if ((params?.system ?? '') !== '') showSystemPromptField = true;
 </script>
 
 <div class=" dark:text-white">
@@ -93,28 +94,39 @@
 						<div>
 							<AdvancedParams admin={$user?.role === 'admin'} custom={true} separators={true} bind:params />
 						</div>
-					</div>
-				</Collapsible>
-			{/if}
 
-			{#if $user?.role === 'admin' || ($user?.permissions.chat?.system_prompt ?? true)}
-				<div class="h-8"></div>
-
-				<Collapsible
-					title={$i18n.t('System Prompt')}
-					bind:open={showSystemPrompt}
-					onChange={setOpen('systemPrompt')}
-					buttonClassName="w-full"
-				>
-					<div class="pt-3" slot="content">
-						<textarea
-							bind:value={params.system}
-							class="w-full text-xs outline-hidden resize-vertical {$settings.highContrastMode
-								? 'border-2 border-gray-300 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 p-2.5'
-								: 'py-1.5 bg-transparent'}"
-							rows="4"
-							placeholder={$i18n.t('Enter system prompt')}
-						/>
+						{#if $user?.role === 'admin' || ($user?.permissions.chat?.system_prompt ?? true)}
+							<div class="flex w-full items-center justify-between py-1.5 mt-1">
+								{#if showSystemPromptField}
+									<button
+										type="button"
+										class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition"
+										on:click={() => { params.system = ''; showSystemPromptField = false; }}
+									>{$i18n.t('System Prompt')}</button>
+								{:else}
+									<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('System Prompt')}</div>
+								{/if}
+								{#if !showSystemPromptField}
+									<button
+										type="button"
+										class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700"
+										on:click={() => { showSystemPromptField = true; }}
+									>{$i18n.t('Default')}</button>
+								{/if}
+							</div>
+							{#if showSystemPromptField}
+								<div class="pt-1">
+									<textarea
+										bind:value={params.system}
+										class="w-full text-xs outline-hidden resize-vertical {$settings.highContrastMode
+											? 'border-2 border-gray-300 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800 p-2.5'
+											: 'py-1.5 bg-transparent'}"
+										rows="4"
+										placeholder={$i18n.t('Enter system prompt')}
+									/>
+								</div>
+							{/if}
+						{/if}
 					</div>
 				</Collapsible>
 			{/if}

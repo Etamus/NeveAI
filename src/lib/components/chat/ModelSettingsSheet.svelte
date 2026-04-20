@@ -4,6 +4,7 @@
 	import { showModelSettings, user } from '$lib/stores';
 	import AdvancedParams from '$lib/components/chat/Settings/Advanced/AdvancedParams.svelte';
 	import FileItem from '$lib/components/common/FileItem.svelte';
+	import Collapsible from '$lib/components/common/Collapsible.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -20,6 +21,8 @@
 	};
 
 	let showFiles = getOpen('files');
+	let showSystemPromptField = false;
+	$: if ((params?.system ?? '') !== '') showSystemPromptField = true;
 
 	const close = () => showModelSettings.set(false);
 </script>
@@ -120,18 +123,35 @@
 						</div>
 					{/if}
 
-					<hr class="border-gray-200/30 dark:border-gray-700/20 my-4" />
-
 					{#if $user?.role === 'admin' || ($user?.permissions?.chat?.system_prompt ?? true)}
-						<div class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">{$i18n.t('System Prompt')}</div>
-						<div class="rounded-lg border border-gray-200 dark:border-gray-700 p-2">
-							<textarea
-								bind:value={params.system}
-								class="w-full text-xs outline-none resize-vertical bg-transparent"
-								rows="4"
-								placeholder={$i18n.t('Enter system prompt')}
-							/>
+						<div class="flex w-full items-center justify-between py-1.5 mt-1">
+							{#if showSystemPromptField}
+								<button
+									type="button"
+									class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition"
+									on:click={() => { params.system = ''; showSystemPromptField = false; }}
+								>{$i18n.t('System Prompt')}</button>
+							{:else}
+								<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('System Prompt')}</div>
+							{/if}
+							{#if !showSystemPromptField}
+								<button
+									type="button"
+									class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700"
+									on:click={() => { showSystemPromptField = true; }}
+								>{$i18n.t('Default')}</button>
+							{/if}
 						</div>
+						{#if showSystemPromptField}
+							<div class="pt-1">
+								<textarea
+									bind:value={params.system}
+									class="w-full text-xs outline-none resize-vertical bg-transparent py-1.5"
+									rows="4"
+									placeholder={$i18n.t('Enter system prompt')}
+								/>
+							</div>
+						{/if}
 					{/if}
 				</div>
 			{/if}

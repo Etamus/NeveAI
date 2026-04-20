@@ -558,9 +558,9 @@
 		$config?.features?.enable_stable_diffusion &&
 		($_user.role === 'admin' || $_user?.permissions?.features?.stable_diffusion);
 
-	let showThinkingButton = true;
-	$: showThinkingButton = selectedModels.every(
-		(model) => $models.find((m) => m.id === model)?.info?.meta?.capabilities?.toggle_reasoning ?? true
+	let showThinkingButton = false;
+	$: showThinkingButton = selectedModels.length > 0 && selectedModels.every(
+		(model) => $models.find((m) => m.id === model)?.info?.meta?.capabilities?.toggle_reasoning ?? false
 	);
 	$: if (!showThinkingButton) {
 		thinkingEnabled = true;

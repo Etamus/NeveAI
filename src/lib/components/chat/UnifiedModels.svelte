@@ -94,9 +94,14 @@
 	let searchValue = '';
 
 	// ─── COMPUTED ────────────────────────────────────────────────────────────
-	$: filteredLocalModels = localModels.filter(
-		(m) => searchValue === '' || m.filename.toLowerCase().includes(searchValue.toLowerCase())
-	);
+	$: filteredLocalModels = localModels.filter((m) => {
+		if (searchValue === '') return true;
+		const q = searchValue.toLowerCase();
+		if (m.filename.toLowerCase().includes(q)) return true;
+		const adm = (adminModels ?? []).find((am: any) => am.id === m.id);
+		if (adm && (adm.name ?? '').toLowerCase().includes(q)) return true;
+		return false;
+	});
 
 	$: filteredAdminModels = (adminModels ?? [])
 		.filter(
@@ -122,8 +127,21 @@
 		const q = searchValue.toLowerCase();
 
 		const ggufItems = localModels
-			.filter((gm) => !q || gm.filename.toLowerCase().includes(q))
+			.filter((gm) => {
+				if (!q) return true;
+				if (gm.filename.toLowerCase().includes(q)) return true;
+				const adm = adminById.get(gm.id);
+				if (adm && (adm.name ?? '').toLowerCase().includes(q)) return true;
+				return false;
+			})
 			.map((gm) => ({ key: `gguf:${gm.id ?? gm.filename}`, gguf: gm, admin: adminById.get(gm.id) ?? null }));
+
+		// Sort GGUFs: loaded first, then unloaded
+		ggufItems.sort((a, b) => {
+			const aLoaded = a.gguf?.is_loaded ? 1 : 0;
+			const bLoaded = b.gguf?.is_loaded ? 1 : 0;
+			return bLoaded - aLoaded;
+		});
 
 		const adminOnlyItems = (adminModels ?? [])
 			.filter((am: any) => !ggufIds.has(am.id))
@@ -436,7 +454,16 @@
 
 		// Auto-refresh: poll for new GGUF files every 3 seconds
 		const pollInterval = setInterval(async () => {
+			const prevIds = new Set(localModels.map((m) => m.id).filter(Boolean));
 			await refreshLocalModels(false);
+			const currIds = new Set(localModels.map((m) => m.id).filter(Boolean));
+			// If models changed (added/removed), also refresh the global models store
+			const changed = prevIds.size !== currIds.size ||
+				[...prevIds].some((id) => !currIds.has(id)) ||
+				[...currIds].some((id) => !prevIds.has(id));
+			if (changed) {
+				_models.set(await getModels(localStorage.token));
+			}
 			await initAdmin();
 		}, 3000);
 
@@ -675,7 +702,7 @@
 								id={am ? `model-item-${am.id}` : undefined}
 							>
 								<div
-								class="flex gap-3 w-full px-2 py-2 hover:bg-gray-50 dark:hover:bg-gray-850/50 rounded-2xl transition cursor-pointer"
+								class="flex gap-3 w-full px-2 py-2 rounded-2xl transition cursor-pointer {gm?.is_loaded ? 'border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30' : 'hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
 							on:click={(e) => {
 								if (am && (am?.is_active ?? true) && !(e.target as HTMLElement).closest('button') && !(e.target as HTMLElement).closest('[data-melt-dropdown-menu]')) {
 									selectedModelId = am.id;
@@ -758,19 +785,29 @@
 												</div>
 											{:else if gm.is_loaded}
 
-												<button
-													class="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-600 dark:text-gray-400"
-													on:click={() => handleUnload(gm)}
-												>
-													Descarregar
-												</button>
+												<Tooltip content="Descarregar">
+													<button
+														class="flex items-center justify-center p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-500 dark:text-gray-400"
+														on:click={() => handleUnload(gm)}
+													>
+														<!-- Circle Stop -->
+															<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
+															<path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm6-2.438c0-.724.588-1.312 1.313-1.312h4.874c.725 0 1.313.588 1.313 1.313v4.874c0 .725-.588 1.313-1.313 1.313H9.564a1.312 1.312 0 0 1-1.313-1.313V9.564Z" clip-rule="evenodd" />
+														</svg>
+													</button>
+												</Tooltip>
 											{:else}
-												<button
-													class="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-600 dark:text-gray-400"
-													on:click={() => startLoadWithContextModal(gm)}
-												>
-													Carregar
-												</button>
+												<Tooltip content="Carregar">
+													<button
+														class="flex items-center justify-center p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-500 dark:text-gray-400"
+														on:click={() => startLoadWithContextModal(gm)}
+													>
+														<!-- Circle Play -->
+															<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
+															<path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm14.024-.983a1.125 1.125 0 0 1 0 1.966l-5.603 3.113A1.125 1.125 0 0 1 9 15.113V8.887c0-.857.921-1.4 1.671-.983l5.603 3.113Z" clip-rule="evenodd" />
+														</svg>
+													</button>
+												</Tooltip>
 											{/if}
 										{/if}
 
