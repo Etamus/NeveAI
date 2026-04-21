@@ -4035,7 +4035,7 @@ ENABLE_STABLE_DIFFUSION = PersistentConfig(
 STABLE_DIFFUSION_MODEL = PersistentConfig(
     "STABLE_DIFFUSION_MODEL",
     "stable_diffusion.model",
-    os.environ.get("STABLE_DIFFUSION_MODEL", "stabilityai/sdxl-turbo"),
+    os.environ.get("STABLE_DIFFUSION_MODEL", "ByteDance/SDXL-Lightning"),
 )
 
 STABLE_DIFFUSION_WIDTH = PersistentConfig(

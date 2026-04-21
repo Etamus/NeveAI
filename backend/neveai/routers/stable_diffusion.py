@@ -1,6 +1,7 @@
 """
-Stable Diffusion Local — GPU-based image generation using SDXL Turbo.
+SDXL Lightning Local — GPU-based image generation using SDXL Lightning 4-step.
 
+Uses ByteDance/SDXL-Lightning UNet checkpoint over the SDXL base 1.0 pipeline.
 Manages loading/unloading the diffusion pipeline and coordinates VRAM with
 the llama-server (LLM) via the LocalModelManager standby/resume mechanism.
 """
@@ -37,7 +38,7 @@ IMAGE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 class _SDPipeline:
-    """Manages the SDXL Turbo diffusion pipeline lifecycle."""
+    """Manages the SDXL Lightning 4-step diffusion pipeline lifecycle."""
 
     def __init__(self):
         self._pipe = None
@@ -68,15 +69,49 @@ class _SDPipeline:
 
             def _load_sync():
                 import torch
-                from diffusers import AutoPipelineForText2Image
+                from diffusers import (
+                    StableDiffusionXLPipeline,
+                    UNet2DConditionModel,
+                    EulerDiscreteScheduler,
+                )
+                from huggingface_hub import hf_hub_download
+                from safetensors.torch import load_file
 
-                pipe = AutoPipelineForText2Image.from_pretrained(
-                    model_id,
+                _base = "stabilityai/stable-diffusion-xl-base-1.0"
+                _lightning_repo = "ByteDance/SDXL-Lightning"
+                _lightning_ckpt = "sdxl_lightning_4step_unet.safetensors"
+
+                # Load Lightning UNet weights onto GPU
+                unet = UNet2DConditionModel.from_config(
+                    _base, subfolder="unet"
+                ).to(device, torch.float16)
+                unet.load_state_dict(
+                    load_file(
+                        hf_hub_download(
+                            _lightning_repo,
+                            _lightning_ckpt,
+                            cache_dir=str(SD_CACHE_DIR),
+                        ),
+                        device=device,
+                    )
+                )
+
+                # Build pipeline from SDXL base, substituting the Lightning UNet
+                pipe = StableDiffusionXLPipeline.from_pretrained(
+                    _base,
+                    unet=unet,
                     torch_dtype=torch.float16,
                     variant="fp16",
                     cache_dir=str(SD_CACHE_DIR),
+                ).to(device)
+
+                # Lightning requires EulerDiscrete with trailing timesteps
+                pipe.scheduler = EulerDiscreteScheduler.from_config(
+                    pipe.scheduler.config,
+                    timestep_spacing="trailing",
+                    prediction_type="epsilon",
                 )
-                pipe.to(device)
+
                 return pipe
 
             self._pipe = await loop.run_in_executor(None, _load_sync)
@@ -127,8 +162,8 @@ class _SDPipeline:
                     prompt=prompt,
                     width=width,
                     height=height,
-                    num_inference_steps=steps,
-                    guidance_scale=guidance_scale,
+                    num_inference_steps=4,   # Fixed: SDXL Lightning 4-step
+                    guidance_scale=0.0,      # Fixed: CFG-free for Lightning
                 )
             return result.images[0]
 
