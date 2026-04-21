@@ -206,7 +206,6 @@ Neve AI/
 | Pydantic | 2.12.5 |
 | SQLAlchemy | 2.0.48 |
 | ChromaDB | — |
-| faster-whisper | — |
 | MCP SDK | 1.26.0 |
 
 ---
