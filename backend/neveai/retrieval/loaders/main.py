@@ -5,16 +5,16 @@ import sys
 import json
 
 from azure.identity import DefaultAzureCredential
+from pathlib import Path as _Path
+
 from langchain_community.document_loaders import (
     AzureAIDocumentIntelligenceLoader,
     BSHTMLLoader,
-    CSVLoader,
     Docx2txtLoader,
     OutlookMessageLoader,
     PyPDFLoader,
     TextLoader,
     UnstructuredEPubLoader,
-    UnstructuredExcelLoader,
     UnstructuredODTLoader,
     UnstructuredPowerPointLoader,
     UnstructuredRSTLoader,
@@ -22,6 +22,78 @@ from langchain_community.document_loaders import (
     YoutubeLoader,
 )
 from langchain_core.documents import Document
+
+
+class FastSpreadsheetLoader:
+    """Fast loader for XLSX, XLS and CSV files using pandas.
+
+    Replaces the slow UnstructuredExcelLoader / CSVLoader for large files.
+    Produces compact tabular Documents: one header line followed by CSV-style
+    value rows (no repeated column names), so the normal text-splitter can
+    handle them.  Each document is ~100 rows which keeps chunk count low and
+    preserves full row context for RAG retrieval.
+    """
+
+    ROWS_PER_CHUNK = 100
+
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+
+    def load(self) -> list[Document]:
+        import pandas as pd
+
+        file_ext = _Path(self.file_path).suffix.lower()
+
+        # ---- read into {sheet_name: DataFrame} ----------------------------
+        if file_ext == ".csv":
+            df = None
+            for enc in ("utf-8", "utf-8-sig", "latin-1", "cp1252"):
+                try:
+                    df = pd.read_csv(self.file_path, encoding=enc, dtype=str)
+                    break
+                except UnicodeDecodeError:
+                    continue
+            if df is None:
+                df = pd.read_csv(self.file_path, encoding="latin-1", dtype=str)
+            dfs = {"Sheet1": df}
+        else:
+            engine = "openpyxl" if file_ext == ".xlsx" else "xlrd"
+            xl = pd.ExcelFile(self.file_path, engine=engine)
+            dfs = {sheet: xl.parse(sheet, dtype=str) for sheet in xl.sheet_names}
+
+        # ---- convert to Documents ----------------------------------------
+        docs: list[Document] = []
+        for sheet_name, df in dfs.items():
+            if df.empty:
+                continue
+            df = df.fillna("")
+            headers = [str(c) for c in df.columns]
+            header_line = "Columns: " + " | ".join(headers)
+            total = len(df)
+
+            for start in range(0, total, self.ROWS_PER_CHUNK):
+                batch = df.iloc[start : start + self.ROWS_PER_CHUNK]
+                lines: list[str] = [header_line]
+
+                # itertuples is ~10x faster than iterrows for large DataFrames
+                for row in batch.itertuples(index=False, name=None):
+                    vals = " | ".join(str(v) for v in row)
+                    if vals.replace("|", "").strip():
+                        lines.append(vals)
+
+                if len(lines) > 1:  # more than just the header
+                    docs.append(
+                        Document(
+                            page_content="\n".join(lines),
+                            metadata={
+                                "source": self.file_path,
+                                "sheet": sheet_name,
+                                "rows": f"{start + 1}-{min(start + self.ROWS_PER_CHUNK, total)}",
+                            },
+                        )
+                    )
+
+        return docs
 
 from neveai.retrieval.loaders.external_document import ExternalDocumentLoader
 
@@ -369,7 +441,7 @@ class Loader:
                     mode=self.kwargs.get("PDF_LOADER_MODE", "page"),
                 )
             elif file_ext == "csv":
-                loader = CSVLoader(file_path, autodetect_encoding=True)
+                loader = FastSpreadsheetLoader(file_path)
             elif file_ext == "rst":
                 loader = UnstructuredRSTLoader(file_path, mode="elements")
             elif file_ext == "xml":
@@ -390,7 +462,7 @@ class Loader:
                 "application/vnd.ms-excel",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             ] or file_ext in ["xls", "xlsx"]:
-                loader = UnstructuredExcelLoader(file_path)
+                loader = FastSpreadsheetLoader(file_path)
             elif file_content_type in [
                 "application/vnd.ms-powerpoint",
                 "application/vnd.openxmlformats-officedocument.presentationml.presentation",

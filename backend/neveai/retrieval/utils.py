@@ -832,13 +832,19 @@ def get_embedding_function(
     concurrent_requests=0,
 ) -> Awaitable:
     if embedding_engine == "":
-        # Sentence transformers: CPU-bound sync operation
+        # Sentence transformers: CPU-bound sync operation.
+        # Enforce a minimum batch_size of 32 regardless of the stored config
+        # (which defaults to 1, intended for OpenAI API rate limits).
+        # batch_size=1 on a local model serialises every encode call and turns
+        # a 5-second job into a 10-minute one for large documents.
+        _local_batch_size = max(int(embedding_batch_size), 32)
+
         async def async_embedding_function(query, prefix=None, user=None):
             return await asyncio.to_thread(
                 (
                     lambda query, prefix=None: embedding_function.encode(
                         query,
-                        batch_size=int(embedding_batch_size),
+                        batch_size=_local_batch_size,
                         **({"prompt": prefix} if prefix else {}),
                     ).tolist()
                 ),
