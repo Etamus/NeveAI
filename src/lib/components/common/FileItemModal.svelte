@@ -273,7 +273,7 @@
 	});
 </script>
 
-<Modal bind:show size="lg">
+<Modal bind:show size="md">
 	<div class="font-primary px-4.5 py-3.5 w-full flex flex-col justify-center dark:text-gray-400">
 		<div class=" pb-2">
 			<div class="flex items-start justify-between">
@@ -457,7 +457,7 @@
 					</div>
 				{:else if selectedTab === ''}
 					{#if item?.file?.data}
-						{@const rawContent = (item?.file?.data?.content ?? '').trim() || 'No content'}
+						{@const rawContent = (item?.file?.data?.content ?? '').trim() || 'Sem conteúdo'}
 						{@const isTruncated =
 							($settings?.renderMarkdownInPreviews ?? true) &&
 							rawContent.length > CONTENT_PREVIEW_LIMIT &&
@@ -489,7 +489,7 @@
 							</div>
 						{/if}
 					{:else if item?.content}
-						{@const rawContent = (item?.content ?? '').trim() || 'No content'}
+						{@const rawContent = (item?.content ?? '').trim() || 'Sem conteúdo'}
 						{@const isTruncated =
 							($settings?.renderMarkdownInPreviews ?? true) &&
 							rawContent.length > CONTENT_PREVIEW_LIMIT &&
@@ -563,7 +563,7 @@
 									{@html excelHtml}
 								</div>
 							{:else}
-								<div class="text-gray-500 text-sm p-4">No content available</div>
+								<div class="text-gray-500 text-sm p-4">Sem conteúdo</div>
 							{/if}
 						{/if}
 					{:else if isCode}
@@ -593,7 +593,7 @@
 								{@html docxHtml}
 							</div>
 						{:else}
-							<div class="text-gray-500 text-sm p-4">No content available</div>
+							<div class="text-gray-500 text-sm p-4">Sem conteúdo</div>
 						{/if}
 					{:else if isPptx}
 						{#if pptxError}
@@ -652,11 +652,11 @@
 								{/if}
 							</div>
 						{:else}
-							<div class="text-gray-500 text-sm p-4">No content available</div>
-						{/if}
-					{:else}
-						<div class="max-h-96 overflow-scroll scrollbar-hidden text-xs whitespace-pre-wrap">
-							{(item?.file?.data?.content ?? '').trim() || 'No content'}
+						<div class="text-gray-500 text-sm p-4">Sem conteúdo</div>
+					{/if}
+				{:else}
+					<div class="max-h-96 overflow-scroll scrollbar-hidden text-xs whitespace-pre-wrap">
+						{(item?.file?.data?.content ?? '').trim() || 'Sem conteúdo'}
 						</div>
 					{/if}
 				{/if}

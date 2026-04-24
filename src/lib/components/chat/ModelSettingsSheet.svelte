@@ -85,7 +85,7 @@
 							title={$i18n.t('Files')}
 							bind:open={showFiles}
 							onChange={setOpen('files')}
-							buttonClassName="w-full"
+							buttonClassName="w-full font-semibold"
 						>
 							<div class="flex flex-col gap-1 mt-1.5" slot="content">
 								{#each chatFiles as file, fileIdx}
@@ -111,7 +111,7 @@
 					{/if}
 
 					{#if $user?.role === 'admin' || ($user?.permissions?.chat?.params ?? true)}
-						<div class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">{$i18n.t('Advanced Params')}</div>
+					<div class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 mt-4">{$i18n.t('Advanced Params')}</div>
 						<div class="mt-1.5">
 							<AdvancedParams
 								admin={$user?.role === 'admin'}
@@ -124,7 +124,7 @@
 					{/if}
 
 					{#if $user?.role === 'admin' || ($user?.permissions?.chat?.system_prompt ?? true)}
-						<div class="flex w-full items-center justify-between py-1.5 mt-1">
+						<div class="flex w-full items-center justify-between py-1 mt-0.5">
 							{#if showSystemPromptField}
 								<button
 									type="button"

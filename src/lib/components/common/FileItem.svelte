@@ -51,8 +51,9 @@
 	<FileItemModal bind:show={showModal} bind:item {edit} />
 {/if}
 
+<div class="relative group {className}">
 <button
-	class="relative group {className} flex items-center gap-1 {colorClassName} {small
+	class="w-full flex items-center gap-1 {colorClassName} {small
 		? 'rounded-lg p-1.5'
 		: 'rounded-xl p-1.5'} text-left"
 	type="button"
@@ -165,41 +166,30 @@
 		<Tooltip content={decodeString(name)} className="flex flex-col w-full min-w-0" placement="top-start">
 			<div class="flex flex-col justify-center w-full min-w-0 px-1">
 				<div class="dark:text-gray-100 text-xs flex justify-between items-center gap-1">
-					<div class="font-medium line-clamp-1 flex-1 min-w-0">{decodeString(name)}</div>
-					{#if size}
-						<div class="text-gray-400 text-xs capitalize shrink-0">{formatFileSize(size)}</div>
-					{:else if type !== 'chat'}
-						<div class="text-gray-400 text-xs capitalize shrink-0">{type}</div>
+					<div class="line-clamp-1 flex-1 min-w-0">{decodeString(name)}</div>
+					{#if dismissible}
+						<button
+							type="button"
+							aria-label={$i18n.t('Remove File')}
+							class="hidden group-hover:flex items-center justify-center text-gray-300 hover:text-gray-400 dark:text-gray-600 dark:hover:text-gray-500 transition shrink-0"
+							on:click|stopPropagation={() => dispatch('dismiss')}
+						>
+							<XMark className="size-3.5" />
+						</button>
+						<div class="group-hover:hidden text-gray-400 dark:text-gray-500 text-xs capitalize shrink-0">
+							{#if size}{formatFileSize(size)}{:else if type !== 'chat'}{type}{/if}
+						</div>
+					{:else}
+						{#if size}
+							<div class="text-gray-400 text-xs capitalize shrink-0">{formatFileSize(size)}</div>
+						{:else if type !== 'chat'}
+							<div class="text-gray-400 text-xs capitalize shrink-0">{type}</div>
+						{/if}
 					{/if}
 				</div>
 			</div>
 		</Tooltip>
 	{/if}
 
-	{#if dismissible}
-		<div class=" absolute -top-1 -right-1">
-			<button
-				aria-label={$i18n.t('Remove File')}
-				class=" bg-white text-black border border-gray-50 rounded-full {($settings?.highContrastMode ??
-				false)
-					? ''
-					: 'outline-hidden focus:outline-hidden group-hover:visible invisible transition'}"
-				type="button"
-				on:click|stopPropagation={() => {
-					dispatch('dismiss');
-				}}
-			>
-				<XMark className={'size-4'} />
-			</button>
-
-			<!-- <button
-				class=" p-1 dark:text-gray-300 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 rounded-full group-hover:visible invisible transition"
-				type="button"
-				on:click={() => {
-				}}
-			>
-				<GarbageBin />
-			</button> -->
-		</div>
-	{/if}
 </button>
+</div>
