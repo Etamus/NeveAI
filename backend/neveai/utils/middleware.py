@@ -1476,10 +1476,11 @@ async def chat_stable_diffusion_handler(
         from neveai.routers.stable_diffusion import _sd_pipeline
         from neveai.routers.llamacpp import model_manager
 
-        model_id = request.app.state.config.STABLE_DIFFUSION_MODEL
-        width = request.app.state.config.STABLE_DIFFUSION_WIDTH
-        height = request.app.state.config.STABLE_DIFFUSION_HEIGHT
-        steps = request.app.state.config.STABLE_DIFFUSION_STEPS
+        model_id       = request.app.state.config.STABLE_DIFFUSION_MODEL
+        hf_token       = str(request.app.state.config.STABLE_DIFFUSION_HF_TOKEN) or None
+        width          = request.app.state.config.STABLE_DIFFUSION_WIDTH
+        height         = request.app.state.config.STABLE_DIFFUSION_HEIGHT
+        steps          = request.app.state.config.STABLE_DIFFUSION_STEPS
         guidance_scale = request.app.state.config.STABLE_DIFFUSION_GUIDANCE_SCALE
 
         # Put LLM in standby
@@ -1491,9 +1492,9 @@ async def chat_stable_diffusion_handler(
 
         try:
             # Load SD pipeline
-            await _sd_pipeline.load(model_id)
+            await _sd_pipeline.load(model_id, hf_token=hf_token)
 
-            # Generate
+            # Generate (txt2img)
             data_uri = await _sd_pipeline.generate(
                 prompt=user_message,
                 width=width,

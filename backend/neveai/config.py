@@ -4035,7 +4035,7 @@ ENABLE_STABLE_DIFFUSION = PersistentConfig(
 STABLE_DIFFUSION_MODEL = PersistentConfig(
     "STABLE_DIFFUSION_MODEL",
     "stable_diffusion.model",
-    os.environ.get("STABLE_DIFFUSION_MODEL", "ByteDance/SDXL-Lightning"),
+    os.environ.get("STABLE_DIFFUSION_MODEL", "unsloth/Z-Image-Turbo-GGUF"),
 )
 
 STABLE_DIFFUSION_WIDTH = PersistentConfig(
@@ -4053,13 +4053,22 @@ STABLE_DIFFUSION_HEIGHT = PersistentConfig(
 STABLE_DIFFUSION_STEPS = PersistentConfig(
     "STABLE_DIFFUSION_STEPS",
     "stable_diffusion.steps",
-    int(os.environ.get("STABLE_DIFFUSION_STEPS", "4")),
+    int(os.environ.get("STABLE_DIFFUSION_STEPS", "6")),
 )
 
 STABLE_DIFFUSION_GUIDANCE_SCALE = PersistentConfig(
     "STABLE_DIFFUSION_GUIDANCE_SCALE",
     "stable_diffusion.guidance_scale",
     float(os.environ.get("STABLE_DIFFUSION_GUIDANCE_SCALE", "0.0")),
+)
+
+STABLE_DIFFUSION_HF_TOKEN = PersistentConfig(
+    "STABLE_DIFFUSION_HF_TOKEN",
+    "stable_diffusion.hf_token",
+    os.environ.get(
+        "STABLE_DIFFUSION_HF_TOKEN",
+        os.environ.get("HUGGING_FACE_HUB_TOKEN", os.environ.get("HF_TOKEN", "")),
+    ),
 )
 
 ####################################
