@@ -4053,7 +4053,7 @@ STABLE_DIFFUSION_HEIGHT = PersistentConfig(
 STABLE_DIFFUSION_STEPS = PersistentConfig(
     "STABLE_DIFFUSION_STEPS",
     "stable_diffusion.steps",
-    int(os.environ.get("STABLE_DIFFUSION_STEPS", "6")),
+    int(os.environ.get("STABLE_DIFFUSION_STEPS", "8")),
 )
 
 STABLE_DIFFUSION_GUIDANCE_SCALE = PersistentConfig(

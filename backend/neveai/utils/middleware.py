@@ -1451,6 +1451,62 @@ async def chat_memory_handler(
     return form_data
 
 
+def _enhance_zimage_prompt(user_prompt: str) -> str:
+    """Build a fast deterministic image prompt for local Z-Image generation."""
+    prompt = re.sub(r"\s+", " ", str(user_prompt or "")).strip()
+    if not prompt:
+        return prompt
+
+    lower_prompt = prompt.lower()
+    keyword_map = {
+        "tubarão": "shark",
+        "tubarao": "shark",
+        "asas": "wings",
+        "aza": "wing",
+        "azas": "wings",
+        "voando": "flying",
+        "voar": "flying",
+        "céu": "sky",
+        "ceu": "sky",
+        "nuvens": "clouds",
+        "mar": "sea",
+        "oceano": "ocean",
+        "água": "water",
+        "agua": "water",
+        "floresta": "forest",
+        "cidade": "city",
+        "praia": "beach",
+        "montanha": "mountain",
+        "realista": "realistic",
+        "cinematográfico": "cinematic",
+        "cinematografico": "cinematic",
+    }
+    english_hints = [value for key, value in keyword_map.items() if key in lower_prompt]
+
+    constraints = [
+        "render the user's request literally",
+        "keep every requested subject, action, object, and location visible",
+        "do not replace unusual or fantasy concepts with a generic scene",
+        "single coherent composition",
+        "high detail, sharp focus, cinematic lighting",
+    ]
+
+    if any(term in lower_prompt for term in ("voando", "voar", "flying", "asas", "aza", "azas", "wing", "wings")):
+        constraints.append("the subject is airborne with visible wings")
+    if any(term in lower_prompt for term in ("céu", "ceu", "sky", "nuvens", "clouds")):
+        constraints.append("sky background, not underwater, no ocean, no sea")
+
+    enhanced_prompt = (
+        "Image generation prompt: "
+        f"{prompt}. "
+        f"English visual keywords: {', '.join(dict.fromkeys(english_hints))}. "
+        f"Requirements: {', '.join(constraints)}. "
+        "Avoid: wrong subject, missing requested elements, generic default scene, blurry, low quality."
+    )
+
+    return enhanced_prompt[:1200]
+
+
 async def chat_stable_diffusion_handler(
     request: Request, form_data: dict, extra_params: dict, user
 ):
@@ -1465,12 +1521,17 @@ async def chat_stable_diffusion_handler(
     await __event_emitter__(
         {
             "type": "status",
-            "data": {"description": "Gerando imagem...", "done": False},
+            "data": {
+                "action": "stable_diffusion",
+                "description": "Gerando imagem...",
+                "done": False,
+            },
         }
     )
 
     messages = form_data.get("messages", [])
     user_message = get_last_user_message(messages)
+    image_prompt = _enhance_zimage_prompt(user_message)
 
     try:
         from neveai.routers.stable_diffusion import _sd_pipeline
@@ -1480,7 +1541,7 @@ async def chat_stable_diffusion_handler(
         hf_token       = str(request.app.state.config.STABLE_DIFFUSION_HF_TOKEN) or None
         width          = request.app.state.config.STABLE_DIFFUSION_WIDTH
         height         = request.app.state.config.STABLE_DIFFUSION_HEIGHT
-        steps          = request.app.state.config.STABLE_DIFFUSION_STEPS
+        steps          = max(int(request.app.state.config.STABLE_DIFFUSION_STEPS or 8), 8)
         guidance_scale = request.app.state.config.STABLE_DIFFUSION_GUIDANCE_SCALE
 
         # Put LLM in standby
@@ -1496,7 +1557,7 @@ async def chat_stable_diffusion_handler(
 
             # Generate (txt2img)
             data_uri = await _sd_pipeline.generate(
-                prompt=user_message,
+                prompt=image_prompt,
                 width=width,
                 height=height,
                 steps=steps,
@@ -1506,7 +1567,11 @@ async def chat_stable_diffusion_handler(
             await __event_emitter__(
                 {
                     "type": "status",
-                    "data": {"description": "Imagem gerada", "done": True},
+                    "data": {
+                        "action": "stable_diffusion",
+                        "description": "Imagem gerada",
+                        "done": True,
+                    },
                 }
             )
 

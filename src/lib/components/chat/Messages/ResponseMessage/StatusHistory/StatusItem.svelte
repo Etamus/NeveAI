@@ -3,11 +3,20 @@
 	const i18n = getContext('i18n');
 	import WebSearchResults from '../WebSearchResults.svelte';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
+	import Photo from '$lib/components/icons/Photo.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import { t } from 'i18next';
 
 	export let status = null;
 	export let done = false;
+
+	$: statusAction = String(status?.action ?? '').toLowerCase();
+	$: statusDescription = String(status?.description ?? '').toLowerCase();
+	$: isImageStatus =
+		statusAction.includes('image') ||
+		statusAction.includes('stable_diffusion') ||
+		statusDescription.includes('image') ||
+		statusDescription.includes('imagem');
 </script>
 
 {#if !status?.hidden}
@@ -37,7 +46,11 @@
 						<span
 							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
 						>
-							<GlobeAlt className="size-3.5" strokeWidth="1.6" />
+							{#if isImageStatus}
+								<Photo className="size-3.5" strokeWidth="1.6" />
+							{:else}
+								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
+							{/if}
 						</span>
 
 						<span
@@ -86,7 +99,11 @@
 						<span
 							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
 						>
-							<GlobeAlt className="size-3.5" strokeWidth="1.6" />
+							{#if isImageStatus}
+								<Photo className="size-3.5" strokeWidth="1.6" />
+							{:else}
+								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
+							{/if}
 						</span>
 						<span class="relative min-w-0 truncate text-sm leading-5 {(done || status?.done) === false ? 'shimmer' : ''}">{$i18n.t(`Searching`)}</span>
 					</div>
@@ -170,7 +187,11 @@
 						<span
 							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
 						>
-							<GlobeAlt className="size-3.5" strokeWidth="1.6" />
+							{#if isImageStatus}
+								<Photo className="size-3.5" strokeWidth="1.6" />
+							{:else}
+								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
+							{/if}
 						</span>
 						<span class="relative min-w-0 truncate text-sm leading-5 {(done || status?.done) === false ? 'shimmer' : ''}">
 					<!-- $i18n.t(`Searching "{{searchQuery}}"`) -->
