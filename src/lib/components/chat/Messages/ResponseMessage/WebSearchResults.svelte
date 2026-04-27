@@ -50,23 +50,31 @@
 
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <!-- svelte-ignore a11y-click-events-have-key-events -->
-<div class="web-search-block w-full py-1">
+<div
+	class="web-search-block -ml-3 mb-2 w-[calc(100%+0.75rem)] overflow-hidden rounded-xl text-sm transition-all duration-200 {open && items.length > 0
+		? 'border border-gray-200/80 bg-gray-50/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-white/[0.035] dark:shadow-none'
+		: ''}"
+>
 	<!-- Trigger -->
 	<div
-		class="flex items-center gap-2 cursor-pointer group/ws-trigger"
+		class="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer group/ws-trigger"
 		on:pointerup|stopPropagation={() => {
 			open = !open;
 		}}
 		on:click|stopPropagation
 	>
 		<div
-			class="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-sm text-gray-500 dark:text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-300"
+			class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100"
 		>
-			<GlobeAlt className="size-4 shrink-0" strokeWidth="1.5" />
+			<span
+				class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
+			>
+				<GlobeAlt className="size-3.5" strokeWidth="1.6" />
+			</span>
 
-			<span class="relative inline-block leading-none">
+			<span class="relative min-w-0 truncate text-sm leading-5">
 				{#if isSearching}
-					<span class="shimmer text-sm">
+					<span class="shimmer text-sm leading-5">
 						{#if status?.query}
 							{$i18n.t('Searching for "{{query}}"', { query: status.query })}
 						{:else}
@@ -80,7 +88,7 @@
 
 			<ChevronDown
 				strokeWidth="2.5"
-				className="size-3.5 shrink-0 transition-transform duration-200 {open
+				className="size-3.5 shrink-0 translate-y-px text-gray-400 transition-transform duration-200 dark:text-gray-500 {open
 					? 'rotate-0'
 					: '-rotate-90'}"
 			/>
@@ -90,7 +98,7 @@
 	<!-- Results content -->
 	{#if open && items.length > 0}
 		<div
-			class="mt-1.5 pl-6"
+			class="border-t border-gray-200/70 bg-white/55 px-3 py-2.5 dark:border-white/10 dark:bg-black/10"
 			transition:slide={{ duration: 200, easing: quintOut, axis: 'y' }}
 		>
 			<div class="flex flex-wrap gap-1.5">

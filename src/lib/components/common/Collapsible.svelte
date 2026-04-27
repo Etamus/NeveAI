@@ -35,6 +35,7 @@
 	import ChevronUp from '../icons/ChevronUp.svelte';
 	import ChevronDown from '../icons/ChevronDown.svelte';
 	import Lightbulb from '../icons/Lightbulb.svelte';
+	import Terminal from '../icons/Terminal.svelte';
 	import Spinner from './Spinner.svelte';
 
 	import { copyToClipboard } from '$lib/utils';
@@ -63,8 +64,25 @@
 
 	// Reasoning-specific state
 	$: isReasoning = attributes?.type === 'reasoning';
-	$: isStreaming = isReasoning && attributes?.done && attributes?.done !== 'true';
-	$: isDone = isReasoning && attributes?.done === 'true';
+	$: isCodeInterpreter = attributes?.type === 'code_interpreter';
+	$: isActivityBlock = isReasoning || isCodeInterpreter;
+	$: reasoningDoneValue = attributes?.done == null ? '' : String(attributes.done);
+	$: isDone = isReasoning && reasoningDoneValue === 'true';
+	$: isStreaming = isReasoning && !isDone;
+	$: isCodeInterpreterRunning = isCodeInterpreter && attributes?.done !== 'true';
+	$: showReasoningContent = isReasoning && !hide && (open || isStreaming);
+	$: showActivityChrome = isReasoning ? showReasoningContent : isCodeInterpreter && open && !hide;
+	$: reasoningPreviewMode = isReasoning && isStreaming && !open;
+
+	let wasStreamingReasoning = false;
+	$: if (isReasoning) {
+		if (isStreaming) {
+			wasStreamingReasoning = true;
+		} else if (isDone && wasStreamingReasoning) {
+			open = false;
+			wasStreamingReasoning = false;
+		}
+	}
 
 	let copied = false;
 	let copyTimeout: ReturnType<typeof setTimeout>;
@@ -118,7 +136,7 @@
 		}
 	}
 
-	$: if (isStreaming && open && reasoningScrollEl) {
+	$: if (isStreaming && showReasoningContent && reasoningScrollEl) {
 		startObserving();
 	} else {
 		stopObserving();
@@ -129,18 +147,18 @@
 	});
 </script>
 
-{#if isReasoning}
-	<!-- Unsloth-style reasoning block -->
+{#if isActivityBlock}
+	<!-- LM Studio-inspired reasoning block -->
 	<div
 		{id}
-		class="reasoning-block mb-4 w-full rounded-lg transition-all duration-200 {open
-			? 'border border-gray-200 dark:border-gray-700/70 px-3 py-2'
-			: 'px-3 py-2'} {className}"
+		class="reasoning-block mb-4 w-full overflow-hidden rounded-xl transition-all duration-200 {showActivityChrome
+			? 'border border-gray-200/80 bg-gray-50/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-white/[0.035] dark:shadow-none'
+			: ''} {className}"
 	>
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
 		<div
-			class="flex items-center gap-2 {disabled ? '' : 'cursor-pointer'}"
+			class="flex items-center justify-between gap-3 px-3 py-2 {disabled ? '' : 'cursor-pointer'}"
 			on:pointerup={() => {
 				if (!disabled) {
 					open = !open;
@@ -148,34 +166,52 @@
 			}}
 		>
 			<div
-				class="flex min-w-0 flex-1 items-center gap-2 py-0.5 text-sm text-gray-500 dark:text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-300"
+				class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100"
 			>
-				<Lightbulb className="size-4 shrink-0" strokeWidth="1.5" />
+				<span
+					class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
+				>
+					{#if isReasoning}
+						<Lightbulb className="size-3.5" strokeWidth="1.6" />
+					{:else}
+						<Terminal className="size-3.5" strokeWidth="1.7" />
+					{/if}
+				</span>
 
-				<span class="relative inline-block leading-none">
-					{#if isStreaming}
-						<span class="shimmer text-sm">{$i18n.t('Thinking...')}</span>
-					{:else if isDone && attributes?.duration}
-						{#if attributes.duration < 1}
-							{$i18n.t('Thought for less than a second')}
-						{:else if attributes.duration < 60}
-							{$i18n.t('Thought for {{DURATION}} seconds', {
-								DURATION: attributes.duration
-							})}
+				<span class="relative min-w-0 truncate leading-5">
+					{#if isReasoning}
+						{#if isStreaming}
+							<span class="shimmer text-sm leading-5">{$i18n.t('Thinking...')}</span>
+						{:else if isDone && attributes?.duration}
+							{#if attributes.duration < 1}
+								{$i18n.t('Thought for less than a second')}
+							{:else if attributes.duration < 60}
+								{$i18n.t('Thought for {{DURATION}} seconds', {
+									DURATION: attributes.duration
+								})}
+							{:else}
+								{$i18n.t('Thought for {{DURATION}}', {
+									DURATION: dayjs.duration(attributes.duration, 'seconds').humanize()
+								})}
+							{/if}
 						{:else}
-							{$i18n.t('Thought for {{DURATION}}', {
-								DURATION: dayjs.duration(attributes.duration, 'seconds').humanize()
-							})}
+							{$i18n.t('Thinking...')}
 						{/if}
 					{:else}
-						{$i18n.t('Thinking...')}
+						<span class="{isCodeInterpreterRunning ? 'shimmer' : ''} text-sm leading-5">
+							{#if attributes?.done === 'true'}
+								{$i18n.t('Analyzed')}
+							{:else}
+								{$i18n.t('Analyzing...')}
+							{/if}
+						</span>
 					{/if}
 				</span>
 
 				{#if !disabled}
 					<ChevronDown
-						strokeWidth="2.5"
-						className="size-3.5 shrink-0 transition-transform duration-200 {open
+						strokeWidth="2.4"
+						className="size-3.5 shrink-0 translate-y-px text-gray-400 transition-transform duration-200 dark:text-gray-500 {open
 							? 'rotate-0'
 							: '-rotate-90'}"
 					/>
@@ -183,9 +219,9 @@
 			</div>
 
 			<!-- Copy button - only show when open and done -->
-			{#if open && isDone}
+			{#if isReasoning && open && isDone}
 				<button
-					class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-gray-500 dark:text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800"
+					class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-gray-500 transition-colors hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-gray-100"
 					on:pointerup|stopPropagation={handleCopy}
 					aria-label="Copy reasoning"
 				>
@@ -229,14 +265,14 @@
 		</div>
 
 		<!-- Reasoning content -->
-		{#if open && !hide}
+		{#if isReasoning && showReasoningContent}
 			<div
-				class="reasoning-content relative overflow-hidden text-gray-500 dark:text-gray-400 text-sm"
+				class="reasoning-content relative border-t border-gray-200/70 bg-white/55 text-sm text-gray-600 dark:border-white/10 dark:bg-black/10 dark:text-gray-300"
 				transition:slide={{ duration: 200, easing: quintOut, axis: 'y' }}
 			>
 				{#if isStreaming}
 					<div
-						class="reasoning-fade-top pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-gradient-to-b from-white dark:from-gray-900 to-transparent"
+						class="reasoning-fade-top pointer-events-none absolute inset-x-0 top-0 z-10 h-5 bg-gradient-to-b from-white/90 to-transparent dark:from-gray-950/70"
 					></div>
 				{/if}
 
@@ -244,16 +280,27 @@
 					id="reasoning-content-{collapsibleId}"
 					bind:this={reasoningScrollEl}
 					on:scroll={handleReasoningScroll}
-					class="reasoning-text relative z-0 overflow-y-auto pt-2 pb-2 leading-relaxed {isStreaming
-						? 'max-h-32'
-						: 'max-h-64'}"
+					class="reasoning-text relative z-0 overflow-y-auto px-3 py-2.5 leading-relaxed text-gray-600 dark:text-gray-300 {reasoningPreviewMode
+						? 'max-h-24'
+						: isStreaming
+							? 'max-h-40'
+							: 'max-h-72'}"
 				>
 					<slot name="content" />
 				</div>
 
 				<div
-					class="reasoning-fade pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-gradient-to-t from-white dark:from-gray-900 to-transparent"
+					class="reasoning-fade pointer-events-none absolute inset-x-0 bottom-0 z-10 h-7 bg-gradient-to-t from-white/95 to-transparent dark:from-gray-950/80"
 				></div>
+			</div>
+		{:else if isCodeInterpreter && open && !hide}
+			<div
+				class="border-t border-gray-200/70 bg-white/55 text-sm text-gray-600 dark:border-white/10 dark:bg-black/10 dark:text-gray-300"
+				transition:slide={{ duration: 200, easing: quintOut, axis: 'y' }}
+			>
+				<div class="px-3 py-2.5 leading-relaxed">
+					<slot name="content" />
+				</div>
 			</div>
 		{/if}
 	</div>
