@@ -112,9 +112,9 @@
 		<div class="flex justify-between items-center px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20">
 			<div class="text-lg font-semibold dark:text-gray-100">
 				{#if edit}
-					{$i18n.t('Edit Folder')}
+					{$i18n.t('Editar projeto')}
 				{:else}
-					{$i18n.t('Create Folder')}
+					{$i18n.t('Criar projeto')}
 				{/if}
 			</div>
 			<button
@@ -134,15 +134,20 @@
 					submitHandler();
 				}}
 			>
-				<div class="flex flex-col w-full">
-					<input
-						id="folder-name"
-						class="w-full text-sm bg-transparent border border-gray-100/60 dark:border-gray-800/60 rounded-lg px-3 py-2 placeholder:text-gray-300 dark:placeholder:text-gray-600 outline-hidden transition"
-						type="text"
-						bind:value={name}
-						placeholder={$i18n.t('Enter folder name')}
-						autocomplete="off"
-					/>
+				<div
+					class="flex flex-col gap-3 px-3.5 py-3 border border-gray-100 dark:border-gray-850 rounded-xl"
+				>
+					<div class="flex flex-col">
+						<div class="text-xs text-gray-500 mb-1">{$i18n.t('Nome do projeto')}</div>
+						<input
+							id="folder-name"
+							class="w-full text-sm bg-transparent outline-hidden placeholder:text-gray-300 dark:placeholder:text-gray-700"
+							type="text"
+							bind:value={name}
+							placeholder={$i18n.t('Digite o nome do projeto')}
+							autocomplete="off"
+						/>
+					</div>
 				</div>
 
 				<div class="flex justify-end pt-4 text-sm font-medium gap-1.5">

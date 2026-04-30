@@ -872,7 +872,7 @@
 
 	{:else}
 		<!-- ─── Model Editor ──────────────────────────────────────────────── -->
-		<div style="height: 60vh; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 1rem 2.5rem 1rem;">
+		<div style="height: 56vh; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 1rem 2.5rem 1rem;">
 			<ModelEditor
 				edit
 				model={adminModels?.find((m) => m.id === selectedModelId)}

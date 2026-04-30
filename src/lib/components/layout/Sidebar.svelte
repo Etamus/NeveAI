@@ -823,11 +823,13 @@
 							}}
 						>
 							<div
-								class=" cursor-pointer flex rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/50 transition group"
+								class=" cursor-pointer flex rounded-md hover:bg-gray-100 dark:hover:bg-gray-700/50 transition group"
 							>
 								<div class="self-center relative">
 									<img
-										src={`${WEBUI_API_BASE_URL}/users/${$user?.id}/profile/image`}
+										src={($user?.profile_image_url ?? '').startsWith('data:')
+											? $user?.profile_image_url
+											: `${WEBUI_API_BASE_URL}/users/${$user?.id}/profile/image`}
 										class=" size-7 object-cover rounded-full"
 										alt={$i18n.t('Open User Profile Menu')}
 										aria-label={$i18n.t('Open User Profile Menu')}
@@ -1316,11 +1318,13 @@
 							}}
 						>
 							<div
-								class=" flex items-center rounded-2xl py-2 px-1.5 w-full hover:bg-gray-100 dark:hover:bg-gray-700/50 transition"
+								class=" flex items-center rounded-md py-2 px-1.5 w-full hover:bg-gray-100 dark:hover:bg-gray-700/50 transition"
 							>
 								<div class=" self-center mr-3 relative">
 									<img
-										src={`${WEBUI_API_BASE_URL}/users/${$user?.id}/profile/image`}
+										src={($user?.profile_image_url ?? '').startsWith('data:')
+											? $user?.profile_image_url
+											: `${WEBUI_API_BASE_URL}/users/${$user?.id}/profile/image`}
 										class=" size-7 object-cover rounded-full"
 										alt={$i18n.t('Open User Profile Menu')}
 										aria-label={$i18n.t('Open User Profile Menu')}

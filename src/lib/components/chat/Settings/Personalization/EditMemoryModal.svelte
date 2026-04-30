@@ -48,9 +48,9 @@
 
 <Modal bind:show size="sm">
 	<div>
-		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-2">
+		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20">
 			<div class=" text-lg font-medium self-center">
-				{$i18n.t('Edit Memory')}
+				{$i18n.t('Editar memória')}
 			</div>
 			<button
 				class="self-center"
@@ -62,7 +62,7 @@
 			</button>
 		</div>
 
-		<div class="flex flex-col md:flex-row w-full px-5 pb-4 md:space-x-4 dark:text-gray-200">
+		<div class="flex flex-col md:flex-row w-full px-5 pb-4 pt-4 md:space-x-4 dark:text-gray-200">
 			<div class=" flex flex-col w-full sm:flex-row sm:justify-center sm:space-x-6">
 				<form
 					class="flex flex-col w-full"
@@ -73,15 +73,11 @@
 					<div class="">
 						<textarea
 							bind:value={content}
-							class=" bg-transparent w-full text-sm rounded-xl p-3 outline outline-1 outline-gray-100 dark:outline-gray-800"
-							rows="6"
+							class=" bg-transparent w-full text-sm rounded-xl p-3 outline outline-1 outline-gray-100 dark:outline-gray-800 placeholder:text-gray-300 dark:placeholder:text-gray-700"
+							rows="3"
 							style="resize: vertical;"
 							placeholder={$i18n.t('Enter a detail about yourself for your LLMs to recall')}
 						/>
-
-						<div class="text-xs text-gray-500">
-							ⓘ {$i18n.t('Refer to yourself as "User" (e.g., "User is learning Spanish")')}
-						</div>
 					</div>
 
 					<div class="flex justify-end pt-5 text-sm font-medium">

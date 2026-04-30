@@ -22,6 +22,8 @@
 	import FaceSmile from '$lib/components/icons/FaceSmile.svelte';
 	import { shutdownApp } from '$lib/apis';
 	import UserStatusModal from './UserStatusModal.svelte';
+	import EditProfileModal from './EditProfileModal.svelte';
+	import User from '$lib/components/icons/User.svelte';
 	import Emoji from '$lib/components/common/Emoji.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import { updateUserStatus } from '$lib/apis/users';
@@ -41,6 +43,7 @@
 	export let showActiveUsers = true;
 
 	let showUserStatusModal = false;
+	let showEditProfileModal = false;
 
 	const dispatch = createEventDispatcher();
 
@@ -69,6 +72,13 @@
 
 <UserStatusModal
 	bind:show={showUserStatusModal}
+	onSave={async () => {
+		user.set(await getSessionUser(localStorage.token));
+	}}
+/>
+
+<EditProfileModal
+	bind:show={showEditProfileModal}
 	onSave={async () => {
 		user.set(await getSessionUser(localStorage.token));
 	}}
@@ -207,6 +217,24 @@
 					class="flex items-center rounded-sm py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer select-none"
 					on:click={async () => {
 						show = false;
+						showEditProfileModal = true;
+
+						if ($mobile) {
+							await tick();
+							showSidebar.set(false);
+						}
+					}}
+				>
+					<div class="flex items-center gap-3">
+						<User className="w-5 h-5" strokeWidth="1.5" />
+						<span class="text-sm">{$i18n.t('Profile')}</span>
+					</div>
+				</DropdownMenu.Item>
+
+				<DropdownMenu.Item
+					class="flex items-center rounded-sm py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer select-none"
+					on:click={async () => {
+						show = false;
 
 						await showSettings.set(true);
 
@@ -231,7 +259,7 @@
 					}}
 				>
 					<div class="flex items-center gap-3">
-					<SignOut className="w-5 h-5" />
+					<SignOut className="w-5 h-5 translate-x-0.5" />
 						<span class="text-sm">{$i18n.t('Sair')}</span>
 					</div>
 				</DropdownMenu.Item>

@@ -107,7 +107,7 @@
 			class="m-auto max-w-full {sizeToWidth(size)} {size !== 'full'
 				? 'mx-2'
 				: ''} shadow-3xl min-h-fit scrollbar-hidden {className} border border-gray-200 dark:border-gray-800"
-			in:flyAndScale
+			in:flyAndScale={{ start: 1, y: -8, duration: 150 }}
 			on:mousedown={(e) => {
 				e.stopPropagation();
 			}}

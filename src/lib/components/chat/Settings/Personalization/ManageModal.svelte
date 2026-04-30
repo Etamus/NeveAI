@@ -54,28 +54,29 @@
 	<div>
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-1">
 			<div class=" text-lg font-medium self-center">{$i18n.t('Memory')}</div>
-			<button
-				class="self-center"
-				on:click={() => {
-					show = false;
-				}}
-			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					viewBox="0 0 20 20"
-					fill="currentColor"
-					class="w-5 h-5"
+			<div class="flex items-center gap-1.5">
+				<button
+					class="px-3 py-1 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg"
+					on:click={() => {
+						showAddMemoryModal = true;
+					}}>{$i18n.t('Adicionar')}</button
 				>
-					<path
-						d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
-					/>
-				</svg>
-			</button>
+				<button
+					class="px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition rounded-lg"
+					on:click={() => {
+						if (memories.length > 0) {
+							showClearConfirmDialog = true;
+						} else {
+							toast.error($i18n.t('No memories to clear'));
+						}
+					}}>{$i18n.t('Limpar')}</button
+				>
+			</div>
 		</div>
 
 		<div class="flex flex-col w-full px-5 pb-5 dark:text-gray-200">
 			<div
-				class=" flex flex-col w-full sm:flex-row sm:justify-center sm:space-x-6 h-[28rem] max-h-screen rounded-xl mb-4 mt-1"
+				class=" flex flex-col w-full sm:flex-row sm:justify-center sm:space-x-6 h-[20rem] max-h-screen rounded-xl mb-2 mt-1"
 			>
 				{#if memories.length > 0}
 					<div class="text-left text-sm w-full mb-4 overflow-y-scroll">
@@ -186,32 +187,14 @@
 					</div>
 				{/if}
 			</div>
-			<div class="flex text-xs font-medium gap-1.5">
-				<button
-					class="px-4 py-1.5 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg"
-					on:click={() => {
-						showAddMemoryModal = true;
-					}}>{$i18n.t('Add Memory')}</button
-				>
-				<button
-					class="px-4 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition rounded-lg"
-					on:click={() => {
-						if (memories.length > 0) {
-							showClearConfirmDialog = true;
-						} else {
-							toast.error($i18n.t('No memories to clear'));
-						}
-					}}>{$i18n.t('Clear memory')}</button
-				>
-			</div>
 		</div>
 	</div>
 </Modal>
 
 <ConfirmDialog
-	title={$i18n.t('Clear Memory')}
+	title={$i18n.t('Limpar memória')}
 	message={$i18n.t('Are you sure you want to clear all memories? This action cannot be undone.')}
-	show={showClearConfirmDialog}
+	bind:show={showClearConfirmDialog}
 	on:confirm={onClearConfirmed}
 	on:cancel={() => {
 		showClearConfirmDialog = false;
