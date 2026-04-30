@@ -20,6 +20,9 @@
 		if (size === 'full') {
 			return 'w-full';
 		}
+		if (typeof size === 'string' && size.startsWith('w-')) {
+			return size;
+		}
 		if (size === 'xs') {
 			return 'w-[16rem]';
 		} else if (size === 'sm') {

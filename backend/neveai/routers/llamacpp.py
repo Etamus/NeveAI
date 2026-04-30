@@ -1339,3 +1339,213 @@ def _human_size(nbytes: int) -> str:
             return f"{nbytes:.1f} {unit}"
         nbytes /= 1024
     return f"{nbytes:.1f} PB"
+
+
+# ---------------------------------------------------------------------------
+# Hugging Face download — Neve catalog
+# ---------------------------------------------------------------------------
+
+import uuid
+import threading
+
+NEVE_CATALOG = [
+    {"id": "neve-echo-s",   "name": "Neve Echo S",   "repo": "NeveAI/Neve-Echo-S-4B-GGUF",    "size_label": "7.9 GB"},
+    {"id": "neve-echo",     "name": "Neve Echo",     "repo": "NeveAI/Neve-Echo-4-26B-GGUF",   "size_label": "13.6 GB"},
+    {"id": "neve-prism",    "name": "Neve Prism",    "repo": "NeveAI/Neve-Prism-3-12B-GGUF",  "size_label": "8.1 GB"},
+    {"id": "neve-prism-x",  "name": "Neve Prism X",  "repo": "NeveAI/Neve-Prism-X2-9B-GGUF",  "size_label": "12.1 GB"},
+    {"id": "neve-sense",    "name": "Neve Sense",    "repo": "NeveAI/Neve-Sense-2-20B-GGUF",  "size_label": "11.1 GB"},
+    {"id": "neve-strata-s", "name": "Neve Strata S", "repo": "NeveAI/Neve-Strata-S2-4B-GGUF", "size_label": "5.5 GB"},
+    {"id": "neve-strata",   "name": "Neve Strata",   "repo": "NeveAI/Neve-Strata-4-30B-GGUF", "size_label": "16.3 GB"},
+    {"id": "neve-strata-x", "name": "Neve Strata X", "repo": "NeveAI/Neve-Strata-X2-35B-GGUF", "size_label": "18.2 GB"},
+]
+
+# In-memory task registry: { task_id: { status, progress, total, downloaded, message, files: [...] } }
+_DOWNLOAD_TASKS: dict = {}
+_DOWNLOAD_TASKS_LOCK = threading.Lock()
+
+
+def _set_task(task_id: str, **fields):
+    with _DOWNLOAD_TASKS_LOCK:
+        task = _DOWNLOAD_TASKS.setdefault(task_id, {})
+        task.update(fields)
+
+
+def _get_task(task_id: str) -> dict:
+    with _DOWNLOAD_TASKS_LOCK:
+        return dict(_DOWNLOAD_TASKS.get(task_id, {}))
+
+
+def _catalog_entry(model_id: str) -> Optional[dict]:
+    return next((m for m in NEVE_CATALOG if m["id"] == model_id), None)
+
+
+def _local_filename_for(repo_filename: str, repo_id: str) -> str:
+    """Produce a stable local filename to avoid collisions between repos."""
+    return repo_filename
+
+
+def _is_installed(repo_filename: str) -> bool:
+    return (MODELS_DIR / repo_filename).exists()
+
+
+async def _hf_list_files(repo_id: str) -> list[dict]:
+    """Return file listing of a HF repo (main branch). Each item: {path, size}."""
+    url = f"https://huggingface.co/api/models/{repo_id}/tree/main"
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+        return r.json()
+
+
+def _pick_main_gguf(files: list[dict]) -> Optional[dict]:
+    """Pick the first non-mmproj .gguf file from a HF repo listing."""
+    for f in files:
+        path = f.get("path", "")
+        if path.lower().endswith(".gguf") and "mmproj" not in path.lower():
+            return f
+    return None
+
+
+def _pick_mmproj(files: list[dict]) -> Optional[dict]:
+    for f in files:
+        path = f.get("path", "")
+        lower = path.lower()
+        if lower.endswith(".gguf") and "mmproj" in lower:
+            return f
+    return None
+
+
+async def _stream_download_file(
+    task_id: str,
+    repo_id: str,
+    repo_path: str,
+    dest_path: Path,
+    file_index: int,
+    file_total: int,
+):
+    """Stream a single file from HF to disk, updating task progress."""
+    url = f"https://huggingface.co/{repo_id}/resolve/main/{repo_path}"
+    tmp_path = dest_path.with_suffix(dest_path.suffix + ".part")
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
+        async with client.stream("GET", url) as r:
+            r.raise_for_status()
+            total = int(r.headers.get("content-length", 0))
+            downloaded = 0
+            _set_task(
+                task_id,
+                status="downloading",
+                current_file=repo_path,
+                file_index=file_index,
+                file_total=file_total,
+                downloaded=0,
+                total=total,
+                progress=0.0,
+            )
+            with open(tmp_path, "wb") as f:
+                async for chunk in r.aiter_bytes(chunk_size=1024 * 1024):
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    progress = (downloaded / total) if total > 0 else 0.0
+                    _set_task(
+                        task_id,
+                        downloaded=downloaded,
+                        total=total,
+                        progress=progress,
+                    )
+    tmp_path.replace(dest_path)
+
+
+async def _run_download_task(task_id: str, model_id: str):
+    entry = _catalog_entry(model_id)
+    if not entry:
+        _set_task(task_id, status="error", error="Modelo não encontrado no catálogo")
+        return
+    repo_id = entry["repo"]
+    try:
+        _set_task(task_id, status="resolving", model_id=model_id, repo_id=repo_id, name=entry["name"])
+        files = await _hf_list_files(repo_id)
+        main_file = _pick_main_gguf(files)
+        if not main_file:
+            _set_task(task_id, status="error", error=f"Nenhum .gguf encontrado em {repo_id}")
+            return
+        mmproj_file = _pick_mmproj(files)
+
+        targets: list[tuple[str, Path]] = []
+        if not _is_installed(main_file["path"]):
+            targets.append((main_file["path"], MODELS_DIR / main_file["path"]))
+        if mmproj_file and not (MMPROJ_DIR / mmproj_file["path"]).exists():
+            targets.append((mmproj_file["path"], MMPROJ_DIR / mmproj_file["path"]))
+
+        if not targets:
+            _set_task(task_id, status="completed", message="Já instalado", progress=1.0)
+            return
+
+        total_files = len(targets)
+        for i, (repo_path, dest_path) in enumerate(targets, start=1):
+            await _stream_download_file(task_id, repo_id, repo_path, dest_path, i, total_files)
+
+        _set_task(task_id, status="completed", progress=1.0, message="Download concluído")
+    except httpx.HTTPStatusError as e:
+        _set_task(task_id, status="error", error=f"HTTP {e.response.status_code} ao baixar de {repo_id}")
+    except Exception as e:
+        log.exception(f"Erro no download do modelo {model_id}")
+        _set_task(task_id, status="error", error=str(e))
+
+
+@router.get("/catalog")
+async def get_neve_catalog():
+    """Return the curated Neve model catalog with installed status and fixed size label."""
+    items = []
+    for entry in NEVE_CATALOG:
+        repo_short = entry["repo"].split("/")[-1].lower().replace("-gguf", "")
+        installed = False
+        try:
+            for p in MODELS_DIR.glob("*.gguf"):
+                if repo_short in p.name.lower():
+                    installed = True
+                    break
+        except Exception:
+            pass
+        items.append({**entry, "installed": installed})
+    return {"models": items}
+
+
+class DownloadModelRequest(BaseModel):
+    model_id: str
+
+
+@router.post("/download")
+async def start_download(req: DownloadModelRequest):
+    """Start a background download of a Neve catalog model. Returns task_id."""
+    if not _catalog_entry(req.model_id):
+        raise HTTPException(status_code=404, detail="Modelo não encontrado no catálogo")
+    task_id = uuid.uuid4().hex
+    _set_task(task_id, status="queued", model_id=req.model_id, progress=0.0)
+    asyncio.create_task(_run_download_task(task_id, req.model_id))
+    return {"task_id": task_id}
+
+
+@router.get("/download/status/{task_id}")
+async def stream_download_status(task_id: str):
+    """SSE stream of download progress for a given task."""
+    if not _get_task(task_id):
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada")
+
+    async def event_gen():
+        last_serialized = None
+        while True:
+            task = _get_task(task_id)
+            payload = json.dumps(task)
+            if payload != last_serialized:
+                yield f"data: {payload}\n\n"
+                last_serialized = payload
+            status = task.get("status")
+            if status in ("completed", "error"):
+                break
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")

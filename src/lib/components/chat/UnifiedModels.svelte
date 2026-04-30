@@ -34,6 +34,7 @@
 
 	import ModelSettingsModal from '$lib/components/admin/Settings/Models/ModelSettingsModal.svelte';
 	import ManageModelsModal from '$lib/components/admin/Settings/Models/ManageModelsModal.svelte';
+	import DownloadNeveModelsModal from '$lib/components/chat/DownloadNeveModelsModal.svelte';
 	import ModelEditor from '$lib/components/workspace/Models/ModelEditor.svelte';
 	import ModelMenu from '$lib/components/admin/Settings/Models/ModelMenu.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
@@ -85,6 +86,7 @@
 	let selectedModelId: string | null = null;
 	let showConfigModal = false;
 	let showManageModal = false;
+	let showDownloadModal = false;
 	let viewOption = '';
 
 	const perPage = 30;
@@ -575,6 +577,7 @@
 
 <ModelSettingsModal bind:show={showConfigModal} initHandler={initAdmin} />
 <ManageModelsModal bind:show={showManageModal} />
+<DownloadNeveModelsModal bind:show={showDownloadModal} />
 
 {#if true}
 	{#if selectedModelId === null}
@@ -587,61 +590,13 @@
 				</div>
 
 				<div class="flex items-center gap-1.5">
-					{#if $user?.role === 'admin'}
-						<!-- Hidden file input for import -->
-						<input
-							id="models-import-input"
-							bind:this={modelsImportInputElement}
-							bind:files={importFiles}
-							type="file"
-							accept=".json"
-							hidden
-							on:change={() => {
-								if (importFiles.length > 0) {
-									const reader = new FileReader();
-									reader.onload = async (event) => {
-										modelsImportInProgress = true;
-										try {
-											const models = JSON.parse(String(event.target.result));
-											const res = await importModels(localStorage.token, models);
-											if (res) {
-												toast.success($i18n.t('Models imported successfully'));
-												await initAdmin();
-											} else {
-												toast.error($i18n.t('Failed to import models'));
-											}
-										} catch (e) {
-											toast.error(e?.detail ?? $i18n.t('Invalid JSON file'));
-										}
-										modelsImportInProgress = false;
-									};
-									reader.readAsText(importFiles[0]);
-								}
-							}}
-						/>
-
-						<button
-							class="flex text-xs items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition"
-							disabled={modelsImportInProgress}
-							on:click={() => modelsImportInputElement.click()}
-						>
-							{#if modelsImportInProgress}
-								<Spinner className="size-3" />
-							{/if}
-							<span class="font-medium">{$i18n.t('Import')}</span>
-						</button>
-
-						<button
-							class="flex text-xs items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition"
-							on:click={() => {
-								const blob = new Blob([JSON.stringify(adminModels)], { type: 'application/json' });
-								saveAs(blob, `models-export-${Date.now()}.json`);
-							}}
-						>
-							<span class="font-medium">{$i18n.t('Export')}</span>
-						</button>
-					{/if}
-
+					<button
+						class="flex text-xs items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition font-medium"
+						type="button"
+						on:click={() => (showDownloadModal = true)}
+					>
+						<span>{$i18n.t('Baixar')}</span>
+					</button>
 					<button
 						class="flex text-xs items-center gap-1 px-3 py-1.5 rounded-lg bg-black hover:bg-gray-900 text-white dark:bg-white dark:hover:bg-gray-100 dark:text-black transition font-medium"
 						type="button"
