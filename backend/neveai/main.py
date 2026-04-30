@@ -2351,6 +2351,19 @@ async def shutdown_app(background_tasks: BackgroundTasks, user=Depends(get_admin
                     proc.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
+        # Encerra a janela do navegador (browser-app) lançada pelo neve_window
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                cmdline = proc.cmdline()
+                joined = " ".join(cmdline).lower()
+                if (
+                    "logs\\browser-app" in joined
+                    or "logs/browser-app" in joined
+                    or "--app=http://localhost:8080" in joined
+                ):
+                    proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
+                pass
         # Encerra o próprio processo uvicorn
         os.kill(os.getpid(), signal.SIGTERM)
 

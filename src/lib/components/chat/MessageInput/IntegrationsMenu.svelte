@@ -232,7 +232,7 @@
 
 
 					{#if showWebSearchButton}
-						<Tooltip content={$i18n.t('Search the internet')} placement="top-start">
+						<Tooltip content="" placement="top-start">
 							<button
 								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
 								on:click={() => {
@@ -268,7 +268,7 @@
 					{/if}
 
 					{#if showImageGenerationButton}
-						<Tooltip content={$i18n.t('Generate an image')} placement="top-start">
+						<Tooltip content="" placement="top-start">
 							<button
 								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
 								on:click={() => {
@@ -305,7 +305,7 @@
 					{/if}
 
 					{#if showCodeInterpreterButton}
-						<Tooltip content={$i18n.t('Execute code for analysis')} placement="top-start">
+						<Tooltip content="" placement="top-start">
 							<button
 								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
 								aria-pressed={codeInterpreterEnabled}
@@ -345,7 +345,7 @@
 					{/if}
 
 					{#if showCodeExecutionButton}
-						<Tooltip content={$i18n.t('Gerar artefato de visualização')} placement="top-start">
+						<Tooltip content="" placement="top-start">
 							<button
 								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
 								aria-pressed={codeExecutionEnabled}
@@ -383,7 +383,7 @@
 					{/if}
 
 					{#if showStableDiffusionButton}
-						<Tooltip content={$i18n.t('Gerar imagens localmente')} placement="top-start">
+						<Tooltip content="" placement="top-start">
 							<button
 								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800/50"
 								on:click={() => {

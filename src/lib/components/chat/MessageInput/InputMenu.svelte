@@ -429,7 +429,7 @@
 					{/if}
 
 					{#if showWebSearchButton}
-						<Tooltip content={$i18n.t('Search the internet')} placement="top-start">
+						<Tooltip content="" placement="top-start">
 							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {stableDiffusionEnabled || codeInterpreterEnabled || imageGenerationEnabled ? 'opacity-40 pointer-events-none' : ''}" on:click={() => { webSearchEnabled = !webSearchEnabled; if (webSearchEnabled) { codeInterpreterEnabled = false; imageGenerationEnabled = false; } }}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
@@ -443,7 +443,7 @@
 					{/if}
 
 					{#if showImageGenerationButton}
-						<Tooltip content={$i18n.t('Generate an image')} placement="top-start">
+						<Tooltip content="" placement="top-start">
 					<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {stableDiffusionEnabled || webSearchEnabled || codeInterpreterEnabled || codeExecutionEnabled ? 'opacity-40 pointer-events-none' : ''}" on:click={() => { imageGenerationEnabled = !imageGenerationEnabled; if (imageGenerationEnabled) { webSearchEnabled = false; codeInterpreterEnabled = false; codeExecutionEnabled = false; } }}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
@@ -457,7 +457,7 @@
 					{/if}
 
 					{#if showCodeInterpreterButton}
-						<Tooltip content={$i18n.t('Execute code for analysis')} placement="top-start">
+						<Tooltip content="" placement="top-start">
 							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {stableDiffusionEnabled || webSearchEnabled || imageGenerationEnabled ? 'opacity-40 pointer-events-none' : ''}" aria-pressed={codeInterpreterEnabled} on:click={() => { codeInterpreterEnabled = !codeInterpreterEnabled; if (codeInterpreterEnabled) { webSearchEnabled = false; imageGenerationEnabled = false; } }}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
@@ -471,7 +471,7 @@
 					{/if}
 
 					{#if showCodeExecutionButton}
-						<Tooltip content={$i18n.t('Gerar artefato de visualização')} placement="top-start">
+						<Tooltip content="" placement="top-start">
 							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {stableDiffusionEnabled || imageGenerationEnabled ? 'opacity-40 pointer-events-none' : ''}" aria-pressed={codeExecutionEnabled} on:click={() => { codeExecutionEnabled = !codeExecutionEnabled; if (codeExecutionEnabled) { imageGenerationEnabled = false; } }}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
@@ -489,7 +489,7 @@
 					{/if}
 
 					{#if showStableDiffusionButton}
-						<Tooltip content={$i18n.t('Gerar imagens localmente')} placement="top-start">
+						<Tooltip content="" placement="top-start">
 <button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {webSearchEnabled || imageGenerationEnabled || codeInterpreterEnabled || codeExecutionEnabled ? 'opacity-40 pointer-events-none' : ''}" on:click={() => {
 							stableDiffusionEnabled = !stableDiffusionEnabled;
 							if (stableDiffusionEnabled) {
