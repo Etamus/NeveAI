@@ -56,7 +56,29 @@ O instalador (`instalar.bat` → `instalar.ps1`) realiza automaticamente:
 6. **Cria as pastas necessárias** (`models/`, `mmproj/`, `backend/data/`, `logs/`)
 7. **Cria o arquivo `.env`** com configurações padrão (se ainda não existir)
 
-> O log completo da instalação fica em `logs/install.log`.
+---
+
+## Atualizando o Neve AI
+
+```bat
+atualizar.bat
+```
+
+O atualizador (`atualizar.bat` → `atualizar.ps1`) abre uma janela gráfica que:
+
+1. **Lê a versão local** do arquivo `version.txt` na raiz do projeto.
+2. **Consulta a última release** em [github.com/Etamus/NeveAI/releases/latest](https://github.com/Etamus/NeveAI/releases/latest) e mostra:
+   - versão instalada × versão disponível
+   - status: **Atualizado**, **Pendente** (`vX → vY`) ou **Erro de rede**
+   - notas da release
+3. Se já estiver na última versão, exibe **"Você já está na última versão"** e oferece apenas o botão **Fechar** (nada é baixado).
+4. Se houver atualização pendente, ao clicar em **Atualizar**:
+   - Baixa o `zipball` da release no `%TEMP%`
+   - Aplica os arquivos novos sobre o projeto via `robocopy`, **preservando** dados locais: `backend/neveai/venv/`, `backend/neveai/frontend/`, `backend/neveai/data/`, `backend/data/`, `models/`, `mmproj/`, `llamacpp-server/`, `node_modules/`, `build/`, `logs/`, `.git/`, `.svelte-kit/`, `.env` e `version.txt` (com backup automático do `.env`)
+   - Roda `npm install` e `npm run build`
+   - Recria `backend/neveai/frontend/` com o novo build
+   - Grava o novo tag em `version.txt`
+5. Painel final mostra **"Atualização concluída!"** com o resumo `versão anterior → versão instalada`.
 
 ---
 
@@ -106,6 +128,9 @@ O backend auto-detecta o mmproj compatível pelo prefixo do nome do modelo (ex: 
 Neve AI/
 ├── instalar.bat              # Instalador único — detecta GPU, baixa llama.cpp,
 ├── instalar.ps1              #   cria venv, instala deps, compila frontend
+├── atualizar.bat             # Atualizador — checa última release no GitHub,
+├── atualizar.ps1             #   baixa, aplica overlay, refaz build e deploy
+├── version.txt               # Versão (tag) atualmente instalada
 ├── iniciar.bat               # Inicia o backend e abre a janela de app
 ├── neve_window.py            # Abre o Neve AI em janela Chromium isolada
 ├── .env                      # Variáveis de ambiente (gerado pelo instalar)

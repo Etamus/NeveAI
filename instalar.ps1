@@ -1,485 +1,560 @@
-# Neve AI - Instalador Completo v2
-# Detecta hardware, faz perguntas relevantes e instala as dependencias
-# otimizadas para o sistema de cada usuario.
-#
-# PRE-REQUISITOS:
-#   Python 3.11/3.12  https://python.org/downloads
-#   Node.js 18+       https://nodejs.org
+﻿# Neve AI - Instalador Grafico (WPF)
+# UI bonita + progresso visual + log em tempo real.
+# Toda a logica original (deteccao de GPU, llama.cpp, venv, requirements, npm)
+# roda em runspace separado para nao travar a interface.
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-$OutputEncoding = [Console]::OutputEncoding
-$Host.UI.RawUI.WindowTitle = 'Neve AI - Instalador'
+$OutputEncoding           = [Console]::OutputEncoding
 
+Add-Type -AssemblyName PresentationFramework
+Add-Type -AssemblyName PresentationCore
+Add-Type -AssemblyName WindowsBase
+Add-Type -AssemblyName System.Windows.Forms
+
+# =============================================================================
+# Caminhos globais
+# =============================================================================
 $ROOT     = Split-Path $MyInvocation.MyCommand.Path -Parent
-$VENV_DIR = "$ROOT\backend\neveai\venv"
-$VENV_PY  = "$VENV_DIR\Scripts\python.exe"
-$BACKEND  = "$ROOT\backend"
-
-if (-not (Test-Path "$ROOT\logs")) { New-Item "$ROOT\logs" -ItemType Directory | Out-Null }
-$LOG = "$ROOT\logs\install.log"
+$VENV_DIR = Join-Path $ROOT 'backend\neveai\venv'
+$VENV_PY  = Join-Path $VENV_DIR 'Scripts\python.exe'
+$BACKEND  = Join-Path $ROOT 'backend'
+$LOG_DIR  = Join-Path $ROOT 'logs'
+if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
+$LOG = Join-Path $LOG_DIR 'install.log'
 '' | Set-Content $LOG
 
-function Write-Step ($num, $text) { Write-Host "  [$num] $text" -ForegroundColor Cyan }
-function Write-Ok   ($text) { Write-Host "  [OK] $text" -ForegroundColor Green }
-function Write-Info ($text) { Write-Host "  [INFO] $text" -ForegroundColor Gray }
-function Write-Warn ($text) { Write-Host "  [AVISO] $text" -ForegroundColor Yellow }
-function Write-Err  ($text) { Write-Host "  [ERRO] $text" -ForegroundColor Red }
-
-Write-Host ''
-Write-Host '  ================================================' -ForegroundColor Cyan
-Write-Host '     NEVE AI - INSTALADOR COMPLETO v2' -ForegroundColor White
-Write-Host '  ================================================' -ForegroundColor Cyan
-Write-Host ''
-
-# =============================================================================
-# 1. PRE-REQUISITOS
-# =============================================================================
-Write-Step '1/7' 'Verificando pre-requisitos...'
-
-$missing = $false
-
-try {
-    $pyVer = (python --version 2>&1).ToString().Trim()
-    Write-Ok "Python: $pyVer"
-} catch {
-    Write-Err 'Python nao encontrado. Instale Python 3.11 ou 3.12 em https://python.org/downloads'
-    $missing = $true
+# Logo (favicon do projeto)
+$LOGO_PATH = Join-Path $ROOT 'static\favicon.png'
+if (-not (Test-Path $LOGO_PATH)) {
+    $LOGO_PATH = Join-Path $ROOT 'static\static\favicon.png'
 }
 
-try {
-    $nodeVer = (node --version 2>&1).ToString().Trim()
-    Write-Ok "Node.js: $nodeVer"
-} catch {
-    Write-Err 'Node.js nao encontrado. Instale Node.js 18+ em https://nodejs.org'
-    $missing = $true
-}
+# =============================================================================
+# XAML - Interface
+# =============================================================================
+[xml]$xaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Neve AI - Instalador"
+        Width="780" Height="560"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent">
+    <Window.Resources>
+        <Style x:Key="PrimaryBtn" TargetType="Button">
+            <Setter Property="Background" Value="#111111"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="22,9"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#262626"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="GhostBtn" TargetType="Button" BasedOn="{StaticResource PrimaryBtn}">
+            <Setter Property="Background" Value="#F4F4F5"/>
+            <Setter Property="Foreground" Value="#111111"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#E4E4E7"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="8,4"/>
+        </Style>
+    </Window.Resources>
 
-if ($missing) {
-    Write-Host ''
-    Write-Err 'Instale os programas acima e execute o instalador novamente.'
-    $null = Read-Host 'Pressione Enter para fechar'
-    exit 1
-}
-Write-Host ''
+    <Border CornerRadius="14" Background="#FAFAFA" BorderBrush="#E4E4E7" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="56"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="68"/>
+            </Grid.RowDefinitions>
+
+            <!-- TITLE BAR -->
+            <Grid Grid.Row="0" Background="Transparent">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="18,0,0,0" VerticalAlignment="Center">
+                    <Image x:Name="LogoImg" Width="22" Height="22" Margin="0,0,10,0"/>
+                    <TextBlock Text="Neve AI" FontSize="15" FontWeight="SemiBold" Foreground="#111111" VerticalAlignment="Center"/>
+                    <TextBlock Text="  ·  Instalador" FontSize="13" Foreground="#71717A" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Button x:Name="BtnClose" Grid.Column="2" Width="44" Height="32" Margin="0,0,12,0"
+                        Background="Transparent" BorderThickness="0" Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="bd" Background="Transparent" CornerRadius="6">
+                                <TextBlock Text="X" FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="#E4E4E7"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </Grid>
+
+            <!-- BODY (cards swap by visibility) -->
+            <Grid Grid.Row="1" Margin="32,8,32,0">
+
+                <!-- WELCOME / CONFIG CARD -->
+                <Grid x:Name="ConfigPanel">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,18">
+                        <TextBlock Text="Bem-vindo ao Neve AI" FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
+                        <TextBlock Text="Vamos detectar seu hardware e instalar tudo o que é preciso."
+                                   FontSize="13" Foreground="#71717A" Margin="0,4,0,0"/>
+                    </StackPanel>
+
+                    <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="20">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="220"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="GPU detectada:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="LblGpu" Text="Detectando..." FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,12" TextTrimming="CharacterEllipsis"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Tipo de aceleração:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
+                            <ComboBox  Grid.Row="1" Grid.Column="1" x:Name="CmbBackend" Margin="0,0,0,12">
+                                <ComboBoxItem Content="CPU (sem GPU)"/>
+                                <ComboBoxItem Content="NVIDIA - RTX 50xx (Blackwell, CUDA 13)"/>
+                                <ComboBoxItem Content="NVIDIA - RTX 40xx (Ada, CUDA 12.8)"/>
+                                <ComboBoxItem Content="NVIDIA - RTX 30xx (Ampere, CUDA 12.8)"/>
+                                <ComboBoxItem Content="NVIDIA - RTX 20xx (Turing, CUDA 12.6)"/>
+                                <ComboBoxItem Content="NVIDIA - GTX 16xx (Turing, CUDA 12.4)"/>
+                                <ComboBoxItem Content="NVIDIA - GTX 10xx ou anterior (Pascal)"/>
+                                <ComboBoxItem Content="NVIDIA - Profissional (RTX A/Quadro/Tesla)"/>
+                                <ComboBoxItem Content="AMD - HIP/ROCm 6.3"/>
+                                <ComboBoxItem Content="AMD - Vulkan"/>
+                            </ComboBox>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="VRAM (GB):" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
+                            <ComboBox  Grid.Row="2" Grid.Column="1" x:Name="CmbVram" Margin="0,0,0,12">
+                                <ComboBoxItem Content="Pular"/>
+                                <ComboBoxItem Content="4 GB"/>
+                                <ComboBoxItem Content="6 GB"/>
+                                <ComboBoxItem Content="8 GB"/>
+                                <ComboBoxItem Content="12 GB"/>
+                                <ComboBoxItem Content="16 GB"/>
+                                <ComboBoxItem Content="24 GB"/>
+                                <ComboBoxItem Content="32 GB ou mais"/>
+                            </ComboBox>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Flash Attention:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
+                            <CheckBox  Grid.Row="3" Grid.Column="1" x:Name="ChkFlash" Content="Compilar Flash Attention (acelera RAG/SD, +10 min)" FontSize="13" Margin="0,2,0,12"/>
+
+                            <Border Grid.Row="4" Grid.ColumnSpan="2" Background="#FAFAFA" CornerRadius="8" Padding="14,12" Margin="0,8,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="O que será instalado:" FontWeight="SemiBold" FontSize="13" Foreground="#111111" Margin="0,0,0,4"/>
+                                    <TextBlock Text="• llama.cpp (binários mais recentes do GitHub)" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="• Python venv com PyTorch + diffusers + dependências do backend" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="• Pacotes npm e build do frontend" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="• Estrutura de pastas (logs, models, mmproj, data) e .env padrão" FontSize="12" Foreground="#52525B"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- INSTALL CARD -->
+                <Grid x:Name="InstallPanel" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                        <TextBlock Text="Instalando..." FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
+                        <TextBlock x:Name="LblStep" Text="Preparando…" FontSize="13" Foreground="#71717A" Margin="0,4,0,0"/>
+                    </StackPanel>
+
+                    <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="16,14" Margin="0,0,0,14">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock x:Name="LblProgressTxt" Text="0%" FontSize="12" Foreground="#52525B" HorizontalAlignment="Right"/>
+                                <TextBlock x:Name="LblPhase" Text="Iniciando" FontSize="12" Foreground="#52525B"/>
+                            </Grid>
+                            <ProgressBar x:Name="Progress" Height="6" Minimum="0" Maximum="100" Value="0" Margin="0,8,0,0"
+                                         Foreground="#111111" Background="#F4F4F5" BorderThickness="0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Row="2" Background="#0A0A0A" CornerRadius="10" Padding="14,12">
+                        <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
+                            <TextBox x:Name="LogBox" Background="Transparent" Foreground="#D4D4D4" BorderThickness="0"
+                                     IsReadOnly="True" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"
+                                     AcceptsReturn="True" VerticalScrollBarVisibility="Disabled"/>
+                        </ScrollViewer>
+                    </Border>
+                </Grid>
+
+                <!-- DONE CARD -->
+                <Grid x:Name="DonePanel" Visibility="Collapsed">
+                    <Border Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="32">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <Border Width="56" Height="56" CornerRadius="28" Background="#10B981" Margin="0,0,0,18">
+                                <TextBlock Text="OK" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock x:Name="LblDoneTitle" Text="Tudo pronto!" FontSize="22" FontWeight="SemiBold" Foreground="#111111" HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="LblDoneSub" Text="Use start.bat para iniciar o Neve AI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
+                            <Border Background="#FAFAFA" CornerRadius="8" Padding="14,12">
+                                <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="#52525B"/>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+            </Grid>
+
+            <!-- FOOTER -->
+            <Border Grid.Row="2" BorderBrush="#EEEEEE" BorderThickness="0,1,0,0" Padding="32,0,32,0">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button x:Name="BtnCancel" Style="{StaticResource GhostBtn}" Content="Cancelar" Margin="0,0,10,0"/>
+                    <Button x:Name="BtnPrimary" Style="{StaticResource PrimaryBtn}" Content="Instalar"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
+</Window>
+"@
 
 # =============================================================================
-# 2. DETECCAO DE HARDWARE
+# Carregar XAML
 # =============================================================================
-Write-Step '2/7' 'Detectando hardware...'
+$reader = New-Object System.Xml.XmlNodeReader $xaml
+$window = [Windows.Markup.XamlReader]::Load($reader)
 
-$gpuVendor    = 'CPU'
-$gpuName      = ''
-$cudaVer      = 'nenhum'
-$torchIndex   = 'https://download.pytorch.org/whl/cpu'
-$llamaAsset   = 'cpu'       # sufixo do asset: cpu, cuda-12.4, cuda-13.1, vulkan, hip-radeon
-$useFlashAttn = $false
-$useOnnxGpu   = $false
-$vramGb       = 0
+# Atalhos para controles
+$ctl = @{}
+foreach ($name in 'LogoImg','BtnClose','LblGpu','CmbBackend','CmbVram','ChkFlash',
+                  'ConfigPanel','InstallPanel','DonePanel',
+                  'LblStep','LblPhase','LblProgressTxt','Progress','LogBox','LogScroll',
+                  'LblDoneTitle','LblDoneSub','LblSummary',
+                  'BtnCancel','BtnPrimary') {
+    $ctl[$name] = $window.FindName($name)
+}
 
-# Detecta NVIDIA via nvidia-smi
+# Logo
+if (Test-Path $LOGO_PATH) {
+    try {
+        $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
+        $bmp.BeginInit()
+        $bmp.UriSource = New-Object System.Uri($LOGO_PATH, [System.UriKind]::Absolute)
+        $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $bmp.EndInit()
+        $ctl.LogoImg.Source = $bmp
+    } catch {}
+}
+
+# Drag da janela
+$window.Add_MouseLeftButtonDown({
+    param($s, $e)
+    if ($e.ButtonState -eq 'Pressed') { try { $window.DragMove() } catch {} }
+})
+
+# Botoes basicos
+$ctl.BtnClose.Add_Click({ $window.Close() })
+$ctl.BtnCancel.Add_Click({ $window.Close() })
+
+# =============================================================================
+# Deteccao de hardware (executa antes de mostrar a janela)
+# =============================================================================
+$detected = @{
+    Vendor    = 'CPU'
+    Name      = ''
+    Backend   = 0   # indice do CmbBackend
+}
+
 try {
     $nOut = nvidia-smi --query-gpu=name --format=csv,noheader 2>&1
     if ($LASTEXITCODE -eq 0 -and "$nOut" -notmatch 'failed|not found') {
-        $gpuVendor = 'NVIDIA'
-        $gpuName   = ("$nOut" -split "`n")[0].Trim()
-        Write-Ok "GPU NVIDIA detectada: $gpuName"
+        $detected.Vendor = 'NVIDIA'
+        $detected.Name   = ("$nOut" -split "`n")[0].Trim()
     }
 } catch {}
 
-# Detecta AMD via WMI (se nao encontrou NVIDIA)
-if ($gpuVendor -eq 'CPU') {
+if ($detected.Vendor -eq 'CPU') {
     try {
-        $gpus = Get-CimInstance Win32_VideoController |
-                Select-Object -ExpandProperty Name -EA SilentlyContinue
+        $gpus = Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name -EA SilentlyContinue
         $amdGpu = $gpus | Where-Object { $_ -match 'AMD|Radeon|RX\s' } | Select-Object -First 1
         if ($amdGpu) {
-            $gpuVendor = 'AMD'
-            $gpuName   = $amdGpu.Trim()
-            Write-Ok "GPU AMD detectada: $gpuName"
+            $detected.Vendor = 'AMD'
+            $detected.Name   = $amdGpu.Trim()
         }
     } catch {}
 }
 
-if ($gpuVendor -eq 'CPU') {
-    Write-Info 'Nenhuma GPU NVIDIA ou AMD detectada (modo CPU).'
+# Mapear deteccao para indice do dropdown
+if ($detected.Vendor -eq 'NVIDIA') {
+    $n = $detected.Name
+    if     ($n -match 'RTX\s*5\d{3}|50\d{2}')                      { $detected.Backend = 1 }
+    elseif ($n -match 'RTX\s*4\d{3}|40\d{2}')                      { $detected.Backend = 2 }
+    elseif ($n -match 'RTX\s*3\d{3}|30\d{2}')                      { $detected.Backend = 3 }
+    elseif ($n -match 'RTX\s*2\d{3}|20\d{2}')                      { $detected.Backend = 4 }
+    elseif ($n -match 'GTX\s*16\d{2}')                             { $detected.Backend = 5 }
+    elseif ($n -match 'GTX\s*10\d{2}|GTX\s*9\d{2}|GTX\s*7\d{2}')   { $detected.Backend = 6 }
+    elseif ($n -match 'RTX\s*A|Quadro|Tesla')                      { $detected.Backend = 7 }
+    else                                                            { $detected.Backend = 2 }
+} elseif ($detected.Vendor -eq 'AMD') {
+    $detected.Backend = 9   # Vulkan default (mais compativel no Windows)
 }
-Write-Host ''
 
-# =============================================================================
-# 3. PERGUNTAS DE HARDWARE
-# =============================================================================
-Write-Step '3/7' 'Configurando para seu hardware...'
-Write-Host ''
+# Pre-checar Python e Node
+$pyOk = $false; $pyVer = ''
+try { $pyVer = (python --version 2>&1).ToString().Trim(); $pyOk = $LASTEXITCODE -eq 0 } catch {}
+$nodeOk = $false; $nodeVer = ''
+try { $nodeVer = (node --version 2>&1).ToString().Trim(); $nodeOk = $LASTEXITCODE -eq 0 } catch {}
 
-if ($gpuVendor -eq 'NVIDIA') {
-
-    # Auto-detectar serie baseado no nome da GPU
-    $autoSeries = $null
-    if     ($gpuName -match 'RTX\s*5\d{3}|5[06789]\d{2} Ti| 50\d{2}')    { $autoSeries = '1' }
-    elseif ($gpuName -match 'RTX\s*4\d{3}|4[0-9]\d{2} Ti| 40\d{2}')      { $autoSeries = '2' }
-    elseif ($gpuName -match 'RTX\s*3\d{3}|3[0-9]\d{2} Ti| 30\d{2}')      { $autoSeries = '3' }
-    elseif ($gpuName -match 'RTX\s*2\d{3}|2[0-9]\d{2} Ti| 20\d{2}')      { $autoSeries = '4' }
-    elseif ($gpuName -match 'GTX\s*16\d{2}|1[6-9]\d{2} (Ti|Super|SUPER)') { $autoSeries = '5' }
-    elseif ($gpuName -match 'GTX\s*10\d{2}|GTX\s*9\d{2}|GTX\s*7\d{2}')   { $autoSeries = '6' }
-
-    Write-Host '  +---------------------------------------------------------+' -ForegroundColor DarkCyan
-    Write-Host "  |  GPU: $gpuName" -ForegroundColor White
-    Write-Host '  |' -ForegroundColor DarkCyan
-    Write-Host '  |  Qual e a SERIE da sua GPU NVIDIA?' -ForegroundColor White
-    Write-Host '  |' -ForegroundColor DarkCyan
-    Write-Host '  |   [1] RTX 50xx  - Blackwell    (5060, 5070, 5080, 5090)' -ForegroundColor White
-    Write-Host '  |   [2] RTX 40xx  - Ada Lovelace (4060, 4070, 4080, 4090)' -ForegroundColor White
-    Write-Host '  |   [3] RTX 30xx  - Ampere       (3060, 3070, 3080, 3090)' -ForegroundColor White
-    Write-Host '  |   [4] RTX 20xx  - Turing       (2060, 2070, 2080)' -ForegroundColor White
-    Write-Host '  |   [5] GTX 16xx  - Turing       (1650, 1660, 1660 Ti)' -ForegroundColor White
-    Write-Host '  |   [6] GTX 10xx  - Pascal ou mais antigo' -ForegroundColor DarkGray
-    Write-Host '  |   [7] Profissional (RTX A-series, Quadro, Tesla)' -ForegroundColor DarkGray
-    Write-Host '  +---------------------------------------------------------+' -ForegroundColor DarkCyan
-
-    if ($autoSeries) {
-        Write-Host "  [AUTO] Serie detectada automaticamente: opcao $autoSeries" -ForegroundColor DarkYellow
-        Write-Host '  (Pressione Enter para confirmar ou digite outro numero)' -ForegroundColor DarkGray
-    }
-
-    $seriesChoice = (Read-Host '  Serie').Trim()
-    if ([string]::IsNullOrWhiteSpace($seriesChoice) -and $autoSeries) {
-        $seriesChoice = $autoSeries
-    }
-
-    switch ($seriesChoice) {
-        '1' {
-            $cudaVer      = 'CUDA 13.1 (Blackwell)'
-            $torchIndex   = 'https://download.pytorch.org/whl/cu128'
-            $llamaAsset   = 'cuda-13.1'
-            $useFlashAttn = $true
-            $useOnnxGpu   = $true
-            Write-Ok 'RTX 50xx (Blackwell, SM 12.0) -> CUDA 13.1, PyTorch cu128, Flash Attention 3'
-        }
-        '2' {
-            $cudaVer      = 'CUDA 12.8 (Ada Lovelace)'
-            $torchIndex   = 'https://download.pytorch.org/whl/cu128'
-            $llamaAsset   = 'cuda-12.4'
-            $useFlashAttn = $true
-            $useOnnxGpu   = $true
-            Write-Ok 'RTX 40xx (Ada, SM 8.9) -> CUDA 12.8, PyTorch cu128, Flash Attention 2/3'
-        }
-        '3' {
-            $cudaVer      = 'CUDA 12.8 (Ampere)'
-            $torchIndex   = 'https://download.pytorch.org/whl/cu128'
-            $llamaAsset   = 'cuda-12.4'
-            $useFlashAttn = $true
-            $useOnnxGpu   = $true
-            Write-Ok 'RTX 30xx (Ampere, SM 8.6) -> CUDA 12.8, PyTorch cu128, Flash Attention 2'
-        }
-        '4' {
-            $cudaVer    = 'CUDA 12.6 (Turing)'
-            $torchIndex = 'https://download.pytorch.org/whl/cu126'
-            $llamaAsset = 'cuda-12.4'
-            $useOnnxGpu = $true
-            Write-Ok 'RTX 20xx (Turing, SM 7.5) -> CUDA 12.6, PyTorch cu126 (Flash Attention nao recomendado)'
-        }
-        '5' {
-            $cudaVer    = 'CUDA 12.4 (Turing)'
-            $torchIndex = 'https://download.pytorch.org/whl/cu124'
-            $llamaAsset = 'cuda-12.4'
-            $useOnnxGpu = $true
-            Write-Ok 'GTX 16xx (Turing, SM 7.5) -> CUDA 12.4, PyTorch cu124'
-        }
-        '6' {
-            $cudaVer    = 'CUDA 12.4 (Pascal)'
-            $torchIndex = 'https://download.pytorch.org/whl/cu124'
-            $llamaAsset = 'cuda-12.4'
-            Write-Ok 'GTX 10xx (Pascal, SM 6.x) -> CUDA 12.4 (sem Flash Attention)'
-        }
-        '7' {
-            $cudaVer      = 'CUDA 12.8 (Profissional)'
-            $torchIndex   = 'https://download.pytorch.org/whl/cu128'
-            $llamaAsset   = 'cuda-12.4'
-            $useFlashAttn = $true
-            $useOnnxGpu   = $true
-            Write-Ok 'GPU Profissional -> CUDA 12.8'
-        }
-        default {
-            Write-Warn "Selecao invalida ('$seriesChoice'), usando configuracao CPU."
-            $gpuVendor = 'CPU'
-        }
-    }
-
-    if ($gpuVendor -eq 'NVIDIA') {
-        # VRAM
-        Write-Host ''
-        $vramInput = Read-Host '  Quantos GB de VRAM tem sua GPU? (ex: 8, 12, 16, 24  --  Enter para pular)'
-        if ($vramInput -match '^\d+$') {
-            $vramGb = [int]$vramInput
-            Write-Info "VRAM: ${vramGb}GB"
-        }
-
-        # Flash Attention (opt-in, so para Ampere+)
-        if ($useFlashAttn) {
-            Write-Host ''
-            Write-Host '  +------------------------------------------------------------------+' -ForegroundColor DarkCyan
-            Write-Host '  |  Flash Attention acelera modelos de embedding/RAG/imagens.       |' -ForegroundColor White
-            Write-Host '  |  Requer ~10 min extras de compilacao + MSVC Build Tools.         |' -ForegroundColor DarkGray
-            Write-Host '  |  Se voce nao usa RAG / stable diffusion, pode pular.             |' -ForegroundColor DarkGray
-            Write-Host '  +------------------------------------------------------------------+' -ForegroundColor DarkCyan
-            $faChoice = (Read-Host '  Instalar Flash Attention? (s/N)').Trim()
-            if ($faChoice -notmatch '^[sS]$') { $useFlashAttn = $false }
-        }
-    }
-
-} elseif ($gpuVendor -eq 'AMD') {
-
-    Write-Host '  GPU AMD detectada. Escolha o backend para llama.cpp:' -ForegroundColor White
-    Write-Host '   [1] HIP/ROCm  - Melhor desempenho, suporte limitado no Windows' -ForegroundColor White
-    Write-Host '   [2] Vulkan    - Compativel com a maioria das GPUs AMD no Windows' -ForegroundColor White
-    Write-Host '   [3] CPU apenas' -ForegroundColor DarkGray
-    Write-Host ''
-    $amdChoice = (Read-Host '  Escolha (1/2/3)').Trim()
-    switch ($amdChoice) {
-        '1' {
-            $llamaAsset = 'hip-radeon'
-            $torchIndex = 'https://download.pytorch.org/whl/rocm6.3'
-            Write-Ok 'AMD HIP/ROCm selecionado. PyTorch cu ROCm 6.3.'
-        }
-        '2' {
-            $llamaAsset = 'vulkan'
-            Write-Ok 'AMD Vulkan selecionado. PyTorch CPU (Vulkan apenas para llama.cpp).'
-        }
-        default {
-            Write-Ok 'CPU apenas selecionado.'
-        }
-    }
-
+if ($detected.Name) {
+    $ctl.LblGpu.Text = $detected.Name
 } else {
+    $ctl.LblGpu.Text = "Nenhuma GPU detectada (modo CPU)"
+}
+$ctl.CmbBackend.SelectedIndex = $detected.Backend
+$ctl.CmbVram.SelectedIndex    = 0
+$ctl.ChkFlash.IsChecked       = $false
 
-    $confirm = (Read-Host '  Sem GPU detectada. Continuar com CPU apenas? (s/N)').Trim()
-    if ($confirm -notmatch '^[sS]$') {
-        Write-Host '  Instalacao cancelada.'
-        exit 0
-    }
+# Se faltar Python ou Node, bloqueia o botao
+if (-not $pyOk -or -not $nodeOk) {
+    $ctl.BtnPrimary.IsEnabled = $false
+    $ctl.BtnPrimary.Content   = 'Pré-requisitos faltando'
+    $missing = @()
+    if (-not $pyOk)   { $missing += 'Python 3.11/3.12 (https://python.org)' }
+    if (-not $nodeOk) { $missing += 'Node.js 18+ (https://nodejs.org)' }
+    [System.Windows.MessageBox]::Show(
+        "Faltando:`n  • " + ($missing -join "`n  • ") + "`n`nInstale e abra o instalador novamente.",
+        'Pré-requisitos', 'OK', 'Warning') | Out-Null
 }
 
-Write-Host ''
-
 # =============================================================================
-# 4. BAIXAR LLAMA.CPP MAIS RECENTE (GitHub API)
+# Funcoes auxiliares de UI (chamadas via Dispatcher)
 # =============================================================================
-Write-Step '4/7' 'Baixando llama.cpp mais recente do GitHub...'
-Write-Host ''
-
-$llamaDir = "$ROOT\llamacpp-server\bin"
-foreach ($d in @("$ROOT\llamacpp-server", $llamaDir)) {
-    if (-not (Test-Path $d)) { New-Item $d -ItemType Directory | Out-Null }
+function UI-Invoke([scriptblock]$sb) {
+    $window.Dispatcher.Invoke([Action]$sb)
 }
 
-try {
-    Write-Info 'Consultando GitHub API...'
-    $rel = Invoke-RestMethod 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest' `
-                             -Headers @{ 'User-Agent' = 'Neve-Installer/2.0' }
-    $tag = $rel.tag_name
-    Write-Info "Versao mais recente: $tag"
-
-    # Asset principal (binarios do llama-server, llama-cli, etc.)
-    $binName = "llama-$tag-bin-win-$llamaAsset-x64.zip"
-    $binObj  = $rel.assets | Where-Object { $_.name -eq $binName } | Select-Object -First 1
-
-    if (-not $binObj) {
-        Write-Warn "Asset '$binName' nao encontrado. Usando CPU como fallback..."
-        $binName = "llama-$tag-bin-win-cpu-x64.zip"
-        $binObj  = $rel.assets | Where-Object { $_.name -eq $binName } | Select-Object -First 1
-    }
-
-    if ($binObj) {
-        $sizeMB = [math]::Round($binObj.size / 1MB, 0)
-        Write-Info "Baixando $binName ($sizeMB MB)..."
-        $tmpZip = "$env:TEMP\neve_llama_bin.zip"
-        Invoke-WebRequest $binObj.browser_download_url -OutFile $tmpZip -UseBasicParsing
-
-        Write-Info 'Extraindo...'
-        # Remove executaveis e DLLs antigos
-        Get-ChildItem $llamaDir -Filter '*.exe' -EA SilentlyContinue | Remove-Item -Force
-        Get-ChildItem $llamaDir -Filter '*.dll' -EA SilentlyContinue | Remove-Item -Force
-
-        $extractTemp = "$env:TEMP\neve_llama_ext"
-        if (Test-Path $extractTemp) { Remove-Item $extractTemp -Recurse -Force }
-        Expand-Archive $tmpZip -DestinationPath $extractTemp -Force
-
-        # Copia tudo para llamaDir (independente de subpastas no zip)
-        Get-ChildItem $extractTemp -Recurse -File |
-            ForEach-Object { Copy-Item $_.FullName $llamaDir -Force }
-
-        Remove-Item $extractTemp -Recurse -Force
-        Remove-Item $tmpZip -Force
-        Write-Ok "llama.cpp $tag instalado em llamacpp-server\bin"
-    } else {
-        Write-Warn 'Asset nao encontrado. Pulando download do llama.cpp.'
-    }
-
-    # CUDA Runtime DLLs (so para builds CUDA)
-    if ($llamaAsset -match '^cuda-') {
-        $dllName = "cudart-llama-bin-win-$llamaAsset-x64.zip"
-        $dllObj  = $rel.assets | Where-Object { $_.name -eq $dllName } | Select-Object -First 1
-        if ($dllObj) {
-            $sizeMB = [math]::Round($dllObj.size / 1MB, 0)
-            Write-Info "Baixando CUDA Runtime DLLs: $dllName ($sizeMB MB)..."
-            $tmpDll = "$env:TEMP\neve_llama_dll.zip"
-            Invoke-WebRequest $dllObj.browser_download_url -OutFile $tmpDll -UseBasicParsing
-            $extractDll = "$env:TEMP\neve_llama_dll_ext"
-            if (Test-Path $extractDll) { Remove-Item $extractDll -Recurse -Force }
-            Expand-Archive $tmpDll -DestinationPath $extractDll -Force
-            Get-ChildItem $extractDll -Recurse -File |
-                ForEach-Object { Copy-Item $_.FullName $llamaDir -Force }
-            Remove-Item $extractDll -Recurse -Force
-            Remove-Item $tmpDll -Force
-            Write-Ok 'CUDA Runtime DLLs instaladas.'
+function UI-Log([string]$msg, [string]$kind='info') {
+    UI-Invoke {
+        $color = switch ($kind) {
+            'ok'    { '[OK] ' }
+            'warn'  { '[!]  ' }
+            'err'   { '[X]  ' }
+            'step'  { '==>  ' }
+            default { '     ' }
         }
-    }
-
-} catch {
-    Write-Warn "Nao foi possivel baixar llama.cpp automaticamente: $_"
-    Write-Info 'Baixe manualmente em: https://github.com/ggml-org/llama.cpp/releases'
-    Write-Info "  -> Procure pelo asset: llama-bXXXX-bin-win-$llamaAsset-x64.zip"
-}
-
-Write-Host ''
-
-# =============================================================================
-# 5. CRIAR VENV PYTHON (sempre recriado do zero)
-# =============================================================================
-Write-Step '5/7' 'Recriando ambiente Python (venv)...'
-
-if (Test-Path $VENV_DIR) {
-    Write-Info 'Removendo venv existente...'
-    try {
-        Remove-Item $VENV_DIR -Recurse -Force -EA Stop
-        Write-Ok 'venv antigo removido.'
-    } catch {
-        Write-Err "Nao foi possivel remover o venv: $_"
-        Write-Err 'Feche todos os processos Python e execute novamente.'
-        $null = Read-Host 'Pressione Enter para fechar'; exit 1
+        $line = "$color$msg`r`n"
+        $ctl.LogBox.AppendText($line)
+        $ctl.LogScroll.ScrollToEnd()
     }
 }
 
-Write-Info 'Criando novo venv...'
-python -m venv $VENV_DIR *>> $LOG
-if ($LASTEXITCODE -ne 0) {
-    Write-Err "Falha ao criar venv. Log: $LOG"
-    $null = Read-Host 'Pressione Enter para fechar'; exit 1
-}
-Write-Ok "venv criado em $VENV_DIR"
-Write-Host ''
-
-# =============================================================================
-# 6. DEPENDENCIAS PYTHON
-# =============================================================================
-Write-Step '6/7' 'Instalando dependencias Python...'
-
-Write-Info 'Atualizando pip...'
-& $VENV_PY -m pip install --upgrade pip *>> $LOG
-
-# PyTorch + torchvision (sem pinagem de versao — sempre o mais recente compativel)
-if ($torchIndex -ne 'https://download.pytorch.org/whl/cpu') {
-    Write-Info "Instalando PyTorch ($cudaVer) -- ~2-3GB, pode demorar..."
-} else {
-    Write-Info 'Instalando PyTorch (CPU)...'
-}
-& $VENV_PY -m pip install torch torchvision --index-url $torchIndex *>> $LOG
-if ($LASTEXITCODE -ne 0) {
-    Write-Err "Falha ao instalar PyTorch. Log: $LOG"
-    $null = Read-Host 'Pressione Enter para fechar'; exit 1
-}
-Write-Ok 'PyTorch instalado.'
-
-# Flash Attention (opcional, Ampere/Ada/Blackwell)
-if ($useFlashAttn) {
-    Write-Info 'Compilando Flash Attention (~5-15 min)...'
-    & $VENV_PY -m pip install flash-attn --no-build-isolation *>> $LOG
-    if ($LASTEXITCODE -eq 0) {
-        Write-Ok 'Flash Attention instalado.'
-    } else {
-        Write-Warn 'Flash Attention falhou (precisa de MSVC Build Tools). Continuando sem ela.'
+function UI-Progress([int]$val, [string]$phase) {
+    UI-Invoke {
+        $ctl.Progress.Value     = $val
+        $ctl.LblProgressTxt.Text = "$val%"
+        if ($phase) { $ctl.LblPhase.Text = $phase; $ctl.LblStep.Text = $phase }
     }
 }
 
-# diffusers (Stable Diffusion — latest)
-Write-Info 'Instalando diffusers (Stable Diffusion)...'
-& $VENV_PY -m pip install diffusers *>> $LOG
-if ($LASTEXITCODE -eq 0) { Write-Ok 'diffusers instalado.' } else { Write-Warn 'diffusers falhou (opcional).' }
-
-# Dependencias principais do backend
-Write-Info 'Instalando dependencias backend (~5-15 min)...'
-& $VENV_PY -m pip install -r "$BACKEND\requirements.txt" *>> $LOG
-if ($LASTEXITCODE -ne 0) {
-    Write-Warn "Algumas dependencias opcionais podem ter falhado. Log: $LOG"
-} else {
-    Write-Ok 'Dependencias backend instaladas.'
+function Run-Logged([string]$exe, [string[]]$args, [string]$desc) {
+    UI-Log $desc 'info'
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName               = $exe
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError  = $true
+    $psi.UseShellExecute        = $false
+    $psi.CreateNoWindow         = $true
+    foreach ($a in $args) { $psi.ArgumentList.Add($a) }
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $stdout = $proc.StandardOutput.ReadToEnd()
+    $stderr = $proc.StandardError.ReadToEnd()
+    $proc.WaitForExit()
+    if ($stdout) { Add-Content $LOG $stdout }
+    if ($stderr) { Add-Content $LOG $stderr }
+    return $proc.ExitCode
 }
 
-# onnxruntime-gpu (substitui a versao CPU do requirements.txt, melhora OCR/embeddings)
-if ($useOnnxGpu) {
-    Write-Info 'Instalando onnxruntime-gpu (melhora OCR e embeddings com GPU)...'
-    & $VENV_PY -m pip uninstall onnxruntime -y *>> $LOG
-    & $VENV_PY -m pip install onnxruntime-gpu *>> $LOG
-    if ($LASTEXITCODE -eq 0) {
-        Write-Ok 'onnxruntime-gpu instalado (substituiu versao CPU).'
-    } else {
-        Write-Warn 'onnxruntime-gpu falhou. Reinstalando versao CPU...'
-        & $VENV_PY -m pip install onnxruntime *>> $LOG
+# =============================================================================
+# Worker - executa em runspace separado
+# =============================================================================
+$ctl.BtnPrimary.Add_Click({
+    if ($ctl.BtnPrimary.Tag -eq 'done') { $window.Close(); return }
+
+    # Coleta selecoes
+    $backendIdx  = $ctl.CmbBackend.SelectedIndex
+    $vramIdx     = $ctl.CmbVram.SelectedIndex
+    $flashAttn   = [bool]$ctl.ChkFlash.IsChecked
+
+    $vramMap     = @(0,4,6,8,12,16,24,32)
+    $vramGb      = $vramMap[$vramIdx]
+
+    # Mapeia indice -> torchIndex / llamaAsset / cudaVer / useOnnxGpu
+    $cfg = switch ($backendIdx) {
+        0 { @{ torchIndex='https://download.pytorch.org/whl/cpu'; llamaAsset='cpu';        cudaVer='CPU';                 useOnnxGpu=$false; vendor='CPU'    } }
+        1 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-13.1'; cudaVer='CUDA 13.1 (Blackwell)'; useOnnxGpu=$true;  vendor='NVIDIA' } }
+        2 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.8 (Ada)';        useOnnxGpu=$true;  vendor='NVIDIA' } }
+        3 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.8 (Ampere)';     useOnnxGpu=$true;  vendor='NVIDIA' } }
+        4 { @{ torchIndex='https://download.pytorch.org/whl/cu126'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.6 (Turing)';     useOnnxGpu=$true;  vendor='NVIDIA' } }
+        5 { @{ torchIndex='https://download.pytorch.org/whl/cu124'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.4 (Turing)';     useOnnxGpu=$true;  vendor='NVIDIA' } }
+        6 { @{ torchIndex='https://download.pytorch.org/whl/cu124'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.4 (Pascal)';     useOnnxGpu=$false; vendor='NVIDIA' } }
+        7 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.8 (Profissional)'; useOnnxGpu=$true; vendor='NVIDIA' } }
+        8 { @{ torchIndex='https://download.pytorch.org/whl/rocm6.3'; llamaAsset='hip-radeon'; cudaVer='ROCm 6.3';            useOnnxGpu=$false; vendor='AMD'    } }
+        9 { @{ torchIndex='https://download.pytorch.org/whl/cpu'; llamaAsset='vulkan';         cudaVer='Vulkan';              useOnnxGpu=$false; vendor='AMD'    } }
+        default { @{ torchIndex='https://download.pytorch.org/whl/cpu'; llamaAsset='cpu'; cudaVer='CPU'; useOnnxGpu=$false; vendor='CPU' } }
     }
-}
 
-Write-Host ''
+    # Trocar para a tela de instalacao
+    $ctl.ConfigPanel.Visibility = 'Collapsed'
+    $ctl.InstallPanel.Visibility = 'Visible'
+    $ctl.BtnPrimary.IsEnabled = $false
+    $ctl.BtnCancel.IsEnabled  = $false
 
-# =============================================================================
-# 7. FRONTEND (npm install + build + deploy)
-# =============================================================================
-Write-Step '7/7' 'Frontend: instalando pacotes e compilando...'
-
-Set-Location $ROOT
-
-Write-Info 'npm install...'
-npm install *>> $LOG
-if ($LASTEXITCODE -ne 0) {
-    Write-Err "Falha no npm install. Log: $LOG"
-    $null = Read-Host 'Pressione Enter para fechar'; exit 1
-}
-Write-Ok 'Pacotes npm instalados.'
-
-Write-Info 'npm run build (~2-5 min)...'
-npm run build *>> $LOG
-if ($LASTEXITCODE -ne 0) {
-    Write-Err "Falha no build do frontend. Log: $LOG"
-    $null = Read-Host 'Pressione Enter para fechar'; exit 1
-}
-Write-Ok 'Frontend compilado.'
-
-Write-Info 'Copiando frontend para backend static...'
-$staticDir = "$BACKEND\neveai\static"
-if (Test-Path $staticDir) { Remove-Item $staticDir -Recurse -Force }
-Copy-Item "$ROOT\build\*" $staticDir -Recurse -Force
-Write-Ok 'Frontend implantado.'
-Write-Host ''
-
-# =============================================================================
-# ESTRUTURA DE PASTAS + .ENV
-# =============================================================================
-foreach ($d in @('logs','logs\webview2','logs\browser-app','models','mmproj',
-                 'backend\data','backend\data\uploads','backend\data\vector_db',
-                 'backend\data\cache','backend\data\tools')) {
-    $p = "$ROOT\$d"
-    if (-not (Test-Path $p)) {
-        New-Item $p -ItemType Directory -Force | Out-Null
-        Write-Info "Criado: $d"
+    # ---- Atalho: se TUDO ja esta instalado, marca como concluido
+    $venvOk     = Test-Path $VENV_PY
+    $torchOk    = $false
+    if ($venvOk) {
+        try {
+            & $VENV_PY -c "import torch, fastapi, transformers" 2>&1 | Out-Null
+            $torchOk = ($LASTEXITCODE -eq 0)
+        } catch { $torchOk = $false }
     }
-}
+    $llamaOk    = (Get-ChildItem (Join-Path $ROOT 'llamacpp-server\bin') -Filter '*.exe' -EA SilentlyContinue | Measure-Object).Count -gt 0
+    $nodeModsOk = Test-Path (Join-Path $ROOT 'node_modules')
+    $frontendOk = Test-Path (Join-Path $BACKEND 'neveai\frontend\index.html')
+    $envOk      = Test-Path (Join-Path $ROOT '.env')
 
-if (-not (Test-Path "$ROOT\.env")) {
-    @"
-# Frontend
+    if ($venvOk -and $torchOk -and $llamaOk -and $nodeModsOk -and $frontendOk -and $envOk) {
+        $ctl.LogBox.AppendText("[OK] Tudo já está instalado. Nada a fazer.`r`n")
+        $ctl.Progress.Value      = 100
+        $ctl.LblProgressTxt.Text = '100%'
+        $ctl.LblPhase.Text       = 'Concluído'
+        $ctl.LblStep.Text        = 'Concluído'
+
+        $summary = @()
+        $summary += "Python:      $((python --version 2>&1))"
+        $summary += "Node.js:     $((node --version 2>&1))"
+        try {
+            $tOut = & $VENV_PY -c "import torch; v=torch.__version__; cuda='(CUDA '+torch.version.cuda+')' if torch.cuda.is_available() else '(CPU)'; print('PyTorch '+v+' '+cuda)" 2>$null
+            if ($tOut) { $summary += "PyTorch:     $tOut" }
+        } catch {}
+        if ($vramGb -gt 0) { $summary += "VRAM:        ${vramGb} GB ($($detected.Name))" }
+
+        $ctl.InstallPanel.Visibility = 'Collapsed'
+        $ctl.DonePanel.Visibility    = 'Visible'
+        $ctl.LblDoneTitle.Text       = 'Já está tudo pronto!'
+        $ctl.LblDoneSub.Text         = 'Nenhuma pendência detectada. Use start.bat para iniciar o Neve AI.'
+        $ctl.LblSummary.Text         = ($summary -join "`r`n")
+        $ctl.BtnCancel.Visibility    = 'Collapsed'
+        $ctl.BtnPrimary.IsEnabled    = $true
+        $ctl.BtnPrimary.Content      = 'Concluir'
+        $ctl.BtnPrimary.Tag          = 'done'
+        return
+    }
+
+    # Worker em runspace separado, usando as funcoes UI-* via $window
+    $worker = {
+        param($cfg, $flashAttn, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG)
+
+        # Helpers (definidas dentro do runspace)
+        function Log([string]$m, [string]$k='info') {
+            $script:Window.Dispatcher.Invoke([Action]{
+                $script:Ctl.LogBox.AppendText("$m`r`n")
+                $script:Ctl.LogScroll.ScrollToEnd()
+            })
+            Add-Content $LOG $m
+        }
+        function P([int]$v, [string]$phase) {
+            $script:Window.Dispatcher.Invoke([Action]{
+                $script:Ctl.Progress.Value = $v
+                $script:Ctl.LblProgressTxt.Text = "$v%"
+                if ($phase) { $script:Ctl.LblPhase.Text = $phase; $script:Ctl.LblStep.Text = $phase }
+            })
+        }
+        function Run([string]$exe, [string[]]$argv, [string]$desc) {
+            Log "==> $desc"
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $exe
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError  = $true
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow  = $true
+            foreach ($a in $argv) { [void]$psi.ArgumentList.Add($a) }
+            $p = [System.Diagnostics.Process]::Start($psi)
+            $out = $p.StandardOutput.ReadToEnd()
+            $err = $p.StandardError.ReadToEnd()
+            $p.WaitForExit()
+            if ($out) { Add-Content $LOG $out }
+            if ($err) { Add-Content $LOG $err }
+            return $p.ExitCode
+        }
+
+        try {
+            # ---- 1. Estrutura de pastas
+            P 5 'Criando estrutura de pastas'
+            foreach ($d in @('logs','logs\webview2','logs\browser-app','models','mmproj',
+                             'backend\data','backend\data\uploads','backend\data\vector_db',
+                             'backend\data\cache','backend\data\tools',
+                             'backend\neveai\frontend')) {
+                $p = Join-Path $ROOT $d
+                if (-not (Test-Path $p)) { New-Item $p -ItemType Directory -Force | Out-Null }
+            }
+            Log "[OK] Pastas garantidas"
+
+            # ---- 2. .env padrao
+            $envPath = Join-Path $ROOT '.env'
+            if (-not (Test-Path $envPath)) {                @"
 VITE_RELATIVE_CONFIG=True
 VITE_OPENWEBUI_BACKEND_URL=http://localhost:8080
-
-# Backend
 ENV=dev
 PORT=8080
 WEBUI_SECRET_KEY=troque-esta-chave-por-algo-seguro
@@ -498,42 +573,185 @@ ENABLE_LOGIN_FORM=True
 SAFE_MODE=False
 CORS_ALLOW_ORIGIN=http://localhost:8080
 USER_AGENT=Neve AI
-"@ | Set-Content "$ROOT\.env"
-    Write-Ok '.env criado com configuracoes padrao.'
-} else {
-    Write-Info '.env ja existe, nao foi sobrescrito.'
-}
+"@ | Set-Content $envPath
+                Log "[OK] .env criado"
+            } else {
+                Log "[…] .env preservado"
+            }
+
+            # ---- 3. llama.cpp
+            P 12 'Baixando llama.cpp'
+            $llamaDir = Join-Path $ROOT 'llamacpp-server\bin'
+            if (-not (Test-Path (Split-Path $llamaDir -Parent))) { New-Item (Split-Path $llamaDir -Parent) -ItemType Directory | Out-Null }
+            if (-not (Test-Path $llamaDir)) { New-Item $llamaDir -ItemType Directory | Out-Null }
+            try {
+                $rel = Invoke-RestMethod 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest' -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' }
+                $tag = $rel.tag_name
+                $binName = "llama-$tag-bin-win-$($cfg.llamaAsset)-x64.zip"
+                $binObj  = $rel.assets | Where-Object { $_.name -eq $binName } | Select-Object -First 1
+                if (-not $binObj) {
+                    Log "[!] Asset $binName não encontrado, usando CPU como fallback" 'warn'
+                    $binName = "llama-$tag-bin-win-cpu-x64.zip"
+                    $binObj  = $rel.assets | Where-Object { $_.name -eq $binName } | Select-Object -First 1
+                }
+                if ($binObj) {
+                    $sizeMB = [math]::Round($binObj.size/1MB,0)
+                    Log "==> Baixando $binName ($sizeMB MB)"
+                    $tmp = Join-Path $env:TEMP 'neve_llama_bin.zip'
+                    Invoke-WebRequest $binObj.browser_download_url -OutFile $tmp -UseBasicParsing
+                    Get-ChildItem $llamaDir -Filter '*.exe' -EA SilentlyContinue | Remove-Item -Force
+                    Get-ChildItem $llamaDir -Filter '*.dll' -EA SilentlyContinue | Remove-Item -Force
+                    $ext = Join-Path $env:TEMP 'neve_llama_ext'
+                    if (Test-Path $ext) { Remove-Item $ext -Recurse -Force }
+                    Expand-Archive $tmp -DestinationPath $ext -Force
+                    Get-ChildItem $ext -Recurse -File | ForEach-Object { Copy-Item $_.FullName $llamaDir -Force }
+                    Remove-Item $ext -Recurse -Force
+                    Remove-Item $tmp -Force
+                    Log "[OK] llama.cpp $tag instalado"
+                }
+                if ($cfg.llamaAsset -match '^cuda-') {
+                    P 18 'Baixando CUDA Runtime'
+                    $dllName = "cudart-llama-bin-win-$($cfg.llamaAsset)-x64.zip"
+                    $dllObj  = $rel.assets | Where-Object { $_.name -eq $dllName } | Select-Object -First 1
+                    if ($dllObj) {
+                        $sizeMB = [math]::Round($dllObj.size/1MB,0)
+                        Log "==> Baixando $dllName ($sizeMB MB)"
+                        $tmp = Join-Path $env:TEMP 'neve_cudart.zip'
+                        Invoke-WebRequest $dllObj.browser_download_url -OutFile $tmp -UseBasicParsing
+                        $ext = Join-Path $env:TEMP 'neve_cudart_ext'
+                        if (Test-Path $ext) { Remove-Item $ext -Recurse -Force }
+                        Expand-Archive $tmp -DestinationPath $ext -Force
+                        Get-ChildItem $ext -Recurse -File | ForEach-Object { Copy-Item $_.FullName $llamaDir -Force }
+                        Remove-Item $ext -Recurse -Force
+                        Remove-Item $tmp -Force
+                        Log "[OK] CUDA Runtime DLLs instaladas"
+                    }
+                }
+            } catch {
+                Log "[!] Falha ao baixar llama.cpp: $_" 'warn'
+            }
+
+            # ---- 4. Recriar venv
+            P 25 'Recriando ambiente Python'
+            if (Test-Path $VENV_DIR) {
+                Log "==> Removendo venv antigo"
+                try { Remove-Item $VENV_DIR -Recurse -Force -EA Stop } catch {
+                    Log "[X] Falha ao remover venv: $_" 'err'; throw
+                }
+            }
+            $rc = Run 'python' @('-m','venv',$VENV_DIR) 'Criando venv'
+            if ($rc -ne 0) { throw "Falha ao criar venv (exit $rc)" }
+            Log "[OK] venv criado"
+
+            # ---- 5. pip + PyTorch
+            P 32 'Atualizando pip'
+            [void](Run $VENV_PY @('-m','pip','install','--upgrade','pip') 'pip upgrade')
+
+            P 38 "Instalando PyTorch ($($cfg.cudaVer))"
+            $rc = Run $VENV_PY @('-m','pip','install','torch','torchvision','--index-url',$cfg.torchIndex) 'PyTorch + torchvision'
+            if ($rc -ne 0) { throw "Falha ao instalar PyTorch (exit $rc)" }
+            Log "[OK] PyTorch instalado"
+
+            # ---- 6. Flash Attention (opcional)
+            if ($flashAttn -and $cfg.vendor -eq 'NVIDIA') {
+                P 48 'Compilando Flash Attention (~10 min)'
+                $rc = Run $VENV_PY @('-m','pip','install','flash-attn','--no-build-isolation') 'flash-attn'
+                if ($rc -eq 0) { Log "[OK] Flash Attention instalado" } else { Log "[!] Flash Attention falhou (precisa MSVC Build Tools)" 'warn' }
+            }
+
+            # ---- 7. diffusers
+            P 55 'Instalando diffusers'
+            [void](Run $VENV_PY @('-m','pip','install','diffusers') 'diffusers')
+
+            # ---- 8. requirements do backend
+            P 60 'Instalando dependências do backend (~5-15 min)'
+            $req = Join-Path $BACKEND 'requirements.txt'
+            $rc = Run $VENV_PY @('-m','pip','install','-r',$req) 'requirements.txt'
+            if ($rc -ne 0) { Log "[!] Algumas dependências podem ter falhado" 'warn' } else { Log "[OK] Dependências do backend instaladas" }
+
+            # ---- 9. onnxruntime-gpu (substituir CPU)
+            if ($cfg.useOnnxGpu) {
+                P 78 'Instalando onnxruntime-gpu'
+                [void](Run $VENV_PY @('-m','pip','uninstall','onnxruntime','-y') 'remover onnxruntime CPU')
+                $rc = Run $VENV_PY @('-m','pip','install','onnxruntime-gpu') 'onnxruntime-gpu'
+                if ($rc -eq 0) { Log "[OK] onnxruntime-gpu instalado" } else {
+                    Log "[!] onnxruntime-gpu falhou, voltando para CPU" 'warn'
+                    [void](Run $VENV_PY @('-m','pip','install','onnxruntime') 'onnxruntime CPU fallback')
+                }
+            }
+
+            # ---- 10. npm install
+            P 84 'Instalando pacotes npm'
+            Set-Location $ROOT
+            $rc = Run 'npm.cmd' @('install') 'npm install'
+            if ($rc -ne 0) { throw "Falha em npm install (exit $rc)" }
+            Log "[OK] Pacotes npm instalados"
+
+            # ---- 11. npm run build
+            P 92 'Compilando frontend (~2-5 min)'
+            $rc = Run 'npm.cmd' @('run','build') 'npm run build'
+            if ($rc -ne 0) { throw "Falha no build do frontend (exit $rc)" }
+            Log "[OK] Frontend compilado"
+
+            # ---- 12. Deploy frontend para backend\neveai\frontend
+            P 97 'Implantando frontend no backend'
+            $frontDir = Join-Path $BACKEND 'neveai\frontend'
+            if (Test-Path $frontDir) { Remove-Item $frontDir -Recurse -Force }
+            New-Item $frontDir -ItemType Directory -Force | Out-Null
+            Copy-Item (Join-Path $ROOT 'build\*') $frontDir -Recurse -Force
+            Log "[OK] Frontend copiado para backend\neveai\frontend"
+
+            # ---- Done
+            P 100 'Concluído'
+
+            # Resumo
+            $summary = @()
+            $summary += "Python:      $((python --version 2>&1))"
+            $summary += "Node.js:     $((node --version 2>&1))"
+            try {
+                $tOut = & $VENV_PY -c "import torch; v=torch.__version__; cuda='(CUDA '+torch.version.cuda+')' if torch.cuda.is_available() else '(CPU)'; print('PyTorch '+v+' '+cuda)" 2>$null
+                if ($tOut) { $summary += "PyTorch:     $tOut" }
+            } catch {}
+            $summary += "llama.cpp:   $($cfg.llamaAsset)"
+            if ($vramGb -gt 0) { $summary += "VRAM:        ${vramGb} GB ($($detected.Name))" }
+
+            $script:Window.Dispatcher.Invoke([Action]{
+                $script:Ctl.InstallPanel.Visibility = 'Collapsed'
+                $script:Ctl.DonePanel.Visibility    = 'Visible'
+                $script:Ctl.LblSummary.Text         = ($summary -join "`r`n")
+                $script:Ctl.BtnCancel.Visibility    = 'Collapsed'
+                $script:Ctl.BtnPrimary.IsEnabled    = $true
+                $script:Ctl.BtnPrimary.Content      = 'Concluir'
+                $script:Ctl.BtnPrimary.Tag          = 'done'
+            })
+        } catch {
+            Log "[X] FALHA: $_" 'err'
+            $script:Window.Dispatcher.Invoke([Action]{
+                $script:Ctl.LblStep.Text = "Falha durante a instalação."
+                $script:Ctl.BtnPrimary.IsEnabled = $true
+                $script:Ctl.BtnPrimary.Content   = 'Fechar'
+                $script:Ctl.BtnPrimary.Tag       = 'done'
+                $script:Ctl.BtnCancel.IsEnabled  = $true
+                [System.Windows.MessageBox]::Show("A instalação falhou. Veja o log em logs\install.log`n`n$_", 'Neve AI', 'OK', 'Error') | Out-Null
+            })
+        }
+    }
+
+    # Cria runspace e injeta o que precisamos
+    $runspace = [RunspaceFactory]::CreateRunspace()
+    $runspace.ApartmentState = 'STA'
+    $runspace.ThreadOptions  = 'ReuseThread'
+    $runspace.Open()
+    $runspace.SessionStateProxy.SetVariable('Window', $window)
+    $runspace.SessionStateProxy.SetVariable('Ctl',    $ctl)
+
+    $ps = [PowerShell]::Create()
+    $ps.Runspace = $runspace
+    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($flashAttn).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG)
+    [void]$ps.BeginInvoke()
+})
 
 # =============================================================================
-# RESUMO FINAL
+# Mostrar a janela
 # =============================================================================
-Write-Host ''
-Write-Host '  ================================================' -ForegroundColor Cyan
-Write-Host '     INSTALACAO CONCLUIDA COM SUCESSO!' -ForegroundColor Green
-Write-Host '  ================================================' -ForegroundColor Cyan
-Write-Host ''
-Write-Host '  Versoes instaladas:' -ForegroundColor White
-Write-Host "    $(python --version 2>&1)" -ForegroundColor DarkGray
-Write-Host "    $(node --version 2>&1)" -ForegroundColor DarkGray
-
-$torchOut = & $VENV_PY -c "import torch; v=torch.__version__; cuda='(CUDA '+torch.version.cuda+')' if torch.cuda.is_available() else '(CPU)'; print('PyTorch '+v+' '+cuda)" 2>$null
-if ($torchOut) { Write-Host "    $torchOut" -ForegroundColor DarkGray }
-
-if ($vramGb -gt 0) { Write-Host "    VRAM: ${vramGb}GB ($gpuName)" -ForegroundColor DarkGray }
-if ($llamaAsset -ne 'cpu') { Write-Host "    llama.cpp: $llamaAsset" -ForegroundColor DarkGray }
-Write-Host ''
-Write-Host '  Para iniciar o Neve AI execute: iniciar.bat' -ForegroundColor Green
-Write-Host "  Log completo disponivel em: logs\install.log" -ForegroundColor DarkGray
-Write-Host ''
-
-Write-Host '  ================================================' -ForegroundColor DarkGray
-Write-Host '  O que REMOVER antes de distribuir o projeto:' -ForegroundColor DarkGray
-Write-Host '    backend\neveai\venv\   ~6 GB  (recriado pelo instalar)' -ForegroundColor DarkGray
-Write-Host '    node_modules\              ~950 MB (recriado pelo npm install)' -ForegroundColor DarkGray
-Write-Host '    build\                     ~160 MB (recriado pelo npm build)' -ForegroundColor DarkGray
-Write-Host '    .svelte-kit\               ~190 MB (cache compilador)' -ForegroundColor DarkGray
-Write-Host '    models\ mmproj\            (usuario baixa os seus proprios)' -ForegroundColor DarkGray
-Write-Host '  ================================================' -ForegroundColor DarkGray
-Write-Host ''
-
-$null = Read-Host 'Pressione Enter para fechar'
+[void]$window.ShowDialog()
