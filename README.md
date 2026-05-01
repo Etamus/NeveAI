@@ -28,10 +28,6 @@
 
 ---
 
-<img width="1128" height="191" alt="neveai_cover" src="https://github.com/user-attachments/assets/09383a14-20c2-48fb-9eff-753ec710cff9" />
-
----
-
 ## Instalação
 
 ### Pré-requisitos
@@ -45,6 +41,10 @@
 ```bat
 instalar.bat
 ```
+
+<h1 align="center">
+<img width="772" alt="{55F2246F-520C-4D6F-855F-8F7DF2687F8B}" src="https://github.com/user-attachments/assets/2a9e1fd4-4c29-431a-a49a-332f335d625b" />
+</h1>
 
 O instalador (`instalar.bat` → `instalar.ps1`) realiza automaticamente:
 
@@ -63,6 +63,10 @@ O instalador (`instalar.bat` → `instalar.ps1`) realiza automaticamente:
 ```bat
 atualizar.bat
 ```
+
+<h1 align="center">
+<img width="771" alt="{B2BB9685-2183-4917-A015-B4FAFBFC9805}" src="https://github.com/user-attachments/assets/5cd350c4-42b2-45e0-afeb-b4ce2118e519" />
+</h1>
 
 O atualizador (`atualizar.bat` → `atualizar.ps1`) abre uma janela gráfica que:
 
@@ -99,6 +103,10 @@ Acesse manualmente se preferir: **http://localhost:8080**
 ---
 
 ## Modelos
+
+<img width="1128" height="191" alt="neveai_cover" src="https://github.com/user-attachments/assets/09383a14-20c2-48fb-9eff-753ec710cff9" />
+
+---
 
 ### Modelos de linguagem (LLM)
 
