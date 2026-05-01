@@ -1403,7 +1403,7 @@
 	"Neve uses faster-whisper internally.": "Úsáideann Neve cogar níos tapúla go hinmheánach.",
 	"Neve uses SpeechT5 and CMU Arctic speaker embeddings.": "Úsáideann Neve úsáidí SpeechT5 agus CMU leabaithe cainteoir Artach.",
 	"Neve version": "Oscail leagan WebUI",
-	"Neve version (v{{OPEN_WEBUI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "Tá leagan WebUI oscailte (v{{OPEN_WEBUI_VERSION}}) níos ísle ná an leagan riachtanach (v{{REQUIRED_VERSION}})",
+	"Neve version (v{{NEVEAI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "Tá leagan WebUI oscailte (v{{NEVEAI_VERSION}}) níos ísle ná an leagan riachtanach (v{{REQUIRED_VERSION}})",
 	"OpenAI": "OpenAI",
 	"OpenAI API": "API OpenAI",
 	"OpenAI API Base URL": "Bun-URL API OpenAI",

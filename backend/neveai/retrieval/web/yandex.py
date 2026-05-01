@@ -42,7 +42,7 @@ def search_yandex(
 ) -> List[SearchResult]:
     try:
         headers = {
-            "User-Agent": "Neve (https://github.com/open-webui/open-webui) RAG Bot",
+            "User-Agent": "Neve AI (https://github.com/Etamus/NeveAI) RAG Bot",
             "Authorization": f"Api-Key {yandex_search_api_key}",
         }
 

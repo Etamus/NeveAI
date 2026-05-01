@@ -59,7 +59,7 @@ def search_yacy(
         query_url,
         auth=yacy_auth,
         headers={
-            "User-Agent": "Neve (https://github.com/open-webui/open-webui) RAG Bot",
+            "User-Agent": "Neve AI (https://github.com/Etamus/NeveAI) RAG Bot",
             "Accept": "text/html",
             "Accept-Encoding": "gzip, deflate",
             "Accept-Language": "en-US,en;q=0.5",

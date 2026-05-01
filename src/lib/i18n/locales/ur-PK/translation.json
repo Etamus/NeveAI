@@ -1403,7 +1403,7 @@
 	"Neve uses faster-whisper internally.": "اوپن ویب یو آئی اندرونی طور پر فاسٹر وِسپر استعمال کرتا ہے",
 	"Neve uses SpeechT5 and CMU Arctic speaker embeddings.": "",
 	"Neve version": "",
-	"Neve version (v{{OPEN_WEBUI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "اوپن WebUI ورژن (v{{OPEN_WEBUI_VERSION}}) مطلوبہ ورژن (v{{REQUIRED_VERSION}}) سے کم ہے",
+	"Neve version (v{{NEVEAI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "اوپن WebUI ورژن (v{{NEVEAI_VERSION}}) مطلوبہ ورژن (v{{REQUIRED_VERSION}}) سے کم ہے",
 	"OpenAI": "اوپن اے آئی",
 	"OpenAI API": "اوپن اے آئی اے پی آئی\n",
 	"OpenAI API Base URL": "",

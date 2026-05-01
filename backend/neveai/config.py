@@ -236,7 +236,7 @@ class AppConfig:
         redis_url: Optional[str] = None,
         redis_sentinels: Optional[list] = [],
         redis_cluster: Optional[bool] = False,
-        redis_key_prefix: str = "open-webui",
+        redis_key_prefix: str = "neveai",
     ):
         if redis_url:
             super().__setattr__("_redis_key_prefix", redis_key_prefix)
@@ -322,7 +322,7 @@ JWT_EXPIRES_IN = PersistentConfig(
 if JWT_EXPIRES_IN.value == "-1":
     log.warning(
         "⚠️  SECURITY WARNING: JWT_EXPIRES_IN is set to '-1'\n"
-        "    See: https://docs.openwebui.com/reference/env-configuration\n"
+        "    Tokens will never expire — review this for production deployments.\n"
     )
 
 ####################################
@@ -921,46 +921,13 @@ if frontend_loader.exists():
 
 
 ####################################
-# CUSTOM_NAME (Legacy)
+# CUSTOM_NAME (Legacy — disabled, depended on api.openwebui.com)
 ####################################
 
 CUSTOM_NAME = os.environ.get("CUSTOM_NAME", "")
-
-if CUSTOM_NAME:
-    try:
-        r = requests.get(f"https://api.openwebui.com/api/v1/custom/{CUSTOM_NAME}")
-        data = r.json()
-        if r.ok:
-            if "logo" in data:
-                WEBUI_FAVICON_URL = url = (
-                    f"https://api.openwebui.com{data['logo']}"
-                    if data["logo"][0] == "/"
-                    else data["logo"]
-                )
-
-                r = requests.get(url, stream=True)
-                if r.status_code == 200:
-                    with open(f"{STATIC_DIR}/favicon.png", "wb") as f:
-                        r.raw.decode_content = True
-                        shutil.copyfileobj(r.raw, f)
-
-            if "splash" in data:
-                url = (
-                    f"https://api.openwebui.com{data['splash']}"
-                    if data["splash"][0] == "/"
-                    else data["splash"]
-                )
-
-                r = requests.get(url, stream=True)
-                if r.status_code == 200:
-                    with open(f"{STATIC_DIR}/splash.png", "wb") as f:
-                        r.raw.decode_content = True
-                        shutil.copyfileobj(r.raw, f)
-
-            WEBUI_NAME = data["name"]
-    except Exception as e:
-        log.exception(e)
-        pass
+# Bloco antigo removido: chamava https://api.openwebui.com/api/v1/custom/{CUSTOM_NAME}
+# Esse serviço não pertence ao Neve AI. Para customizar nome/logo use NEVE_NAME e
+# substitua /static/favicon.png diretamente.
 
 
 ####################################
@@ -1057,7 +1024,7 @@ if ENV == "prod":
         else:
             OLLAMA_BASE_URL = "http://host.docker.internal:11434"
     elif K8S_FLAG:
-        OLLAMA_BASE_URL = "http://ollama-service.open-webui.svc.cluster.local:11434"
+        OLLAMA_BASE_URL = "http://ollama-service.neveai.svc.cluster.local:11434"
 
 
 def _resolve_ollama_base_url(url: str) -> str:
@@ -1219,7 +1186,7 @@ TERMINAL_SERVER_CONNECTIONS = PersistentConfig(
 ####################################
 
 
-WEBUI_URL = PersistentConfig("WEBUI_URL", "webui.url", os.environ.get("WEBUI_URL", ""))
+WEBUI_URL = PersistentConfig("WEBUI_URL", "webui.url", os.environ.get("NEVE_URL", ""))
 
 
 ENABLE_SIGNUP = PersistentConfig(
@@ -1845,10 +1812,10 @@ class BannerModel(BaseModel):
 
 
 try:
-    banners = json.loads(os.environ.get("WEBUI_BANNERS", "[]"))
+    banners = json.loads(os.environ.get("NEVE_BANNERS", "[]"))
     banners = [BannerModel(**banner) for banner in banners]
 except Exception as e:
-    log.exception(f"Error loading WEBUI_BANNERS: {e}")
+    log.exception(f"Error loading NEVE_BANNERS: {e}")
     banners = []
 
 WEBUI_BANNERS = PersistentConfig("WEBUI_BANNERS", "ui.banners", banners)
@@ -2466,7 +2433,7 @@ ENABLE_MILVUS_MULTITENANCY_MODE = (
     os.environ.get("ENABLE_MILVUS_MULTITENANCY_MODE", "false").lower() == "true"
 )
 # Hyphens not allowed, need to use underscores in collection names
-MILVUS_COLLECTION_PREFIX = os.environ.get("MILVUS_COLLECTION_PREFIX", "open_webui")
+MILVUS_COLLECTION_PREFIX = os.environ.get("MILVUS_COLLECTION_PREFIX", "neveai")
 
 # Qdrant
 QDRANT_URI = os.environ.get("QDRANT_URI", None)
@@ -2479,7 +2446,7 @@ QDRANT_HNSW_M = int(os.environ.get("QDRANT_HNSW_M", "16"))
 ENABLE_QDRANT_MULTITENANCY_MODE = (
     os.environ.get("ENABLE_QDRANT_MULTITENANCY_MODE", "true").lower() == "true"
 )
-QDRANT_COLLECTION_PREFIX = os.environ.get("QDRANT_COLLECTION_PREFIX", "open-webui")
+QDRANT_COLLECTION_PREFIX = os.environ.get("QDRANT_COLLECTION_PREFIX", "neveai")
 
 WEAVIATE_HTTP_HOST = os.environ.get("WEAVIATE_HTTP_HOST", "")
 WEAVIATE_GRPC_HOST = os.environ.get("WEAVIATE_GRPC_HOST", "")
@@ -2510,7 +2477,7 @@ ELASTICSEARCH_PASSWORD = os.environ.get("ELASTICSEARCH_PASSWORD", None)
 ELASTICSEARCH_CLOUD_ID = os.environ.get("ELASTICSEARCH_CLOUD_ID", None)
 SSL_ASSERT_FINGERPRINT = os.environ.get("SSL_ASSERT_FINGERPRINT", None)
 ELASTICSEARCH_INDEX_PREFIX = os.environ.get(
-    "ELASTICSEARCH_INDEX_PREFIX", "open_webui_collections"
+    "ELASTICSEARCH_INDEX_PREFIX", "neveai_collections"
 )
 # Pgvector
 PGVECTOR_DB_URL = os.environ.get("PGVECTOR_DB_URL", DATABASE_URL)
@@ -2663,7 +2630,7 @@ else:
 # Pinecone
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY", None)
 PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT", None)
-PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "open-webui-index")
+PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "neveai-index")
 PINECONE_DIMENSION = int(os.getenv("PINECONE_DIMENSION", 1536))  # or 3072, 1024, 768
 PINECONE_METRIC = os.getenv("PINECONE_METRIC", "cosine")
 PINECONE_CLOUD = os.getenv("PINECONE_CLOUD", "aws")  # or "gcp" or "azure"

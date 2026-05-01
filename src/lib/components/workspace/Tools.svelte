@@ -98,7 +98,7 @@
 
 		toast.success($i18n.t('Redirecting you to Neve Community'));
 
-		const url = 'https://openwebui.com';
+		const url = 'https://github.com/Etamus/NeveAI';
 
 		const tab = await window.open(`${url}/tools/create`, '_blank');
 
@@ -498,7 +498,7 @@
 
 			<a
 				class=" flex cursor-pointer items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-850 w-full mb-2 px-3.5 py-1.5 rounded-xl transition"
-				href="https://openwebui.com/tools"
+				href="https://github.com/Etamus/NeveAI"
 				target="_blank"
 			>
 				<div class=" self-center">

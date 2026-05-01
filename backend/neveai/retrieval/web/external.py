@@ -24,7 +24,7 @@ def search_external(
 ) -> List[SearchResult]:
     try:
         headers = {
-            "User-Agent": "Neve (https://github.com/open-webui/open-webui) RAG Bot",
+            "User-Agent": "Neve AI (https://github.com/Etamus/NeveAI) RAG Bot",
             "Authorization": f"Bearer {external_api_key}",
         }
         headers = include_user_info_headers(headers, user)

@@ -30,7 +30,7 @@ class ExternalWebLoader(BaseLoader):
                 response = requests.post(
                     self.external_url,
                     headers={
-                        "User-Agent": "Neve (https://github.com/open-webui/open-webui) External Web Loader",
+                        "User-Agent": "Neve AI (https://github.com/Etamus/NeveAI) External Web Loader",
                         "Authorization": f"Bearer {self.external_api_key}",
                     },
                     json={

@@ -1,4 +1,4 @@
-import hashlib
+﻿import hashlib
 import re
 import threading
 import time
@@ -34,10 +34,10 @@ def get_allow_block_lists(filter_list):
     if filter_list:
         for d in filter_list:
             if d.startswith("!"):
-                # Domains starting with "!" → blocked
+                # Domains starting with "!" â†’ blocked
                 block_list.append(d[1:].strip())
             else:
-                # Domains starting without "!" → allowed
+                # Domains starting without "!" â†’ allowed
                 allow_list.append(d.strip())
 
     return allow_list, block_list
@@ -242,7 +242,7 @@ def convert_output_to_messages(output: list, raw: bool = False) -> list[dict]:
                     pending_content.append(f"{start_tag}{reasoning_text}{end_tag}")
             # else: skip reasoning blocks for normal LLM messages
 
-        elif item_type == "open_webui:code_interpreter":
+        elif item_type == "neveai:code_interpreter":
             # Always include code interpreter content so the LLM knows
             # the code was already executed and doesn't retry.
             code = item.get("code", "")
@@ -265,7 +265,7 @@ def convert_output_to_messages(output: list, raw: bool = False) -> list[dict]:
                         f"<code_interpreter_output>\n{output_text}\n</code_interpreter_output>"
                     )
 
-        elif item_type.startswith("open_webui:"):
+        elif item_type.startswith("neveai:"):
             # Skip other extension types
             pass
 

@@ -77,7 +77,7 @@
 				<div class=" text-xs text-gray-600 dark:text-gray-300 mb-2">
 					{$i18n.t('Neve can use tools provided by any OpenAPI server.')} <br /><a
 						class="underline"
-						href="https://github.com/open-webui/openapi-servers"
+						href="https://github.com/Etamus/NeveAI"
 						target="_blank">{$i18n.t('Learn more about OpenAPI tool servers.')}</a
 					>
 				</div>

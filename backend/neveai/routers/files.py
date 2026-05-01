@@ -238,10 +238,10 @@ def upload_file_handler(
             file.file,
             filename,
             {
-                "OpenWebUI-User-Email": user.email,
-                "OpenWebUI-User-Id": user.id,
-                "OpenWebUI-User-Name": user.name,
-                "OpenWebUI-File-Id": id,
+                "NeveAI-User-Email": user.email,
+                "NeveAI-User-Id": user.id,
+                "NeveAI-User-Name": user.name,
+                "NeveAI-File-Id": id,
             },
         )
 

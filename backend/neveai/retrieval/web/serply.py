@@ -42,7 +42,7 @@ def search_serply(
     headers = {
         "X-API-KEY": api_key,
         "X-User-Agent": device_type,
-        "User-Agent": "open-webui",
+        "User-Agent": "neveai",
         "X-Proxy-Location": proxy_location,
     }
 

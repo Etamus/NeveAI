@@ -62,7 +62,7 @@
 
 						{#if $config?.features?.enable_version_update_check}
 							<a
-								href="https://github.com/open-webui/open-webui/releases/tag/v{version.latest}"
+								href="https://github.com/Etamus/NeveAI/releases/tag/v{version.latest}"
 								target="_blank"
 							>
 								{updateAvailable === null
@@ -122,21 +122,21 @@
 				<a href="https://discord.gg/5rJgQTnV4s" target="_blank">
 					<img
 						alt="Discord"
-						src="https://img.shields.io/badge/Discord-Open_WebUI-blue?logo=discord&logoColor=white"
+						src="/static/favicon.png"
 					/>
 				</a>
 
-				<a href="https://twitter.com/OpenWebUI" target="_blank">
+				<a href="https://github.com/Etamus/NeveAI" target="_blank">
 					<img
 						alt="X (formerly Twitter) Follow"
-						src="https://img.shields.io/twitter/follow/OpenWebUI"
+						src="/static/favicon.png"
 					/>
 				</a>
 
-				<a href="https://github.com/open-webui/open-webui" target="_blank">
+				<a href="https://github.com/Etamus/NeveAI" target="_blank">
 					<img
 						alt="Github Repo"
-						src="https://img.shields.io/github/stars/open-webui/open-webui?style=social&label=Star us on Github"
+						src="/static/favicon.png"
 					/>
 				</a>
 			</div>
@@ -151,10 +151,10 @@
 		<div>
 			<pre
 				class="text-xs text-gray-400 dark:text-gray-500">Copyright (c) {new Date().getFullYear()} <a
-					href="https://openwebui.com"
+					href="https://github.com/Etamus/NeveAI"
 					target="_blank"
 					class="underline">Neve Inc.</a
-				> <a href="https://github.com/open-webui/open-webui/blob/main/LICENSE" target="_blank"
+				> <a href="https://github.com/Etamus/NeveAI/blob/main/LICENSE" target="_blank"
 					>All rights reserved.</a
 				>
 </pre>

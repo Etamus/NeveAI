@@ -25,13 +25,13 @@ from neveai.constants import ERROR_MESSAGES
 # Use .resolve() to get the canonical path, removing any '..' or '.' components
 ENV_FILE_PATH = Path(__file__).resolve()
 
-# OPEN_WEBUI_DIR should be the directory where env.py resides (open_webui/)
+# OPEN_WEBUI_DIR should be the directory where env.py resides (neveai/)
 OPEN_WEBUI_DIR = ENV_FILE_PATH.parent
 
 # BACKEND_DIR is the parent of OPEN_WEBUI_DIR (backend/)
 BACKEND_DIR = OPEN_WEBUI_DIR.parent
 
-# BASE_DIR is the parent of BACKEND_DIR (open-webui-dev/)
+# BASE_DIR is the parent of BACKEND_DIR (Neve AI/)
 BASE_DIR = BACKEND_DIR.parent
 
 try:
@@ -132,10 +132,10 @@ if "cuda_error" in locals():
 
 SRC_LOG_LEVELS = {}  # Legacy variable, do not remove
 
-WEBUI_NAME = os.environ.get("WEBUI_NAME", "Neve AI")
+WEBUI_NAME = os.environ.get("NEVE_NAME", "Neve AI")
 # Custom name - no suffix appended
 
-WEBUI_FAVICON_URL = "https://openwebui.com/favicon.png"
+WEBUI_FAVICON_URL = "/static/favicon.png"
 
 TRUSTED_SIGNATURE_KEY = os.environ.get("TRUSTED_SIGNATURE_KEY", "")
 
@@ -148,7 +148,7 @@ ENV = os.environ.get("ENV", "dev")
 FROM_INIT_PY = os.environ.get("FROM_INIT_PY", "False").lower() == "true"
 
 if FROM_INIT_PY:
-    PACKAGE_DATA = {"version": importlib.metadata.version("open-webui")}
+    PACKAGE_DATA = {"version": importlib.metadata.version("neve-ai")}
 else:
     try:
         PACKAGE_DATA = json.loads((BASE_DIR / "package.json").read_text())
@@ -245,24 +245,24 @@ ENABLE_FORWARD_USER_INFO_HEADERS = (
 
 # Header names for user info forwarding (customizable via environment variables)
 FORWARD_USER_INFO_HEADER_USER_NAME = os.environ.get(
-    "FORWARD_USER_INFO_HEADER_USER_NAME", "X-OpenWebUI-User-Name"
+    "FORWARD_USER_INFO_HEADER_USER_NAME", "X-NeveAI-User-Name"
 )
 FORWARD_USER_INFO_HEADER_USER_ID = os.environ.get(
-    "FORWARD_USER_INFO_HEADER_USER_ID", "X-OpenWebUI-User-Id"
+    "FORWARD_USER_INFO_HEADER_USER_ID", "X-NeveAI-User-Id"
 )
 FORWARD_USER_INFO_HEADER_USER_EMAIL = os.environ.get(
-    "FORWARD_USER_INFO_HEADER_USER_EMAIL", "X-OpenWebUI-User-Email"
+    "FORWARD_USER_INFO_HEADER_USER_EMAIL", "X-NeveAI-User-Email"
 )
 FORWARD_USER_INFO_HEADER_USER_ROLE = os.environ.get(
-    "FORWARD_USER_INFO_HEADER_USER_ROLE", "X-OpenWebUI-User-Role"
+    "FORWARD_USER_INFO_HEADER_USER_ROLE", "X-NeveAI-User-Role"
 )
 
 # Header name for chat ID forwarding (customizable via environment variable)
 FORWARD_SESSION_INFO_HEADER_MESSAGE_ID = os.environ.get(
-    "FORWARD_SESSION_INFO_HEADER_MESSAGE_ID", "X-OpenWebUI-Message-Id"
+    "FORWARD_SESSION_INFO_HEADER_MESSAGE_ID", "X-NeveAI-Message-Id"
 )
 FORWARD_SESSION_INFO_HEADER_CHAT_ID = os.environ.get(
-    "FORWARD_SESSION_INFO_HEADER_CHAT_ID", "X-OpenWebUI-Chat-Id"
+    "FORWARD_SESSION_INFO_HEADER_CHAT_ID", "X-NeveAI-Chat-Id"
 )
 
 # Experimental feature, may be removed in future
@@ -276,7 +276,7 @@ ENABLE_EASTER_EGGS = os.environ.get("ENABLE_EASTER_EGGS", "True").lower() == "tr
 # WEBUI_BUILD_HASH
 ####################################
 
-WEBUI_BUILD_HASH = os.environ.get("WEBUI_BUILD_HASH", "dev-build")
+WEBUI_BUILD_HASH = os.environ.get("NEVE_BUILD_HASH", "dev-build")
 
 ####################################
 # DATA/FRONTEND BUILD DIR
@@ -299,7 +299,7 @@ if FROM_INIT_PY:
                 shutil.copy2(item, dest)
 
         # Zip the data directory
-        shutil.make_archive(DATA_DIR.parent / "open_webui_data", "zip", DATA_DIR)
+        shutil.make_archive(DATA_DIR.parent / "neveai_data", "zip", DATA_DIR)
 
         # Remove the old data directory
         shutil.rmtree(DATA_DIR)
@@ -321,15 +321,17 @@ if FROM_INIT_PY:
 # Database
 ####################################
 
-# Check if the file exists
-if os.path.exists(f"{DATA_DIR}/ollama.db"):
-    # Rename the file
-    os.rename(f"{DATA_DIR}/ollama.db", f"{DATA_DIR}/webui.db")
+# Check if the file exists (legacy migrations: ollama.db -> webui.db -> neve.db)
+if os.path.exists(f"{DATA_DIR}/ollama.db") and not os.path.exists(f"{DATA_DIR}/neve.db"):
+    os.rename(f"{DATA_DIR}/ollama.db", f"{DATA_DIR}/neve.db")
     log.info("Database migrated from Ollama-WebUI successfully.")
+elif os.path.exists(f"{DATA_DIR}/webui.db") and not os.path.exists(f"{DATA_DIR}/neve.db"):
+    os.rename(f"{DATA_DIR}/webui.db", f"{DATA_DIR}/neve.db")
+    log.info("Database migrated to neve.db successfully.")
 else:
     pass
 
-DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DATA_DIR}/webui.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DATA_DIR}/neve.db")
 
 DATABASE_TYPE = os.environ.get("DATABASE_TYPE")
 DATABASE_USER = os.environ.get("DATABASE_USER")
@@ -353,8 +355,7 @@ if all(DB_VARS.values()):
     DATABASE_URL = f"{DB_VARS['db_type']}://{DB_VARS['db_cred']}@{DB_VARS['db_host']}:{DB_VARS['db_port']}/{DB_VARS['db_name']}"
 elif DATABASE_TYPE == "sqlite+sqlcipher" and not os.environ.get("DATABASE_URL"):
     # Handle SQLCipher with local file when DATABASE_URL wasn't explicitly set
-    DATABASE_URL = f"sqlite+sqlcipher:///{DATA_DIR}/webui.db"
-
+    DATABASE_URL = f"sqlite+sqlcipher:///{DATA_DIR}/neve.db"
 # Replace the postgres:// with postgresql://
 if "postgres://" in DATABASE_URL:
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://")
@@ -443,7 +444,7 @@ RAG_SYSTEM_CONTEXT = os.environ.get("RAG_SYSTEM_CONTEXT", "False").lower() == "t
 REDIS_URL = os.environ.get("REDIS_URL", "")
 REDIS_CLUSTER = os.environ.get("REDIS_CLUSTER", "False").lower() == "true"
 
-REDIS_KEY_PREFIX = os.environ.get("REDIS_KEY_PREFIX", "open-webui")
+REDIS_KEY_PREFIX = os.environ.get("REDIS_KEY_PREFIX", "neveai")
 
 REDIS_SENTINEL_HOSTS = os.environ.get("REDIS_SENTINEL_HOSTS", "")
 REDIS_SENTINEL_PORT = os.environ.get("REDIS_SENTINEL_PORT", "26379")
@@ -494,7 +495,7 @@ except ValueError:
 # WEBUI_AUTH (Required for security)
 ####################################
 
-WEBUI_AUTH = os.environ.get("WEBUI_AUTH", "True").lower() == "true"
+WEBUI_AUTH = os.environ.get("NEVE_AUTH", "True").lower() == "true"
 
 ENABLE_INITIAL_ADMIN_SIGNUP = (
     os.environ.get("ENABLE_INITIAL_ADMIN_SIGNUP", "False").lower() == "true"
@@ -509,16 +510,18 @@ ENABLE_SIGNUP_PASSWORD_CONFIRMATION = (
 
 # Optional env vars for creating an admin account on startup
 # Useful for headless/automated deployments
-WEBUI_ADMIN_EMAIL = os.environ.get("WEBUI_ADMIN_EMAIL", "")
-WEBUI_ADMIN_PASSWORD = os.environ.get("WEBUI_ADMIN_PASSWORD", "")
-WEBUI_ADMIN_NAME = os.environ.get("WEBUI_ADMIN_NAME", "Admin")
+WEBUI_ADMIN_EMAIL = os.environ.get("NEVE_ADMIN_EMAIL", "")
+WEBUI_ADMIN_PASSWORD = os.environ.get("NEVE_ADMIN_PASSWORD", "")
+WEBUI_ADMIN_NAME = os.environ.get("NEVE_ADMIN_NAME", "Admin")
 
 WEBUI_AUTH_TRUSTED_EMAIL_HEADER = os.environ.get(
-    "WEBUI_AUTH_TRUSTED_EMAIL_HEADER", None
+    "NEVE_AUTH_TRUSTED_EMAIL_HEADER", None
 )
-WEBUI_AUTH_TRUSTED_NAME_HEADER = os.environ.get("WEBUI_AUTH_TRUSTED_NAME_HEADER", None)
+WEBUI_AUTH_TRUSTED_NAME_HEADER = os.environ.get(
+    "NEVE_AUTH_TRUSTED_NAME_HEADER", None
+)
 WEBUI_AUTH_TRUSTED_GROUPS_HEADER = os.environ.get(
-    "WEBUI_AUTH_TRUSTED_GROUPS_HEADER", None
+    "NEVE_AUTH_TRUSTED_GROUPS_HEADER", None
 )
 
 
@@ -548,37 +551,22 @@ BYPASS_MODEL_ACCESS_CONTROL = (
 )
 
 WEBUI_AUTH_SIGNOUT_REDIRECT_URL = os.environ.get(
-    "WEBUI_AUTH_SIGNOUT_REDIRECT_URL", None
+    "NEVE_AUTH_SIGNOUT_REDIRECT_URL", None
 )
 
 ####################################
 # WEBUI_SECRET_KEY
 ####################################
 
-WEBUI_SECRET_KEY = os.environ.get(
-    "WEBUI_SECRET_KEY",
-    os.environ.get(
-        "WEBUI_JWT_SECRET_KEY", "t0p-s3cr3t"
-    ),  # DEPRECATED: remove at next major version
-)
+WEBUI_SECRET_KEY = os.environ.get("NEVE_SECRET_KEY", "t0p-s3cr3t")
 
-WEBUI_SESSION_COOKIE_SAME_SITE = os.environ.get("WEBUI_SESSION_COOKIE_SAME_SITE", "lax")
+WEBUI_SESSION_COOKIE_SAME_SITE = os.environ.get("NEVE_SESSION_COOKIE_SAME_SITE", "lax")
 
-WEBUI_SESSION_COOKIE_SECURE = (
-    os.environ.get("WEBUI_SESSION_COOKIE_SECURE", "false").lower() == "true"
-)
+WEBUI_SESSION_COOKIE_SECURE = os.environ.get("NEVE_SESSION_COOKIE_SECURE", "false").lower() == "true"
 
-WEBUI_AUTH_COOKIE_SAME_SITE = os.environ.get(
-    "WEBUI_AUTH_COOKIE_SAME_SITE", WEBUI_SESSION_COOKIE_SAME_SITE
-)
+WEBUI_AUTH_COOKIE_SAME_SITE = os.environ.get("NEVE_AUTH_COOKIE_SAME_SITE", WEBUI_SESSION_COOKIE_SAME_SITE)
 
-WEBUI_AUTH_COOKIE_SECURE = (
-    os.environ.get(
-        "WEBUI_AUTH_COOKIE_SECURE",
-        os.environ.get("WEBUI_SESSION_COOKIE_SECURE", "false"),
-    ).lower()
-    == "true"
-)
+WEBUI_AUTH_COOKIE_SECURE = os.environ.get("NEVE_AUTH_COOKIE_SECURE", "false").lower() == "true"
 
 if WEBUI_AUTH and WEBUI_SECRET_KEY == "":
     raise ValueError(ERROR_MESSAGES.ENV_VAR_NOT_FOUND)
@@ -611,7 +599,7 @@ OAUTH_SESSION_TOKEN_ENCRYPTION_KEY = os.environ.get(
 OAUTH_MAX_SESSIONS_PER_USER = int(os.environ.get("OAUTH_MAX_SESSIONS_PER_USER", "10"))
 
 # Token Exchange Configuration
-# Allows external apps to exchange OAuth tokens for OpenWebUI tokens
+# Allows external apps to exchange OAuth tokens for Neve AI tokens
 ENABLE_OAUTH_TOKEN_EXCHANGE = (
     os.environ.get("ENABLE_OAUTH_TOKEN_EXCHANGE", "False").lower() == "true"
 )
@@ -1002,7 +990,7 @@ OTEL_LOGS_EXPORTER_OTLP_INSECURE = (
     ).lower()
     == "true"
 )
-OTEL_SERVICE_NAME = os.environ.get("OTEL_SERVICE_NAME", "open-webui")
+OTEL_SERVICE_NAME = os.environ.get("OTEL_SERVICE_NAME", "neveai")
 OTEL_RESOURCE_ATTRIBUTES = os.environ.get(
     "OTEL_RESOURCE_ATTRIBUTES", ""
 )  # e.g. key1=val1,key2=val2

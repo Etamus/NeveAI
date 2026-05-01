@@ -45,7 +45,7 @@ log = logging.getLogger(__name__)
 
 class PineconeClient(VectorDBBase):
     def __init__(self):
-        self.collection_prefix = "open-webui"
+        self.collection_prefix = "neveai"
 
         # Validate required configuration
         self._validate_config()

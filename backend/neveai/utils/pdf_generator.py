@@ -108,7 +108,7 @@ class PDFGenerator:
             if not FONTS_DIR.exists():
                 FONTS_DIR = Path(site.getsitepackages()[0]) / "static/fonts"
             # When running using `pip install -e .` the static directory is in the site packages.
-            # This path only works if `open-webui serve` is run from the root of this project.
+            # This path only works if `neveai serve` is run from the root of this project.
             if not FONTS_DIR.exists():
                 FONTS_DIR = Path(".") / "backend" / "static" / "fonts"
 

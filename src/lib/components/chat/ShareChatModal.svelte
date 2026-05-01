@@ -32,7 +32,7 @@
 		console.log('share', _chat);
 
 		toast.success($i18n.t('Redirecting you to Neve Community'));
-		const url = 'https://openwebui.com';
+		const url = 'https://github.com/Etamus/NeveAI';
 		// const url = 'http://localhost:5173';
 
 		const tab = await window.open(`${url}/chats/upload`, '_blank');

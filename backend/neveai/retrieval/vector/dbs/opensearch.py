@@ -24,7 +24,7 @@ from neveai.config import (
 
 class OpenSearchClient(VectorDBBase):
     def __init__(self):
-        self.index_prefix = "open_webui"
+        self.index_prefix = "neveai"
         self.client = OpenSearch(
             hosts=[OPENSEARCH_URI],
             use_ssl=OPENSEARCH_SSL,

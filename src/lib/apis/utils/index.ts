@@ -164,7 +164,7 @@ export const downloadDatabase = async (token: string) => {
 			const url = window.URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = url;
-			a.download = 'webui.db';
+			a.download = 'neve.db';
 			document.body.appendChild(a);
 			a.click();
 			window.URL.revokeObjectURL(url);

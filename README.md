@@ -164,7 +164,7 @@ Neve AI/
 │       ├── migrations/       # Alembic migrations
 │       ├── venv/             # Ambiente virtual Python [gerado pelo instalar]
 │       ├── frontend/         # Frontend compilado [gerado pelo instalar]
-│       └── data/             # uploads/, vector_db/, cache/, webui.db [runtime]
+│       └── data/             # uploads/, vector_db/, cache/, neve.db [runtime]
 │
 ├── build/                    # Saída do npm run build [gerado, não commitado]
 ├── models/                   # Arquivos .gguf (usuário baixa os seus)

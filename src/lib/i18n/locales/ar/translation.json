@@ -1403,7 +1403,7 @@
 	"Neve uses faster-whisper internally.": "تستخدم واجهة WebUI أداة faster-whisper داخليًا.",
 	"Neve uses SpeechT5 and CMU Arctic speaker embeddings.": "تستخدم WebUI نموذج SpeechT5 وتضمينات صوتية من CMU Arctic.",
 	"Neve version": "",
-	"Neve version (v{{OPEN_WEBUI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "إصدار WebUI الحالي (v{{OPEN_WEBUI_VERSION}}) أقل من الإصدار المطلوب (v{{REQUIRED_VERSION}})",
+	"Neve version (v{{NEVEAI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "إصدار WebUI الحالي (v{{NEVEAI_VERSION}}) أقل من الإصدار المطلوب (v{{REQUIRED_VERSION}})",
 	"OpenAI": "OpenAI",
 	"OpenAI API": "OpenAI API",
 	"OpenAI API Base URL": "",

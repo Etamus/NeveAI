@@ -554,12 +554,12 @@ $ctl.BtnPrimary.Add_Click({
             $envPath = Join-Path $ROOT '.env'
             if (-not (Test-Path $envPath)) {                @"
 VITE_RELATIVE_CONFIG=True
-VITE_OPENWEBUI_BACKEND_URL=http://localhost:8080
+VITE_NEVEAI_BACKEND_URL=http://localhost:8080
 ENV=dev
 PORT=8080
-WEBUI_SECRET_KEY=troque-esta-chave-por-algo-seguro
-WEBUI_AUTH=False
-WEBUI_NAME=Neve AI
+NEVE_SECRET_KEY=troque-esta-chave-por-algo-seguro
+NEVE_AUTH=False
+NEVE_NAME=Neve AI
 ENABLE_OLLAMA_API=False
 ENABLE_OPENAI_API=False
 ENABLE_WEB_SEARCH=False

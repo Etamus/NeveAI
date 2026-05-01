@@ -34,7 +34,7 @@
 		window.addEventListener('message', async (event) => {
 			console.log(event);
 			if (
-				!['https://openwebui.com', 'https://www.openwebui.com', 'http://localhost:9999'].includes(
+				!['https://github.com/Etamus/NeveAI', 'https://github.com/Etamus', 'http://localhost:9999'].includes(
 					event.origin
 				)
 			)

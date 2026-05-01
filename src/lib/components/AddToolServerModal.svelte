@@ -875,7 +875,7 @@
 
 							<a
 								class="font-medium underline"
-								href="https://docs.openwebui.com/features/mcp"
+								href="https://github.com/Etamus/NeveAI"
 								target="_blank">{$i18n.t('Read more →')}</a
 							>
 						</div>

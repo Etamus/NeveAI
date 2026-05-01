@@ -10,7 +10,14 @@ from typing_extensions import Annotated
 
 app = typer.Typer()
 
-KEY_FILE = Path.cwd() / ".webui_secret_key"
+KEY_FILE = Path.cwd() / ".neve_secret_key"
+# Legacy compatibility: detect old key file and migrate transparently
+_LEGACY_KEY_FILE = Path.cwd() / ".webui_secret_key"
+if _LEGACY_KEY_FILE.exists() and not KEY_FILE.exists():
+    try:
+        _LEGACY_KEY_FILE.rename(KEY_FILE)
+    except Exception:
+        pass
 
 
 def version_callback(value: bool):
@@ -36,15 +43,15 @@ def serve(
     port: int = 8080,
 ):
     os.environ["FROM_INIT_PY"] = "true"
-    if os.getenv("WEBUI_SECRET_KEY") is None:
+    if os.getenv("NEVE_SECRET_KEY") is None:
         typer.echo(
-            "Loading WEBUI_SECRET_KEY from file, not provided as an environment variable."
+            "Loading NEVE_SECRET_KEY from file, not provided as an environment variable."
         )
         if not KEY_FILE.exists():
             typer.echo(f"Generating a new secret key and saving it to {KEY_FILE}")
             KEY_FILE.write_bytes(base64.b64encode(random.randbytes(12)))
-        typer.echo(f"Loading WEBUI_SECRET_KEY from {KEY_FILE}")
-        os.environ["WEBUI_SECRET_KEY"] = KEY_FILE.read_text()
+        typer.echo(f"Loading NEVE_SECRET_KEY from {KEY_FILE}")
+        os.environ["NEVE_SECRET_KEY"] = KEY_FILE.read_text()
 
     if os.getenv("USE_CUDA_DOCKER", "false") == "true":
         typer.echo(
@@ -73,7 +80,7 @@ def serve(
             os.environ["LD_LIBRARY_PATH"] = ":".join(LD_LIBRARY_PATH)
 
     import neveai.main  # we need set environment variables before importing main
-    from neveai.env import UVICORN_WORKERS  # Import the workers setting
+    from neveai.env import UVICORN_WORKERS  # import the workers setting
 
     uvicorn.run(
         "neveai.main:app",

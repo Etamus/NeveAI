@@ -34,7 +34,7 @@
 						<br class=" " />
 						<a
 							class=" font-medium underline"
-							href="https://github.com/open-webui/open-webui#how-to-install-"
+							href="https://github.com/Etamus/NeveAI#instala%C3%A7%C3%A3o"
 							target="_blank">{$i18n.t('See readme.md for instructions')}</a
 						>
 						{$i18n.t('or')}

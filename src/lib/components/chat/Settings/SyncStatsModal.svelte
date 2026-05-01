@@ -223,7 +223,7 @@
 			// Get version for filename
 			const versionRes = await getVersion(localStorage.token).catch(() => null);
 			const version = versionRes?.version ?? '0.0.0';
-			const filename = `open-webui-stats-${version}-${Date.now()}.json`;
+			const filename = `neveai-stats-${version}-${Date.now()}.json`;
 
 			// Start streaming download
 			const searchParams = eventData?.searchParams ?? {};

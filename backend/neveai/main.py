@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import inspect
 import json
 import logging
@@ -883,7 +883,7 @@ app.state.config.ENABLE_USER_STATUS = ENABLE_USER_STATUS
 app.state.config.ENABLE_EVALUATION_ARENA_MODELS = ENABLE_EVALUATION_ARENA_MODELS
 app.state.config.EVALUATION_ARENA_MODELS = EVALUATION_ARENA_MODELS
 
-# Migrate legacy access_control → access_grants on boot
+# Migrate legacy access_control â†’ access_grants on boot
 from neveai.utils.access_control import migrate_access_control
 
 connections = app.state.config.TOOL_SERVER_CONNECTIONS
@@ -1840,7 +1840,7 @@ async def chat_completion(
                 "local:"
             ):  # temporary chats are not stored
 
-                # Verify chat ownership — lightweight EXISTS check avoids
+                # Verify chat ownership â€” lightweight EXISTS check avoids
                 # deserializing the full chat JSON blob just to confirm the row exists
                 if (
                     not Chats.is_chat_owner(metadata["chat_id"], user.id)
@@ -2343,7 +2343,7 @@ async def shutdown_app(background_tasks: BackgroundTasks, user=Depends(get_admin
 
     def _do_shutdown():
         import time
-        time.sleep(0.5)  # dá tempo para a resposta HTTP ser enviada
+        time.sleep(0.5)  # dÃ¡ tempo para a resposta HTTP ser enviada
         # Encerra processos llama-server
         for proc in psutil.process_iter(["pid", "name"]):
             try:
@@ -2351,7 +2351,7 @@ async def shutdown_app(background_tasks: BackgroundTasks, user=Depends(get_admin
                     proc.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-        # Encerra a janela do navegador (browser-app) lançada pelo neve_window
+        # Encerra a janela do navegador (browser-app) lanÃ§ada pelo neve_window
         for proc in psutil.process_iter(["pid", "name"]):
             try:
                 cmdline = proc.cmdline()
@@ -2364,7 +2364,7 @@ async def shutdown_app(background_tasks: BackgroundTasks, user=Depends(get_admin
                     proc.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
                 pass
-        # Encerra o próprio processo uvicorn
+        # Encerra o prÃ³prio processo uvicorn
         os.kill(os.getpid(), signal.SIGTERM)
 
     background_tasks.add_task(_do_shutdown)
@@ -2382,7 +2382,7 @@ async def get_app_latest_release_version(user=Depends(get_verified_user)):
         timeout = aiohttp.ClientTimeout(total=1)
         async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
             async with session.get(
-                "https://api.github.com/repos/open-webui/open-webui/releases/latest",
+                "https://api.github.com/repos/Etamus/NeveAI/releases/latest",
                 ssl=AIOHTTP_CLIENT_SESSION_SSL,
             ) as response:
                 response.raise_for_status()
@@ -2630,7 +2630,7 @@ async def get_manifest_json():
         return {
             "name": app.state.WEBUI_NAME,
             "short_name": app.state.WEBUI_NAME,
-            "description": f"{app.state.WEBUI_NAME} is an open, extensible, user-friendly interface for AI that adapts to your workflow.",
+            "description": f"{app.state.WEBUI_NAME} is a private, local-first AI workspace.",
             "start_url": "/",
             "display": "standalone",
             "background_color": "#343541",

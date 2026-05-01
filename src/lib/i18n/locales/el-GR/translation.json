@@ -1403,7 +1403,7 @@
 	"Neve uses faster-whisper internally.": "Το Neve χρησιμοποιεί το faster-whisper εσωτερικά.",
 	"Neve uses SpeechT5 and CMU Arctic speaker embeddings.": "Το Neve χρησιμοποιεί τα SpeechT5 και CMU Arctic ενσωματώσεων ομιλητών.",
 	"Neve version": "",
-	"Neve version (v{{OPEN_WEBUI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "Η έκδοση Neve (v{{OPEN_WEBUI_VERSION}}) είναι χαμηλότερη από την απαιτούμενη έκδοση (v{{REQUIRED_VERSION}})",
+	"Neve version (v{{NEVEAI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "Η έκδοση Neve (v{{NEVEAI_VERSION}}) είναι χαμηλότερη από την απαιτούμενη έκδοση (v{{REQUIRED_VERSION}})",
 	"OpenAI": "",
 	"OpenAI API": "",
 	"OpenAI API Base URL": "",

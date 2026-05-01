@@ -9,7 +9,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-import open_webui.internal.db
+import neveai.internal.db
 ${imports if imports else ""}
 
 # revision identifiers, used by Alembic.

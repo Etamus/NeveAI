@@ -2,7 +2,7 @@
 name = "neve-ai"
 description = "Neve"
 authors = [
-    { name = "Timothy Jaeryang Baek", email = "tim@openwebui.com" }
+    { name = "Etamus", email = "" }
 ]
 license = { file = "LICENSE" }
 dependencies = [
@@ -192,11 +192,13 @@ sources = ["backend"]
 exclude = [
     ".dockerignore",
     ".gitignore",
+    ".neve_secret_key",
     ".webui_secret_key",
     "dev.sh",
     "requirements.txt",
     "start.sh",
     "start_windows.bat",
+    "neve.db",
     "webui.db",
     "chroma.sqlite3",
 ]

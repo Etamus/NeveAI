@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 SETLOCAL ENABLEDELAYEDEXPANSION
 chcp 65001 >nul
 title Neve AI
@@ -30,19 +30,10 @@ powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort 8080 -EA Silent
 echo  Iniciando backend (porta 8080)...
 start "Neve AI - Backend" powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:PYTHONIOENCODING='utf-8'; $env:PYTHONPATH='%BACKEND%'; Set-Location '%BACKEND%'; & '%VENV_PY%' -m uvicorn neveai.main:app --host 0.0.0.0 --port 8080"
 
-:: Aguarda o backend responder (testa a cada 1s, ate 120s)
+:: Aguarda o backend responder em UMA unica instancia do PowerShell (polling 250ms)
 echo  Aguardando backend carregar...
-set TRIES=0
-:WAIT_BACKEND
-timeout /t 1 /nobreak >nul
-powershell -NoProfile -Command "try{Invoke-WebRequest -Uri 'http://127.0.0.1:8080/health' -UseBasicParsing -TimeoutSec 1|Out-Null;exit 0}catch{exit 1}" >nul 2>&1
-if %errorlevel% == 0 goto BACKEND_OK
-set /a TRIES=TRIES+1
-if !TRIES! == 10 echo  Pode levar 20-60 segundos na primeira vez...
-if !TRIES! lss 120 goto WAIT_BACKEND
-echo  AVISO: Backend nao respondeu em 120s. Continuando mesmo assim.
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='SilentlyContinue'; $start=[DateTime]::UtcNow; $warned=$false; while ($true) { try { $r=[System.Net.HttpWebRequest]::Create('http://127.0.0.1:8080/health'); $r.Timeout=500; $r.Method='GET'; $resp=$r.GetResponse(); $resp.Close(); break } catch { $el=([DateTime]::UtcNow - $start).TotalSeconds; if ($el -gt 120) { Write-Host '  AVISO: backend nao respondeu em 120s.'; break } if ($el -gt 10 -and -not $warned) { Write-Host '  Pode levar 20-60 segundos na primeira vez...'; $warned=$true } Start-Sleep -Milliseconds 250 } }"
 
-:BACKEND_OK
 echo  Backend pronto!
 echo.
 echo  ==========================================

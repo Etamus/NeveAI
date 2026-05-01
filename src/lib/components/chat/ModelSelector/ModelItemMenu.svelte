@@ -112,7 +112,7 @@
 					e.preventDefault();
 
 					window.open(
-						`https://openwebui.com/models?q=${encodeURIComponent(model?.id ?? '')}`,
+						`https://huggingface.co/models?search=${encodeURIComponent(model?.id ?? '')}`,
 						'_blank'
 					);
 					show = false;

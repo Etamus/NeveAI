@@ -1403,7 +1403,7 @@
 	"Neve uses faster-whisper internally.": "Neve ใช้ faster-whisper อยู่ภายใน",
 	"Neve uses SpeechT5 and CMU Arctic speaker embeddings.": "Neve ใช้ SpeechT5 และ Embedding เสียงผู้พูด CMU Arctic",
 	"Neve version": "",
-	"Neve version (v{{OPEN_WEBUI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "เวอร์ชัน Neve (v{{OPEN_WEBUI_VERSION}}) ต่ำกว่าเวอร์ชันที่ต้องการ (v{{REQUIRED_VERSION}})",
+	"Neve version (v{{NEVEAI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "เวอร์ชัน Neve (v{{NEVEAI_VERSION}}) ต่ำกว่าเวอร์ชันที่ต้องการ (v{{REQUIRED_VERSION}})",
 	"OpenAI": "OpenAI",
 	"OpenAI API": "OpenAI API",
 	"OpenAI API Base URL": "Base URL ของ OpenAI API",

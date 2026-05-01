@@ -1408,7 +1408,7 @@
 	"Neve uses faster-whisper internally.": "Neve usa faster-whisper internamente.",
 	"Neve uses SpeechT5 and CMU Arctic speaker embeddings.": "A Neve usa os embeddings de voz do SpeechT5 e do CMU Arctic.",
 	"Neve version": "Versão do Neve",
-	"Neve version (v{{OPEN_WEBUI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "A versão do Neve (v{{OPEN_WEBUI_VERSION}}) é inferior à versão necessária (v{{REQUIRED_VERSION}})",
+	"Neve version (v{{NEVEAI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})": "A versão do Neve (v{{NEVEAI_VERSION}}) é inferior à versão necessária (v{{REQUIRED_VERSION}})",
 	"OpenAI": "OpenAI",
 	"OpenAI API": "API OpenAI",
 	"OpenAI API Base URL": "URL base da API OpenAI",

@@ -1,4 +1,4 @@
-import copy
+﻿import copy
 import time
 import logging
 import sys
@@ -151,7 +151,7 @@ DEFAULT_REASONING_TAGS = [
     ("<thought>", "</thought>"),
     ("<Thought>", "</Thought>"),
     ("<|begin_of_thought|>", "<|end_of_thought|>"),
-    ("◁think▷", "◁/think▷"),
+    ("â—thinkâ–·", "â—/thinkâ–·"),
 ]
 DEFAULT_SOLUTION_TAGS = [("<|begin_of_solution|>", "<|end_of_solution|>")]
 DEFAULT_CODE_INTERPRETER_TAGS = [("<code_interpreter>", "</code_interpreter>")]
@@ -487,9 +487,9 @@ def serialize_output(output: list) -> str:
             if status == "completed" or duration is not None or not is_last_item:
                 content = f'{content}<details type="reasoning" done="true" duration="{duration or 0}">\n<summary>Pensou por {duration or 0} segundos</summary>\n{display}\n</details>\n'
             else:
-                content = f'{content}<details type="reasoning" done="false">\n<summary>Pensando…</summary>\n{display}\n</details>\n'
+                content = f'{content}<details type="reasoning" done="false">\n<summary>Pensandoâ€¦</summary>\n{display}\n</details>\n'
 
-        elif item_type == "open_webui:code_interpreter":
+        elif item_type == "neveai:code_interpreter":
             content_stripped, original_whitespace = split_content_and_whitespace(
                 content
             )
@@ -538,7 +538,7 @@ def serialize_output(output: list) -> str:
                 if ci_output_text:
                     content += f"\n```\n{ci_output_text}\n```\n"
             else:
-                content += f'<details type="code_interpreter" done="false"{output_attr}>\n<summary>Analyzing…</summary>\n{display}\n</details>\n'
+                content += f'<details type="code_interpreter" done="false"{output_attr}>\n<summary>Analyzingâ€¦</summary>\n{display}\n</details>\n'
 
     return content.strip()
 
@@ -937,7 +937,7 @@ def apply_source_context_to_messages(
     Uses RAG template to format context for model consumption.
 
     When include_content is False, emit <source> tags with id/name but no
-    document body — useful when the content is already present elsewhere
+    document body â€” useful when the content is already present elsewhere
     (e.g. in a tool result message) and only citation markers are needed.
     """
     if not sources or not user_message:
@@ -1129,9 +1129,9 @@ async def terminal_event_handler(
 ):
     """Emit terminal:* events for Open Terminal tools.
 
-    - display_file  → emits 'terminal:display_file' to open the file preview.
-    - write_file / replace_file_content → emits 'terminal:write_file' to refresh.
-    - run_command → emits 'terminal:run_command' with cwd to refresh if relevant.
+    - display_file  â†’ emits 'terminal:display_file' to open the file preview.
+    - write_file / replace_file_content â†’ emits 'terminal:write_file' to refresh.
+    - run_command â†’ emits 'terminal:run_command' with cwd to refresh if relevant.
     """
     if not event_emitter:
         return
@@ -1459,26 +1459,26 @@ def _enhance_zimage_prompt(user_prompt: str) -> str:
 
     lower_prompt = prompt.lower()
     keyword_map = {
-        "tubarão": "shark",
+        "tubarÃ£o": "shark",
         "tubarao": "shark",
         "asas": "wings",
         "aza": "wing",
         "azas": "wings",
         "voando": "flying",
         "voar": "flying",
-        "céu": "sky",
+        "cÃ©u": "sky",
         "ceu": "sky",
         "nuvens": "clouds",
         "mar": "sea",
         "oceano": "ocean",
-        "água": "water",
+        "Ã¡gua": "water",
         "agua": "water",
         "floresta": "forest",
         "cidade": "city",
         "praia": "beach",
         "montanha": "mountain",
         "realista": "realistic",
-        "cinematográfico": "cinematic",
+        "cinematogrÃ¡fico": "cinematic",
         "cinematografico": "cinematic",
     }
     english_hints = [value for key, value in keyword_map.items() if key in lower_prompt]
@@ -1493,7 +1493,7 @@ def _enhance_zimage_prompt(user_prompt: str) -> str:
 
     if any(term in lower_prompt for term in ("voando", "voar", "flying", "asas", "aza", "azas", "wing", "wings")):
         constraints.append("the subject is airborne with visible wings")
-    if any(term in lower_prompt for term in ("céu", "ceu", "sky", "nuvens", "clouds")):
+    if any(term in lower_prompt for term in ("cÃ©u", "ceu", "sky", "nuvens", "clouds")):
         constraints.append("sky background, not underwater, no ocean, no sea")
 
     enhanced_prompt = (
@@ -1589,7 +1589,7 @@ async def chat_stable_diffusion_handler(
                 }
             )
 
-            # Emit completion directly — skip LLM entirely
+            # Emit completion directly â€” skip LLM entirely
             await __event_emitter__(
                 {
                     "type": "chat:completion",
@@ -1610,14 +1610,14 @@ async def chat_stable_diffusion_handler(
             except Exception as e:
                 log.warning(f"SD handler: failed to unload SD: {e}")
 
-            # Resume LLM em background — não bloqueia o handler.
-            # O server já emitiu chat:completion done:True, então o cliente
-            # já recebeu a imagem. O LLM carrega em paralelo (~10s).
+            # Resume LLM em background â€” nÃ£o bloqueia o handler.
+            # O server jÃ¡ emitiu chat:completion done:True, entÃ£o o cliente
+            # jÃ¡ recebeu a imagem. O LLM carrega em paralelo (~10s).
             if llm_standby_info:
                 async def _resume_llm():
                     try:
                         await model_manager.resume(llm_standby_info)
-                        log.info("LLM resumido com sucesso após geração de imagem.")
+                        log.info("LLM resumido com sucesso apÃ³s geraÃ§Ã£o de imagem.")
                     except Exception as e:
                         log.error(f"SD handler: failed to resume LLM: {e}")
                 asyncio.ensure_future(_resume_llm())
@@ -2231,7 +2231,7 @@ def apply_params_to_form_data(form_data, model):
     if _no_think:
         form_data["no_think"] = True
 
-    open_webui_params = {
+    neveai_params = {
         "stream_response": bool,
         "stream_delta_chunk_size": int,
         "function_calling": str,
@@ -2240,7 +2240,7 @@ def apply_params_to_form_data(form_data, model):
     }
 
     for key in list(params.keys()):
-        if key in open_webui_params:
+        if key in neveai_params:
             del params[key]
 
     if custom_params:
@@ -2372,7 +2372,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     form_data = apply_params_to_form_data(form_data, model)
     log.debug(f"form_data: {form_data}")
 
-    # Load messages from DB when available — DB preserves structured 'output' items
+    # Load messages from DB when available â€” DB preserves structured 'output' items
     # which the frontend strips, causing tool calls to be merged into content.
     chat_id = metadata.get("chat_id")
     parent_message_id = metadata.get("parent_message_id")
@@ -2407,7 +2407,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                                 if f.get("url")
                             ],
                         ]
-                # Strip files field — it's been incorporated into content
+                # Strip files field â€” it's been incorporated into content
                 message.pop("files", None)
 
     # Process messages with OR-aligned output items for clean LLM messages
@@ -2459,7 +2459,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     # Folder "Project" handling
     # Check if the request has chat_id and is inside of a folder
-    # Uses lightweight column query — only fetches folder_id, not the full chat JSON blob
+    # Uses lightweight column query â€” only fetches folder_id, not the full chat JSON blob
     chat_id = metadata.get("chat_id", None)
     if chat_id and user:
         folder_id = Chats.get_chat_folder_id(chat_id, user.id)
@@ -2596,7 +2596,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 )
 
         if "code_interpreter" in features and features["code_interpreter"]:
-            # Skip XML-tag prompt injection when native FC is enabled —
+            # Skip XML-tag prompt injection when native FC is enabled â€”
             # execute_code will be injected as a builtin tool instead
             if metadata.get("params", {}).get("function_calling") != "native":
                 prompt = (
@@ -3537,7 +3537,7 @@ async def streaming_chat_response_handler(response, ctx):
                 output_type_map = {
                     "reasoning": "reasoning",
                     "solution": "message",  # solution tags just produce text
-                    "code_interpreter": "open_webui:code_interpreter",
+                    "code_interpreter": "neveai:code_interpreter",
                 }
                 output_item_type = output_type_map.get(content_type, content_type)
 
@@ -3589,10 +3589,10 @@ async def streaming_chat_response_handler(response, ctx):
                                         "started_at": time.time(),
                                     }
                                 )
-                            elif output_item_type == "open_webui:code_interpreter":
+                            elif output_item_type == "neveai:code_interpreter":
                                 output.append(
                                     {
-                                        "type": "open_webui:code_interpreter",
+                                        "type": "neveai:code_interpreter",
                                         "id": output_id("ci"),
                                         "status": "in_progress",
                                         "start_tag": start_tag,
@@ -3629,7 +3629,7 @@ async def streaming_chat_response_handler(response, ctx):
                                     output[-1]["content"] = [
                                         {"type": "output_text", "text": after_tag}
                                     ]
-                                elif output_item_type == "open_webui:code_interpreter":
+                                elif output_item_type == "neveai:code_interpreter":
                                     output[-1]["code"] = after_tag
                                 else:
                                     set_last_text(output, after_tag)
@@ -3645,7 +3645,7 @@ async def streaming_chat_response_handler(response, ctx):
                 elif (
                     (last_type == "reasoning" and content_type == "reasoning")
                     or (
-                        last_type == "open_webui:code_interpreter"
+                        last_type == "neveai:code_interpreter"
                         and content_type == "code_interpreter"
                     )
                     or (
@@ -3665,7 +3665,7 @@ async def streaming_chat_response_handler(response, ctx):
                         block_content = ""
                         if parts and parts[-1].get("type") == "output_text":
                             block_content = parts[-1].get("text", "")
-                    elif last_type == "open_webui:code_interpreter":
+                    elif last_type == "neveai:code_interpreter":
                         block_content = item.get("code", "")
                     else:
                         block_content = get_last_text(output)
@@ -3704,7 +3704,7 @@ async def streaming_chat_response_handler(response, ctx):
                                     item["ended_at"] - item["started_at"]
                                 )
                                 item["status"] = "completed"
-                            elif last_type == "open_webui:code_interpreter":
+                            elif last_type == "neveai:code_interpreter":
                                 item["code"] = block_content
                                 item["ended_at"] = time.time()
                                 item["duration"] = int(
@@ -4217,7 +4217,7 @@ async def streaming_chat_response_handler(response, ctx):
                                         # Check if we're inside a tag-based block
                                         # (reasoning, code_interpreter, or solution).
                                         # If so, append to the existing in-progress
-                                        # item instead of creating a new message —
+                                        # item instead of creating a new message â€”
                                         # otherwise tag_output_handler re-detects the
                                         # start tag on every chunk and fragments the
                                         # output.
@@ -4237,7 +4237,7 @@ async def streaming_chat_response_handler(response, ctx):
                                             and (
                                                 last_item_type == "reasoning"
                                                 or last_item_type
-                                                == "open_webui:code_interpreter"
+                                                == "neveai:code_interpreter"
                                                 or (
                                                     last_item_type == "message"
                                                     and last_item.get("_tag_type")
@@ -4250,7 +4250,7 @@ async def streaming_chat_response_handler(response, ctx):
                                             # Append to the existing tag-based item
                                             if (
                                                 last_item_type
-                                                == "open_webui:code_interpreter"
+                                                == "neveai:code_interpreter"
                                             ):
                                                 last_item["code"] = (
                                                     last_item.get("code", "") + value
@@ -4790,7 +4790,7 @@ async def streaming_chat_response_handler(response, ctx):
 
                     while (
                         output
-                        and output[-1].get("type") == "open_webui:code_interpreter"
+                        and output[-1].get("type") == "neveai:code_interpreter"
                         and retries < MAX_RETRIES
                     ):
 
