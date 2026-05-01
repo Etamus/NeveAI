@@ -17,7 +17,7 @@
 >
 	<button
 		type="button"
-		class="h-7 w-7 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition disabled:opacity-30"
+		class="h-7 w-6 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition disabled:opacity-30"
 		on:click={() => adjust(-step)}
 		disabled={value <= min}
 		aria-label="Decrease"
@@ -36,7 +36,7 @@
 	</button>
 	<input
 		type="number"
-		class="h-7 w-16 text-center text-xs bg-transparent outline-none tabular-nums" style="font-family: 'Segoe UI', system-ui, sans-serif;"
+		class="h-7 w-12 text-center text-xs bg-transparent outline-none tabular-nums" style="font-family: 'Segoe UI', system-ui, sans-serif;"
 		bind:value
 		{min}
 		{max}
@@ -44,7 +44,7 @@
 	/>
 	<button
 		type="button"
-		class="h-7 w-7 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition disabled:opacity-30"
+		class="h-7 w-6 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition disabled:opacity-30"
 		on:click={() => adjust(step)}
 		disabled={value >= max}
 		aria-label="Increase"

@@ -379,7 +379,7 @@
 		}
 	};
 
-	const ITEM_HEIGHT = 42;
+	const ITEM_HEIGHT = 46;
 	const OVERSCAN = 10;
 
 	let listScrollTop = 0;
@@ -458,7 +458,7 @@
 					class="shrink-0 self-center p-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
 					type="button"
 					aria-label="Controles"
-					on:click|stopPropagation|preventDefault={() => onGearClick()}
+					on:click|stopPropagation|preventDefault={() => { show = false; onGearClick(); }}
 				>
 					<svg
 						xmlns="http://www.w3.org/2000/svg"
