@@ -65,7 +65,7 @@ atualizar.bat
 ```
 
 <h1 align="center">
-<img width="771" alt="{B2BB9685-2183-4917-A015-B4FAFBFC9805}" src="https://github.com/user-attachments/assets/5cd350c4-42b2-45e0-afeb-b4ce2118e519" />
+<img width="767" alt="{FC3EC2EB-63FA-47E4-AD01-DBED022EBD8E}" src="https://github.com/user-attachments/assets/cc73531a-e589-4739-8721-ff90f86cff26" />
 </h1>
 
 O atualizador (`atualizar.bat` → `atualizar.ps1`) abre uma janela gráfica que:
