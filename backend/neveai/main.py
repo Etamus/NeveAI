@@ -600,6 +600,10 @@ class SPAStaticFiles(StaticFiles):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
+        # Hashed assets emitted by Vite under _app/immutable/ never change for a given URL,
+        # so cache them aggressively to make subsequent boots near-instant.
+        elif "/_app/immutable/" in path or path.startswith("_app/immutable/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
 

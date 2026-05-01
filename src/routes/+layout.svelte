@@ -1,10 +1,11 @@
 <script>
-	import { io } from 'socket.io-client';
+	// socket.io-client (~75KB) is loaded lazily inside setupSocket() to avoid blocking the auth screen
 	import PyodideWorker from '$lib/workers/pyodide.worker?worker';
-	import { toast } from 'svelte-sonner';
+	import { Toaster, toast } from 'svelte-sonner';
 
-	// Disable non-essential toast notifications (info, warning, message)
-	// Keep toast.error and toast.success for actionable feedback
+	// Disable all non-error toast notifications (success, info, warning, message)
+	// Keep toast.error intact so error toasts still display
+	toast.success = () => {};
 	toast.info = () => {};
 	toast.warning = () => {};
 	toast.message = () => {};
@@ -58,7 +59,7 @@
 	import { displayFileHandler } from '$lib/utils';
 	import { setTextScale } from '$lib/utils/text-scale';
 
-
+	import NotificationToast from '$lib/components/NotificationToast.svelte';
 	import AppSidebar from '$lib/components/app/AppSidebar.svelte';
 	import SyncStatsModal from '$lib/components/chat/Settings/SyncStatsModal.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
@@ -104,6 +105,7 @@
 	const BREAKPOINT = 768;
 
 	const setupSocket = async (enableWebsocket) => {
+		const { io } = await import('socket.io-client');
 		const _socket = io(`${WEBUI_BASE_URL}` || undefined, {
 			reconnection: true,
 			reconnectionDelay: 1000,
@@ -446,6 +448,18 @@
 							playingNotificationSound.set(false);
 						});
 					}
+
+					toast.custom(NotificationToast, {
+						componentProps: {
+							onClick: () => {
+								goto(`/c/${event.chat_id}`);
+							},
+							content: content,
+							title: displayTitle
+						},
+						duration: 15000,
+						unstyled: true
+					});
 				}
 			} else if (type === 'chat:title') {
 				currentChatPage.set(1);
@@ -544,6 +558,22 @@
 				}
 			}
 
+			if (type === 'message') {
+				const title = `${data?.user?.name}${event?.channel?.type !== 'dm' ? ` (#${event?.channel?.name})` : ''}`;
+
+
+				toast.custom(NotificationToast, {
+					componentProps: {
+						onClick: () => {
+							goto(`/channels/${event.channel_id}`);
+						},
+						content: data?.content,
+						title: `${title}`
+					},
+					duration: 15000,
+					unstyled: true
+				});
+			}
 		}
 	};
 
@@ -568,7 +598,7 @@
 
 	const windowMessageEventHandler = async (event) => {
 		if (
-			!['https://github.com/Etamus/NeveAI', 'https://github.com/Etamus', 'http://localhost:9999'].includes(
+			!['https://openwebui.com', 'https://www.openwebui.com', 'http://localhost:9999'].includes(
 				event.origin
 			)
 		) {
@@ -700,7 +730,8 @@
 				if (tokenTimer) {
 					clearInterval(tokenTimer);
 				}
-				tokenTimer = setInterval(checkTokenExpiry, 15000);
+				// Token JWT lasts 24h+, checking once per minute is plenty
+				tokenTimer = setInterval(checkTokenExpiry, 60000);
 			} else {
 				$socket?.off('events', chatEventHandler);
 				$socket?.off('events:channel', channelEventHandler);
@@ -827,3 +858,15 @@
 	<SyncStatsModal bind:show={showSyncStatsModal} eventData={syncStatsEventData} />
 {/if}
 
+<Toaster
+	theme={$theme.includes('dark')
+		? 'dark'
+		: $theme === 'system'
+			? window.matchMedia('(prefers-color-scheme: dark)').matches
+				? 'dark'
+				: 'light'
+			: 'light'}
+	richColors
+	position="top-right"
+	closeButton
+/>

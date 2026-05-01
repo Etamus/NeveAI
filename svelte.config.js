@@ -17,7 +17,7 @@ const config = {
 			assets: 'build',
 			fallback: 'index.html'
 		}),
-		// poll for new version name every 60 seconds (to trigger reload mechanic in +layout.svelte)
+		// Local desktop app: version polling disabled (no remote deploys to detect)
 		version: {
 			name: (() => {
 				try {
@@ -35,7 +35,7 @@ const config = {
 					}
 				}
 			})(),
-			pollInterval: 60000
+			pollInterval: 0
 		}
 	},
 	vitePlugin: {

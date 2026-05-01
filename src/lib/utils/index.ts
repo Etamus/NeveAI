@@ -21,7 +21,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { marked } from 'marked';
 import markedExtension from '$lib/utils/marked/extension';
 import markedKatexExtension from '$lib/utils/marked/katex-extension';
-import hljs from 'highlight.js';
+// highlight.js (~80KB) is loaded lazily inside copyToClipboard() to avoid bloating the boot bundle
 
 //////////////////////////
 // Helper functions
@@ -419,6 +419,7 @@ export const copyToClipboard = async (text, html = null, formatted = false) => {
 	if (formatted) {
 		let styledHtml = '';
 		if (!html) {
+			const { default: hljs } = await import('highlight.js');
 			const options = {
 				throwOnError: false,
 				highlight: function (code, lang) {
@@ -443,7 +444,7 @@ export const copyToClipboard = async (text, html = null, formatted = false) => {
 						overflow: auto;
 					}
 					code {
-						font-family: 'Segoe UI', monospace;
+						font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 						font-size: 14px;
 					}
 					.hljs-keyword { color: #d73a49; }
