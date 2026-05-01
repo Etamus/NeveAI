@@ -348,7 +348,7 @@ if ($checkError) {
     } else {
         $ctl.LblCheckTitle.Text = 'Atualização disponível'
         $ctl.LblCheckSub.Text   = "Uma nova versão do Neve AI está pronta para ser instalada."
-        $ctl.LblStatus.Text     = "Pendente — $currentVersion → $latestTag"
+        $ctl.LblStatus.Text     = "Pendente"
         $ctl.LblStatus.Foreground = '#D97706'
         $ctl.BtnPrimary.Content   = 'Atualizar'
         $ctl.BtnPrimary.IsEnabled = $true
