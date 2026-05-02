@@ -23,7 +23,7 @@
 	import { shutdownApp } from '$lib/apis';
 	import UserStatusModal from './UserStatusModal.svelte';
 	import EditProfileModal from './EditProfileModal.svelte';
-	import User from '$lib/components/icons/User.svelte';
+	import UserCircle from '$lib/components/icons/UserCircle.svelte';
 	import Emoji from '$lib/components/common/Emoji.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import { updateUserStatus } from '$lib/apis/users';
@@ -226,7 +226,7 @@
 					}}
 				>
 					<div class="flex items-center gap-3">
-						<User className="w-5 h-5" strokeWidth="1.5" />
+						<UserCircle className="w-5 h-5" strokeWidth="1.5" />
 						<span class="text-sm">{$i18n.t('Profile')}</span>
 					</div>
 				</DropdownMenu.Item>

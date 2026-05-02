@@ -141,7 +141,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Margin="0,0,0,18">
-                        <TextBlock Text="Bem-vindo ao Neve AI" FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
+                        <TextBlock Text="Bem-vindo a Neve AI" FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
                         <TextBlock Text="Vamos detectar seu hardware e instalar tudo o que é preciso."
                                    FontSize="13" Foreground="#71717A" Margin="0,4,0,0"/>
                     </StackPanel>
