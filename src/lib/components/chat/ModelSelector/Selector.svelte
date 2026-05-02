@@ -30,7 +30,6 @@
 	import { getModels } from '$lib/apis';
 
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
-	import Check from '$lib/components/icons/Check.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
@@ -455,9 +454,10 @@
 			</span>
 			{#if selectedModel && onGearClick}
 				<button
-					class="shrink-0 self-center p-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+					class="relative z-20 -mr-2 shrink-0 self-center p-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
 					type="button"
 					aria-label="Controles"
+					on:pointerdown|stopPropagation|preventDefault
 					on:click|stopPropagation|preventDefault={() => { show = false; onGearClick(); }}
 				>
 					<svg

@@ -693,20 +693,22 @@
 		</div><!-- end overflow-y-auto wrapper -->
 		</div><!-- end h-full wrapper -->
 	{:else}
-		<ModelEditor
-			edit
-			model={models.find((m) => m.id === selectedModelId)}
-			preset={false}
-			onSubmit={async (model) => {
-				console.log(model);
-				await upsertModelHandler(model);
-				selectedModelId = null;
-			}}
-			onBack={async () => {
-				selectedModelId = null;
-				await init();
-			}}
-		/>
+		<div style="height: 62.6vh; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
+			<ModelEditor
+				edit
+				model={models.find((m) => m.id === selectedModelId)}
+				preset={false}
+				onSubmit={async (model) => {
+					console.log(model);
+					await upsertModelHandler(model);
+					selectedModelId = null;
+				}}
+				onBack={async () => {
+					selectedModelId = null;
+					await init();
+				}}
+			/>
+		</div>
 	{/if}
 {:else}
 	<div class=" h-full w-full flex justify-center items-center">

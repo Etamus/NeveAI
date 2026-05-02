@@ -3,6 +3,7 @@
 	import { onMount, tick, getContext } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import Selector from './ModelSelector/Selector.svelte';
+	import LocalModelLoadPreferences from './ModelSelector/LocalModelLoadPreferences.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
 
 	import { updateUserSettings } from '$lib/apis/users';
@@ -35,13 +36,17 @@
 			selectedModels = _selectedModels;
 		}
 	}
+
+	$: hasLocalFolderModels = $models.some(
+		(model) => model?.owned_by === 'llamacpp' && model?.connection_type === 'local' && model?.llamacpp
+	);
 </script>
 
 <div class="flex flex-col w-full items-start">
 	{#each selectedModels as selectedModel, selectedModelIdx}
-		<div class="flex items-center w-full max-w-fit">
+		<div class="flex items-center w-full max-w-fit gap-0">
 			<div class="overflow-hidden flex-1 min-w-0">
-				<div class="max-w-full {($settings?.highContrastMode ?? false) ? 'm-1' : 'mr-1'}">
+				<div class="max-w-full {($settings?.highContrastMode ?? false) ? 'm-1' : 'mr-0'}">
 					<Selector
 						id={`${selectedModelIdx}`}
 						placeholder={$i18n.t('Select a model')}
@@ -56,6 +61,11 @@
 					/>
 				</div>
 			</div>
+			{#if selectedModelIdx === 0 && selectedModel && !disabled && hasLocalFolderModels}
+				<div class="relative z-20 -ml-1.5 flex shrink-0">
+					<LocalModelLoadPreferences />
+				</div>
+			{/if}
 		</div>
 	{/each}
 </div>

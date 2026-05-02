@@ -237,7 +237,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                                 </Grid>
                             </Grid>
 
-                            <TextBlock Grid.Row="1" Text="Notas da release do Neve AI:" FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,6"/>
+                            <TextBlock Grid.Row="1" Text="Notas da release:" FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,6"/>
 
                             <Border Grid.Row="2" Background="#FAFAFA" CornerRadius="8" Padding="12,10">
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -792,7 +792,7 @@ if ($checkError) {
         $ctl.LblStatus.Foreground = '#10B981'
         $ctl.ChkUpdateNeve.Visibility = 'Collapsed'
     } else {
-        $ctl.LblStatus.Text     = 'Atualização disponível'
+        $ctl.LblStatus.Text     = 'Pendente'
         $ctl.LblStatus.Foreground = '#D97706'
         $ctl.ChkUpdateNeve.Visibility = 'Visible'
         $ctl.ChkUpdateNeve.IsChecked = $false
@@ -812,7 +812,7 @@ if ($llamaCheckError) {
         $ctl.LblLlamaStatus.Foreground = '#10B981'
         $ctl.ChkUpdateLlama.Visibility = 'Collapsed'
     } elseif ($llamaInstalledTag) {
-        $ctl.LblLlamaStatus.Text = 'Atualização disponível'
+        $ctl.LblLlamaStatus.Text = 'Pendente'
         $ctl.LblLlamaStatus.Foreground = '#D97706'
         $ctl.ChkUpdateLlama.Visibility = 'Visible'
         $ctl.ChkUpdateLlama.IsChecked = $false

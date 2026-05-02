@@ -10,7 +10,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { copyToClipboard, sanitizeResponseContent } from '$lib/utils';
 	import ArrowUpTray from '$lib/components/icons/ArrowUpTray.svelte';
-	import Check from '$lib/components/icons/Check.svelte';
+	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import Pin from '$lib/components/icons/Pin.svelte';
 	import PinSlash from '$lib/components/icons/PinSlash.svelte';
 	import Tag from '$lib/components/icons/Tag.svelte';
@@ -235,7 +235,7 @@
 
 		{#if value === item.value}
 			<div>
-				<Check className="size-3" />
+				<CheckCircle className="size-4" strokeWidth="1.7" />
 			</div>
 		{/if}
 	</div>

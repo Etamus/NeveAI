@@ -32,6 +32,7 @@
 	import { DropdownMenu } from 'bits-ui';
 	import { flyAndScale } from '$lib/utils/transitions';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
+	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
 
 	import ModelSettingsModal from '$lib/components/admin/Settings/Models/ModelSettingsModal.svelte';
 	import ManageModelsModal from '$lib/components/admin/Settings/Models/ManageModelsModal.svelte';
@@ -204,6 +205,13 @@
 	}
 
 	function startLoadWithContextModal(model: LocalModel) {
+		const preferences = getLocalModelLoadPreferences();
+		if (preferences.context !== 'ask') {
+			contextSize = preferences.context;
+			continueAfterContextSelection(model);
+			return;
+		}
+
 		loadModalModel = model;
 		loadModalStep = 'context';
 		loadModalFromContext = true;
@@ -211,20 +219,38 @@
 		contextModalSize = 8192;
 	}
 
+	function continueAfterContextSelection(model: LocalModel) {
+		const preferences = getLocalModelLoadPreferences();
+		const matchingMmproj = findMatchingMmproj(model.filename, mmProjFiles);
+
+		if (matchingMmproj) {
+			if (preferences.vision === 'ask') {
+				loadModalModel = model;
+				loadModalMmprojFile = matchingMmproj;
+				loadModalStep = 'vision';
+				loadModalFromContext = true;
+				return;
+			}
+
+			if (preferences.vision === 'yes') {
+				loadModalModel = null;
+				loadModalMmprojFile = '';
+				handleLoadWithMmproj(model, matchingMmproj);
+				return;
+			}
+		}
+
+		loadModalModel = null;
+		loadModalMmprojFile = '';
+		handleLoad(model);
+	}
+
 	function confirmContextAndProceed() {
 		const model = contextModalModel ?? loadModalModel;
 		if (!model) return;
 		contextSize = contextModalSize;
 		contextModalModel = null;
-		const matchingMmproj = findMatchingMmproj(model.filename, mmProjFiles);
-		if (matchingMmproj) {
-			loadModalMmprojFile = matchingMmproj;
-			loadModalStep = 'vision';
-		} else {
-			loadModalModel = null;
-			loadModalMmprojFile = '';
-			handleLoad(model);
-		}
+		continueAfterContextSelection(model);
 	}
 
 	function handleVisionNo() {
@@ -232,6 +258,7 @@
 		const fromContext = loadModalFromContext;
 		loadModalModel = null;
 		loadModalMmprojFile = '';
+		loadModalFromContext = false;
 		if (fromContext && model) handleLoad(model);
 	}
 
@@ -245,6 +272,7 @@
 	async function handleLoadWithMmproj(model: LocalModel, mmprojFile: string) {
 		loadModalModel = null;
 		loadModalMmprojFile = '';
+		loadModalFromContext = false;
 		loadingModels = new Set([...loadingModels, model.filename]);
 		localError = '';
 		localSuccess = '';
@@ -505,7 +533,7 @@
 						>
 							<span>{sz.toLocaleString()} tokens</span>
 							{#if sz === 8192}
-								<span class="text-[10px] opacity-60">(padrão)</span>
+								<span class="text-[11px] opacity-60">Padrão</span>
 							{/if}
 						</button>
 					{/each}
@@ -793,7 +821,7 @@
 
 	{:else}
 		<!-- ─── Model Editor ──────────────────────────────────────────────── -->
-		<div style="height: 55vh; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
+		<div style="height: 62.6vh; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
 			<ModelEditor
 				edit
 				model={adminModels?.find((m) => m.id === selectedModelId)}

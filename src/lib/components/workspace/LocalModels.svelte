@@ -10,6 +10,7 @@
 		type LocalModel
 	} from '$lib/apis/llamacpp';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
+	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
 
 	let localModels: LocalModel[] = [];
 	let mmProjFiles: string[] = [];
@@ -64,9 +65,38 @@
 	}
 
 	function startLoadWithContextModal(model: LocalModel) {
+		const preferences = getLocalModelLoadPreferences();
+		if (preferences.context !== 'ask') {
+			contextSize = preferences.context;
+			continueAfterContextSelection(model);
+			return;
+		}
+
 		contextModalModel = model;
 		contextModalSize = 8192;
 
+	}
+
+	function continueAfterContextSelection(model: LocalModel) {
+		const preferences = getLocalModelLoadPreferences();
+		const matchingMmproj = findMatchingMmproj(model.filename, mmProjFiles);
+
+		if (matchingMmproj) {
+			if (preferences.vision === 'ask') {
+				confirmVisionCallback = {
+					onNo: () => handleLoad(model),
+					onYes: () => handleLoadWithMmproj(model, matchingMmproj)
+				};
+				return;
+			}
+
+			if (preferences.vision === 'yes') {
+				handleLoadWithMmproj(model, matchingMmproj);
+				return;
+			}
+		}
+
+		handleLoad(model);
 	}
 
 	function confirmContextAndProceed() {
@@ -74,15 +104,7 @@
 		if (!model) return;
 		contextSize = contextModalSize;
 		contextModalModel = null;
-		const matchingMmproj = findMatchingMmproj(model.filename, mmProjFiles);
-		if (matchingMmproj) {
-			confirmVisionCallback = {
-				onNo: () => handleLoad(model),
-				onYes: () => handleLoadWithMmproj(model, matchingMmproj)
-			};
-		} else {
-			handleLoad(model);
-		}
+		continueAfterContextSelection(model);
 	}
 
 	function openVisionSelector(model: LocalModel) {
@@ -183,7 +205,7 @@
 						>
 							<span>{size.toLocaleString()} tokens</span>
 							{#if size === 8192}
-								<span class="text-[10px] opacity-60">(padrão)</span>
+								<span class="text-[11px] opacity-60">Padrão</span>
 							{/if}
 						</button>
 					{/each}

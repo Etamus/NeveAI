@@ -60,6 +60,7 @@
 	export let onChange = (e) => {};
 
 	export let toolServers = [];
+	export let sendDisabled = false;
 
 	export let dragged = false;
 
@@ -139,6 +140,7 @@
 					{toolServers}
 					{stopResponse}
 					{createMessagePair}
+					{sendDisabled}
 					placeholder={$i18n.t('How can I help you today?')}
 					{onChange}
 					{onUpload}

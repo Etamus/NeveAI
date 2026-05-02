@@ -100,6 +100,7 @@
 		type LocalModel
 	} from '$lib/apis/llamacpp';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
+	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
 	import { getFunctions } from '$lib/apis/functions';
 	import { updateFolderById } from '$lib/apis/folders';
 
@@ -2043,10 +2044,16 @@
 						// Check if another model is already loaded
 						const currentlyLoaded = loadedModels.length > 0 ? loadedModels[0] : null;
 
-						// Show context size modal instead of browser confirm
-						const chosenSize = await openContextModal(model.name ?? modelId);
-						if (chosenSize === null) {
-							return; // User cancelled
+						const loadPreferences = getLocalModelLoadPreferences();
+						let chosenSize: number;
+						if (loadPreferences.context === 'ask') {
+							const modalSize = await openContextModal(model.name ?? modelId);
+							if (modalSize === null) {
+								return; // User cancelled
+							}
+							chosenSize = modalSize;
+						} else {
+							chosenSize = loadPreferences.context;
 						}
 
 						modelLoading = true;
@@ -2080,8 +2087,12 @@
 							const matchingMmproj = findMatchingMmproj(modelFilename, mmProjFiles);
 							let selectedMmproj = '';
 							if (matchingMmproj) {
-								const useVision = await openVisionModal(model.name ?? modelId);
-								selectedMmproj = useVision ? matchingMmproj : '';
+								if (loadPreferences.vision === 'ask') {
+									const useVision = await openVisionModal(model.name ?? modelId);
+									selectedMmproj = useVision ? matchingMmproj : '';
+								} else {
+									selectedMmproj = loadPreferences.vision === 'yes' ? matchingMmproj : '';
+								}
 							}
 
 							const doLoad = () => loadLocalModel(
@@ -3060,7 +3071,7 @@
 					>
 						<span>{sz.toLocaleString()} tokens</span>
 						{#if sz === 8192}
-							<span class="text-[10px] opacity-60">(padrão)</span>
+							<span class="text-[11px] opacity-60">Padrão</span>
 						{/if}
 					</button>
 				{/each}
