@@ -22,7 +22,6 @@ backend/neveai/static/
 # ──────────────────────────────────────────────────────────────────────────────
 models/
 mmproj/
-llamacpp-server/bin/
 llamacpp-server/
 *.gguf
 

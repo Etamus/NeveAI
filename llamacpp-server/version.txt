@@ -1,3 +1,0 @@
-﻿b9009
-NVIDIA CUDA 13.1
-llama-b9009-bin-win-cuda-13.1-x64.zip
