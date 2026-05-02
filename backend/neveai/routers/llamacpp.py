@@ -17,6 +17,7 @@ import logging
 import asyncio
 import mimetypes
 import subprocess
+import unicodedata
 from pathlib import Path
 from typing import Optional
 
@@ -51,16 +52,17 @@ MMPROJ_DIR.mkdir(parents=True, exist_ok=True)
 
 def _model_base_name(filename: str) -> str:
     """Extract a comparable base name from a .gguf (model or mmproj) filename."""
-    name = Path(filename).stem.lower()
-    # Remove quantization suffixes like -q4_k_m, -q5_0, -f16, -BF16, etc.
-    name = re.sub(r'[-_.][qQfFbBiI][0-9][0-9a-z_]*$', '', name)
-    # Remove "-mmproj" and anything after (e.g. "-mmproj-f16", "-mmproj-model")
-    name = re.sub(r'[-_.]?mmproj.*$', '', name)
-    # Remove "mmproj" prefix
-    name = re.sub(r'^mmproj[-_.]?', '', name)
-    # Remove trailing "-model"
-    name = re.sub(r'[-_.]model$', '', name)
-    return name.strip('-_.')
+    name = unicodedata.normalize("NFKD", Path(filename).stem.lower())
+    name = "".join(ch for ch in name if not unicodedata.combining(ch))
+    # Remove "mmproj" suffixes like "-mmproj-f16" or " mmproj model".
+    name = re.sub(r'(^|[\s._-]+)mmproj([\s._-].*)?$', '', name)
+    # Remove "mmproj" prefix.
+    name = re.sub(r'^mmproj[\s._-]*', '', name)
+    # Remove trailing "model" and common quantization / precision suffixes.
+    name = re.sub(r'[\s._-]+model$', '', name)
+    name = re.sub(r'[\s._-]+(?:u?d?q\d[\w.-]*|q\d[\w.-]*|f\d+|bf\d+|fp\d+)$', '', name)
+    # Ignore separators and punctuation so "Qwen3.5", "Qwen3_5", and "Qwen3-5" match.
+    return re.sub(r'[^a-z0-9]+', '', name)
 
 
 def _mmproj_compatible(model_filename: str, mmproj_filename: str) -> bool:
@@ -68,12 +70,12 @@ def _mmproj_compatible(model_filename: str, mmproj_filename: str) -> bool:
 
     Compatibility is determined by comparing the stripped base names:
     one must begin with the other (case-insensitive).
-    If either base name is empty (can't determine), we allow it.
+    If either base name is empty (can't determine), we reject it.
     """
     model_base = _model_base_name(model_filename)
     mmproj_base = _model_base_name(mmproj_filename)
     if not model_base or not mmproj_base:
-        return True
+        return False
     # Allow if one is a prefix of the other
     return model_base.startswith(mmproj_base) or mmproj_base.startswith(model_base)
 
@@ -376,12 +378,23 @@ class LocalModelManager:
 
     def auto_detect_mmproj(self, model_filename: str) -> Optional[str]:
         """Auto-detect a compatible mmproj file for the given model."""
-        mmproj_files = self.scan_mmproj_files()
-        for mmproj_file in mmproj_files:
-            if _mmproj_compatible(model_filename, mmproj_file):
-                log.info(f"Auto-detected compatible mmproj: {mmproj_file} for model {model_filename}")
-                return mmproj_file
-        return None
+        model_base = _model_base_name(model_filename)
+        best_match = None
+        best_score = 0
+
+        for mmproj_file in self.scan_mmproj_files():
+            mmproj_base = _model_base_name(mmproj_file)
+            if not model_base or not mmproj_base:
+                continue
+            if model_base.startswith(mmproj_base) or mmproj_base.startswith(model_base):
+                score = min(len(model_base), len(mmproj_base))
+                if score > best_score:
+                    best_match = mmproj_file
+                    best_score = score
+
+        if best_match:
+            log.info(f"Auto-detected compatible mmproj: {best_match} for model {model_filename}")
+        return best_match
 
     def _is_process_alive(self, model_id: str) -> bool:
         proc = self._processes.get(model_id)

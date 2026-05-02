@@ -92,7 +92,14 @@
 	import { getModelById } from '$lib/apis/models';
 	import { uploadFile } from '$lib/apis/files';
 	import { createOpenAITextStream } from '$lib/apis/streaming';
-	import { getLoadedLocalModels, loadLocalModel, unloadLocalModel } from '$lib/apis/llamacpp';
+	import {
+		getLoadedLocalModels,
+		getMmProjFiles,
+		loadLocalModel,
+		unloadLocalModel,
+		type LocalModel
+	} from '$lib/apis/llamacpp';
+	import { findMatchingMmproj } from '$lib/utils/mmproj';
 	import { getFunctions } from '$lib/apis/functions';
 	import { updateFolderById } from '$lib/apis/folders';
 
@@ -154,6 +161,9 @@
 	let codeInterpreterEnabled = false;
 	let codeExecutionEnabled = false;
 	let stableDiffusionEnabled = false;
+	let previousStableDiffusionEnabled = stableDiffusionEnabled;
+	let stableDiffusionStandbyModel: LocalModel | null = null;
+	let restoringStableDiffusionStandbyModel = false;
 	let thinkingEnabled = true;
 
 	// Sincronizar toggle do chat com a store — controla auto-show de artifacts
@@ -162,6 +172,7 @@
 	let showCommands = false;
 
 	let generating = false;
+	let modelLoading = false;
 	let dragged = false;
 	let generationController = null;
 
@@ -225,6 +236,9 @@
 	let contextModalSize = 8192;
 	let contextModalModelName = '';
 	let contextModalResolve: ((size: number | null) => void) | null = null;
+	let showVisionModal = false;
+	let visionModalModelName = '';
+	let visionModalResolve: ((useVision: boolean) => void) | null = null;
 
 	function openContextModal(modelName: string): Promise<number | null> {
 		contextModalModelName = modelName;
@@ -248,6 +262,95 @@
 		if (contextModalResolve) {
 			contextModalResolve(null);
 			contextModalResolve = null;
+		}
+	}
+
+	const hasActiveChatResponse = () => {
+		const currentMessage = history?.currentId ? history.messages[history.currentId] : null;
+		return Boolean(
+			taskIds ||
+			generating ||
+			(currentMessage?.role === 'assistant' && currentMessage?.done !== true)
+		);
+	};
+
+	const restoreStableDiffusionStandbyModel = async () => {
+		if (restoringStableDiffusionStandbyModel || !stableDiffusionStandbyModel) return;
+		if (stableDiffusionEnabled || hasActiveChatResponse()) return;
+
+		const standbyModel = stableDiffusionStandbyModel;
+		restoringStableDiffusionStandbyModel = true;
+		modelLoading = true;
+
+		try {
+			const loadedModels = await getLoadedLocalModels(localStorage.token);
+			if (loadedModels.some((loadedModel) => loadedModel.id === standbyModel.id)) {
+				stableDiffusionStandbyModel = null;
+				return;
+			}
+
+			const currentlyLoaded = loadedModels[0] ?? null;
+			toast.info($i18n.t('Loading model... Please wait.'));
+
+			if (currentlyLoaded) {
+				try {
+					await unloadLocalModel(localStorage.token, currentlyLoaded.id);
+				} catch (unloadErr) {
+					console.warn('Could not explicitly unload previous model (may already be inactive):', unloadErr);
+				}
+			}
+
+			await loadLocalModel(
+				localStorage.token,
+				standbyModel.filename,
+				standbyModel.n_gpu_layers ?? -1,
+				standbyModel.n_ctx ?? 8192,
+				standbyModel.mmproj_filename ?? null,
+				localStorage.getItem('llamacpp_cache_type') || 'q8_0'
+			);
+
+			stableDiffusionStandbyModel = null;
+			models.set(await getModels(localStorage.token, null, false, true));
+			toast.success($i18n.t('Model loaded successfully!'));
+		} catch (err: any) {
+			console.error('Failed to restore Stable Diffusion standby model:', err);
+			toast.error($i18n.t('Failed to verify/load model: {{error}}', { error: err.message ?? err }));
+		} finally {
+			restoringStableDiffusionStandbyModel = false;
+			modelLoading = false;
+		}
+	};
+
+	$: if (previousStableDiffusionEnabled !== stableDiffusionEnabled) {
+		const wasStableDiffusionEnabled = previousStableDiffusionEnabled;
+		previousStableDiffusionEnabled = stableDiffusionEnabled;
+
+		if (wasStableDiffusionEnabled && !stableDiffusionEnabled) {
+			void restoreStableDiffusionStandbyModel();
+		}
+	}
+
+	function openVisionModal(modelName: string): Promise<boolean> {
+		visionModalModelName = modelName;
+		showVisionModal = true;
+		return new Promise((resolve) => {
+			visionModalResolve = resolve;
+		});
+	}
+
+	function confirmVisionModal() {
+		showVisionModal = false;
+		if (visionModalResolve) {
+			visionModalResolve(true);
+			visionModalResolve = null;
+		}
+	}
+
+	function declineVisionModal() {
+		showVisionModal = false;
+		if (visionModalResolve) {
+			visionModalResolve(false);
+			visionModalResolve = null;
 		}
 	}
 
@@ -1501,6 +1604,10 @@
 
 		taskIds = null;
 
+		if (!stableDiffusionEnabled) {
+			await restoreStableDiffusionStandbyModel();
+		}
+
 		// Process message queue - combine all queued messages and submit at once
 		if (messageQueue.length > 0) {
 			const combinedPrompt = messageQueue.map((m) => m.prompt).join('\n\n');
@@ -1924,7 +2031,13 @@
 			if (model && (model as any).owned_by === 'llamacpp') {
 				try {
 					const loadedModels = await getLoadedLocalModels(localStorage.token);
-					const isLoaded = loadedModels.some((lm) => lm.id === modelId);
+					const loadedModel = loadedModels.find((lm) => lm.id === modelId) ?? null;
+					const isLoaded = loadedModel !== null;
+
+					if (stableDiffusionEnabled) {
+						stableDiffusionStandbyModel = loadedModel ?? loadedModels[0] ?? stableDiffusionStandbyModel;
+						continue;
+					}
 
 					if (!isLoaded) {
 						// Check if another model is already loaded
@@ -1936,51 +2049,65 @@
 							return; // User cancelled
 						}
 
-						// Unload current model if any, then load the selected one
-						toast.info($i18n.t('Loading model... Please wait.'));
-						if (currentlyLoaded) {
-							try {
-								await unloadLocalModel(localStorage.token, currentlyLoaded.id);
-							} catch (unloadErr) {
-								// Model may have already been cleaned up by _cleanup_stale (process died).
-								// The backend auto-unloads other models during load_model anyway, so proceed.
-								console.warn('Could not explicitly unload previous model (may already be inactive):', unloadErr);
-							}
-						}
-						const llamacppInfo = (model as any).llamacpp ?? {};
-
-						// Resolve cache_type: params > localStorage > saved model > default
-						let resolvedCacheType =
-							(params as any)?.cache_type ||
-							localStorage.getItem('llamacpp_cache_type');
-						if (!resolvedCacheType) {
-							try {
-								const fullModel = await getModelById(localStorage.token, model.id);
-								resolvedCacheType = fullModel?.params?.cache_type;
-							} catch (_) {}
-						}
-
-						const doLoad = () => loadLocalModel(
-							localStorage.token,
-							llamacppInfo.filename ?? modelId,
-							llamacppInfo.n_gpu_layers ?? -1,
-							chosenSize,
-							null, // mmproj auto-detected by backend
-							resolvedCacheType || 'q8_0'
-						);
+						modelLoading = true;
 						try {
-							await doLoad();
-						} catch (firstErr) {
-							// First attempt failed (port/resources from previous model may not
-							// be fully released yet). Wait a moment and retry automatically so
-							// the user doesn't have to press Send again.
-							console.warn('First load attempt failed, retrying in 3s...', firstErr);
-							await new Promise((r) => setTimeout(r, 3000));
-							await doLoad(); // re-throws if still failing → outer catch handles it
+							// Unload current model if any, then load the selected one
+							toast.info($i18n.t('Loading model... Please wait.'));
+							if (currentlyLoaded) {
+								try {
+									await unloadLocalModel(localStorage.token, currentlyLoaded.id);
+								} catch (unloadErr) {
+									// Model may have already been cleaned up by _cleanup_stale (process died).
+									// The backend auto-unloads other models during load_model anyway, so proceed.
+									console.warn('Could not explicitly unload previous model (may already be inactive):', unloadErr);
+								}
+							}
+							const llamacppInfo = (model as any).llamacpp ?? {};
+							const modelFilename = llamacppInfo.filename ?? modelId;
+
+							// Resolve cache_type: params > localStorage > saved model > default
+							let resolvedCacheType =
+								(params as any)?.cache_type ||
+								localStorage.getItem('llamacpp_cache_type');
+							if (!resolvedCacheType) {
+								try {
+									const fullModel = await getModelById(localStorage.token, model.id);
+									resolvedCacheType = fullModel?.params?.cache_type;
+								} catch (_) {}
+							}
+
+							const mmProjFiles = await getMmProjFiles(localStorage.token);
+							const matchingMmproj = findMatchingMmproj(modelFilename, mmProjFiles);
+							let selectedMmproj = '';
+							if (matchingMmproj) {
+								const useVision = await openVisionModal(model.name ?? modelId);
+								selectedMmproj = useVision ? matchingMmproj : '';
+							}
+
+							const doLoad = () => loadLocalModel(
+								localStorage.token,
+								modelFilename,
+								llamacppInfo.n_gpu_layers ?? -1,
+								chosenSize,
+								selectedMmproj,
+								resolvedCacheType || 'q8_0'
+							);
+							try {
+								await doLoad();
+							} catch (firstErr) {
+								// First attempt failed (port/resources from previous model may not
+								// be fully released yet). Wait a moment and retry automatically so
+								// the user doesn't have to press Send again.
+								console.warn('First load attempt failed, retrying in 3s...', firstErr);
+								await new Promise((r) => setTimeout(r, 3000));
+								await doLoad(); // re-throws if still failing → outer catch handles it
+							}
+							toast.success($i18n.t('Model loaded successfully!'));
+							// Refresh models store so n_ctx is up to date
+							models.set(await getModels(localStorage.token, null, false, true));
+						} finally {
+							modelLoading = false;
 						}
-						toast.success($i18n.t('Model loaded successfully!'));
-						// Refresh models store so n_ctx is up to date
-						models.set(await getModels(localStorage.token, null, false, true));
 					}
 				} catch (err: any) {
 					console.error('LlamaCpp model check failed:', err);
@@ -2952,6 +3079,27 @@
 	</div>
 {/if}
 
+{#if showVisionModal}
+	<div class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40" transition:fade={{ duration: 80 }}>
+		<div class="bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-xl mx-4 w-80 flex flex-col gap-3">
+			<p class="text-sm font-semibold text-gray-900 dark:text-white">Deseja carregar a visão?</p>
+			<p class="text-xs text-gray-500 dark:text-gray-400">
+				{visionModalModelName} será carregado com suporte a análise de imagens.
+			</p>
+			<div class="flex justify-end gap-2 mt-1">
+				<button
+					class="px-4 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
+					on:click={declineVisionModal}
+				>Não</button>
+				<button
+					class="px-4 py-1.5 text-xs rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium"
+					on:click={confirmVisionModal}
+				>Sim</button>
+			</div>
+		</div>
+	</div>
+{/if}
+
 <div
 	class="h-screen max-h-[100dvh] w-full max-w-full flex flex-col"
 	id="chat-container"
@@ -3100,6 +3248,7 @@
 									bind:dragged
 									toolServers={$toolServers}
 									{generating}
+									sendDisabled={modelLoading}
 									{stopResponse}
 									{createMessagePair}
 									{onUpload}
@@ -3173,6 +3322,7 @@
 									bind:showCommands
 									bind:dragged
 									toolServers={$toolServers}
+									sendDisabled={modelLoading}
 									{stopResponse}
 									{createMessagePair}
 									{onSelect}

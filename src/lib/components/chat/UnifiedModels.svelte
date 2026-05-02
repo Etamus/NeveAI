@@ -31,6 +31,7 @@
 	import { toast } from 'svelte-sonner';
 	import { DropdownMenu } from 'bits-ui';
 	import { flyAndScale } from '$lib/utils/transitions';
+	import { findMatchingMmproj } from '$lib/utils/mmproj';
 
 	import ModelSettingsModal from '$lib/components/admin/Settings/Models/ModelSettingsModal.svelte';
 	import ManageModelsModal from '$lib/components/admin/Settings/Models/ManageModelsModal.svelte';
@@ -59,13 +60,11 @@
 	let localError = '';
 	let localSuccess = '';
 
-	let confirmVisionCallback: { onNo: () => void; onYes: () => void } | null = null;
-	let mmProjSelectorModel: LocalModel | null = null;
-	let mmProjSelectedFile: string = '';
+	let loadModalMmprojFile: string = '';
 
 	// ─── Unified load modal state ────────────────────────────────────────────
 	let loadModalModel: LocalModel | null = null;
-	let loadModalStep: 'context' | 'vision' | 'mmproj' = 'context';
+	let loadModalStep: 'context' | 'vision' = 'context';
 	let loadModalFromContext = false;
 
 	let gpuLayers: number = -1;
@@ -217,10 +216,13 @@
 		if (!model) return;
 		contextSize = contextModalSize;
 		contextModalModel = null;
-		if (mmProjFiles.length > 0) {
+		const matchingMmproj = findMatchingMmproj(model.filename, mmProjFiles);
+		if (matchingMmproj) {
+			loadModalMmprojFile = matchingMmproj;
 			loadModalStep = 'vision';
 		} else {
 			loadModalModel = null;
+			loadModalMmprojFile = '';
 			handleLoad(model);
 		}
 	}
@@ -229,30 +231,20 @@
 		const model = loadModalModel;
 		const fromContext = loadModalFromContext;
 		loadModalModel = null;
-		confirmVisionCallback = null;
+		loadModalMmprojFile = '';
 		if (fromContext && model) handleLoad(model);
 	}
 
 	function handleVisionYes() {
-		loadModalStep = 'mmproj';
-		mmProjSelectorModel = loadModalModel;
-		mmProjSelectedFile = '';
-		confirmVisionCallback = null;
+		const model = loadModalModel;
+		const mmprojFile = loadModalMmprojFile;
+		if (!model || !mmprojFile) return;
+		handleLoadWithMmproj(model, mmprojFile);
 	}
 
-	function openVisionSelector(model: LocalModel) {
-		if (mmProjFiles.length > 0) {
-			loadModalModel = model;
-			loadModalStep = 'vision';
-			loadModalFromContext = false;
-		}
-	}
-
-	async function handleLoadWithSelectedMmproj() {
-		const model = mmProjSelectorModel;
-		if (!model) return;
-		mmProjSelectorModel = null;
+	async function handleLoadWithMmproj(model: LocalModel, mmprojFile: string) {
 		loadModalModel = null;
+		loadModalMmprojFile = '';
 		loadingModels = new Set([...loadingModels, model.filename]);
 		localError = '';
 		localSuccess = '';
@@ -263,10 +255,10 @@
 				model.filename,
 				gpuLayers,
 				contextSize,
-				mmProjSelectedFile || null,
+				mmprojFile,
 				ct
 			);
-			localSuccess = `${model.filename} carregado!${mmProjSelectedFile ? ` (visão: ${mmProjSelectedFile})` : ' (somente texto)'}`;
+			localSuccess = `${model.filename} carregado! (visão: ${mmprojFile})`;
 			await refreshLocalModels();
 			_models.set(await getModels(localStorage.token));
 			await initAdmin();
@@ -543,32 +535,6 @@
 					>Sim</button>
 				</div>
 
-			{:else if loadModalStep === 'mmproj'}
-				<p class="text-sm font-semibold text-gray-900 dark:text-white">Selecionar módulo de visão</p>
-				<div class="flex flex-col gap-1.5 max-h-80 overflow-y-auto scrollbar-none">
-					{#each mmProjFiles as f}
-						<button
-							class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs text-left transition {mmProjSelectedFile === f ? 'bg-black text-white dark:bg-white dark:text-black' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
-							on:click={() => (mmProjSelectedFile = f)}
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.87V15.13a1 1 0 01-1.447.899L15 14M3 8h12v8H3z" />
-							</svg>
-							{f}
-						</button>
-					{/each}
-				</div>
-				<div class="flex justify-end gap-2">
-					<button
-						class="px-4 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
-						on:click={() => (loadModalModel = null)}
-					>Cancelar</button>
-					<button
-						class="px-4 py-1.5 text-xs rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium disabled:opacity-40"
-						disabled={!mmProjSelectedFile}
-						on:click={handleLoadWithSelectedMmproj}
-					>Carregar</button>
-				</div>
 			{/if}
 
 		</div>

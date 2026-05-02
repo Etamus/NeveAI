@@ -126,6 +126,7 @@
 
 	export let prompt = '';
 	export let files = [];
+	export let sendDisabled = false;
 
 	export let selectedToolIds = [];
 	export let selectedFilterIds = [];
@@ -1267,7 +1268,9 @@
 						class="w-full flex flex-col gap-1.5"
 						on:submit|preventDefault={() => {
 							// check if selectedModels support image input
-							dispatch('submit', prompt);
+							if (!sendDisabled && (prompt !== '' || files.length > 0)) {
+								dispatch('submit', prompt);
+							}
 						}}
 					>
 						<button
@@ -1655,7 +1658,7 @@
 
 																if (enterPressed) {
 																	e.preventDefault();
-																	if (prompt !== '' || files.length > 0) {
+																	if (!sendDisabled && (prompt !== '' || files.length > 0)) {
 																		dispatch('submit', prompt);
 																	}
 																}
@@ -1779,11 +1782,11 @@
 									<Tooltip content={$i18n.t('Send message')}>
 										<button
 											id="send-message-button"
-											class="{prompt !== '' || files.length > 0
+											class="{!sendDisabled && (prompt !== '' || files.length > 0)
 												? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 '
 												: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full p-1.5 self-center"
 											type="submit"
-											disabled={prompt === '' && files.length === 0}
+											disabled={sendDisabled || (prompt === '' && files.length === 0)}
 										>
 											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-5">
 												<path fill-rule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clip-rule="evenodd" />
@@ -2189,11 +2192,11 @@
 											<Tooltip content={uploadPending ? $i18n.t('Waiting for upload...') : $i18n.t('Send message')}>
 												<button
 													id="send-message-button"
-													class="{prompt !== '' || files.length > 0 || uploadPending
+													class="{!sendDisabled && (prompt !== '' || files.length > 0 || uploadPending)
 														? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 '
 														: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full p-1.5 self-center"
 													type="submit"
-													disabled={prompt === '' && files.length === 0 || uploadPending}
+													disabled={sendDisabled || (prompt === '' && files.length === 0) || uploadPending}
 												>
 													{#if uploadPending}
 														<Spinner className="size-5" />

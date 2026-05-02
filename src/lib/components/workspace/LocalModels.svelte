@@ -9,6 +9,7 @@
 		unloadLocalModel,
 		type LocalModel
 	} from '$lib/apis/llamacpp';
+	import { findMatchingMmproj } from '$lib/utils/mmproj';
 
 	let localModels: LocalModel[] = [];
 	let mmProjFiles: string[] = [];
@@ -17,10 +18,8 @@
 	let errorMessage = '';
 	let successMessage = '';
 
-	// Per-model mmproj confirmation + selector flow
+	// Per-model mmproj confirmation flow
 	let confirmVisionCallback: { onNo: () => void; onYes: () => void } | null = null;
-	let mmProjSelectorModel: LocalModel | null = null;
-	let mmProjSelectedFile: string = '';
 
 	// Load settings
 	let gpuLayers: number = -1;
@@ -75,13 +74,11 @@
 		if (!model) return;
 		contextSize = contextModalSize;
 		contextModalModel = null;
-		if (mmProjFiles.length > 0) {
+		const matchingMmproj = findMatchingMmproj(model.filename, mmProjFiles);
+		if (matchingMmproj) {
 			confirmVisionCallback = {
 				onNo: () => handleLoad(model),
-				onYes: () => {
-					mmProjSelectorModel = model;
-					mmProjSelectedFile = '';
-				}
+				onYes: () => handleLoadWithMmproj(model, matchingMmproj)
 			};
 		} else {
 			handleLoad(model);
@@ -89,28 +86,23 @@
 	}
 
 	function openVisionSelector(model: LocalModel) {
-		if (mmProjFiles.length > 0) {
+		const matchingMmproj = findMatchingMmproj(model.filename, mmProjFiles);
+		if (matchingMmproj) {
 			confirmVisionCallback = {
 				onNo: () => {},
-				onYes: () => {
-					mmProjSelectorModel = model;
-					mmProjSelectedFile = model.mmproj_filename ?? '';
-				}
+				onYes: () => handleLoadWithMmproj(model, matchingMmproj)
 			};
 		}
 	}
 
-	async function handleLoadWithSelectedMmproj() {
-		const model = mmProjSelectorModel;
-		if (!model) return;
-		mmProjSelectorModel = null;
+	async function handleLoadWithMmproj(model: LocalModel, mmprojFile: string) {
 		loadingModels = new Set([...loadingModels, model.filename]);
 		errorMessage = '';
 		successMessage = '';
 		try {
 			const ct = localStorage.getItem('llamacpp_cache_type') || 'q8_0';
-			await loadLocalModel(localStorage.token, model.filename, gpuLayers, contextSize, mmProjSelectedFile || null, ct);
-			successMessage = `${model.filename} carregado com sucesso!${mmProjSelectedFile ? ` (visão: ${mmProjSelectedFile})` : ' (somente texto)'}`;
+			await loadLocalModel(localStorage.token, model.filename, gpuLayers, contextSize, mmprojFile, ct);
+			successMessage = `${model.filename} carregado com sucesso! (visão: ${mmprojFile})`;
 			await refreshModels();
 			models.set(await getModels(localStorage.token));
 		} catch (e: any) {
@@ -170,38 +162,6 @@
 		</div>
 	{/if}
 
-	<!-- mmproj selector modal -->
-	{#if mmProjSelectorModel}
-		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-			<div class="bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-xl mx-4 w-80 flex flex-col gap-3">
-				<p class="text-sm font-semibold text-gray-900 dark:text-white">Selecionar módulo de visão</p>
-				<div class="flex flex-col gap-1.5 max-h-80 overflow-y-auto scrollbar-none">
-					{#each mmProjFiles as f}
-						<button
-							class="flex items-center gap-2 px-3 py-2 rounded-xl text-xs text-left transition {mmProjSelectedFile === f ? 'bg-black text-white dark:bg-white dark:text-black font-medium' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
-							on:click={() => (mmProjSelectedFile = f)}
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.87V15.13a1 1 0 01-1.447.899L15 14M3 8h12v8H3z" />
-							</svg>
-							{f}
-						</button>
-					{/each}
-				</div>
-				<div class="flex justify-end gap-2">
-					<button
-						class="px-4 py-1.5 text-xs rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
-						on:click={() => (mmProjSelectorModel = null)}
-					>Cancelar</button>
-					<button
-						class="px-4 py-1.5 text-xs rounded-xl bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium disabled:opacity-40"
-						disabled={!mmProjSelectedFile}
-						on:click={handleLoadWithSelectedMmproj}
-					>Carregar</button>
-				</div>
-			</div>
-		</div>
-	{/if}
 	<!-- Context size modal -->
 	{#if contextModalModel}
 		<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
@@ -366,7 +326,7 @@
 												</div>
 											{:else if model.is_loaded}
 
-												{#if mmProjFiles.length > 0}
+												{#if findMatchingMmproj(model.filename, mmProjFiles)}
 													<button
 														class="flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-xl bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition text-gray-600 dark:text-gray-400"
 														on:click={() => openVisionSelector(model)}

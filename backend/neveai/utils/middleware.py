@@ -1609,18 +1609,8 @@ async def chat_stable_diffusion_handler(
                 await _sd_pipeline.unload()
             except Exception as e:
                 log.warning(f"SD handler: failed to unload SD: {e}")
-
-            # Resume LLM em background â€” nÃ£o bloqueia o handler.
-            # O server jÃ¡ emitiu chat:completion done:True, entÃ£o o cliente
-            # jÃ¡ recebeu a imagem. O LLM carrega em paralelo (~10s).
             if llm_standby_info:
-                async def _resume_llm():
-                    try:
-                        await model_manager.resume(llm_standby_info)
-                        log.info("LLM resumido com sucesso apÃ³s geraÃ§Ã£o de imagem.")
-                    except Exception as e:
-                        log.error(f"SD handler: failed to resume LLM: {e}")
-                asyncio.ensure_future(_resume_llm())
+                log.info("LLM mantido em standby apos geracao de imagem.")
 
     except Exception as e:
         log.exception(e)
