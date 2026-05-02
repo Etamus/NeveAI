@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { createEventDispatcher, onMount, getContext } from 'svelte';
+	import { browser } from '$app/environment';
 	const dispatch = createEventDispatcher();
 
 	import { config, models, settings, theme, user } from '$lib/stores';
@@ -16,7 +17,14 @@
 
 	// General
 	let themes = ['dark', 'light'];
-	let selectedTheme = 'system';
+	const themeSelectorOptions = ['system', 'light', 'dark'];
+	const getSelectedTheme = () => {
+		if (!browser) return 'system';
+
+		const storedTheme = localStorage.getItem('theme') ?? 'system';
+		return themeSelectorOptions.includes(storedTheme) ? storedTheme : 'system';
+	};
+	let selectedTheme = getSelectedTheme();
 
 	let enableMessageQueue = true;
 	let temporaryChatByDefault = false;
@@ -104,7 +112,7 @@
 	};
 
 	onMount(async () => {
-		selectedTheme = localStorage.theme ?? 'system';
+		selectedTheme = getSelectedTheme();
 
 		enableMessageQueue = $settings?.enableMessageQueue ?? true;
 		temporaryChatByDefault = $settings?.temporaryChatByDefault ?? false;

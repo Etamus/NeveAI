@@ -185,7 +185,10 @@
 		}
 
 		// Set the virtual scroll position so the selected item is rendered and centered
-		const targetScrollTop = Math.max(0, selectedModelIdx * ITEM_HEIGHT - 128 + ITEM_HEIGHT / 2);
+		const targetScrollTop = Math.max(
+			0,
+			selectedModelIdx * ITEM_HEIGHT - LIST_VIEWPORT_HEIGHT / 2 + ITEM_HEIGHT / 2
+		);
 		listScrollTop = targetScrollTop;
 
 		await tick();
@@ -379,6 +382,7 @@
 	};
 
 	const ITEM_HEIGHT = 46;
+	const LIST_VIEWPORT_HEIGHT = 272;
 	const OVERSCAN = 10;
 
 	let listScrollTop = 0;
@@ -387,7 +391,7 @@
 	$: visibleStart = Math.max(0, Math.floor(listScrollTop / ITEM_HEIGHT) - OVERSCAN);
 	$: visibleEnd = Math.min(
 		filteredItems.length,
-		Math.ceil((listScrollTop + 256) / ITEM_HEIGHT) + OVERSCAN
+		Math.ceil((listScrollTop + LIST_VIEWPORT_HEIGHT) / ITEM_HEIGHT) + OVERSCAN
 	);
 </script>
 
@@ -551,7 +555,7 @@
 				{:else}
 					<!-- svelte-ignore a11y-no-static-element-interactions -->
 					<div
-						class="max-h-64 overflow-y-auto pr-2"
+						class="max-h-[17rem] overflow-y-auto pr-2"
 						role="listbox"
 						aria-label={$i18n.t('Available models')}
 						bind:this={listContainer}

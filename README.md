@@ -6,7 +6,7 @@
 
 ---
 
-<img width="1918" height="1008" alt="{CB39D918-42A2-4334-BDDE-09DC11A0057C}" src="https://github.com/user-attachments/assets/5fb399ec-e2eb-470a-a844-311e326ae55e" />
+<img width="1920" height="1008" alt="{D91EE8A9-8973-449B-8650-B7B97762FB71}" src="https://github.com/user-attachments/assets/6ba6fada-b430-4b53-8835-a1fcdb8a54da" />
 
 ---
 
@@ -43,7 +43,7 @@ instalar.bat
 ```
 
 <h1 align="center">
-<img width="772" alt="{55F2246F-520C-4D6F-855F-8F7DF2687F8B}" src="https://github.com/user-attachments/assets/2a9e1fd4-4c29-431a-a49a-332f335d625b" />
+<img width="768" alt="{9A74D3AB-74C0-4D9E-8F74-D4134AB1723B}" src="https://github.com/user-attachments/assets/922a2d71-5dca-4fca-9a63-269694712587" />
 </h1>
 
 O instalador (`instalar.bat` → `instalar.ps1`) realiza automaticamente:
@@ -65,7 +65,7 @@ atualizar.bat
 ```
 
 <h1 align="center">
-<img width="767" alt="{FC3EC2EB-63FA-47E4-AD01-DBED022EBD8E}" src="https://github.com/user-attachments/assets/cc73531a-e589-4739-8721-ff90f86cff26" />
+<img width="771" alt="{C0BDAE44-0FE2-43D1-B261-458B0802404C}" src="https://github.com/user-attachments/assets/568ebfbf-7e6a-4c25-a585-37cad58a515e" />
 </h1>
 
 O atualizador (`atualizar.bat` → `atualizar.ps1`) abre uma janela gráfica que:
@@ -138,6 +138,8 @@ Neve AI/
 ├── instalar.ps1              #   cria venv, instala deps, compila frontend
 ├── atualizar.bat             # Atualizador — checa última release no GitHub,
 ├── atualizar.ps1             #   baixa, aplica overlay, refaz build e deploy
+├── buildar.bat               # Build e deploy do frontend com interface grafica
+├── buildar.ps1               #   limpa build, compila, publica e valida hash
 ├── version.txt               # Versão (tag) atualmente instalada
 ├── iniciar.bat               # Inicia o backend e abre a janela de app
 ├── neve_window.py            # Abre o Neve AI em janela Chromium isolada
