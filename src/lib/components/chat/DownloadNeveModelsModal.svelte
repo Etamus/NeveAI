@@ -80,14 +80,17 @@
 						progressLabel = 'Na fila...';
 					}
 				},
-				(state) => {
+				async (state) => {
 					downloading = false;
+					selectedId = null;
+					progress = 0;
+					progressLabel = '';
 					if (state.message === 'Já instalado') {
 						toast.info(`${entry.name}: já instalado`);
 					} else {
 						toast.success(`${entry.name} baixado com sucesso`);
 					}
-					loadCatalog();
+					await loadCatalog();
 				},
 				(err: any) => {
 					downloading = false;

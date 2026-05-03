@@ -25,6 +25,7 @@
 	export let selectedModels = [];
 
 	export let done = true;
+	export let messageDone = done;
 	export let model = null;
 	export let sources = null;
 
@@ -38,6 +39,11 @@
 	export let onSave = (e) => {};
 	export let onSourceClick = (e) => {};
 	export let onTaskClick = (e) => {};
+
+	let hasStreamingMessage = false;
+	$: hasStreamingMessage = Object.values(history?.messages ?? {}).some(
+		(message) => message?.role !== 'user' && message?.done === false
+	);
 	export let onAddMessages = (e) => {};
 
 	let contentContainerElement;
@@ -177,6 +183,8 @@
 			const lang = rawLang?.match(/^[\w+#.-]+/)?.[0] ?? rawLang;
 
 			if (
+				!hasStreamingMessage &&
+				messageDone &&
 				$chatCodeExecutionEnabled &&
 				($settings?.detectArtifacts ?? true) &&
 				(['html', 'svg'].includes(lang) || (lang === 'xml' && code.includes('svg'))) &&

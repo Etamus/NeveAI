@@ -749,6 +749,7 @@
 									done={($settings?.chatFadeStreamingText ?? true)
 										? (message?.done ?? false)
 										: true}
+									messageDone={message?.done ?? false}
 									{model}
 									onTaskClick={async (e) => {
 										console.log(e);
