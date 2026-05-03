@@ -27,7 +27,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from neveai.env import SRC_LOG_LEVELS, GLOBAL_LOG_LEVEL, BASE_DIR
-from neveai.models.models import Models
+from neveai.models.models import ModelForm, Models
 from neveai.utils.payload import apply_model_params_to_body_openai, apply_system_prompt_to_body
 
 log = logging.getLogger(__name__)
@@ -1361,15 +1361,96 @@ def _human_size(nbytes: int) -> str:
 import uuid
 import threading
 
+NEVE_CATALOG_DEFAULTS_VERSION = 1
+NEVE_DOWNLOAD_USER_ID = "neve-download"
+
+NEVE_DEFAULT_CAPABILITIES = {
+    "file_context": True,
+    "vision": True,
+    "file_upload": True,
+    "web_search": True,
+    "image_generation": True,
+    "code_interpreter": True,
+    "citations": True,
+    "status_updates": True,
+    "builtin_tools": True,
+    "toggle_reasoning": False,
+}
+
+
 NEVE_CATALOG = [
-    {"id": "neve-echo-s",   "name": "Neve Echo S",   "repo": "NeveAI/Neve-Echo-S-4B-GGUF",    "size_label": "7.9 GB"},
-    {"id": "neve-echo",     "name": "Neve Echo",     "repo": "NeveAI/Neve-Echo-4-26B-GGUF",   "size_label": "13.6 GB"},
-    {"id": "neve-prism",    "name": "Neve Prism",    "repo": "NeveAI/Neve-Prism-3-12B-GGUF",  "size_label": "8.1 GB"},
-    {"id": "neve-prism-x",  "name": "Neve Prism X",  "repo": "NeveAI/Neve-Prism-X2-9B-GGUF",  "size_label": "12.1 GB"},
-    {"id": "neve-sense",    "name": "Neve Sense",    "repo": "NeveAI/Neve-Sense-2-20B-GGUF",  "size_label": "11.1 GB"},
-    {"id": "neve-strata-s", "name": "Neve Strata S", "repo": "NeveAI/Neve-Strata-S2-4B-GGUF", "size_label": "5.5 GB"},
-    {"id": "neve-strata",   "name": "Neve Strata",   "repo": "NeveAI/Neve-Strata-4-30B-GGUF", "size_label": "16.3 GB"},
-    {"id": "neve-strata-x", "name": "Neve Strata X", "repo": "NeveAI/Neve-Strata-X2-35B-GGUF", "size_label": "18.2 GB"},
+    {
+        "id": "neve-echo-s",
+        "name": "Neve Echo S",
+        "repo": "NeveAI/Neve-Echo-S-4B-GGUF",
+        "size_label": "7.9 GB",
+        "description": "Modelo de uso geral e raciocínio para tarefas rápidas.",
+        "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
+        "default_feature_ids": ["web_search", "toggle_reasoning"],
+    },
+    {
+        "id": "neve-echo",
+        "name": "Neve Echo",
+        "repo": "NeveAI/Neve-Echo-4-26B-GGUF",
+        "size_label": "13.6 GB",
+        "description": "Modelo de uso geral e raciocínio para tarefas variadas.",
+        "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
+        "default_feature_ids": ["web_search", "toggle_reasoning"],
+    },
+    {
+        "id": "neve-prism",
+        "name": "Neve Prism",
+        "repo": "NeveAI/Neve-Prism-3-12B-GGUF",
+        "size_label": "8.1 GB",
+        "description": "Modelo de visão para análise de imagens em alta precisão.",
+        "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
+        "default_feature_ids": [],
+    },
+    {
+        "id": "neve-prism-x",
+        "name": "Neve Prism X",
+        "repo": "NeveAI/Neve-Prism-X2-9B-GGUF",
+        "size_label": "12.1 GB",
+        "description": "Modelo de visão e raciocínio para cenários visuais complexos.",
+        "params": {"temperature": 0.7, "min_p": 0.1},
+        "default_feature_ids": ["code_execution", "toggle_reasoning"],
+    },
+    {
+        "id": "neve-sense",
+        "name": "Neve Sense",
+        "repo": "NeveAI/Neve-Sense-2-20B-GGUF",
+        "size_label": "11.1 GB",
+        "description": "Modelo de análise e resumo para documentos complexos.",
+        "params": {"temperature": 0.3, "min_p": 0.05},
+        "default_feature_ids": [],
+    },
+    {
+        "id": "neve-strata-s",
+        "name": "Neve Strata S",
+        "repo": "NeveAI/Neve-Strata-S2-4B-GGUF",
+        "size_label": "5.5 GB",
+        "description": "Modelo de programação e raciocínio para execução em escala.",
+        "params": {"temperature": 0.7, "min_p": 0.1},
+        "default_feature_ids": ["code_execution", "toggle_reasoning"],
+    },
+    {
+        "id": "neve-strata",
+        "name": "Neve Strata",
+        "repo": "NeveAI/Neve-Strata-4-30B-GGUF",
+        "size_label": "16.3 GB",
+        "description": "Modelo de programação e raciocínio para códigos robustos.",
+        "params": {"temperature": 0.7, "min_p": 0.1},
+        "default_feature_ids": ["code_execution", "toggle_reasoning"],
+    },
+    {
+        "id": "neve-strata-x",
+        "name": "Neve Strata X",
+        "repo": "NeveAI/Neve-Strata-X2-35B-GGUF",
+        "size_label": "18.2 GB",
+        "description": "Modelo de programação e raciocínio para arquiteturas complexas.",
+        "params": {"temperature": 0.7, "min_p": 0.1},
+        "default_feature_ids": ["code_execution", "toggle_reasoning"],
+    },
 ]
 
 # In-memory task registry: { task_id: { status, progress, total, downloaded, message, files: [...] } }
@@ -1390,6 +1471,66 @@ def _get_task(task_id: str) -> dict:
 
 def _catalog_entry(model_id: str) -> Optional[dict]:
     return next((m for m in NEVE_CATALOG if m["id"] == model_id), None)
+
+
+def _catalog_model_id(repo_filename: str) -> str:
+    return f"local/{Path(repo_filename).stem}"
+
+
+def _catalog_model_form(entry: dict, repo_filename: str) -> ModelForm:
+    default_feature_ids = entry.get("default_feature_ids", [])
+    capabilities = {
+        **NEVE_DEFAULT_CAPABILITIES,
+        "toggle_reasoning": "toggle_reasoning" in default_feature_ids,
+    }
+
+    meta = {
+        "profile_image_url": "/static/favicon.png",
+        "description": entry.get("description"),
+        "capabilities": capabilities,
+        "neve_catalog_id": entry["id"],
+        "neve_catalog_repo": entry["repo"],
+        "neve_catalog_defaults_version": NEVE_CATALOG_DEFAULTS_VERSION,
+        "managed_by": "neve_download",
+    }
+
+    if default_feature_ids:
+        meta["defaultFeatureIds"] = default_feature_ids
+
+    return ModelForm(
+        id=_catalog_model_id(repo_filename),
+        base_model_id=None,
+        name=entry["name"],
+        params=entry.get("params", {}),
+        meta=meta,
+        is_active=True,
+    )
+
+
+def _apply_catalog_model_defaults(entry: dict, repo_filename: str) -> str:
+    local_model_id = _catalog_model_id(repo_filename)
+    existing_model = Models.get_model_by_id(local_model_id)
+    form = _catalog_model_form(entry, repo_filename)
+
+    if existing_model:
+        existing_meta = existing_model.meta.model_dump() if existing_model.meta else {}
+        is_catalog_managed = (
+            existing_meta.get("managed_by") == "neve_download"
+            and existing_meta.get("neve_catalog_id") == entry["id"]
+        )
+
+        if not is_catalog_managed:
+            log.info(
+                "Skipping Neve catalog defaults for %s because an existing custom model is not catalog-managed",
+                local_model_id,
+            )
+            return "skipped_existing_customization"
+
+        updated_model = Models.update_model_by_id(local_model_id, form)
+        return "updated" if updated_model else "failed"
+
+    created_model = Models.insert_new_model(form, NEVE_DOWNLOAD_USER_ID)
+    return "created" if created_model else "failed"
 
 
 def _local_filename_for(repo_filename: str, repo_id: str) -> str:
@@ -1472,7 +1613,7 @@ async def _stream_download_file(
     tmp_path.replace(dest_path)
 
 
-async def _run_download_task(task_id: str, model_id: str):
+async def _run_download_task(task_id: str, model_id: str, app=None):
     entry = _catalog_entry(model_id)
     if not entry:
         _set_task(task_id, status="error", error="Modelo não encontrado no catálogo")
@@ -1487,21 +1628,43 @@ async def _run_download_task(task_id: str, model_id: str):
             return
         mmproj_file = _pick_mmproj(files)
 
-        targets: list[tuple[str, Path]] = []
+        targets: list[tuple[str, Path, bool]] = []
         if not _is_installed(main_file["path"]):
-            targets.append((main_file["path"], MODELS_DIR / main_file["path"]))
+            targets.append((main_file["path"], MODELS_DIR / main_file["path"], True))
         if mmproj_file and not (MMPROJ_DIR / mmproj_file["path"]).exists():
-            targets.append((mmproj_file["path"], MMPROJ_DIR / mmproj_file["path"]))
+            targets.append((mmproj_file["path"], MMPROJ_DIR / mmproj_file["path"], False))
 
         if not targets:
             _set_task(task_id, status="completed", message="Já instalado", progress=1.0)
             return
 
         total_files = len(targets)
-        for i, (repo_path, dest_path) in enumerate(targets, start=1):
+        main_model_downloaded = False
+        for i, (repo_path, dest_path, is_main_model) in enumerate(targets, start=1):
             await _stream_download_file(task_id, repo_id, repo_path, dest_path, i, total_files)
+            main_model_downloaded = main_model_downloaded or is_main_model
 
-        _set_task(task_id, status="completed", progress=1.0, message="Download concluído")
+        defaults_status = None
+        if main_model_downloaded:
+            defaults_status = _apply_catalog_model_defaults(entry, main_file["path"])
+            if defaults_status == "failed":
+                _set_task(
+                    task_id,
+                    status="error",
+                    error="Download concluído, mas não foi possível aplicar as definições do modelo",
+                )
+                return
+
+        if app is not None:
+            app.state.BASE_MODELS = None
+
+        _set_task(
+            task_id,
+            status="completed",
+            progress=1.0,
+            message="Download concluído",
+            defaults_status=defaults_status,
+        )
     except httpx.HTTPStatusError as e:
         _set_task(task_id, status="error", error=f"HTTP {e.response.status_code} ao baixar de {repo_id}")
     except Exception as e:
@@ -1532,13 +1695,13 @@ class DownloadModelRequest(BaseModel):
 
 
 @router.post("/download")
-async def start_download(req: DownloadModelRequest):
+async def start_download(req: DownloadModelRequest, request: Request):
     """Start a background download of a Neve catalog model. Returns task_id."""
     if not _catalog_entry(req.model_id):
         raise HTTPException(status_code=404, detail="Modelo não encontrado no catálogo")
     task_id = uuid.uuid4().hex
     _set_task(task_id, status="queued", model_id=req.model_id, progress=0.0)
-    asyncio.create_task(_run_download_task(task_id, req.model_id))
+    asyncio.create_task(_run_download_task(task_id, req.model_id, request.app))
     return {"task_id": task_id}
 
 
