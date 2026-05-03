@@ -1981,6 +1981,7 @@
 			// Auto-open artifacts panel if HTML/SVG content was detected
 			const artContents = get(artifactContents);
 			if (
+				$chatCodeExecutionEnabled &&
 				artContents && artContents.length > 0 &&
 				($settings?.detectArtifacts ?? true) &&
 				!$mobile
