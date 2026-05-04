@@ -257,7 +257,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <TextBlock Text="OK" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <TextBlock x:Name="LblDoneTitle" Text="Tudo pronto!" FontSize="22" FontWeight="SemiBold" Foreground="#111111" HorizontalAlignment="Center"/>
-                            <TextBlock x:Name="LblDoneSub" Text="Use instalar.bat para iniciar o Neve AI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
+                            <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar o Neve AI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
                             <Border Background="#FAFAFA" CornerRadius="8" Padding="14,12">
                                 <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="#52525B"/>
                             </Border>
@@ -691,7 +691,7 @@ $ctl.BtnPrimary.Add_Click({
         $ctl.InstallPanel.Visibility = 'Collapsed'
         $ctl.DonePanel.Visibility    = 'Visible'
         $ctl.LblDoneTitle.Text       = 'Já está tudo pronto!'
-        $ctl.LblDoneSub.Text         = 'Nenhuma pendência detectada. Use instalar.bat para iniciar o Neve AI.'
+        $ctl.LblDoneSub.Text         = 'Nenhuma pendência detectada. Use iniciar.bat para iniciar o Neve AI.'
         $ctl.LblSummary.Text         = ($summary -join "`r`n")
         $ctl.BtnCancel.Visibility    = 'Collapsed'
         $ctl.BtnPrimary.IsEnabled    = $true

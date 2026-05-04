@@ -1555,7 +1555,7 @@ $ctl.BtnPrimary.Add_Click({
                 $script:Ctl.UpdatePanel.Visibility = 'Collapsed'
                 $script:Ctl.DonePanel.Visibility   = 'Visible'
                 $script:Ctl.LblDoneTitle.Text = $doneTitle
-                $script:Ctl.LblDoneSub.Text   = 'Use instalar.bat para iniciar o Neve AI.'
+                $script:Ctl.LblDoneSub.Text   = 'Use iniciar.bat para iniciar o Neve AI.'
                 $script:Ctl.LblSummary.Text   = ($summary -join "`r`n")
                 $script:Ctl.BtnPrimary.Content   = 'Concluir'
                 $script:Ctl.BtnPrimary.Tag       = 'done'
