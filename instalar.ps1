@@ -1001,6 +1001,9 @@ $ctl.BtnPrimary.Add_Click({
                 try { $p.Dispose() } catch {}
             }
         }
+        function Run([string]$exe, [string[]]$argv, [string]$desc) {
+            return Run-NoPipe $exe $argv $desc
+        }
         function Test-CommandExists([string]$name) {
             return $null -ne (Get-Command $name -EA SilentlyContinue)
         }
@@ -1206,12 +1209,17 @@ USER_AGENT=Neve AI
             $env:PIP_DEFAULT_TIMEOUT = '60'
             $env:PIP_PROGRESS_BAR = 'raw'
             $env:PYTHONUNBUFFERED = '1'
-            $pipInstall = @('-m','pip','install','--disable-pip-version-check','--no-input','--prefer-binary','--progress-bar','raw','--retries','5','--timeout','60')
+            $pipLog = Join-Path (Split-Path -Parent $LOG) 'pip-install.log'
+            try { [System.IO.File]::WriteAllText($pipLog, '', [System.Text.UTF8Encoding]::new($false)) } catch {}
+            Log "[OK] Log detalhado do pip: $pipLog"
+            $pipInstall = @('-m','pip','--log',$pipLog,'install','--disable-pip-version-check','--no-input','--prefer-binary','--progress-bar','off','--retries','5','--timeout','60')
 
             P 32 'Atualizando pip'
+            Set-InstallState 'pip_upgrade'
             [void](Run $VENV_PY ($pipInstall + @('--upgrade','pip')) 'pip upgrade')
 
             P 38 "Instalando PyTorch ($($cfg.cudaVer))"
+            Set-InstallState 'installing_torch'
             $rc = Run $VENV_PY ($pipInstall + @('torch','torchvision','--index-url',$cfg.torchIndex)) 'PyTorch + torchvision'
             if ($rc -ne 0) { throw "Falha ao instalar PyTorch (exit $rc)" }
             Log "[OK] PyTorch instalado"
@@ -1224,6 +1232,7 @@ USER_AGENT=Neve AI
                     Log "[!] Flash Attention Python ignorado: requer MSVC Build Tools. O llama.cpp e o Neve AI funcionam normalmente sem esse pacote." 'warn'
                 } else {
                     P 48 'Compilando Flash Attention Python (~10 min)'
+                    Set-InstallState 'installing_flash_attn'
                     $rc = Run $VENV_PY ($pipInstall + @('flash-attn','--no-build-isolation')) 'flash-attn'
                     if ($rc -eq 0) {
                         Log "[OK] Flash Attention Python instalado"
@@ -1235,11 +1244,13 @@ USER_AGENT=Neve AI
 
             # ---- 7. diffusers
             P 55 'Instalando diffusers'
+            Set-InstallState 'installing_diffusers'
             Log "==> diffusers será instalado separadamente para facilitar diagnóstico"
             [void](Run $VENV_PY ($pipInstall + @('diffusers')) 'diffusers')
 
             # ---- 8. requirements do backend
             P 60 'Instalando dependências do backend (~5-15 min)'
+            Set-InstallState 'installing_backend_requirements'
             $runtimeReq = Join-Path $BACKEND 'requirements-runtime.txt'
             $fullReq = Join-Path $BACKEND 'requirements.txt'
             $useFullReq = @('1','true','yes','sim') -contains ([string]$env:NEVE_INSTALL_FULL_REQUIREMENTS).ToLowerInvariant()
@@ -1265,6 +1276,7 @@ USER_AGENT=Neve AI
                 $index = $i + 1
                 $percent = 60 + [math]::Floor(($index / [math]::Max(1, $reqCount)) * 17)
                 P $percent ("{0} {1}/{2}" -f $reqName, $index, $reqCount)
+                Set-InstallState ("installing_requirement_{0}_of_{1}" -f $index, $reqCount)
                 Log ("==> {0} [{1}/{2}] linha {3}: {4}" -f $reqName, $index, $reqCount, $entry.Line, $entry.Spec)
                 $rc = Run $VENV_PY ($pipInstall + @($entry.Spec)) ("{0} {1}/{2}: {3}" -f $reqName, $index, $reqCount, $entry.Spec)
                 if ($rc -ne 0) {
@@ -1280,12 +1292,14 @@ USER_AGENT=Neve AI
             Log "[OK] Dependências do backend instaladas"
 
             P 77 'Validando dependências Python'
+            Set-InstallState 'pip_check'
             $rc = Run $VENV_PY @('-m','pip','check') 'pip check'
             if ($rc -eq 0) { Log "[OK] pip check sem conflitos" } else { Log "[!] pip check encontrou conflitos; verifique o log acima se algo falhar ao iniciar" 'warn' }
 
             # ---- 9. onnxruntime-gpu (substituir CPU)
             if ($cfg.useOnnxGpu) {
                 P 78 'Instalando onnxruntime-gpu'
+                Set-InstallState 'installing_onnxruntime_gpu'
                 [void](Run $VENV_PY @('-m','pip','uninstall','onnxruntime','-y') 'remover onnxruntime CPU')
                 $rc = Run $VENV_PY ($pipInstall + @('onnxruntime-gpu')) 'onnxruntime-gpu'
                 if ($rc -eq 0) { Log "[OK] onnxruntime-gpu instalado" } else {
