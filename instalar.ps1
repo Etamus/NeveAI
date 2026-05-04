@@ -5,6 +5,11 @@
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding           = [Console]::OutputEncoding
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+} catch {
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+}
 
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
@@ -23,7 +28,9 @@ $BACKEND  = Join-Path $ROOT 'backend'
 $LOG_DIR  = Join-Path $ROOT 'logs'
 if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
 $LOG = Join-Path $LOG_DIR 'install.log'
+$STATE_FILE = Join-Path $LOG_DIR 'install-state.txt'
 '' | Set-Content $LOG
+[System.IO.File]::WriteAllText($STATE_FILE, 'idle', [System.Text.UTF8Encoding]::new($false))
 
 # Logo (favicon do projeto)
 $LOGO_PATH = Join-Path $ROOT 'static\favicon.png'
@@ -275,6 +282,7 @@ if (-not (Test-Path $LOGO_PATH)) {
 # =============================================================================
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [Windows.Markup.XamlReader]::Load($reader)
+$window.Tag = 'idle'
 
 # Atalhos para controles
 $ctl = @{}
@@ -289,6 +297,7 @@ foreach ($name in 'LogoImg','BtnClose','LblGpu','CmbBackend','CmbVram','ChkFlash
 $window.Dispatcher.add_UnhandledException({
     param($sender, $eventArgs)
     $msg = if ($eventArgs.Exception) { $eventArgs.Exception.Message } else { 'Falha inesperada no instalador.' }
+    try { [System.IO.File]::WriteAllText($STATE_FILE, 'failed', [System.Text.UTF8Encoding]::new($false)) } catch {}
     try { Add-Content -LiteralPath $LOG -Value "[FATAL UI] $msg" -Encoding UTF8 } catch {}
     try {
         $ctl.LblStep.Text = 'Falha inesperada no instalador.'
@@ -297,6 +306,8 @@ $window.Dispatcher.add_UnhandledException({
         $ctl.BtnPrimary.Content = 'Fechar'
         $ctl.BtnPrimary.Tag = 'done'
         $ctl.BtnCancel.IsEnabled = $true
+        $ctl.BtnClose.IsEnabled = $true
+        $window.Tag = 'failed'
         $ctl.LogBox.AppendText("[FATAL UI] $msg`r`n")
         $ctl.LogScroll.ScrollToEnd()
     } catch {}
@@ -325,6 +336,15 @@ $window.Add_MouseLeftButtonDown({
 # Botoes basicos
 $ctl.BtnClose.Add_Click({ $window.Close() })
 $ctl.BtnCancel.Add_Click({ $window.Close() })
+$window.Add_Closing({
+    param($sender, $eventArgs)
+    if ([string]$window.Tag -eq 'installing') {
+        $eventArgs.Cancel = $true
+        [System.Windows.MessageBox]::Show(
+            'A instalação está em andamento. A janela não será fechada até concluir ou falhar com log visível.',
+            'Neve AI - Instalador', 'OK', 'Information') | Out-Null
+    }
+})
 
 # =============================================================================
 # Deteccao de hardware (executa antes de mostrar a janela)
@@ -415,6 +435,16 @@ function Resolve-PythonLaunch {
         }
     }
 
+    $pythonRoots = @($env:LocalAppData, $env:ProgramFiles, ${env:ProgramFiles(x86)}, 'C:\') | Where-Object { $_ }
+    foreach ($root in $pythonRoots) {
+        foreach ($minor in @('312', '311')) {
+            foreach ($relative in @("Programs\Python\Python$minor\python.exe", "Python$minor\python.exe")) {
+                $path = Join-Path $root $relative
+                if (Test-Path -LiteralPath $path) { $candidates += [pscustomobject]@{ Exe = $path; Args = @() } }
+            }
+        }
+    }
+
     $seen = @{}
     foreach ($candidate in $candidates) {
         $key = "$($candidate.Exe)|$($candidate.Args -join ' ')"
@@ -428,13 +458,101 @@ function Resolve-PythonLaunch {
     return $null
 }
 
+function Test-NodeLaunch([string]$exe) {
+    try {
+        if ([string]::IsNullOrWhiteSpace($exe) -or -not (Test-Path -LiteralPath $exe)) { return $null }
+        $fullExe = (Resolve-Path -LiteralPath $exe).ProviderPath
+        if ($fullExe -match '\\Microsoft\\WindowsApps\\node\.exe$') { return $null }
+
+        $versionOut = & $fullExe --version 2>&1
+        if ($LASTEXITCODE -ne 0) { return $null }
+        $version = (("$versionOut" -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
+        if ($version -notmatch '^v?(\d+)\.') { return $null }
+        if ([int]$matches[1] -lt 18) { return $null }
+
+        [pscustomobject]@{
+            Executable = $fullExe
+            Version    = $version
+        }
+    } catch {
+        return $null
+    }
+}
+
+function Test-NpmLaunch([string]$exe) {
+    try {
+        if ([string]::IsNullOrWhiteSpace($exe) -or -not (Test-Path -LiteralPath $exe)) { return $null }
+        $fullExe = (Resolve-Path -LiteralPath $exe).ProviderPath
+        $versionOut = & $fullExe --version 2>&1
+        if ($LASTEXITCODE -ne 0) { return $null }
+        $version = (("$versionOut" -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
+        if (-not $version) { return $null }
+
+        [pscustomobject]@{
+            Executable = $fullExe
+            Version    = $version
+        }
+    } catch {
+        return $null
+    }
+}
+
+function Resolve-NodeLaunch {
+    $nodeCandidates = @()
+    foreach ($cmd in @(Get-Command node.exe -All -EA SilentlyContinue)) {
+        $nodeCandidates += $cmd.Source
+    }
+
+    foreach ($nodeBase in (@($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ })) {
+        $path = Join-Path $nodeBase 'nodejs\node.exe'
+        if (Test-Path -LiteralPath $path) { $nodeCandidates += $path }
+    }
+
+    $npmCandidates = @()
+    foreach ($name in @('npm.cmd', 'npm.exe', 'npm')) {
+        foreach ($cmd in @(Get-Command $name -All -EA SilentlyContinue)) {
+            $npmCandidates += $cmd.Source
+        }
+    }
+
+    foreach ($nodeCandidate in ($nodeCandidates | Select-Object -Unique)) {
+        $nodeDir = Split-Path -Parent $nodeCandidate
+        foreach ($npmName in @('npm.cmd', 'npm.exe')) {
+            $npmPath = Join-Path $nodeDir $npmName
+            if (Test-Path -LiteralPath $npmPath) { $npmCandidates += $npmPath }
+        }
+    }
+
+    foreach ($nodeCandidate in ($nodeCandidates | Select-Object -Unique)) {
+        $node = Test-NodeLaunch $nodeCandidate
+        if (-not $node) { continue }
+
+        foreach ($npmCandidate in ($npmCandidates | Select-Object -Unique)) {
+            $npm = Test-NpmLaunch $npmCandidate
+            if ($npm) {
+                return [pscustomobject]@{
+                    NodeExecutable = $node.Executable
+                    NodeVersion    = $node.Version
+                    NpmExecutable  = $npm.Executable
+                    NpmVersion     = $npm.Version
+                }
+            }
+        }
+    }
+
+    return $null
+}
+
 # Pre-checar Python e Node
 $pythonLaunch = Resolve-PythonLaunch
 $pyOk = $null -ne $pythonLaunch
 $PYTHON_EXE = if ($pyOk) { $pythonLaunch.Executable } else { $null }
 $pyVer = if ($pyOk) { "Python $($pythonLaunch.Version)" } else { '' }
-$nodeOk = $false; $nodeVer = ''
-try { $nodeVer = (node --version 2>&1).ToString().Trim(); $nodeOk = $LASTEXITCODE -eq 0 } catch {}
+$nodeLaunch = Resolve-NodeLaunch
+$nodeOk = $null -ne $nodeLaunch
+$NODE_EXE = if ($nodeOk) { $nodeLaunch.NodeExecutable } else { $null }
+$NPM_EXE = if ($nodeOk) { $nodeLaunch.NpmExecutable } else { $null }
+$nodeVer = if ($nodeOk) { "$($nodeLaunch.NodeVersion) / npm $($nodeLaunch.NpmVersion)" } else { '' }
 
 if ($detected.Name) {
     $ctl.LblGpu.Text = $detected.Name
@@ -451,7 +569,7 @@ if (-not $pyOk -or -not $nodeOk) {
     $ctl.BtnPrimary.Content   = 'Pré-requisitos faltando'
     $missing = @()
     if (-not $pyOk)   { $missing += 'Python 3.11 ou 3.12 real, com venv/ensurepip (desative aliases Python da Microsoft Store se necessário)' }
-    if (-not $nodeOk) { $missing += 'Node.js 18+ (https://nodejs.org)' }
+    if (-not $nodeOk) { $missing += 'Node.js 18+ com npm (https://nodejs.org)' }
     [System.Windows.MessageBox]::Show(
         "Faltando:`n  • " + ($missing -join "`n  • ") + "`n`nInstale e abra o instalador novamente.",
         'Pré-requisitos', 'OK', 'Warning') | Out-Null
@@ -510,12 +628,24 @@ function Run-Logged([string]$exe, [string[]]$args, [string]$desc) {
     }
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName               = $exe
+    $processExe = $exe
+    $processArgs = (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
+    $extension = [System.IO.Path]::GetExtension($exe)
+    if (@('.cmd', '.bat') -contains $extension.ToLowerInvariant()) {
+        $cmdExe = if ($env:ComSpec -and (Test-Path -LiteralPath $env:ComSpec)) { $env:ComSpec } else { Join-Path $env:SystemRoot 'System32\cmd.exe' }
+        $processExe = $cmdExe
+        $quote = [char]34
+        $cmdCommand = $quote + ($exe -replace $quote, ($quote + $quote)) + $quote
+        if ($safeArgs.Count -gt 0) { $cmdCommand += ' ' + (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ') }
+        $processArgs = '/d /s /c ' + $quote + $cmdCommand + $quote
+    }
+
+    $psi.FileName               = $processExe
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
     $psi.UseShellExecute        = $false
     $psi.CreateNoWindow         = $true
-    $psi.Arguments              = (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
+    $psi.Arguments              = $processArgs
     $cmdLine = "CMD: {0} {1}" -f $exe, ($safeArgs -join ' ')
     UI-Log $cmdLine 'info'
     Add-Content $LOG $cmdLine
@@ -597,6 +727,12 @@ $ctl.BtnPrimary.Add_Click({
             'Neve AI - Instalador', 'OK', 'Warning') | Out-Null
         return
     }
+    if ([string]::IsNullOrWhiteSpace($NODE_EXE) -or -not (Test-Path -LiteralPath $NODE_EXE) -or [string]::IsNullOrWhiteSpace($NPM_EXE) -or -not (Test-Path -LiteralPath $NPM_EXE)) {
+        [System.Windows.MessageBox]::Show(
+            "Node.js 18+ com npm não encontrado. Instale pelo nodejs.org e abra o instalador novamente.",
+            'Neve AI - Instalador', 'OK', 'Warning') | Out-Null
+        return
+    }
 
     # Coleta selecoes
     $backendIdx  = $ctl.CmbBackend.SelectedIndex
@@ -616,16 +752,19 @@ $ctl.BtnPrimary.Add_Click({
         5 { @{ torchIndex='https://download.pytorch.org/whl/cu124'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.4 (Turing)';     useOnnxGpu=$true;  vendor='NVIDIA' } }
         6 { @{ torchIndex='https://download.pytorch.org/whl/cu124'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.4 (Pascal)';     useOnnxGpu=$false; vendor='NVIDIA' } }
         7 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.8 (Profissional)'; useOnnxGpu=$true; vendor='NVIDIA' } }
-        8 { @{ torchIndex='https://download.pytorch.org/whl/rocm6.3'; llamaAsset='hip-radeon'; cudaVer='ROCm 6.3';            useOnnxGpu=$false; vendor='AMD'    } }
+        8 { @{ torchIndex='https://download.pytorch.org/whl/cpu'; llamaAsset='hip-radeon'; cudaVer='AMD HIP/ROCm (PyTorch CPU no Windows)'; useOnnxGpu=$false; vendor='AMD'    } }
         9 { @{ torchIndex='https://download.pytorch.org/whl/cpu'; llamaAsset='vulkan';         cudaVer='Vulkan';              useOnnxGpu=$false; vendor='AMD'    } }
         default { @{ torchIndex='https://download.pytorch.org/whl/cpu'; llamaAsset='cpu'; cudaVer='CPU'; useOnnxGpu=$false; vendor='CPU' } }
     }
 
     # Trocar para a tela de instalacao
+    $window.Tag = 'installing'
+    try { [System.IO.File]::WriteAllText($STATE_FILE, 'running', [System.Text.UTF8Encoding]::new($false)) } catch {}
     $ctl.ConfigPanel.Visibility = 'Collapsed'
     $ctl.InstallPanel.Visibility = 'Visible'
     $ctl.BtnPrimary.IsEnabled = $false
     $ctl.BtnCancel.IsEnabled  = $false
+    $ctl.BtnClose.IsEnabled = $false
 
     # ---- Atalho: se TUDO ja esta instalado, marca como concluido
     $venvOk     = Test-Path $VENV_PY
@@ -650,7 +789,7 @@ $ctl.BtnPrimary.Add_Click({
 
         $summary = @()
         $summary += "Python:      $((& $PYTHON_EXE --version 2>&1))"
-        $summary += "Node.js:     $((node --version 2>&1))"
+        $summary += "Node.js:     $((& $NODE_EXE --version 2>&1))"
         try {
             $tOut = & $VENV_PY -c "import torch; v=torch.__version__; cuda='(CUDA '+torch.version.cuda+')' if torch.cuda.is_available() else '(CPU)'; print('PyTorch '+v+' '+cuda)" 2>$null
             if ($tOut) { $summary += "PyTorch:     $tOut" }
@@ -666,12 +805,14 @@ $ctl.BtnPrimary.Add_Click({
         $ctl.BtnPrimary.IsEnabled    = $true
         $ctl.BtnPrimary.Content      = 'Concluir'
         $ctl.BtnPrimary.Tag          = 'done'
+        $window.Tag = 'done'
+        try { [System.IO.File]::WriteAllText($STATE_FILE, 'done', [System.Text.UTF8Encoding]::new($false)) } catch {}
         return
     }
 
     # Worker em runspace separado, usando as funcoes UI-* via $window
     $worker = {
-        param($cfg, $flashAttn, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG, $PYTHON_EXE)
+        param($cfg, $flashAttn, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG, $STATE_FILE, $PYTHON_EXE, $NODE_EXE, $NPM_EXE)
 
         # Helpers (definidas dentro do runspace)
         function Log([string]$m, [string]$k='info') {
@@ -697,6 +838,9 @@ $ctl.BtnPrimary.Add_Click({
                 }
             } catch {}
         }
+        function Set-InstallState([string]$state) {
+            try { [System.IO.File]::WriteAllText($STATE_FILE, $state, [System.Text.UTF8Encoding]::new($false)) } catch {}
+        }
         function ConvertTo-ProcessArgument([string]$arg) {
             if ($null -eq $arg) { throw 'Argumento nulo.' }
             if ($arg.Length -gt 0 -and $arg -notmatch '[\s"]') { return $arg }
@@ -719,12 +863,24 @@ $ctl.BtnPrimary.Add_Click({
             }
 
             $psi = New-Object System.Diagnostics.ProcessStartInfo
-            $psi.FileName = $exe
+            $processExe = $exe
+            $processArgs = (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
+            $extension = [System.IO.Path]::GetExtension($exe)
+            if (@('.cmd', '.bat') -contains $extension.ToLowerInvariant()) {
+                $cmdExe = if ($env:ComSpec -and (Test-Path -LiteralPath $env:ComSpec)) { $env:ComSpec } else { Join-Path $env:SystemRoot 'System32\cmd.exe' }
+                $processExe = $cmdExe
+                $quote = [char]34
+                $cmdCommand = $quote + ($exe -replace $quote, ($quote + $quote)) + $quote
+                if ($safeArgs.Count -gt 0) { $cmdCommand += ' ' + (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ') }
+                $processArgs = '/d /s /c ' + $quote + $cmdCommand + $quote
+            }
+
+            $psi.FileName = $processExe
             $psi.RedirectStandardOutput = $true
             $psi.RedirectStandardError  = $true
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow  = $true
-            $psi.Arguments = (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
+            $psi.Arguments = $processArgs
             Log ("CMD: {0} {1}" -f $exe, ($safeArgs -join ' '))
 
             $queue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]'
@@ -795,16 +951,67 @@ $ctl.BtnPrimary.Add_Click({
                 $p.Dispose()
             }
         }
+        function Run-NoPipe([string]$exe, [string[]]$argv, [string]$desc) {
+            Log "==> $desc"
+            if ([string]::IsNullOrWhiteSpace($exe)) { throw "Executável vazio ao executar '$desc'." }
+
+            $safeArgs = @()
+            foreach ($a in @($argv)) {
+                if ($null -eq $a) { throw "Argumento nulo ao executar '$desc' com '$exe'." }
+                $safeArgs += [string]$a
+            }
+
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $exe
+            $psi.Arguments = (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
+            $psi.WorkingDirectory = $ROOT
+            $psi.RedirectStandardOutput = $false
+            $psi.RedirectStandardError = $false
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            Log ("CMD: {0} {1}" -f $exe, ($safeArgs -join ' '))
+
+            $p = $null
+            try {
+                $p = New-Object System.Diagnostics.Process
+                $p.StartInfo = $psi
+                [void]$p.Start()
+                Log ("[pid {0}] {1} iniciado (sem pipes de stdout/stderr para evitar fechamento do WPF no venv)" -f $p.Id, $desc)
+            } catch {
+                throw "Falha ao iniciar '$exe' para '$desc': $($_.Exception.Message)"
+            }
+            if ($null -eq $p) { throw "Falha ao iniciar '$exe' para '$desc': Process.Start retornou nulo." }
+
+            try {
+                $startedAt = Get-Date
+                $lastHeartbeat = $startedAt
+                while (-not $p.WaitForExit(1000)) {
+                    $now = Get-Date
+                    if (($now - $lastHeartbeat).TotalSeconds -ge 10) {
+                        $elapsedSec = [math]::Floor(($now - $startedAt).TotalSeconds)
+                        Log ("... {0} ainda em andamento ({1}s)." -f $desc, $elapsedSec)
+                        $lastHeartbeat = $now
+                    }
+                }
+                $p.WaitForExit()
+                $elapsed = (Get-Date) - $startedAt
+                Log ("[exit {0}] {1} finalizado em {2:mm\:ss}" -f $p.ExitCode, $desc, $elapsed)
+                return $p.ExitCode
+            } finally {
+                try { $p.Dispose() } catch {}
+            }
+        }
         function Test-CommandExists([string]$name) {
             return $null -ne (Get-Command $name -EA SilentlyContinue)
         }
         function Test-MsvcBuildTools {
             if (Test-CommandExists 'cl.exe') { return $true }
 
-            $vswhereCandidates = @(
-                (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'),
-                (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\Installer\vswhere.exe')
-            ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+            $vswhereCandidates = @()
+            foreach ($vsBase in (@(${env:ProgramFiles(x86)}, $env:ProgramFiles) | Where-Object { $_ })) {
+                $vswherePath = Join-Path $vsBase 'Microsoft Visual Studio\Installer\vswhere.exe'
+                if (Test-Path -LiteralPath $vswherePath) { $vswhereCandidates += $vswherePath }
+            }
 
             foreach ($vswhere in $vswhereCandidates) {
                 try {
@@ -848,7 +1055,8 @@ $ctl.BtnPrimary.Add_Click({
 
             # ---- 2. .env padrao
             $envPath = Join-Path $ROOT '.env'
-            if (-not (Test-Path $envPath)) {                @"
+            if (-not (Test-Path -LiteralPath $envPath)) {
+                $envText = @"
 VITE_RELATIVE_CONFIG=True
 VITE_NEVEAI_BACKEND_URL=http://localhost:8080
 ENV=dev
@@ -869,7 +1077,8 @@ ENABLE_LOGIN_FORM=True
 SAFE_MODE=False
 CORS_ALLOW_ORIGIN=http://localhost:8080
 USER_AGENT=Neve AI
-"@ | Set-Content $envPath
+"@
+                [System.IO.File]::WriteAllText($envPath, $envText, [System.Text.UTF8Encoding]::new($false))
                 Log "[OK] .env criado"
             } else {
                 Log "[…] .env preservado"
@@ -880,58 +1089,94 @@ USER_AGENT=Neve AI
             $llamaDir = Join-Path $ROOT 'llamacpp-server\bin'
             if (-not (Test-Path (Split-Path $llamaDir -Parent))) { New-Item (Split-Path $llamaDir -Parent) -ItemType Directory | Out-Null }
             if (-not (Test-Path $llamaDir)) { New-Item $llamaDir -ItemType Directory | Out-Null }
+            $llamaServer = Join-Path $llamaDir 'llama-server.exe'
+            $llamaInstalled = $false
             try {
-                $rel = Invoke-RestMethod 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest' -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' }
+                $rel = Invoke-RestMethod 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest' -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 60
                 $tag = $rel.tag_name
-                $binName = "llama-$tag-bin-win-$($cfg.llamaAsset)-x64.zip"
-                $binObj  = $rel.assets | Where-Object { $_.name -eq $binName } | Select-Object -First 1
-                if (-not $binObj) {
-                    Log "[!] Asset $binName não encontrado, usando CPU como fallback" 'warn'
-                    $binName = "llama-$tag-bin-win-cpu-x64.zip"
-                    $binObj  = $rel.assets | Where-Object { $_.name -eq $binName } | Select-Object -First 1
-                }
-                if ($binObj) {
-                    $sizeMB = [math]::Round($binObj.size/1MB,0)
-                    Log "==> Baixando $binName ($sizeMB MB)"
-                    $tmp = Join-Path $env:TEMP 'neve_llama_bin.zip'
-                    Invoke-WebRequest $binObj.browser_download_url -OutFile $tmp -UseBasicParsing
-                    Get-ChildItem $llamaDir -Filter '*.exe' -EA SilentlyContinue | Remove-Item -Force
-                    Get-ChildItem $llamaDir -Filter '*.dll' -EA SilentlyContinue | Remove-Item -Force
-                    $ext = Join-Path $env:TEMP 'neve_llama_ext'
-                    if (Test-Path $ext) { Remove-Item $ext -Recurse -Force }
-                    Expand-Archive $tmp -DestinationPath $ext -Force
-                    Get-ChildItem $ext -Recurse -File | ForEach-Object { Copy-Item $_.FullName $llamaDir -Force }
-                    Remove-Item $ext -Recurse -Force
-                    Remove-Item $tmp -Force
-                    Log "[OK] llama.cpp $tag instalado"
-                }
-                if ($cfg.llamaAsset -match '^cuda-') {
-                    P 18 'Baixando CUDA Runtime'
-                    $dllName = "cudart-llama-bin-win-$($cfg.llamaAsset)-x64.zip"
-                    $dllObj  = $rel.assets | Where-Object { $_.name -eq $dllName } | Select-Object -First 1
-                    if ($dllObj) {
-                        $sizeMB = [math]::Round($dllObj.size/1MB,0)
-                        Log "==> Baixando $dllName ($sizeMB MB)"
-                        $tmp = Join-Path $env:TEMP 'neve_cudart.zip'
-                        Invoke-WebRequest $dllObj.browser_download_url -OutFile $tmp -UseBasicParsing
-                        $ext = Join-Path $env:TEMP 'neve_cudart_ext'
-                        if (Test-Path $ext) { Remove-Item $ext -Recurse -Force }
-                        Expand-Archive $tmp -DestinationPath $ext -Force
-                        Get-ChildItem $ext -Recurse -File | ForEach-Object { Copy-Item $_.FullName $llamaDir -Force }
-                        Remove-Item $ext -Recurse -Force
-                        Remove-Item $tmp -Force
-                        Log "[OK] CUDA Runtime DLLs instaladas"
+                if (-not $tag) { throw 'Release do llama.cpp sem tag_name.' }
+
+                $attempts = @($cfg.llamaAsset, 'cpu') | Where-Object { $_ } | Select-Object -Unique
+                foreach ($assetName in $attempts) {
+                    $tmpFiles = @(); $stageDir = $null; $backupDir = $null
+                    try {
+                        $binName = "llama-$tag-bin-win-$assetName-x64.zip"
+                        $binObj  = $rel.assets | Where-Object { $_.name -eq $binName } | Select-Object -First 1
+                        if (-not $binObj) { throw "Asset $binName não encontrado." }
+
+                        $stageDir = Join-Path $env:TEMP "neve_llama_stage_$([guid]::NewGuid().ToString('N'))"
+                        New-Item $stageDir -ItemType Directory -Force | Out-Null
+
+                        $sizeMB = [math]::Round($binObj.size/1MB,0)
+                        Log "==> Baixando $binName ($sizeMB MB)"
+                        $tmpBin = Join-Path $env:TEMP "neve_llama_bin_$([guid]::NewGuid().ToString('N')).zip"
+                        $tmpFiles += $tmpBin
+                        Invoke-WebRequest $binObj.browser_download_url -OutFile $tmpBin -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 300
+                        Expand-Archive $tmpBin -DestinationPath $stageDir -Force
+
+                        if ($assetName -match '^cuda-') {
+                            P 18 'Baixando CUDA Runtime'
+                            $dllName = "cudart-llama-bin-win-$assetName-x64.zip"
+                            $dllObj  = $rel.assets | Where-Object { $_.name -eq $dllName } | Select-Object -First 1
+                            if (-not $dllObj) { throw "Runtime CUDA $dllName não encontrado." }
+                            $sizeMB = [math]::Round($dllObj.size/1MB,0)
+                            Log "==> Baixando $dllName ($sizeMB MB)"
+                            $tmpDll = Join-Path $env:TEMP "neve_cudart_$([guid]::NewGuid().ToString('N')).zip"
+                            $tmpFiles += $tmpDll
+                            Invoke-WebRequest $dllObj.browser_download_url -OutFile $tmpDll -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 300
+                            Expand-Archive $tmpDll -DestinationPath $stageDir -Force
+                        }
+
+                        $serverExe = Get-ChildItem $stageDir -Recurse -File -Filter 'llama-server.exe' | Select-Object -First 1
+                        if (-not $serverExe) { throw "O pacote $binName não contém llama-server.exe." }
+                        $stagedFiles = @(Get-ChildItem $stageDir -Recurse -File)
+                        if ($stagedFiles.Count -eq 0) { throw "O pacote $binName não extraiu arquivos." }
+
+                        $backupDir = Join-Path $env:TEMP "neve_llama_backup_$([guid]::NewGuid().ToString('N'))"
+                        New-Item $backupDir -ItemType Directory -Force | Out-Null
+                        Get-ChildItem $llamaDir -Force -EA SilentlyContinue | ForEach-Object { Copy-Item $_.FullName $backupDir -Recurse -Force }
+
+                        try {
+                            Get-Process llama-server -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue
+                            Get-ChildItem $llamaDir -File -EA SilentlyContinue | Where-Object { $_.Extension -in '.exe','.dll','.pdb' } | Remove-Item -Force -EA Stop
+                            foreach ($file in $stagedFiles) { Copy-Item $file.FullName $llamaDir -Force -EA Stop }
+                            if (-not (Test-Path -LiteralPath $llamaServer)) { throw 'llama-server.exe não ficou disponível após a cópia.' }
+                        } catch {
+                            $applyError = $_
+                            Log "[!] Falha ao aplicar llama.cpp; restaurando backup: $applyError" 'warn'
+                            try {
+                                Get-ChildItem $llamaDir -Force -EA SilentlyContinue | Remove-Item -Recurse -Force -EA SilentlyContinue
+                                Get-ChildItem $backupDir -Force -EA SilentlyContinue | ForEach-Object { Copy-Item $_.FullName $llamaDir -Recurse -Force }
+                            } catch {}
+                            throw $applyError
+                        }
+
+                        Set-Content -Path (Join-Path (Split-Path $llamaDir -Parent) 'version.txt') -Value @($tag, $assetName, $binName) -Encoding UTF8
+                        Log "[OK] llama.cpp $tag instalado ($assetName)"
+                        $llamaInstalled = $true
+                        break
+                    } catch {
+                        if ($assetName -ne 'cpu') { Log "[!] Falha ao instalar llama.cpp ${assetName}: $_. Tentando CPU." 'warn' } else { Log "[!] Falha ao instalar llama.cpp CPU: $_" 'warn' }
+                    } finally {
+                        foreach ($tmp in $tmpFiles) { try { Remove-Item $tmp -Force -EA SilentlyContinue } catch {} }
+                        if ($stageDir) { try { Remove-Item $stageDir -Recurse -Force -EA SilentlyContinue } catch {} }
+                        if ($backupDir) { try { Remove-Item $backupDir -Recurse -Force -EA SilentlyContinue } catch {} }
                     }
                 }
             } catch {
-                Log "[!] Falha ao baixar llama.cpp: $_" 'warn'
+                Log "[!] Falha ao consultar release do llama.cpp: $_" 'warn'
             }
+            if (-not $llamaInstalled -and -not (Test-Path -LiteralPath $llamaServer)) {
+                throw 'Não foi possível instalar o llama.cpp e nenhum llama-server.exe existente foi encontrado. Verifique a conexão com a internet e tente novamente.'
+            }
+            if (-not $llamaInstalled) { Log '[!] Usando llama.cpp existente porque o download novo não pôde ser concluído.' 'warn' }
 
             # ---- 4. Recriar venv
             P 25 'Recriando ambiente Python'
             if ([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) {
                 throw "Python 3.11/3.12 válido não encontrado para criar o venv. Instale pelo python.org e desative aliases Python da Microsoft Store, se existirem."
             }
+            Set-InstallState 'creating_venv'
             Log "[OK] Python selecionado: $PYTHON_EXE"
             if (Test-Path $VENV_DIR) {
                 Log "==> Removendo venv antigo"
@@ -941,19 +1186,21 @@ USER_AGENT=Neve AI
             }
             $venvParent = Split-Path -Parent $VENV_DIR
             if (-not (Test-Path -LiteralPath $venvParent)) { New-Item -ItemType Directory -Path $venvParent -Force | Out-Null }
-            $rc = Run $PYTHON_EXE @('-m','venv',$VENV_DIR) 'Criando venv'
+            $rc = Run-NoPipe $PYTHON_EXE @('-m','venv',$VENV_DIR) 'Criando venv'
             if ($rc -ne 0) {
                 Log "[!] Criação padrão do venv falhou (exit $rc). Tentando novamente com --copies." 'warn'
                 if (Test-Path $VENV_DIR) { Remove-Item $VENV_DIR -Recurse -Force -EA SilentlyContinue }
-                $rc = Run $PYTHON_EXE @('-m','venv','--copies',$VENV_DIR) 'Criando venv (--copies)'
+                $rc = Run-NoPipe $PYTHON_EXE @('-m','venv','--copies',$VENV_DIR) 'Criando venv (--copies)'
             }
             if ($rc -ne 0) { throw "Falha ao criar venv (exit $rc). Python usado: $PYTHON_EXE. Pasta alvo: $VENV_DIR" }
             if (-not (Test-Path $VENV_PY)) {
                 throw "O venv foi criado, mas o Python interno não foi encontrado em '$VENV_PY'. Verifique se o Python instalado suporta venv e se o antivírus não bloqueou a criação dos executáveis."
             }
+            Set-InstallState 'venv_created'
             Log "[OK] venv criado"
 
             # ---- 5. pip + PyTorch
+            Set-InstallState 'installing_python_packages'
             $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'
             $env:PIP_NO_INPUT = '1'
             $env:PIP_DEFAULT_TIMEOUT = '60'
@@ -1048,15 +1295,19 @@ USER_AGENT=Neve AI
             }
 
             # ---- 10. npm install
+            Set-InstallState 'installing_frontend'
             P 84 'Instalando pacotes npm'
             Set-Location -LiteralPath $ROOT
-            $rc = Run 'npm.cmd' @('install') 'npm install'
+            if ([string]::IsNullOrWhiteSpace($NPM_EXE) -or -not (Test-Path -LiteralPath $NPM_EXE)) {
+                throw "npm não encontrado. Instale Node.js 18+ pelo nodejs.org e abra o instalador novamente."
+            }
+            $rc = Run $NPM_EXE @('install','--no-audit','--no-fund') 'npm install'
             if ($rc -ne 0) { throw "Falha em npm install (exit $rc)" }
             Log "[OK] Pacotes npm instalados"
 
             # ---- 11. npm run build
             P 92 'Compilando frontend (~2-5 min)'
-            $rc = Run 'npm.cmd' @('run','build') 'npm run build'
+            $rc = Run $NPM_EXE @('run','build') 'npm run build'
             if ($rc -ne 0) { throw "Falha no build do frontend (exit $rc)" }
             Log "[OK] Frontend compilado"
 
@@ -1069,12 +1320,13 @@ USER_AGENT=Neve AI
             Log "[OK] Frontend copiado para backend\neveai\frontend"
 
             # ---- Done
+            Set-InstallState 'done'
             P 100 'Concluído'
 
             # Resumo
             $summary = @()
             $summary += "Python:      $((& $PYTHON_EXE --version 2>&1))"
-            $summary += "Node.js:     $((node --version 2>&1))"
+            $summary += "Node.js:     $((& $NODE_EXE --version 2>&1))"
             try {
                 $tOut = & $VENV_PY -c "import torch; v=torch.__version__; cuda='(CUDA '+torch.version.cuda+')' if torch.cuda.is_available() else '(CPU)'; print('PyTorch '+v+' '+cuda)" 2>$null
                 if ($tOut) { $summary += "PyTorch:     $tOut" }
@@ -1090,10 +1342,13 @@ USER_AGENT=Neve AI
                 $script:Ctl.BtnPrimary.IsEnabled    = $true
                 $script:Ctl.BtnPrimary.Content      = 'Concluir'
                 $script:Ctl.BtnPrimary.Tag          = 'done'
+                $script:Ctl.BtnClose.IsEnabled      = $true
+                $script:Window.Tag = 'done'
             })
         } catch {
             $errMsg = "$($_.Exception.Message)"
             if (-not $errMsg) { $errMsg = "$_" }
+            Set-InstallState 'failed'
             Log "[X] FALHA: $errMsg" 'err'
             $script:Window.Dispatcher.Invoke([Action]{
                 $script:Ctl.LblStep.Text = "Falha durante a instalação."
@@ -1102,6 +1357,8 @@ USER_AGENT=Neve AI
                 $script:Ctl.BtnPrimary.Content   = 'Fechar'
                 $script:Ctl.BtnPrimary.Tag       = 'done'
                 $script:Ctl.BtnCancel.IsEnabled  = $true
+                $script:Ctl.BtnClose.IsEnabled   = $true
+                $script:Window.Tag = 'failed'
                 [System.Windows.MessageBox]::Show("A instalação falhou. A janela ficará aberta para você ler o log.`n`nVeja logs\install.log`n`n$errMsg", 'Neve AI', 'OK', 'Error') | Out-Null
             })
         }
@@ -1117,12 +1374,13 @@ USER_AGENT=Neve AI
 
     $ps = [PowerShell]::Create()
     $ps.Runspace = $runspace
-    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($flashAttn).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($PYTHON_EXE)
+    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($flashAttn).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($STATE_FILE).AddArgument($PYTHON_EXE).AddArgument($NODE_EXE).AddArgument($NPM_EXE)
     [void]$ps.add_InvocationStateChanged({
         param($sender, $eventArgs)
         if ($eventArgs.InvocationStateInfo.State -eq 'Failed') {
             $fatal = $eventArgs.InvocationStateInfo.Reason
             $msg = if ($fatal) { $fatal.Message } else { 'Falha fatal no processo de instalação.' }
+            try { [System.IO.File]::WriteAllText($STATE_FILE, 'failed', [System.Text.UTF8Encoding]::new($false)) } catch {}
             try { Add-Content -LiteralPath $LOG -Value "[FATAL] $msg" -Encoding UTF8 } catch {}
             try {
                 $window.Dispatcher.Invoke([Action]{
@@ -1132,6 +1390,8 @@ USER_AGENT=Neve AI
                     $ctl.BtnPrimary.Content = 'Fechar'
                     $ctl.BtnPrimary.Tag = 'done'
                     $ctl.BtnCancel.IsEnabled = $true
+                    $ctl.BtnClose.IsEnabled = $true
+                    $window.Tag = 'failed'
                     $ctl.LogBox.AppendText("[FATAL] $msg`r`n")
                     $ctl.LogScroll.ScrollToEnd()
                 })
