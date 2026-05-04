@@ -1,4 +1,4 @@
-<img width="1400" height="350" alt="1776513530968" src="https://github.com/user-attachments/assets/abfd31c4-4ba6-4790-8f64-61c83ac0fdfc" />
+<img width="1400" height="350" alt="Nevebanner" src="https://github.com/user-attachments/assets/b7f15e52-e20e-49e7-a46e-954ad0af8e29" />
 
 ---
 
@@ -104,7 +104,7 @@ Acesse manualmente se preferir: **http://localhost:8080**
 
 ## Modelos
 
-<img width="1128" height="191" alt="neveai_cover" src="https://github.com/user-attachments/assets/09383a14-20c2-48fb-9eff-753ec710cff9" />
+<img width="1400" height="247" alt="Stratabanner" src="https://github.com/user-attachments/assets/951ab901-bed0-4272-b0e0-b1d16e93f56e" />
 
 ---
 
