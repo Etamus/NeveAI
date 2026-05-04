@@ -29,7 +29,7 @@ $LOG_DIR  = Join-Path $ROOT 'logs'
 if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
 $LOG = Join-Path $LOG_DIR 'install.log'
 $STATE_FILE = Join-Path $LOG_DIR 'install-state.txt'
-$INSTALLER_REVISION = '2026-05-04-runtime-minimal-retry-v4'
+$INSTALLER_REVISION = '2026-05-04-release-models-v6'
 '' | Set-Content $LOG
 Add-Content -LiteralPath $LOG -Value ("[INSTALLER] revision={0}; script={1}; root={2}" -f $INSTALLER_REVISION, $SCRIPT_PATH, $ROOT) -Encoding UTF8
 [System.IO.File]::WriteAllText($STATE_FILE, 'idle', [System.Text.UTF8Encoding]::new($false))
@@ -257,7 +257,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <TextBlock Text="OK" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <TextBlock x:Name="LblDoneTitle" Text="Tudo pronto!" FontSize="22" FontWeight="SemiBold" Foreground="#111111" HorizontalAlignment="Center"/>
-                            <TextBlock x:Name="LblDoneSub" Text="Use start.bat para iniciar o Neve AI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
+                            <TextBlock x:Name="LblDoneSub" Text="Use instalar.bat para iniciar o Neve AI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
                             <Border Background="#FAFAFA" CornerRadius="8" Padding="14,12">
                                 <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="#52525B"/>
                             </Border>
@@ -470,7 +470,8 @@ function Test-NodeLaunch([string]$exe) {
         if ($LASTEXITCODE -ne 0) { return $null }
         $version = (("$versionOut" -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
         if ($version -notmatch '^v?(\d+)\.') { return $null }
-        if ([int]$matches[1] -lt 18) { return $null }
+        $major = [int]$matches[1]
+        if ($major -lt 18 -or $major -gt 22) { return $null }
 
         [pscustomobject]@{
             Executable = $fullExe
@@ -565,13 +566,12 @@ $ctl.CmbBackend.SelectedIndex = $detected.Backend
 $ctl.CmbVram.SelectedIndex    = 0
 $ctl.ChkFlash.IsChecked       = $false
 
-# Se faltar Python ou Node, bloqueia o botao
-if (-not $pyOk -or -not $nodeOk) {
+# Se faltar Python, bloqueia o botao. Node.js pode ser baixado em modo portatil pelo instalador.
+if (-not $pyOk) {
     $ctl.BtnPrimary.IsEnabled = $false
     $ctl.BtnPrimary.Content   = 'Pré-requisitos faltando'
     $missing = @()
     if (-not $pyOk)   { $missing += 'Python 3.11 ou 3.12 real, com venv/ensurepip (desative aliases Python da Microsoft Store se necessário)' }
-    if (-not $nodeOk) { $missing += 'Node.js 18+ com npm (https://nodejs.org)' }
     [System.Windows.MessageBox]::Show(
         "Faltando:`n  • " + ($missing -join "`n  • ") + "`n`nInstale e abra o instalador novamente.",
         'Pré-requisitos', 'OK', 'Warning') | Out-Null
@@ -626,13 +626,6 @@ $ctl.BtnPrimary.Add_Click({
             'Neve AI - Instalador', 'OK', 'Warning') | Out-Null
         return
     }
-    if ([string]::IsNullOrWhiteSpace($NODE_EXE) -or -not (Test-Path -LiteralPath $NODE_EXE) -or [string]::IsNullOrWhiteSpace($NPM_EXE) -or -not (Test-Path -LiteralPath $NPM_EXE)) {
-        [System.Windows.MessageBox]::Show(
-            "Node.js 18+ com npm não encontrado. Instale pelo nodejs.org e abra o instalador novamente.",
-            'Neve AI - Instalador', 'OK', 'Warning') | Out-Null
-        return
-    }
-
     # Coleta selecoes
     $backendIdx  = $ctl.CmbBackend.SelectedIndex
     $vramIdx     = $ctl.CmbVram.SelectedIndex
@@ -698,7 +691,7 @@ $ctl.BtnPrimary.Add_Click({
         $ctl.InstallPanel.Visibility = 'Collapsed'
         $ctl.DonePanel.Visibility    = 'Visible'
         $ctl.LblDoneTitle.Text       = 'Já está tudo pronto!'
-        $ctl.LblDoneSub.Text         = 'Nenhuma pendência detectada. Use start.bat para iniciar o Neve AI.'
+        $ctl.LblDoneSub.Text         = 'Nenhuma pendência detectada. Use instalar.bat para iniciar o Neve AI.'
         $ctl.LblSummary.Text         = ($summary -join "`r`n")
         $ctl.BtnCancel.Visibility    = 'Collapsed'
         $ctl.BtnPrimary.IsEnabled    = $true
@@ -765,6 +758,15 @@ $ctl.BtnPrimary.Add_Click({
             $psi.RedirectStandardError = $false
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow = $true
+            if ($script:FrontendNodeDir) {
+                try {
+                    $currentPath = $psi.EnvironmentVariables['PATH']
+                    if ([string]::IsNullOrWhiteSpace($currentPath)) { $currentPath = $env:PATH }
+                    $psi.EnvironmentVariables['PATH'] = "$script:FrontendNodeDir;$currentPath"
+                } catch {
+                    Log "[!] Não foi possível priorizar Node.js portátil para '$desc': $($_.Exception.Message)" 'warn'
+                }
+            }
             if ($script:CleanPipProcessEnv) {
                 try {
                     $cleanVenvScripts = Join-Path $VENV_DIR 'Scripts'
@@ -840,6 +842,123 @@ $ctl.BtnPrimary.Add_Click({
 
             return $false
         }
+        function Get-NodeMajorFromVersion([string]$version) {
+            if ([string]::IsNullOrWhiteSpace($version)) { return -1 }
+            if ($version -notmatch '^v?(\d+)\.') { return -1 }
+            return [int]$matches[1]
+        }
+        function Test-FrontendNodePair([string]$nodeExe, [string]$npmExe) {
+            try {
+                if ([string]::IsNullOrWhiteSpace($nodeExe) -or -not (Test-Path -LiteralPath $nodeExe)) { return $null }
+                if ([string]::IsNullOrWhiteSpace($npmExe) -or -not (Test-Path -LiteralPath $npmExe)) { return $null }
+
+                $nodePath = (Resolve-Path -LiteralPath $nodeExe).ProviderPath
+                if ($nodePath -match '\\Microsoft\\WindowsApps\\node\.exe$') { return $null }
+
+                $nodeVersionOut = & $nodePath --version 2>&1
+                if ($LASTEXITCODE -ne 0) { return $null }
+                $nodeVersion = (("$nodeVersionOut" -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
+                $nodeMajor = Get-NodeMajorFromVersion $nodeVersion
+                if ($nodeMajor -lt 18 -or $nodeMajor -gt 22) { return $null }
+
+                $npmPath = (Resolve-Path -LiteralPath $npmExe).ProviderPath
+                $npmVersionOut = & $npmPath --version 2>&1
+                if ($LASTEXITCODE -ne 0) { return $null }
+                $npmVersion = (("$npmVersionOut" -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
+                if (-not $npmVersion) { return $null }
+
+                return [pscustomobject]@{
+                    NodeExecutable = $nodePath
+                    NodeVersion    = $nodeVersion
+                    NpmExecutable  = $npmPath
+                    NpmVersion     = $npmVersion
+                    NodeDir        = Split-Path -Parent $nodePath
+                }
+            } catch {
+                return $null
+            }
+        }
+        function Resolve-FrontendNodeLaunch {
+            $nodeCandidates = @()
+            $portableNode = Join-Path $ROOT 'tools\nodejs\node.exe'
+            if (Test-Path -LiteralPath $portableNode) { $nodeCandidates += $portableNode }
+            if ($NODE_EXE) { $nodeCandidates += $NODE_EXE }
+
+            foreach ($cmd in @(Get-Command node.exe -All -EA SilentlyContinue)) {
+                $nodeCandidates += $cmd.Source
+            }
+            foreach ($nodeBase in (@($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ })) {
+                $path = Join-Path $nodeBase 'nodejs\node.exe'
+                if (Test-Path -LiteralPath $path) { $nodeCandidates += $path }
+            }
+
+            foreach ($nodeCandidate in ($nodeCandidates | Select-Object -Unique)) {
+                $nodeDir = Split-Path -Parent $nodeCandidate
+                foreach ($npmName in @('npm.cmd','npm.exe')) {
+                    $npmPath = Join-Path $nodeDir $npmName
+                    $pair = Test-FrontendNodePair $nodeCandidate $npmPath
+                    if ($pair) { return $pair }
+                }
+            }
+
+            return $null
+        }
+        function Install-PortableNode22 {
+            Set-InstallState 'installing_portable_node22'
+            P 83 'Preparando Node.js 22 portátil'
+            $toolsDir = Join-Path $ROOT 'tools'
+            $nodeDir = Join-Path $toolsDir 'nodejs'
+            $existing = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
+            if ($existing) {
+                Log "[OK] Node.js portátil já disponível: $($existing.NodeVersion) / npm $($existing.NpmVersion)"
+                return $existing
+            }
+
+            if (-not (Test-Path -LiteralPath $toolsDir)) { New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null }
+            Log '==> Baixando Node.js 22 LTS portátil porque o Node do sistema está ausente ou fora da faixa suportada (18-22)'
+
+            $release = $null
+            try {
+                $index = Invoke-RestMethod 'https://nodejs.org/dist/index.json' -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 60
+                $release = $index | Where-Object { $_.version -match '^v22\.' -and $_.files -contains 'win-x64-zip' } | Select-Object -First 1
+            } catch {
+                Log "[!] Falha ao consultar versões do Node.js: $($_.Exception.Message)" 'warn'
+            }
+            if (-not $release) { throw 'Não foi possível encontrar Node.js 22 win-x64 no site oficial.' }
+
+            $version = [string]$release.version
+            $url = "https://nodejs.org/dist/$version/node-$version-win-x64.zip"
+            $zipPath = Join-Path $env:TEMP "neve_node_$version.zip"
+            $stageParent = Join-Path $env:TEMP "neve_node_stage_$([guid]::NewGuid().ToString('N'))"
+            $stageTarget = Join-Path $toolsDir "nodejs-stage-$([guid]::NewGuid().ToString('N'))"
+            try {
+                if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue }
+                New-Item -ItemType Directory -Path $stageParent -Force | Out-Null
+                Log "==> Baixando $url"
+                Invoke-WebRequest $url -OutFile $zipPath -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 300
+                Expand-Archive $zipPath -DestinationPath $stageParent -Force
+                $extracted = Get-ChildItem -LiteralPath $stageParent -Directory | Select-Object -First 1
+                if (-not $extracted) { throw 'Arquivo do Node.js não extraiu a pasta esperada.' }
+                Move-Item -LiteralPath $extracted.FullName -Destination $stageTarget -Force
+
+                $stagedNode = Join-Path $stageTarget 'node.exe'
+                $stagedNpm = Join-Path $stageTarget 'npm.cmd'
+                $stagedPair = Test-FrontendNodePair $stagedNode $stagedNpm
+                if (-not $stagedPair) { throw 'Node.js portátil extraído não passou na validação.' }
+
+                if (Test-Path -LiteralPath $nodeDir) { Remove-Item -LiteralPath $nodeDir -Recurse -Force -EA SilentlyContinue }
+                Move-Item -LiteralPath $stageTarget -Destination $nodeDir -Force
+
+                $pair = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
+                if (-not $pair) { throw 'Node.js portátil foi copiado, mas não respondeu após a instalação.' }
+                Log "[OK] Node.js portátil pronto: $($pair.NodeVersion) / npm $($pair.NpmVersion)"
+                return $pair
+            } finally {
+                try { if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue } } catch {}
+                try { if (Test-Path -LiteralPath $stageParent) { Remove-Item -LiteralPath $stageParent -Recurse -Force -EA SilentlyContinue } } catch {}
+                try { if (Test-Path -LiteralPath $stageTarget) { Remove-Item -LiteralPath $stageTarget -Recurse -Force -EA SilentlyContinue } } catch {}
+            }
+        }
         function Normalize-PythonPackageName([string]$name) {
             if ([string]::IsNullOrWhiteSpace($name)) { return '' }
             return (([string]$name).Trim().ToLowerInvariant() -replace '[-_.]+','-')
@@ -890,6 +1009,23 @@ $ctl.BtnPrimary.Add_Click({
                 if (-not (Test-Path $p)) { New-Item $p -ItemType Directory -Force | Out-Null }
             }
             Log "[OK] Pastas garantidas"
+
+            $requiredAppFiles = @(
+                'package.json',
+                'backend\requirements-runtime.txt',
+                'backend\neveai\main.py',
+                'backend\neveai\models\users.py',
+                'backend\neveai\models\models.py',
+                'backend\neveai\utils\auth.py'
+            )
+            $missingAppFiles = @()
+            foreach ($relativeAppFile in $requiredAppFiles) {
+                if (-not (Test-Path -LiteralPath (Join-Path $ROOT $relativeAppFile))) { $missingAppFiles += $relativeAppFile }
+            }
+            if ($missingAppFiles.Count -gt 0) {
+                throw "Pacote local incompleto; faltam arquivos essenciais: $($missingAppFiles -join ', '). Baixe o release atualizado ou rode atualizar.bat para reparar."
+            }
+            Log "[OK] Arquivos essenciais do app validados"
 
             # ---- 2. .env padrao
             $envPath = Join-Path $ROOT '.env'
@@ -1374,9 +1510,16 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             Set-InstallState 'installing_frontend'
             P 84 'Instalando pacotes npm'
             Set-Location -LiteralPath $ROOT
-            if ([string]::IsNullOrWhiteSpace($NPM_EXE) -or -not (Test-Path -LiteralPath $NPM_EXE)) {
-                throw "npm não encontrado. Instale Node.js 18+ pelo nodejs.org e abra o instalador novamente."
+            $frontendNode = Resolve-FrontendNodeLaunch
+            if (-not $frontendNode) {
+                $frontendNode = Install-PortableNode22
             }
+            if (-not $frontendNode) { throw 'Node.js 18-22 com npm não encontrado e o Node.js 22 portátil não pôde ser preparado.' }
+            $NODE_EXE = $frontendNode.NodeExecutable
+            $NPM_EXE = $frontendNode.NpmExecutable
+            $script:FrontendNodeDir = $frontendNode.NodeDir
+            Log "[OK] Node.js do frontend: $($frontendNode.NodeVersion) / npm $($frontendNode.NpmVersion) em $($frontendNode.NodeDir)"
+
             $rc = Run $NPM_EXE @('install','--no-audit','--no-fund') 'npm install'
             if ($rc -ne 0) { throw "Falha em npm install (exit $rc)" }
             Log "[OK] Pacotes npm instalados"

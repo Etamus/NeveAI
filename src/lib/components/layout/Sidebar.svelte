@@ -817,7 +817,7 @@
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
 							role={$user?.role}
-							profile={$config?.features?.enable_user_status ?? true}
+							profile={$config?.features?.enable_user_status === true}
 							showActiveUsers={false}
 							on:show={(e) => {
 							}}
@@ -836,7 +836,7 @@
 										on:error={(e) => { (e.currentTarget as HTMLImageElement).src = generateInitialsImage($user?.name ?? '?'); }}
 									/>
 
-									{#if $config?.features?.enable_user_status}
+									{#if $config?.features?.enable_user_status === true}
 										<div class="absolute -bottom-0.5 -right-0.5">
 											<span class="relative flex size-2.5">
 												<span
@@ -1310,7 +1310,7 @@
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
 							role={$user?.role}
-							profile={$config?.features?.enable_user_status ?? true}
+							profile={$config?.features?.enable_user_status === true}
 							showActiveUsers={false}
 							className="max-w-[11rem]"
 							align="start"
@@ -1331,7 +1331,7 @@
 										on:error={(e) => { (e.currentTarget as HTMLImageElement).src = generateInitialsImage($user?.name ?? '?'); }}
 									/>
 
-									{#if $config?.features?.enable_user_status}
+									{#if $config?.features?.enable_user_status === true}
 										<div class="absolute -bottom-0.5 -right-0.5">
 											<span class="relative flex size-2.5">
 												<span

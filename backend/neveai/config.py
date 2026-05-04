@@ -1553,7 +1553,7 @@ USER_PERMISSIONS_FEATURES_FOLDERS = (
 )
 
 USER_PERMISSIONS_FEATURES_NOTES = (
-    os.environ.get("USER_PERMISSIONS_FEATURES_NOTES", "True").lower() == "true"
+    os.environ.get("USER_PERMISSIONS_FEATURES_NOTES", "False").lower() == "true"
 )
 
 USER_PERMISSIONS_FEATURES_CHANNELS = (
@@ -1677,13 +1677,13 @@ ENABLE_CHANNELS = PersistentConfig(
 ENABLE_NOTES = PersistentConfig(
     "ENABLE_NOTES",
     "notes.enable",
-    os.environ.get("ENABLE_NOTES", "True").lower() == "true",
+    os.environ.get("ENABLE_NOTES", "False").lower() == "true",
 )
 
 ENABLE_USER_STATUS = PersistentConfig(
     "ENABLE_USER_STATUS",
     "users.enable_status",
-    os.environ.get("ENABLE_USER_STATUS", "True").lower() == "true",
+    os.environ.get("ENABLE_USER_STATUS", "False").lower() == "true",
 )
 
 ENABLE_EVALUATION_ARENA_MODELS = PersistentConfig(

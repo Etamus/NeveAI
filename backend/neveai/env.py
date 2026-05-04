@@ -422,7 +422,7 @@ DATABASE_ENABLE_SESSION_SHARING = (
 
 # Enable public visibility of active user count (when disabled, only admins can see it)
 ENABLE_PUBLIC_ACTIVE_USERS_COUNT = (
-    os.environ.get("ENABLE_PUBLIC_ACTIVE_USERS_COUNT", "True").lower() == "true"
+    os.environ.get("ENABLE_PUBLIC_ACTIVE_USERS_COUNT", "False").lower() == "true"
 )
 
 RESET_CONFIG_ON_START = (
