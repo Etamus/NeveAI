@@ -435,10 +435,7 @@
 
 		if ((event.chat_id !== $chatId && !$temporaryChatEnabled) || isFocused) {
 			if (type === 'chat:completion') {
-				const { done, content, title } = data;
-				const displayTitle = title || $i18n.t('New Chat');
-
-				if (done) {
+				if (data?.done) {
 					if ($settings?.notificationSoundAlways ?? false) {
 						playingNotificationSound.set(true);
 
@@ -448,18 +445,6 @@
 							playingNotificationSound.set(false);
 						});
 					}
-
-					toast.custom(NotificationToast, {
-						componentProps: {
-							onClick: () => {
-								goto(`/c/${event.chat_id}`);
-							},
-							content: content,
-							title: displayTitle
-						},
-						duration: 15000,
-						unstyled: true
-					});
 				}
 			} else if (type === 'chat:title') {
 				currentChatPage.set(1);

@@ -191,8 +191,8 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <ComboBoxItem Content="32 GB ou mais"/>
                             </ComboBox>
 
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Flash Attention:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
-                            <CheckBox  Grid.Row="3" Grid.Column="1" x:Name="ChkFlash" Content="Compilar Flash Attention (acelera RAG/SD, +10 min)" FontSize="13" Margin="0,2,0,12"/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Flash Attention (Opcional):" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
+                            <CheckBox  Grid.Row="3" Grid.Column="1" x:Name="ChkFlash" Content="Compilar Flash Attention (requer CUDA Toolkit + MSVC Build Tools)" FontSize="13" Margin="0,2,0,12"/>
 
                             <Border Grid.Row="4" Grid.ColumnSpan="2" Background="#FAFAFA" CornerRadius="8" Padding="14,12" Margin="0,8,0,0">
                                 <StackPanel>
@@ -590,6 +590,26 @@ $ctl.BtnPrimary.Add_Click({
                 $p.Dispose()
             }
         }
+        function Test-CommandExists([string]$name) {
+            return $null -ne (Get-Command $name -EA SilentlyContinue)
+        }
+        function Test-MsvcBuildTools {
+            if (Test-CommandExists 'cl.exe') { return $true }
+
+            $vswhereCandidates = @(
+                (Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'),
+                (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\Installer\vswhere.exe')
+            ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+
+            foreach ($vswhere in $vswhereCandidates) {
+                try {
+                    $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+                    if ($installPath) { return $true }
+                } catch {}
+            }
+
+            return $false
+        }
 
         try {
             Set-Location -LiteralPath $ROOT
@@ -713,9 +733,19 @@ USER_AGENT=Neve AI
 
             # ---- 6. Flash Attention (opcional)
             if ($flashAttn -and $cfg.vendor -eq 'NVIDIA') {
-                P 48 'Compilando Flash Attention (~10 min)'
-                $rc = Run $VENV_PY @('-m','pip','install','flash-attn','--no-build-isolation') 'flash-attn'
-                if ($rc -eq 0) { Log "[OK] Flash Attention instalado" } else { Log "[!] Flash Attention falhou (precisa MSVC Build Tools)" 'warn' }
+                if (-not (Test-CommandExists 'nvcc.exe')) {
+                    Log "[!] Flash Attention Python ignorado: requer CUDA Toolkit completo (nvcc.exe). O llama.cpp e o Neve AI funcionam normalmente sem esse pacote." 'warn'
+                } elseif (-not (Test-MsvcBuildTools)) {
+                    Log "[!] Flash Attention Python ignorado: requer MSVC Build Tools. O llama.cpp e o Neve AI funcionam normalmente sem esse pacote." 'warn'
+                } else {
+                    P 48 'Compilando Flash Attention Python (~10 min)'
+                    $rc = Run $VENV_PY @('-m','pip','install','flash-attn','--no-build-isolation') 'flash-attn'
+                    if ($rc -eq 0) {
+                        Log "[OK] Flash Attention Python instalado"
+                    } else {
+                        Log "[!] Flash Attention Python falhou (opcional). O llama.cpp e o Neve AI funcionam normalmente sem esse pacote." 'warn'
+                    }
+                }
             }
 
             # ---- 7. diffusers
