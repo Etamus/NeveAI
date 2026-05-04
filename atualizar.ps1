@@ -12,7 +12,9 @@ Add-Type -AssemblyName System.Windows.Forms
 # =============================================================================
 # Caminhos globais
 # =============================================================================
-$ROOT        = Split-Path $MyInvocation.MyCommand.Path -Parent
+$SCRIPT_PATH = if ($PSCommandPath) { $PSCommandPath } elseif ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path } else { throw 'Não foi possível determinar o caminho do atualizador.' }
+$ROOT        = (Resolve-Path -LiteralPath (Split-Path -Parent $SCRIPT_PATH)).ProviderPath
+Set-Location -LiteralPath $ROOT
 $VENV_PY     = Join-Path $ROOT 'backend\neveai\venv\Scripts\python.exe'
 $VERSION_FILE= Join-Path $ROOT 'version.txt'
 $LOG_DIR     = Join-Path $ROOT 'logs'
@@ -416,6 +418,8 @@ $ctl.BtnLlama.Add_Click({
 
     $worker = {
         param($ROOT, $LOG, $LLAMA_API_LATEST, $UA)
+
+        Set-Location -LiteralPath $ROOT
 
         function L([string]$m, [string]$k='info') {
             $ts = (Get-Date).ToString('HH:mm:ss')
@@ -875,6 +879,8 @@ $ctl.BtnPrimary.Add_Click({
     $worker = {
         param($updateNeve, $updateLlama, $latestTag, $zipUrl, $ROOT, $LOG, $VERSION_FILE, $currentVersion, $LLAMA_API_LATEST, $UA)
 
+        Set-Location -LiteralPath $ROOT
+
         function L([string]$m, [string]$k='info') {
             $ts = (Get-Date).ToString('HH:mm:ss')
             $line = "[$ts] $m"
@@ -899,17 +905,37 @@ $ctl.BtnPrimary.Add_Click({
         function PL([int]$v, [string]$phase) {
             if ($updateNeve) { P (70 + [int][math]::Round($v * 0.30)) $phase } else { P $v $phase }
         }
+        function ConvertTo-ProcessArgument([string]$arg) {
+            if ($null -eq $arg) { throw 'Argumento nulo.' }
+            if ($arg.Length -gt 0 -and $arg -notmatch '[\s"]') { return $arg }
+            $escaped = [regex]::Replace($arg, '(\\*)"', '$1$1\"')
+            $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1')
+            return '"' + $escaped + '"'
+        }
         function Run([string]$exe, [string[]]$argv, [string]$desc) {
             L "==> $desc"
+            if ([string]::IsNullOrWhiteSpace($exe)) { throw "Executável vazio ao executar '$desc'." }
+            $safeArgs = @()
+            foreach ($a in @($argv)) {
+                if ($null -eq $a) { throw "Argumento nulo ao executar '$desc' com '$exe'." }
+                $safeArgs += [string]$a
+            }
             $psi = New-Object System.Diagnostics.ProcessStartInfo
             $psi.FileName = $exe
-            foreach ($a in $argv) { [void]$psi.ArgumentList.Add($a) }
+            $psi.Arguments = (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
             $psi.WorkingDirectory = $ROOT
             $psi.RedirectStandardOutput = $true
             $psi.RedirectStandardError  = $true
             $psi.UseShellExecute        = $false
             $psi.CreateNoWindow         = $true
-            $p = [System.Diagnostics.Process]::Start($psi)
+            L ("> {0} {1}" -f $exe, ($safeArgs -join ' '))
+            $p = $null
+            try {
+                $p = [System.Diagnostics.Process]::Start($psi)
+            } catch {
+                throw "Falha ao iniciar '$exe' para '$desc': $($_.Exception.Message)"
+            }
+            if ($null -eq $p) { throw "Falha ao iniciar '$exe' para '$desc': Process.Start retornou nulo." }
             while (-not $p.HasExited) {
                 while (-not $p.StandardOutput.EndOfStream) {
                     $line = $p.StandardOutput.ReadLine()
@@ -921,7 +947,65 @@ $ctl.BtnPrimary.Add_Click({
             if ($rest) { foreach ($l in $rest -split "`r?`n") { if ($l) { L "    $l" } } }
             $err  = $p.StandardError.ReadToEnd()
             if ($err)  { foreach ($l in $err  -split "`r?`n") { if ($l) { L "    $l" 'warn' } } }
-            return $p.ExitCode
+            $exitCode = $p.ExitCode
+            $p.Dispose()
+            return $exitCode
+        }
+        function Get-RelativePath([string]$basePath, [string]$path) {
+            $baseFull = [System.IO.Path]::GetFullPath($basePath).TrimEnd('\', '/')
+            $pathFull = [System.IO.Path]::GetFullPath($path)
+            if ($pathFull.Length -le $baseFull.Length) { return '' }
+            return $pathFull.Substring($baseFull.Length).TrimStart('\', '/')
+        }
+        function Test-ReleaseExcluded([string]$relativePath, [bool]$isDirectory, [string[]]$excludeDirs, [string[]]$excludeFiles) {
+            $normalized = ($relativePath -replace '/', '\').TrimStart('\')
+            if ([string]::IsNullOrWhiteSpace($normalized)) { return $false }
+
+            foreach ($dir in $excludeDirs) {
+                $excludedDir = ($dir -replace '/', '\').Trim('\')
+                if (
+                    $normalized.Equals($excludedDir, [System.StringComparison]::OrdinalIgnoreCase) -or
+                    $normalized.StartsWith($excludedDir + '\', [System.StringComparison]::OrdinalIgnoreCase)
+                ) {
+                    return $true
+                }
+            }
+
+            if (-not $isDirectory) {
+                $leaf = Split-Path -Path $normalized -Leaf
+                foreach ($file in $excludeFiles) {
+                    if ($leaf.Equals($file, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+                }
+            }
+
+            return $false
+        }
+        function Copy-ReleaseTree([string]$sourcePath, [string]$sourceRoot, [string]$destinationRoot, [string[]]$excludeDirs, [string[]]$excludeFiles) {
+            $item = Get-Item -LiteralPath $sourcePath -Force
+            $relativePath = Get-RelativePath $sourceRoot $item.FullName
+
+            if (Test-ReleaseExcluded $relativePath $item.PSIsContainer $excludeDirs $excludeFiles) {
+                $script:SkippedReleaseItems++
+                return
+            }
+
+            $destinationPath = Join-Path $destinationRoot $relativePath
+            if ($item.PSIsContainer) {
+                if (-not (Test-Path -LiteralPath $destinationPath)) {
+                    [System.IO.Directory]::CreateDirectory($destinationPath) | Out-Null
+                }
+                Get-ChildItem -LiteralPath $item.FullName -Force | ForEach-Object {
+                    Copy-ReleaseTree $_.FullName $sourceRoot $destinationRoot $excludeDirs $excludeFiles
+                }
+                return
+            }
+
+            $destinationParent = Split-Path -Parent $destinationPath
+            if (-not (Test-Path -LiteralPath $destinationParent)) {
+                [System.IO.Directory]::CreateDirectory($destinationParent) | Out-Null
+            }
+            [System.IO.File]::Copy($item.FullName, $destinationPath, $true)
+            $script:CopiedReleaseFiles++
         }
         function New-LlamaTarget([string]$vendor, [string]$name, [string]$label, [string[]]$backends, [string]$reason) {
             [pscustomobject]@{ Vendor=$vendor; Name=$name; Label=$label; Backends=$backends; Reason=$reason }
@@ -1007,6 +1091,7 @@ $ctl.BtnPrimary.Add_Click({
             return $null
         }
         function Update-NeveAI {
+            Set-Location -LiteralPath $ROOT
             if (-not $latestTag -or -not $zipUrl) { throw 'Release do Neve AI indisponível para atualização.' }
             PN 5 "Baixando Neve AI $latestTag"
             L "==> Download $zipUrl"
@@ -1036,15 +1121,23 @@ $ctl.BtnPrimary.Add_Click({
             PN 35 'Aplicando arquivos do Neve AI'
             $excludeDirs = @('backend\neveai\venv','backend\neveai\frontend','backend\neveai\data','backend\data','backend\__pycache__','models','mmproj','llamacpp-server','node_modules','build','logs','.git','.svelte-kit')
             $excludeFiles = @('.env', 'version.txt')
-            $rcArgs = @($inner.FullName, $ROOT, '/E', '/NFL', '/NDL', '/NP', '/NJH', '/NJS', '/R:1', '/W:1')
-            $rcArgs += '/XD'
-            foreach ($d in $excludeDirs) { $rcArgs += (Join-Path $ROOT $d) }
-            $rcArgs += '/XF'
-            foreach ($f in $excludeFiles) { $rcArgs += $f }
-            $rcExit = Run 'robocopy' $rcArgs 'Copiando arquivos da release do Neve AI'
-            if ($rcExit -ge 8) { throw "robocopy falhou com código $rcExit" }
-            if ($envBackup -and -not (Test-Path $envFile)) { Copy-Item $envBackup $envFile -Force; L '[OK] .env restaurado' }
-            if ($envBackup) { Remove-Item $envBackup -Force -EA SilentlyContinue }
+            $sourceRoot = (Resolve-Path -LiteralPath $inner.FullName).ProviderPath
+            $destinationRoot = (Resolve-Path -LiteralPath $ROOT).ProviderPath
+            if ($sourceRoot.Equals($destinationRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                throw 'A pasta fonte da release é igual à pasta de instalação; atualização abortada.'
+            }
+            L "[OK] Pasta da instalação: $destinationRoot"
+            L "[OK] Pasta da release extraída: $sourceRoot"
+
+            $script:CopiedReleaseFiles = 0
+            $script:SkippedReleaseItems = 0
+            Get-ChildItem -LiteralPath $sourceRoot -Force | ForEach-Object {
+                Copy-ReleaseTree $_.FullName $sourceRoot $destinationRoot $excludeDirs $excludeFiles
+            }
+            L "[OK] Arquivos de release aplicados ($script:CopiedReleaseFiles arquivos, $script:SkippedReleaseItems itens preservados)"
+
+            if ($envBackup -and -not (Test-Path -LiteralPath $envFile)) { Copy-Item -LiteralPath $envBackup -Destination $envFile -Force; L '[OK] .env restaurado' }
+            if ($envBackup) { Remove-Item -LiteralPath $envBackup -Force -EA SilentlyContinue }
 
             PN 55 'Instalando dependências do frontend'
             $npmCmd = Get-Command npm.cmd -EA SilentlyContinue
@@ -1064,7 +1157,7 @@ $ctl.BtnPrimary.Add_Click({
             if (-not (Test-Path $buildDir)) { throw 'Pasta build\ não foi gerada' }
             if (Test-Path $deployDir) { Remove-Item $deployDir -Recurse -Force }
             New-Item $deployDir -ItemType Directory | Out-Null
-            Copy-Item (Join-Path $buildDir '*') $deployDir -Recurse -Force
+            Get-ChildItem -LiteralPath $buildDir -Force | Copy-Item -Destination $deployDir -Recurse -Force
 
             PN 97 'Salvando versão do Neve AI'
             Set-Content -Path $VERSION_FILE -Value $latestTag -Encoding UTF8

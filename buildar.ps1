@@ -12,7 +12,9 @@ Add-Type -AssemblyName System.Windows.Forms
 # =============================================================================
 # Caminhos globais
 # =============================================================================
-$ROOT = Split-Path $MyInvocation.MyCommand.Path -Parent
+$SCRIPT_PATH = if ($PSCommandPath) { $PSCommandPath } elseif ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path } else { throw 'Não foi possível determinar o caminho do build.' }
+$ROOT = (Resolve-Path -LiteralPath (Split-Path -Parent $SCRIPT_PATH)).ProviderPath
+Set-Location -LiteralPath $ROOT
 $BUILD_DIR = Join-Path $ROOT 'build'
 $DEPLOY_DIR = Join-Path $ROOT 'backend\neveai\frontend'
 $LOG_DIR = Join-Path $ROOT 'logs'
@@ -400,7 +402,8 @@ function Start-BuildDeploy {
     $worker.add_DoWork({
         param($sender, $eventArgs)
         try {
-            Set-Location $ROOT
+            Set-Location -LiteralPath $ROOT
+            Append-Log "Pasta do build: $ROOT" 'ok'
 
             Set-Progress 5 'Verificando npm'
             $npmCmd = Get-Command npm.cmd -EA SilentlyContinue
