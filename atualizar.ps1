@@ -1007,6 +1007,24 @@ $ctl.BtnPrimary.Add_Click({
             [System.IO.File]::Copy($item.FullName, $destinationPath, $true)
             $script:CopiedReleaseFiles++
         }
+        function Test-NeveInstallState([string]$root) {
+            $required = @(
+                @{ Path = '.env'; Label = '.env' },
+                @{ Path = 'backend\neveai\venv\Scripts\python.exe'; Label = 'venv Python' },
+                @{ Path = 'node_modules'; Label = 'node_modules' },
+                @{ Path = 'backend\neveai\frontend\index.html'; Label = 'frontend publicado' }
+            )
+            $missing = @()
+            foreach ($item in $required) {
+                $path = Join-Path $root $item.Path
+                if (-not (Test-Path -LiteralPath $path)) { $missing += $item.Label }
+            }
+
+            [pscustomobject]@{
+                Installed = $missing.Count -eq 0
+                Missing   = $missing
+            }
+        }
         function New-LlamaTarget([string]$vendor, [string]$name, [string]$label, [string[]]$backends, [string]$reason) {
             [pscustomobject]@{ Vendor=$vendor; Name=$name; Label=$label; Backends=$backends; Reason=$reason }
         }
@@ -1093,6 +1111,14 @@ $ctl.BtnPrimary.Add_Click({
         function Update-NeveAI {
             Set-Location -LiteralPath $ROOT
             if (-not $latestTag -or -not $zipUrl) { throw 'Release do Neve AI indisponível para atualização.' }
+            $installState = Test-NeveInstallState $ROOT
+            $canBuildAndDeploy = [bool]$installState.Installed
+            if (-not $canBuildAndDeploy) {
+                L "[!] Instalação incompleta detectada. Build/deploy serão pulados." 'warn'
+                L "    Faltando: $($installState.Missing -join ', ')" 'warn'
+                L "    Rode instalar.bat para concluir a instalação antes de gerar frontend." 'warn'
+            }
+
             PN 5 "Baixando Neve AI $latestTag"
             L "==> Download $zipUrl"
             $tmpZip = Join-Path $env:TEMP "neve_update_$($latestTag).zip"
@@ -1139,32 +1165,38 @@ $ctl.BtnPrimary.Add_Click({
             if ($envBackup -and -not (Test-Path -LiteralPath $envFile)) { Copy-Item -LiteralPath $envBackup -Destination $envFile -Force; L '[OK] .env restaurado' }
             if ($envBackup) { Remove-Item -LiteralPath $envBackup -Force -EA SilentlyContinue }
 
-            PN 55 'Instalando dependências do frontend'
-            $npmCmd = Get-Command npm.cmd -EA SilentlyContinue
-            if (-not $npmCmd) { $npmCmd = Get-Command npm -EA SilentlyContinue }
-            if (-not $npmCmd) { throw 'npm não encontrado no PATH' }
-            $npmExe = $npmCmd.Source
-            $rc = Run $npmExe @('install', '--no-audit', '--no-fund') 'npm install'
-            if ($rc -ne 0) { throw "npm install falhou (código $rc)" }
+            if ($canBuildAndDeploy) {
+                PN 55 'Instalando dependências do frontend'
+                $npmCmd = Get-Command npm.cmd -EA SilentlyContinue
+                if (-not $npmCmd) { $npmCmd = Get-Command npm -EA SilentlyContinue }
+                if (-not $npmCmd) { throw 'npm não encontrado no PATH' }
+                $npmExe = $npmCmd.Source
+                $rc = Run $npmExe @('install', '--no-audit', '--no-fund') 'npm install'
+                if ($rc -ne 0) { throw "npm install falhou (código $rc)" }
 
-            PN 78 'Gerando build do frontend'
-            $rc = Run $npmExe @('run', 'build') 'npm run build'
-            if ($rc -ne 0) { throw "npm run build falhou (código $rc)" }
+                PN 78 'Gerando build do frontend'
+                $rc = Run $npmExe @('run', 'build') 'npm run build'
+                if ($rc -ne 0) { throw "npm run build falhou (código $rc)" }
 
-            PN 92 'Publicando frontend'
-            $buildDir = Join-Path $ROOT 'build'
-            $deployDir = Join-Path $ROOT 'backend\neveai\frontend'
-            if (-not (Test-Path $buildDir)) { throw 'Pasta build\ não foi gerada' }
-            if (Test-Path $deployDir) { Remove-Item $deployDir -Recurse -Force }
-            New-Item $deployDir -ItemType Directory | Out-Null
-            Get-ChildItem -LiteralPath $buildDir -Force | Copy-Item -Destination $deployDir -Recurse -Force
+                PN 92 'Publicando frontend'
+                $buildDir = Join-Path $ROOT 'build'
+                $deployDir = Join-Path $ROOT 'backend\neveai\frontend'
+                if (-not (Test-Path $buildDir)) { throw 'Pasta build\ não foi gerada' }
+                if (Test-Path $deployDir) { Remove-Item $deployDir -Recurse -Force }
+                New-Item $deployDir -ItemType Directory | Out-Null
+                Get-ChildItem -LiteralPath $buildDir -Force | Copy-Item -Destination $deployDir -Recurse -Force
+            } else {
+                PN 92 'Pulando build/deploy'
+                L '[OK] Build e deploy pulados porque o projeto ainda não foi instalado.'
+            }
 
             PN 97 'Salvando versão do Neve AI'
             Set-Content -Path $VERSION_FILE -Value $latestTag -Encoding UTF8
             try { Remove-Item $tmpZip -Force -EA SilentlyContinue } catch {}
             try { Remove-Item $tmpExt -Recurse -Force -EA SilentlyContinue } catch {}
             L "[OK] Neve AI atualizado para $latestTag"
-            return "Neve AI: $currentVersion -> $latestTag"
+            if ($canBuildAndDeploy) { return "Neve AI: $currentVersion -> $latestTag" }
+            return "Neve AI: $currentVersion -> $latestTag (build/deploy pulados; instalação incompleta)"
         }
         function Update-LlamaCpp {
             $tmpFiles = @(); $stageDir = $null; $backupDir = $null

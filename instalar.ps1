@@ -286,6 +286,24 @@ foreach ($name in 'LogoImg','BtnClose','LblGpu','CmbBackend','CmbVram','ChkFlash
     $ctl[$name] = $window.FindName($name)
 }
 
+$window.Dispatcher.add_UnhandledException({
+    param($sender, $eventArgs)
+    $msg = if ($eventArgs.Exception) { $eventArgs.Exception.Message } else { 'Falha inesperada no instalador.' }
+    try { Add-Content -LiteralPath $LOG -Value "[FATAL UI] $msg" -Encoding UTF8 } catch {}
+    try {
+        $ctl.LblStep.Text = 'Falha inesperada no instalador.'
+        $ctl.LblPhase.Text = 'Falha inesperada no instalador.'
+        $ctl.BtnPrimary.IsEnabled = $true
+        $ctl.BtnPrimary.Content = 'Fechar'
+        $ctl.BtnPrimary.Tag = 'done'
+        $ctl.BtnCancel.IsEnabled = $true
+        $ctl.LogBox.AppendText("[FATAL UI] $msg`r`n")
+        $ctl.LogScroll.ScrollToEnd()
+    } catch {}
+    [System.Windows.MessageBox]::Show("O instalador encontrou uma falha, mas a janela ficará aberta.`n`nVeja logs\install.log`n`n$msg", 'Neve AI - Instalador', 'OK', 'Error') | Out-Null
+    $eventArgs.Handled = $true
+})
+
 # Logo
 if (Test-Path $LOGO_PATH) {
     try {
@@ -351,9 +369,70 @@ if ($detected.Vendor -eq 'NVIDIA') {
     $detected.Backend = 9   # Vulkan default (mais compativel no Windows)
 }
 
+function Test-PythonLaunch([string]$exe, [string[]]$prefixArgs = @()) {
+    try {
+        if ([string]::IsNullOrWhiteSpace($exe) -or -not (Test-Path -LiteralPath $exe)) { return $null }
+        $fullExe = (Resolve-Path -LiteralPath $exe).ProviderPath
+        if ($fullExe -match '\\Microsoft\\WindowsApps\\python(3)?\.exe$') { return $null }
+
+        $probe = 'import sys, venv, ensurepip; print(sys.executable); print(sys.version.split()[0])'
+        $output = & $fullExe @prefixArgs -c $probe 2>&1
+        if ($LASTEXITCODE -ne 0) { return $null }
+
+        $lines = @($output | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+        if ($lines.Count -lt 2) { return $null }
+
+        $realExe = $lines[0]
+        $version = $lines[-1]
+        if (-not (Test-Path -LiteralPath $realExe)) { $realExe = $fullExe }
+
+        $parts = $version -split '\.'
+        if ($parts.Count -lt 2 -or $parts[0] -ne '3' -or @('11','12') -notcontains $parts[1]) {
+            return $null
+        }
+
+        [pscustomobject]@{
+            Executable = (Resolve-Path -LiteralPath $realExe).ProviderPath
+            Version    = $version
+        }
+    } catch {
+        return $null
+    }
+}
+
+function Resolve-PythonLaunch {
+    $candidates = @()
+
+    foreach ($cmd in @(Get-Command py.exe -All -EA SilentlyContinue)) {
+        foreach ($versionArg in @('-3.12', '-3.11')) {
+            $candidates += [pscustomobject]@{ Exe = $cmd.Source; Args = @($versionArg) }
+        }
+    }
+
+    foreach ($name in @('python.exe', 'python3.exe')) {
+        foreach ($cmd in @(Get-Command $name -All -EA SilentlyContinue)) {
+            $candidates += [pscustomobject]@{ Exe = $cmd.Source; Args = @() }
+        }
+    }
+
+    $seen = @{}
+    foreach ($candidate in $candidates) {
+        $key = "$($candidate.Exe)|$($candidate.Args -join ' ')"
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+
+        $resolved = Test-PythonLaunch $candidate.Exe ([string[]]$candidate.Args)
+        if ($resolved) { return $resolved }
+    }
+
+    return $null
+}
+
 # Pre-checar Python e Node
-$pyOk = $false; $pyVer = ''
-try { $pyVer = (python --version 2>&1).ToString().Trim(); $pyOk = $LASTEXITCODE -eq 0 } catch {}
+$pythonLaunch = Resolve-PythonLaunch
+$pyOk = $null -ne $pythonLaunch
+$PYTHON_EXE = if ($pyOk) { $pythonLaunch.Executable } else { $null }
+$pyVer = if ($pyOk) { "Python $($pythonLaunch.Version)" } else { '' }
 $nodeOk = $false; $nodeVer = ''
 try { $nodeVer = (node --version 2>&1).ToString().Trim(); $nodeOk = $LASTEXITCODE -eq 0 } catch {}
 
@@ -371,7 +450,7 @@ if (-not $pyOk -or -not $nodeOk) {
     $ctl.BtnPrimary.IsEnabled = $false
     $ctl.BtnPrimary.Content   = 'Pré-requisitos faltando'
     $missing = @()
-    if (-not $pyOk)   { $missing += 'Python 3.11/3.12 (https://python.org)' }
+    if (-not $pyOk)   { $missing += 'Python 3.11 ou 3.12 real, com venv/ensurepip (desative aliases Python da Microsoft Store se necessário)' }
     if (-not $nodeOk) { $missing += 'Node.js 18+ (https://nodejs.org)' }
     [System.Windows.MessageBox]::Show(
         "Faltando:`n  • " + ($missing -join "`n  • ") + "`n`nInstale e abra o instalador novamente.",
@@ -512,6 +591,12 @@ function Run-Logged([string]$exe, [string[]]$args, [string]$desc) {
 # =============================================================================
 $ctl.BtnPrimary.Add_Click({
     if ($ctl.BtnPrimary.Tag -eq 'done') { $window.Close(); return }
+    if ([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) {
+        [System.Windows.MessageBox]::Show(
+            "Python 3.11/3.12 válido não encontrado. Instale pelo python.org e desative aliases Python da Microsoft Store, se existirem.",
+            'Neve AI - Instalador', 'OK', 'Warning') | Out-Null
+        return
+    }
 
     # Coleta selecoes
     $backendIdx  = $ctl.CmbBackend.SelectedIndex
@@ -564,7 +649,7 @@ $ctl.BtnPrimary.Add_Click({
         $ctl.LblStep.Text        = 'Concluído'
 
         $summary = @()
-        $summary += "Python:      $((python --version 2>&1))"
+        $summary += "Python:      $((& $PYTHON_EXE --version 2>&1))"
         $summary += "Node.js:     $((node --version 2>&1))"
         try {
             $tOut = & $VENV_PY -c "import torch; v=torch.__version__; cuda='(CUDA '+torch.version.cuda+')' if torch.cuda.is_available() else '(CPU)'; print('PyTorch '+v+' '+cuda)" 2>$null
@@ -586,7 +671,7 @@ $ctl.BtnPrimary.Add_Click({
 
     # Worker em runspace separado, usando as funcoes UI-* via $window
     $worker = {
-        param($cfg, $flashAttn, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG)
+        param($cfg, $flashAttn, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG, $PYTHON_EXE)
 
         # Helpers (definidas dentro do runspace)
         function Log([string]$m, [string]$k='info') {
@@ -844,14 +929,25 @@ USER_AGENT=Neve AI
 
             # ---- 4. Recriar venv
             P 25 'Recriando ambiente Python'
+            if ([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) {
+                throw "Python 3.11/3.12 válido não encontrado para criar o venv. Instale pelo python.org e desative aliases Python da Microsoft Store, se existirem."
+            }
+            Log "[OK] Python selecionado: $PYTHON_EXE"
             if (Test-Path $VENV_DIR) {
                 Log "==> Removendo venv antigo"
                 try { Remove-Item $VENV_DIR -Recurse -Force -EA Stop } catch {
                     Log "[X] Falha ao remover venv: $_" 'err'; throw
                 }
             }
-            $rc = Run 'python' @('-m','venv',$VENV_DIR) 'Criando venv'
-            if ($rc -ne 0) { throw "Falha ao criar venv (exit $rc)" }
+            $venvParent = Split-Path -Parent $VENV_DIR
+            if (-not (Test-Path -LiteralPath $venvParent)) { New-Item -ItemType Directory -Path $venvParent -Force | Out-Null }
+            $rc = Run $PYTHON_EXE @('-m','venv',$VENV_DIR) 'Criando venv'
+            if ($rc -ne 0) {
+                Log "[!] Criação padrão do venv falhou (exit $rc). Tentando novamente com --copies." 'warn'
+                if (Test-Path $VENV_DIR) { Remove-Item $VENV_DIR -Recurse -Force -EA SilentlyContinue }
+                $rc = Run $PYTHON_EXE @('-m','venv','--copies',$VENV_DIR) 'Criando venv (--copies)'
+            }
+            if ($rc -ne 0) { throw "Falha ao criar venv (exit $rc). Python usado: $PYTHON_EXE. Pasta alvo: $VENV_DIR" }
             if (-not (Test-Path $VENV_PY)) {
                 throw "O venv foi criado, mas o Python interno não foi encontrado em '$VENV_PY'. Verifique se o Python instalado suporta venv e se o antivírus não bloqueou a criação dos executáveis."
             }
@@ -977,7 +1073,7 @@ USER_AGENT=Neve AI
 
             # Resumo
             $summary = @()
-            $summary += "Python:      $((python --version 2>&1))"
+            $summary += "Python:      $((& $PYTHON_EXE --version 2>&1))"
             $summary += "Node.js:     $((node --version 2>&1))"
             try {
                 $tOut = & $VENV_PY -c "import torch; v=torch.__version__; cuda='(CUDA '+torch.version.cuda+')' if torch.cuda.is_available() else '(CPU)'; print('PyTorch '+v+' '+cuda)" 2>$null
@@ -996,14 +1092,17 @@ USER_AGENT=Neve AI
                 $script:Ctl.BtnPrimary.Tag          = 'done'
             })
         } catch {
-            Log "[X] FALHA: $_" 'err'
+            $errMsg = "$($_.Exception.Message)"
+            if (-not $errMsg) { $errMsg = "$_" }
+            Log "[X] FALHA: $errMsg" 'err'
             $script:Window.Dispatcher.Invoke([Action]{
                 $script:Ctl.LblStep.Text = "Falha durante a instalação."
+                $script:Ctl.LblPhase.Text = "Falha durante a instalação."
                 $script:Ctl.BtnPrimary.IsEnabled = $true
                 $script:Ctl.BtnPrimary.Content   = 'Fechar'
                 $script:Ctl.BtnPrimary.Tag       = 'done'
                 $script:Ctl.BtnCancel.IsEnabled  = $true
-                [System.Windows.MessageBox]::Show("A instalação falhou. Veja o log em logs\install.log`n`n$_", 'Neve AI', 'OK', 'Error') | Out-Null
+                [System.Windows.MessageBox]::Show("A instalação falhou. A janela ficará aberta para você ler o log.`n`nVeja logs\install.log`n`n$errMsg", 'Neve AI', 'OK', 'Error') | Out-Null
             })
         }
     }
@@ -1018,8 +1117,30 @@ USER_AGENT=Neve AI
 
     $ps = [PowerShell]::Create()
     $ps.Runspace = $runspace
-    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($flashAttn).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG)
-    [void]$ps.BeginInvoke()
+    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($flashAttn).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($PYTHON_EXE)
+    [void]$ps.add_InvocationStateChanged({
+        param($sender, $eventArgs)
+        if ($eventArgs.InvocationStateInfo.State -eq 'Failed') {
+            $fatal = $eventArgs.InvocationStateInfo.Reason
+            $msg = if ($fatal) { $fatal.Message } else { 'Falha fatal no processo de instalação.' }
+            try { Add-Content -LiteralPath $LOG -Value "[FATAL] $msg" -Encoding UTF8 } catch {}
+            try {
+                $window.Dispatcher.Invoke([Action]{
+                    $ctl.LblStep.Text = 'Falha fatal durante a instalação.'
+                    $ctl.LblPhase.Text = 'Falha fatal durante a instalação.'
+                    $ctl.BtnPrimary.IsEnabled = $true
+                    $ctl.BtnPrimary.Content = 'Fechar'
+                    $ctl.BtnPrimary.Tag = 'done'
+                    $ctl.BtnCancel.IsEnabled = $true
+                    $ctl.LogBox.AppendText("[FATAL] $msg`r`n")
+                    $ctl.LogScroll.ScrollToEnd()
+                })
+            } catch {}
+        }
+    })
+    $script:InstallerPowerShell = $ps
+    $script:InstallerRunspace = $runspace
+    $script:InstallerAsyncResult = $ps.BeginInvoke()
 })
 
 # =============================================================================
