@@ -1,3 +1,4 @@
 @echo off
-start "" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0instalar.ps1"
-exit
+set "ROOT=%~dp0"
+start "" /D "%ROOT%" /min powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%ROOT%instalar.ps1"
+exit /b

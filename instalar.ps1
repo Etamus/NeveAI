@@ -14,7 +14,9 @@ Add-Type -AssemblyName System.Windows.Forms
 # =============================================================================
 # Caminhos globais
 # =============================================================================
-$ROOT     = Split-Path $MyInvocation.MyCommand.Path -Parent
+$SCRIPT_PATH = if ($PSCommandPath) { $PSCommandPath } elseif ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path } else { throw 'Não foi possível determinar o caminho do instalador.' }
+$ROOT        = (Resolve-Path -LiteralPath (Split-Path -Parent $SCRIPT_PATH)).ProviderPath
+Set-Location -LiteralPath $ROOT
 $VENV_DIR = Join-Path $ROOT 'backend\neveai\venv'
 $VENV_PY  = Join-Path $VENV_DIR 'Scripts\python.exe'
 $BACKEND  = Join-Path $ROOT 'backend'
@@ -406,6 +408,14 @@ function UI-Progress([int]$val, [string]$phase) {
     }
 }
 
+function ConvertTo-ProcessArgument([string]$arg) {
+    if ($null -eq $arg) { throw 'Argumento nulo.' }
+    if ($arg.Length -gt 0 -and $arg -notmatch '[\s"]') { return $arg }
+    $escaped = [regex]::Replace($arg, '(\\*)"', '$1$1\"')
+    $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1')
+    return '"' + $escaped + '"'
+}
+
 function Run-Logged([string]$exe, [string[]]$args, [string]$desc) {
     UI-Log $desc 'info'
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -414,7 +424,7 @@ function Run-Logged([string]$exe, [string[]]$args, [string]$desc) {
     $psi.RedirectStandardError  = $true
     $psi.UseShellExecute        = $false
     $psi.CreateNoWindow         = $true
-    foreach ($a in $args) { $psi.ArgumentList.Add($a) }
+    $psi.Arguments              = (($args | ForEach-Object { ConvertTo-ProcessArgument ([string]$_) }) -join ' ')
     $proc = [System.Diagnostics.Process]::Start($psi)
     $stdout = $proc.StandardOutput.ReadToEnd()
     $stderr = $proc.StandardError.ReadToEnd()
@@ -507,38 +517,84 @@ $ctl.BtnPrimary.Add_Click({
 
         # Helpers (definidas dentro do runspace)
         function Log([string]$m, [string]$k='info') {
-            $script:Window.Dispatcher.Invoke([Action]{
-                $script:Ctl.LogBox.AppendText("$m`r`n")
-                $script:Ctl.LogScroll.ScrollToEnd()
-            })
-            Add-Content $LOG $m
+            $line = if ($null -eq $m) { '' } else { [string]$m }
+            try {
+                if ($script:Window -and $script:Ctl -and $script:Ctl.LogBox) {
+                    $script:Window.Dispatcher.Invoke([Action]{
+                        $script:Ctl.LogBox.AppendText("$line`r`n")
+                        $script:Ctl.LogScroll.ScrollToEnd()
+                    })
+                }
+            } catch {}
+            Add-Content $LOG $line
         }
         function P([int]$v, [string]$phase) {
-            $script:Window.Dispatcher.Invoke([Action]{
-                $script:Ctl.Progress.Value = $v
-                $script:Ctl.LblProgressTxt.Text = "$v%"
-                if ($phase) { $script:Ctl.LblPhase.Text = $phase; $script:Ctl.LblStep.Text = $phase }
-            })
+            try {
+                if ($script:Window -and $script:Ctl) {
+                    $script:Window.Dispatcher.Invoke([Action]{
+                        $script:Ctl.Progress.Value = $v
+                        $script:Ctl.LblProgressTxt.Text = "$v%"
+                        if ($phase) { $script:Ctl.LblPhase.Text = $phase; $script:Ctl.LblStep.Text = $phase }
+                    })
+                }
+            } catch {}
+        }
+        function ConvertTo-ProcessArgument([string]$arg) {
+            if ($null -eq $arg) { throw 'Argumento nulo.' }
+            if ($arg.Length -gt 0 -and $arg -notmatch '[\s"]') { return $arg }
+            $escaped = [regex]::Replace($arg, '(\\*)"', '$1$1\"')
+            $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1')
+            return '"' + $escaped + '"'
         }
         function Run([string]$exe, [string[]]$argv, [string]$desc) {
             Log "==> $desc"
+            if ([string]::IsNullOrWhiteSpace($exe)) {
+                throw "Executável vazio ao executar '$desc'."
+            }
+
+            $safeArgs = @()
+            foreach ($a in @($argv)) {
+                if ($null -eq $a) {
+                    throw "Argumento nulo ao executar '$desc' com '$exe'."
+                }
+                $safeArgs += [string]$a
+            }
+
             $psi = New-Object System.Diagnostics.ProcessStartInfo
             $psi.FileName = $exe
             $psi.RedirectStandardOutput = $true
             $psi.RedirectStandardError  = $true
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow  = $true
-            foreach ($a in $argv) { [void]$psi.ArgumentList.Add($a) }
-            $p = [System.Diagnostics.Process]::Start($psi)
-            $out = $p.StandardOutput.ReadToEnd()
-            $err = $p.StandardError.ReadToEnd()
-            $p.WaitForExit()
-            if ($out) { Add-Content $LOG $out }
-            if ($err) { Add-Content $LOG $err }
-            return $p.ExitCode
+            $psi.Arguments = (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
+            Add-Content $LOG ("CMD: {0} {1}" -f $exe, ($safeArgs -join ' '))
+
+            $p = $null
+            try {
+                $p = [System.Diagnostics.Process]::Start($psi)
+            } catch {
+                throw "Falha ao iniciar '$exe' para '$desc': $($_.Exception.Message)"
+            }
+            if ($null -eq $p) {
+                throw "Falha ao iniciar '$exe' para '$desc': Process.Start retornou nulo."
+            }
+
+            try {
+                $out = $p.StandardOutput.ReadToEnd()
+                $err = $p.StandardError.ReadToEnd()
+                $p.WaitForExit()
+                if ($out) { Add-Content $LOG $out }
+                if ($err) { Add-Content $LOG $err }
+                return $p.ExitCode
+            } finally {
+                $p.Dispose()
+            }
         }
 
         try {
+            Set-Location -LiteralPath $ROOT
+            Log "[OK] Pasta de instalação: $ROOT"
+
             # ---- 1. Estrutura de pastas
             P 5 'Criando estrutura de pastas'
             foreach ($d in @('logs','logs\webview2','logs\browser-app','models','mmproj',
@@ -641,6 +697,9 @@ USER_AGENT=Neve AI
             }
             $rc = Run 'python' @('-m','venv',$VENV_DIR) 'Criando venv'
             if ($rc -ne 0) { throw "Falha ao criar venv (exit $rc)" }
+            if (-not (Test-Path $VENV_PY)) {
+                throw "O venv foi criado, mas o Python interno não foi encontrado em '$VENV_PY'. Verifique se o Python instalado suporta venv e se o antivírus não bloqueou a criação dos executáveis."
+            }
             Log "[OK] venv criado"
 
             # ---- 5. pip + PyTorch
@@ -682,7 +741,7 @@ USER_AGENT=Neve AI
 
             # ---- 10. npm install
             P 84 'Instalando pacotes npm'
-            Set-Location $ROOT
+            Set-Location -LiteralPath $ROOT
             $rc = Run 'npm.cmd' @('install') 'npm install'
             if ($rc -ne 0) { throw "Falha em npm install (exit $rc)" }
             Log "[OK] Pacotes npm instalados"
