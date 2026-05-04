@@ -2,8 +2,6 @@ import logging
 from typing import Optional
 
 from neveai.retrieval.web.main import SearchResult, get_filtered_results
-from ddgs import DDGS
-from ddgs.exceptions import RatelimitException
 
 log = logging.getLogger(__name__)
 
@@ -25,6 +23,13 @@ def search_duckduckgo(
     Returns:
         list[SearchResult]: A list of search results
     """
+    try:
+        from ddgs import DDGS
+        from ddgs.exceptions import RatelimitException
+    except ImportError:
+        log.warning("ddgs is not installed; DuckDuckGo web search is unavailable")
+        return []
+
     # Use the DDGS context manager to create a DDGS object
     search_results = []
     with DDGS(timeout=15) as ddgs:

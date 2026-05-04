@@ -29,7 +29,9 @@ $LOG_DIR  = Join-Path $ROOT 'logs'
 if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
 $LOG = Join-Path $LOG_DIR 'install.log'
 $STATE_FILE = Join-Path $LOG_DIR 'install-state.txt'
+$INSTALLER_REVISION = '2026-05-04-runtime-minimal-retry-v4'
 '' | Set-Content $LOG
+Add-Content -LiteralPath $LOG -Value ("[INSTALLER] revision={0}; script={1}; root={2}" -f $INSTALLER_REVISION, $SCRIPT_PATH, $ROOT) -Encoding UTF8
 [System.IO.File]::WriteAllText($STATE_FILE, 'idle', [System.Text.UTF8Encoding]::new($false))
 
 # Logo (favicon do projeto)
@@ -709,7 +711,7 @@ $ctl.BtnPrimary.Add_Click({
 
     # Worker em runspace separado, usando as funcoes UI-* via $window
     $worker = {
-        param($cfg, $flashAttn, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG, $STATE_FILE, $PYTHON_EXE, $NODE_EXE, $NPM_EXE)
+        param($cfg, $flashAttn, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG, $STATE_FILE, $PYTHON_EXE, $NODE_EXE, $NPM_EXE, $INSTALLER_REVISION, $SCRIPT_PATH)
 
         # Helpers (definidas dentro do runspace)
         function Log([string]$m, [string]$k='info') {
@@ -763,6 +765,25 @@ $ctl.BtnPrimary.Add_Click({
             $psi.RedirectStandardError = $false
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow = $true
+            if ($script:CleanPipProcessEnv) {
+                try {
+                    $cleanVenvScripts = Join-Path $VENV_DIR 'Scripts'
+                    $currentPath = $psi.EnvironmentVariables['PATH']
+                    if ([string]::IsNullOrWhiteSpace($currentPath)) { $currentPath = $env:PATH }
+                    if (Test-Path -LiteralPath $cleanVenvScripts) { $psi.EnvironmentVariables['PATH'] = "$cleanVenvScripts;$currentPath" }
+                    if (Test-Path -LiteralPath $VENV_DIR) { $psi.EnvironmentVariables['VIRTUAL_ENV'] = $VENV_DIR }
+                    $psi.EnvironmentVariables['PIP_CONFIG_FILE'] = 'NUL'
+                    $psi.EnvironmentVariables['PIP_DISABLE_PIP_VERSION_CHECK'] = '1'
+                    $psi.EnvironmentVariables['PIP_NO_INPUT'] = '1'
+                    $psi.EnvironmentVariables['PIP_DEFAULT_TIMEOUT'] = '60'
+                    $psi.EnvironmentVariables['PYTHONUNBUFFERED'] = '1'
+                    foreach ($envName in @('PIP_REQUIRE_VIRTUALENV','PYTHONHOME','PYTHONPATH')) {
+                        if ($psi.EnvironmentVariables.ContainsKey($envName)) { [void]$psi.EnvironmentVariables.Remove($envName) }
+                    }
+                } catch {
+                    Log "[!] Não foi possível limpar todas as variáveis do processo para '$desc': $($_.Exception.Message)" 'warn'
+                }
+            }
             Log ("CMD: {0} {1}" -f $exe, ($safeArgs -join ' '))
 
             $p = $null
@@ -770,7 +791,7 @@ $ctl.BtnPrimary.Add_Click({
                 $p = New-Object System.Diagnostics.Process
                 $p.StartInfo = $psi
                 [void]$p.Start()
-                Log ("[pid {0}] {1} iniciado (sem pipes de stdout/stderr para evitar fechamento do WPF no venv)" -f $p.Id, $desc)
+                Log ("[pid {0}] {1} iniciado (sem pipes de stdout/stderr para evitar fechamento do WPF)" -f $p.Id, $desc)
             } catch {
                 throw "Falha ao iniciar '$exe' para '$desc': $($_.Exception.Message)"
             }
@@ -819,17 +840,35 @@ $ctl.BtnPrimary.Add_Click({
 
             return $false
         }
+        function Normalize-PythonPackageName([string]$name) {
+            if ([string]::IsNullOrWhiteSpace($name)) { return '' }
+            return (([string]$name).Trim().ToLowerInvariant() -replace '[-_.]+','-')
+        }
+        function Get-RequirementPackageName([string]$spec) {
+            if ([string]::IsNullOrWhiteSpace($spec)) { return '' }
+            $name = ([string]$spec).Trim()
+            $name = ($name -split ';', 2)[0].Trim()
+            if ($name.StartsWith('-')) { return '' }
+            if ($name -match '^([^\s@]+)\s*@') { $name = $matches[1] }
+            $name = ($name -split '(===|==|~=|!=|>=|<=|>|<)', 2)[0].Trim()
+            $name = ($name -replace '\[.*?\]', '').Trim()
+            return $name
+        }
         function Get-RequirementEntries([string]$path) {
             $entries = @()
             $lines = Get-Content -LiteralPath $path
             for ($i = 0; $i -lt $lines.Count; $i++) {
-                $line = ([string]$lines[$i]).Trim()
+                $rawLine = ([string]$lines[$i]).Trim()
+                $isOptional = $rawLine -match '#\s*optional\b'
+                $line = $rawLine
                 if (-not $line -or $line.StartsWith('#')) { continue }
                 $line = [regex]::Replace($line, '\s+#.*$', '').Trim()
                 if (-not $line) { continue }
                 $entries += [pscustomobject]@{
                     Line = $i + 1
                     Spec = $line
+                    Package = Get-RequirementPackageName $line
+                    Optional = $isOptional
                 }
             }
             return $entries
@@ -837,6 +876,8 @@ $ctl.BtnPrimary.Add_Click({
 
         try {
             Set-Location -LiteralPath $ROOT
+            Log "[OK] Instalador revisão: $INSTALLER_REVISION"
+            Log "[OK] Script em execução: $SCRIPT_PATH"
             Log "[OK] Pasta de instalação: $ROOT"
 
             # ---- 1. Estrutura de pastas
@@ -887,13 +928,22 @@ USER_AGENT=Neve AI
             if (-not (Test-Path (Split-Path $llamaDir -Parent))) { New-Item (Split-Path $llamaDir -Parent) -ItemType Directory | Out-Null }
             if (-not (Test-Path $llamaDir)) { New-Item $llamaDir -ItemType Directory | Out-Null }
             $llamaServer = Join-Path $llamaDir 'llama-server.exe'
+            $llamaVersionPath = Join-Path (Split-Path $llamaDir -Parent) 'version.txt'
             $llamaInstalled = $false
             try {
                 $rel = Invoke-RestMethod 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest' -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 60
                 $tag = $rel.tag_name
                 if (-not $tag) { throw 'Release do llama.cpp sem tag_name.' }
 
-                $attempts = @($cfg.llamaAsset, 'cpu') | Where-Object { $_ } | Select-Object -Unique
+                if ((Test-Path -LiteralPath $llamaServer) -and (Test-Path -LiteralPath $llamaVersionPath)) {
+                    $installedLlama = @(Get-Content -LiteralPath $llamaVersionPath -EA SilentlyContinue)
+                    if ($installedLlama.Count -ge 2 -and $installedLlama[0] -eq $tag -and $installedLlama[1] -eq $cfg.llamaAsset) {
+                        Log "[OK] llama.cpp $tag ($($cfg.llamaAsset)) já instalado; pulando download"
+                        $llamaInstalled = $true
+                    }
+                }
+
+                $attempts = if ($llamaInstalled) { @() } else { @($cfg.llamaAsset, 'cpu') | Where-Object { $_ } | Select-Object -Unique }
                 foreach ($assetName in $attempts) {
                     $tmpFiles = @(); $stageDir = $null; $backupDir = $null
                     try {
@@ -968,45 +1018,51 @@ USER_AGENT=Neve AI
             }
             if (-not $llamaInstalled) { Log '[!] Usando llama.cpp existente porque o download novo não pôde ser concluído.' 'warn' }
 
-            # ---- 4. Recriar venv
-            P 25 'Recriando ambiente Python'
+            # ---- 4. Preparar venv
+            P 25 'Preparando ambiente Python'
             if ([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) {
                 throw "Python 3.11/3.12 válido não encontrado para criar o venv. Instale pelo python.org e desative aliases Python da Microsoft Store, se existirem."
             }
             Set-InstallState 'creating_venv'
             Log "[OK] Python selecionado: $PYTHON_EXE"
-            if (Test-Path $VENV_DIR) {
-                Log "==> Removendo venv antigo"
-                try { Remove-Item $VENV_DIR -Recurse -Force -EA Stop } catch {
-                    Log "[X] Falha ao remover venv: $_" 'err'; throw
+            $forceRecreateVenv = @('1','true','yes','sim') -contains ([string]$env:NEVE_RECREATE_VENV).ToLowerInvariant()
+            if ((Test-Path -LiteralPath $VENV_PY) -and -not $forceRecreateVenv) {
+                Log "[OK] venv existente preservado para retry incremental"
+            } else {
+                if (Test-Path $VENV_DIR) {
+                    Log "==> Removendo venv antigo ou incompleto"
+                    try { Remove-Item $VENV_DIR -Recurse -Force -EA Stop } catch {
+                        Log "[X] Falha ao remover venv: $_" 'err'; throw
+                    }
                 }
+                $venvParent = Split-Path -Parent $VENV_DIR
+                if (-not (Test-Path -LiteralPath $venvParent)) { New-Item -ItemType Directory -Path $venvParent -Force | Out-Null }
+                $rc = Run-NoPipe $PYTHON_EXE @('-m','venv',$VENV_DIR) 'Criando venv'
+                if ($rc -ne 0) {
+                    Log "[!] Criação padrão do venv falhou (exit $rc). Tentando novamente com --copies." 'warn'
+                    if (Test-Path $VENV_DIR) { Remove-Item $VENV_DIR -Recurse -Force -EA SilentlyContinue }
+                    $rc = Run-NoPipe $PYTHON_EXE @('-m','venv','--copies',$VENV_DIR) 'Criando venv (--copies)'
+                }
+                if ($rc -ne 0) { throw "Falha ao criar venv (exit $rc). Python usado: $PYTHON_EXE. Pasta alvo: $VENV_DIR" }
             }
-            $venvParent = Split-Path -Parent $VENV_DIR
-            if (-not (Test-Path -LiteralPath $venvParent)) { New-Item -ItemType Directory -Path $venvParent -Force | Out-Null }
-            $rc = Run-NoPipe $PYTHON_EXE @('-m','venv',$VENV_DIR) 'Criando venv'
-            if ($rc -ne 0) {
-                Log "[!] Criação padrão do venv falhou (exit $rc). Tentando novamente com --copies." 'warn'
-                if (Test-Path $VENV_DIR) { Remove-Item $VENV_DIR -Recurse -Force -EA SilentlyContinue }
-                $rc = Run-NoPipe $PYTHON_EXE @('-m','venv','--copies',$VENV_DIR) 'Criando venv (--copies)'
-            }
-            if ($rc -ne 0) { throw "Falha ao criar venv (exit $rc). Python usado: $PYTHON_EXE. Pasta alvo: $VENV_DIR" }
             if (-not (Test-Path $VENV_PY)) {
                 throw "O venv foi criado, mas o Python interno não foi encontrado em '$VENV_PY'. Verifique se o Python instalado suporta venv e se o antivírus não bloqueou a criação dos executáveis."
             }
             Set-InstallState 'venv_created'
-            Log "[OK] venv criado"
+            Log "[OK] venv pronto"
 
             # ---- 5. pip + PyTorch
             Set-InstallState 'installing_python_packages'
             Set-InstallState 'preparing_pip_environment'
             $venvScripts = Join-Path $VENV_DIR 'Scripts'
+            $script:CleanPipProcessEnv = $true
             $env:VIRTUAL_ENV = $VENV_DIR
             $env:PATH = "$venvScripts;$env:PATH"
-            $env:PIP_REQUIRE_VIRTUALENV = 'false'
+            try { Remove-Item Env:PIP_REQUIRE_VIRTUALENV -EA SilentlyContinue } catch {}
             $env:PIP_CONFIG_FILE = 'NUL'
             try { Remove-Item Env:PYTHONHOME -EA SilentlyContinue } catch {}
             try { Remove-Item Env:PYTHONPATH -EA SilentlyContinue } catch {}
-            Log "[OK] Ambiente pip isolado para o venv (config global ignorada)"
+            Log "[OK] Ambiente pip isolado para o venv (config global ignorada; PIP_REQUIRE_VIRTUALENV removido)"
 
             $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'
             $env:PIP_NO_INPUT = '1'
@@ -1016,53 +1072,188 @@ USER_AGENT=Neve AI
             $pipLog = Join-Path (Split-Path -Parent $LOG) 'pip-install.log'
             try { [System.IO.File]::WriteAllText($pipLog, '', [System.Text.UTF8Encoding]::new($false)) } catch {}
             Log "[OK] Log detalhado do pip: $pipLog"
-            $pipBase = @('-I','-m','pip','--isolated','--log',$pipLog)
-            $pipInstall = $pipBase + @('install','--disable-pip-version-check','--no-input','--prefer-binary','--progress-bar','off','--retries','5','--timeout','60')
+            $pipCommon = @('--isolated','--log',$pipLog)
+            $pipInstallBase = @('install','--disable-pip-version-check','--no-input','--prefer-binary','--progress-bar','off','--retries','5','--timeout','60')
+            $venvPipExe = Join-Path $venvScripts 'pip.exe'
+            $venvPip3Exe = Join-Path $venvScripts 'pip3.exe'
+
+            function Invoke-PipCommand {
+                param([string[]]$PipArgs, [string]$Desc)
+
+                $attempts = @()
+                $attempts += [pscustomobject]@{ Exe = $VENV_PY; Args = (@('-I','-m','pip') + $pipCommon + $PipArgs); Desc = "$Desc [python -I -m pip]" }
+                $attempts += [pscustomobject]@{ Exe = $VENV_PY; Args = (@('-m','pip') + $pipCommon + $PipArgs); Desc = "$Desc [python -m pip]" }
+                foreach ($pipExe in @($venvPipExe, $venvPip3Exe) | Select-Object -Unique) {
+                    if (Test-Path -LiteralPath $pipExe) {
+                        $attempts += [pscustomobject]@{ Exe = $pipExe; Args = ($pipCommon + $PipArgs); Desc = "$Desc [$([System.IO.Path]::GetFileName($pipExe))]" }
+                    }
+                }
+
+                $lastRc = 1
+                $failures = @()
+                foreach ($attempt in $attempts) {
+                    $rc = Run $attempt.Exe $attempt.Args $attempt.Desc
+                    if ($rc -eq 0) { return 0 }
+                    $lastRc = $rc
+                    $failures += ("{0}: exit {1}" -f $attempt.Desc, $rc)
+                    if ($rc -eq 3) {
+                        Log "[!] pip retornou exit 3 em '$($attempt.Desc)'. Tentando outra rota do pip no mesmo venv." 'warn'
+                    }
+                }
+
+                $script:LastPipFailures = $failures
+                return $lastRc
+            }
+
+            function Invoke-PipInstall {
+                param([string[]]$InstallArgs, [string]$Desc)
+                return Invoke-PipCommand -PipArgs ($pipInstallBase + $InstallArgs) -Desc $Desc
+            }
+
+            function Save-GetPipScript {
+                param([string]$Destination)
+                $urls = @('https://bootstrap.pypa.io/get-pip.py')
+                foreach ($url in $urls) {
+                    try {
+                        Log "==> Baixando get-pip.py com Invoke-WebRequest"
+                        Invoke-WebRequest $url -OutFile $Destination -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 120
+                        if ((Test-Path -LiteralPath $Destination) -and ((Get-Item -LiteralPath $Destination).Length -gt 100000)) { return $true }
+                    } catch { Log "[!] Invoke-WebRequest falhou para get-pip.py: $($_.Exception.Message)" 'warn' }
+
+                    try {
+                        Log "==> Baixando get-pip.py com WebClient"
+                        $wc = New-Object System.Net.WebClient
+                        $wc.Headers.Add('User-Agent', 'Neve-Installer/3.0')
+                        $wc.DownloadFile($url, $Destination)
+                        if ((Test-Path -LiteralPath $Destination) -and ((Get-Item -LiteralPath $Destination).Length -gt 100000)) { return $true }
+                    } catch { Log "[!] WebClient falhou para get-pip.py: $($_.Exception.Message)" 'warn' }
+
+                    $curl = Get-Command curl.exe -EA SilentlyContinue | Select-Object -First 1
+                    if ($curl) {
+                        Log "==> Baixando get-pip.py com curl.exe"
+                        $rc = Run-NoPipe $curl.Source @('-L','--fail','--retry','3','--connect-timeout','30','-o',$Destination,$url) 'baixar get-pip.py com curl'
+                        if ($rc -eq 0 -and (Test-Path -LiteralPath $Destination) -and ((Get-Item -LiteralPath $Destination).Length -gt 100000)) { return $true }
+                    }
+                }
+                return $false
+            }
+
+            function Repair-PipBootstrap {
+                Set-InstallState 'repairing_pip_bootstrap'
+                $getPipPath = Join-Path (Split-Path -Parent $LOG) 'get-pip.py'
+                try { if (Test-Path -LiteralPath $getPipPath) { Remove-Item -LiteralPath $getPipPath -Force -EA SilentlyContinue } } catch {}
+                if (-not (Save-GetPipScript $getPipPath)) {
+                    Log "[X] Não foi possível baixar get-pip.py para reparar o pip." 'err'
+                    return 1
+                }
+                $rc = Run $VENV_PY @('-I',$getPipPath,'--no-warn-script-location','--force-reinstall','pip','setuptools','wheel') 'get-pip repair'
+                return $rc
+            }
+
+            $installedPackagesPath = Join-Path (Split-Path -Parent $LOG) 'installed-python-packages.txt'
+            $script:InstalledPythonPackages = @{}
+            function Refresh-InstalledPackageCache {
+                $code = @'
+import importlib.metadata as metadata
+import sys
+
+def normalize(name: str) -> str:
+    return name.strip().lower().replace('_', '-').replace('.', '-')
+
+names = set()
+for dist in metadata.distributions():
+    name = dist.metadata.get('Name') or getattr(dist, 'name', '')
+    if name:
+        names.add(normalize(name))
+
+with open(sys.argv[1], 'w', encoding='utf-8') as file:
+    file.write('\n'.join(sorted(names)))
+'@
+                $rc = Run $VENV_PY @('-I','-c',$code,$installedPackagesPath) 'atualizar cache de pacotes Python instalados'
+                $script:InstalledPythonPackages = @{}
+                if ($rc -eq 0 -and (Test-Path -LiteralPath $installedPackagesPath)) {
+                    foreach ($pkg in Get-Content -LiteralPath $installedPackagesPath -EA SilentlyContinue) {
+                        $normalized = Normalize-PythonPackageName $pkg
+                        if ($normalized) { $script:InstalledPythonPackages[$normalized] = $true }
+                    }
+                }
+                return $rc
+            }
+            function Test-PythonPackageInstalled([string]$packageName) {
+                $normalized = Normalize-PythonPackageName $packageName
+                return ($normalized -and $script:InstalledPythonPackages.ContainsKey($normalized))
+            }
+            function Mark-PythonPackageInstalled([string]$packageName) {
+                $normalized = Normalize-PythonPackageName $packageName
+                if ($normalized) { $script:InstalledPythonPackages[$normalized] = $true }
+            }
+            function Test-TorchReady {
+                $cudaRequired = if ($cfg.vendor -eq 'NVIDIA') { '1' } else { '0' }
+                $code = 'import sys; import torch, torchvision; sys.exit(0 if (sys.argv[1] != "1" or torch.cuda.is_available()) else 1)'
+                $rc = Run $VENV_PY @('-I','-c',$code,$cudaRequired) 'validar PyTorch existente'
+                return ($rc -eq 0)
+            }
 
             P 31 'Preparando pip do venv'
             Set-InstallState 'ensurepip_upgrade'
             $rc = Run $VENV_PY @('-I','-m','ensurepip','--upgrade','--default-pip') 'ensurepip --upgrade'
             if ($rc -ne 0) {
-                throw "Falha ao preparar pip do venv (ensurepip exit $rc). Veja logs\pip-install.log."
+                Log "[!] ensurepip falhou (exit $rc). Tentando reparar pip com get-pip.py oficial." 'warn'
+                $rc = Repair-PipBootstrap
+                if ($rc -ne 0) { throw "Falha ao preparar pip do venv (ensurepip/get-pip exit $rc). Veja logs\pip-install.log." }
             }
 
             P 32 'Validando pip do venv'
             Set-InstallState 'verifying_pip'
-            $rc = Run $VENV_PY ($pipBase + @('--version')) 'pip --version'
+            $rc = Invoke-PipCommand -PipArgs @('--version') -Desc 'pip --version'
             if ($rc -ne 0) {
-                throw "pip do venv não respondeu mesmo em modo isolado (exit $rc). Veja logs\pip-install.log."
+                Log "[!] pip do venv não respondeu (exit $rc). Reparando com get-pip.py oficial." 'warn'
+                $repairRc = Repair-PipBootstrap
+                if ($repairRc -eq 0) { $rc = Invoke-PipCommand -PipArgs @('--version') -Desc 'pip --version pós-reparo' }
+                if ($rc -ne 0) { throw "pip do venv não respondeu após múltiplas rotas e reparo (exit $rc). Tentativas: $($script:LastPipFailures -join '; '). Veja logs\pip-install.log." }
             }
 
             P 33 'Atualizando pip, setuptools e wheel'
             Set-InstallState 'pip_upgrade'
-            $rc = Run $VENV_PY ($pipInstall + @('--upgrade','pip','setuptools','wheel')) 'pip/setuptools/wheel upgrade'
+            $rc = Invoke-PipInstall -InstallArgs @('--upgrade','pip','setuptools','wheel') -Desc 'pip/setuptools/wheel upgrade'
             if ($rc -ne 0) {
-                throw "Falha ao atualizar pip/setuptools/wheel (exit $rc). Veja logs\pip-install.log."
+                Log "[!] Upgrade de pip/setuptools/wheel falhou (exit $rc). Reparando pip e tentando novamente." 'warn'
+                $repairRc = Repair-PipBootstrap
+                if ($repairRc -eq 0) { $rc = Invoke-PipInstall -InstallArgs @('--upgrade','pip','setuptools','wheel') -Desc 'pip/setuptools/wheel upgrade pós-reparo' }
+                if ($rc -ne 0) { throw "Falha ao atualizar pip/setuptools/wheel após múltiplas rotas (exit $rc). Tentativas: $($script:LastPipFailures -join '; '). Veja logs\pip-install.log." }
             }
+            [void](Refresh-InstalledPackageCache)
 
             P 38 "Instalando PyTorch ($($cfg.cudaVer))"
             Set-InstallState 'installing_torch'
-            $torchIndexes = @($cfg.torchIndex)
-            if ($cfg.vendor -eq 'NVIDIA') {
-                $torchIndexes += @('https://download.pytorch.org/whl/cu128','https://download.pytorch.org/whl/cu126','https://download.pytorch.org/whl/cu124')
-            }
-            $torchIndexes = @($torchIndexes | Where-Object { $_ } | Select-Object -Unique)
-            $torchInstalled = $false
-            $torchFailures = @()
-            foreach ($torchIndex in $torchIndexes) {
-                Set-InstallState ("installing_torch_{0}" -f (($torchIndex -replace '^https://download\.pytorch\.org/whl/','') -replace '[^A-Za-z0-9_\-]','_'))
-                $label = if ($torchIndex -match '/([^/]+)$') { $matches[1] } else { $torchIndex }
-                $rc = Run $VENV_PY ($pipInstall + @('torch','torchvision','--index-url',$torchIndex)) "PyTorch + torchvision ($label)"
-                if ($rc -eq 0) {
-                    $torchInstalled = $true
-                    break
-                }
-                $torchFailures += ("{0}: exit {1}" -f $label, $rc)
+            if ((Test-PythonPackageInstalled 'torch') -and (Test-PythonPackageInstalled 'torchvision') -and (Test-TorchReady)) {
+                Log "[OK] PyTorch já instalado e válido; pulando"
+            } else {
+                $torchIndexes = @($cfg.torchIndex)
                 if ($cfg.vendor -eq 'NVIDIA') {
-                    Log "[!] PyTorch CUDA em $label falhou (exit $rc). Tentando outro índice CUDA compatível." 'warn'
+                    $torchIndexes += @('https://download.pytorch.org/whl/cu128','https://download.pytorch.org/whl/cu126','https://download.pytorch.org/whl/cu124','https://download.pytorch.org/whl/cu121')
                 }
+                $torchIndexes = @($torchIndexes | Where-Object { $_ } | Select-Object -Unique)
+                $torchInstalled = $false
+                $torchFailures = @()
+                foreach ($torchIndex in $torchIndexes) {
+                    Set-InstallState ("installing_torch_{0}" -f (($torchIndex -replace '^https://download\.pytorch\.org/whl/','') -replace '[^A-Za-z0-9_\-]','_'))
+                    $label = if ($torchIndex -match '/([^/]+)$') { $matches[1] } else { $torchIndex }
+                    $rc = Invoke-PipInstall -InstallArgs @('torch','torchvision','--index-url',$torchIndex) -Desc "PyTorch + torchvision ($label)"
+                    if ($rc -eq 0) {
+                        $torchInstalled = $true
+                        Mark-PythonPackageInstalled 'torch'
+                        Mark-PythonPackageInstalled 'torchvision'
+                        break
+                    }
+                    $torchFailures += ("{0}: exit {1}" -f $label, $rc)
+                    if ($cfg.vendor -eq 'NVIDIA') {
+                        Log "[!] PyTorch CUDA em $label falhou (exit $rc). Tentando outro índice CUDA compatível." 'warn'
+                    }
+                }
+                if (-not $torchInstalled) { throw "Falha ao instalar PyTorch sem comprometer a aceleração escolhida. Tentativas: $($torchFailures -join '; '). Veja logs\pip-install.log." }
+                [void](Refresh-InstalledPackageCache)
             }
-            if (-not $torchInstalled) { throw "Falha ao instalar PyTorch sem comprometer a aceleração escolhida. Tentativas: $($torchFailures -join '; '). Veja logs\pip-install.log." }
             Log "[OK] PyTorch instalado"
 
             # ---- 6. Flash Attention (opcional)
@@ -1074,7 +1265,7 @@ USER_AGENT=Neve AI
                 } else {
                     P 48 'Compilando Flash Attention Python (~10 min)'
                     Set-InstallState 'installing_flash_attn'
-                    $rc = Run $VENV_PY ($pipInstall + @('flash-attn','--no-build-isolation')) 'flash-attn'
+                    $rc = Invoke-PipInstall -InstallArgs @('flash-attn','--no-build-isolation') -Desc 'flash-attn'
                     if ($rc -eq 0) {
                         Log "[OK] Flash Attention Python instalado"
                     } else {
@@ -1086,8 +1277,13 @@ USER_AGENT=Neve AI
             # ---- 7. diffusers
             P 55 'Instalando diffusers'
             Set-InstallState 'installing_diffusers'
-            Log "==> diffusers será instalado separadamente para facilitar diagnóstico"
-            [void](Run $VENV_PY ($pipInstall + @('diffusers')) 'diffusers')
+            if (Test-PythonPackageInstalled 'diffusers') {
+                Log "[OK] diffusers já instalado; pulando"
+            } else {
+                Log "==> diffusers será instalado separadamente para facilitar diagnóstico"
+                $rc = Invoke-PipInstall -InstallArgs @('diffusers') -Desc 'diffusers'
+                if ($rc -eq 0) { Mark-PythonPackageInstalled 'diffusers' } else { Log "[!] diffusers falhou (exit $rc); continuando e tentando novamente no próximo instalador." 'warn' }
+            }
 
             # ---- 8. requirements do backend
             P 60 'Instalando dependências do backend (~5-15 min)'
@@ -1110,8 +1306,9 @@ USER_AGENT=Neve AI
             $reqEntries = @(Get-RequirementEntries $req)
             $reqCount = $reqEntries.Count
             Log "[OK] $reqName encontrado: $reqCount entradas"
-            Log "==> Instalando $reqName pacote por pacote para mostrar progresso e identificar qualquer travamento"
+            Log "==> Instalando $reqName pacote por pacote; pacotes já instalados serão pulados"
             $failedRequirements = @()
+            $pythonDependencyFailures = @()
             for ($i = 0; $i -lt $reqEntries.Count; $i++) {
                 $entry = $reqEntries[$i]
                 $index = $i + 1
@@ -1119,33 +1316,58 @@ USER_AGENT=Neve AI
                 P $percent ("{0} {1}/{2}" -f $reqName, $index, $reqCount)
                 Set-InstallState ("installing_requirement_{0}_of_{1}" -f $index, $reqCount)
                 Log ("==> {0} [{1}/{2}] linha {3}: {4}" -f $reqName, $index, $reqCount, $entry.Line, $entry.Spec)
-                $rc = Run $VENV_PY ($pipInstall + @($entry.Spec)) ("{0} {1}/{2}: {3}" -f $reqName, $index, $reqCount, $entry.Spec)
+
+                if ($entry.Package -and (Test-PythonPackageInstalled $entry.Package)) {
+                    Log ("[OK] {0} já instalado; pulando" -f $entry.Package)
+                    continue
+                }
+
+                $rc = Invoke-PipInstall -InstallArgs @($entry.Spec) -Desc ("{0} {1}/{2}: {3}" -f $reqName, $index, $reqCount, $entry.Spec)
                 if ($rc -ne 0) {
                     $failedRequirements += ("linha {0}: {1} (exit {2})" -f $entry.Line, $entry.Spec, $rc)
-                    Log ("[X] Falha em {0} linha {1}: {2} (exit {3})" -f $reqName, $entry.Line, $entry.Spec, $rc) 'err'
-                    break
+                    Log ("[!] Falha em {0} linha {1}: {2} (exit {3}); continuando com as demais" -f $reqName, $entry.Line, $entry.Spec, $rc) 'warn'
+                    continue
                 }
+                if ($entry.Package) { Mark-PythonPackageInstalled $entry.Package }
             }
 
             if ($failedRequirements.Count -gt 0) {
-                throw ("Falha ao instalar dependência do backend: {0}. Veja o log acima para o pacote exato e a mensagem do pip." -f ($failedRequirements -join '; '))
+                $pythonDependencyFailures = @($failedRequirements)
+                $pendingPath = Join-Path (Split-Path -Parent $LOG) 'python-dependencies-pending.txt'
+                try { [System.IO.File]::WriteAllText($pendingPath, ($failedRequirements -join [Environment]::NewLine), [System.Text.UTF8Encoding]::new($false)) } catch {}
+                Log ("[!] Dependências pendentes: {0}" -f ($failedRequirements -join '; ')) 'warn'
+                Log "[!] O instalador continuará. Ao executar de novo, pacotes já instalados serão pulados e estas pendências serão tentadas novamente." 'warn'
+            } else {
+                $pendingPath = Join-Path (Split-Path -Parent $LOG) 'python-dependencies-pending.txt'
+                try { if (Test-Path -LiteralPath $pendingPath) { Remove-Item -LiteralPath $pendingPath -Force -EA SilentlyContinue } } catch {}
             }
-            Log "[OK] Dependências do backend instaladas"
+            [void](Refresh-InstalledPackageCache)
+            Log "[OK] Etapa de dependências do backend concluída"
 
             P 77 'Validando dependências Python'
             Set-InstallState 'pip_check'
-            $rc = Run $VENV_PY ($pipBase + @('check')) 'pip check'
+            $rc = Invoke-PipCommand -PipArgs @('check') -Desc 'pip check'
             if ($rc -eq 0) { Log "[OK] pip check sem conflitos" } else { Log "[!] pip check encontrou conflitos; verifique o log acima se algo falhar ao iniciar" 'warn' }
 
-            # ---- 9. onnxruntime-gpu (substituir CPU)
-            if ($cfg.useOnnxGpu) {
-                P 78 'Instalando onnxruntime-gpu'
+            # ---- 9. onnxruntime-gpu (opcional)
+            $installOnnxGpu = $cfg.useOnnxGpu -and (@('1','true','yes','sim') -contains ([string]$env:NEVE_INSTALL_ONNXRUNTIME_GPU).ToLowerInvariant())
+            if ($installOnnxGpu) {
+                P 78 'Instalando onnxruntime-gpu opcional'
                 Set-InstallState 'installing_onnxruntime_gpu'
-                [void](Run $VENV_PY ($pipBase + @('uninstall','onnxruntime','-y')) 'remover onnxruntime CPU')
-                $rc = Run $VENV_PY ($pipInstall + @('onnxruntime-gpu')) 'onnxruntime-gpu'
-                if ($rc -eq 0) { Log "[OK] onnxruntime-gpu instalado" } else {
-                    throw "Falha ao instalar onnxruntime-gpu (exit $rc). A instalação foi interrompida para não trocar GPU por CPU silenciosamente. Veja logs\pip-install.log."
+                if (Test-PythonPackageInstalled 'onnxruntime-gpu') {
+                    Log "[OK] onnxruntime-gpu já instalado; pulando"
+                } else {
+                    [void](Invoke-PipCommand -PipArgs @('uninstall','onnxruntime','-y') -Desc 'remover onnxruntime CPU')
+                    $rc = Invoke-PipInstall -InstallArgs @('onnxruntime-gpu') -Desc 'onnxruntime-gpu'
+                    if ($rc -eq 0) {
+                        Mark-PythonPackageInstalled 'onnxruntime-gpu'
+                        Log "[OK] onnxruntime-gpu instalado"
+                    } else {
+                        Log "[!] onnxruntime-gpu falhou (exit $rc). Etapa opcional ignorada; sem fallback CPU silencioso." 'warn'
+                    }
                 }
+            } elseif ($cfg.useOnnxGpu) {
+                Log "[OK] onnxruntime-gpu opcional ignorado no runtime mínimo. Defina NEVE_INSTALL_ONNXRUNTIME_GPU=1 para instalar."
             }
 
             # ---- 10. npm install
@@ -1187,11 +1409,18 @@ USER_AGENT=Neve AI
             } catch {}
             $summary += "llama.cpp:   $($cfg.llamaAsset)"
             if ($vramGb -gt 0) { $summary += "VRAM:        ${vramGb} GB ($($detected.Name))" }
+            if ($pythonDependencyFailures.Count -gt 0) {
+                $summary += "Pendências:  $($pythonDependencyFailures.Count) dependência(s) Python; rode instalar.bat novamente para tentar só o que faltou."
+            }
 
             $script:Window.Dispatcher.Invoke([Action]{
                 $script:Ctl.InstallPanel.Visibility = 'Collapsed'
                 $script:Ctl.DonePanel.Visibility    = 'Visible'
                 $script:Ctl.LblSummary.Text         = ($summary -join "`r`n")
+                if ($pythonDependencyFailures.Count -gt 0) {
+                    $script:Ctl.LblDoneTitle.Text = 'Concluído com pendências'
+                    $script:Ctl.LblDoneSub.Text = 'O Neve AI tentou todas as dependências e registrou as pendências para retry incremental.'
+                }
                 $script:Ctl.BtnCancel.Visibility    = 'Collapsed'
                 $script:Ctl.BtnPrimary.IsEnabled    = $true
                 $script:Ctl.BtnPrimary.Content      = 'Concluir'
@@ -1228,7 +1457,7 @@ USER_AGENT=Neve AI
 
     $ps = [PowerShell]::Create()
     $ps.Runspace = $runspace
-    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($flashAttn).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($STATE_FILE).AddArgument($PYTHON_EXE).AddArgument($NODE_EXE).AddArgument($NPM_EXE)
+    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($flashAttn).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($STATE_FILE).AddArgument($PYTHON_EXE).AddArgument($NODE_EXE).AddArgument($NPM_EXE).AddArgument($INSTALLER_REVISION).AddArgument($SCRIPT_PATH)
     [void]$ps.add_InvocationStateChanged({
         param($sender, $eventArgs)
         if ($eventArgs.InvocationStateInfo.State -eq 'Failed') {

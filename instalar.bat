@@ -33,6 +33,8 @@ if not defined PS (
 if /i "%~1"=="--check" (
 	echo ROOT=%ROOT%
 	echo SCRIPT=%SCRIPT%
+	for %%F in ("%SCRIPT%") do echo SCRIPT_LAST_WRITE=%%~tF
+	findstr /b /c:"$INSTALLER_REVISION =" "%SCRIPT%" 2>nul
 	echo POWERSHELL=%PS%
 	echo LOG=%LAUNCHLOG%
 	echo STATE=%STATEFILE%
@@ -49,6 +51,8 @@ set "NEVE_INSTALLER_ROOT=%ROOT%"
 set "NEVE_INSTALLER_SCRIPT=%SCRIPT%"
 
 echo [%date% %time%] Iniciando instalador com "%PS%".>>"%LAUNCHLOG%"
+for %%F in ("%SCRIPT%") do echo [%date% %time%] SCRIPT_LAST_WRITE=%%~tF>>"%LAUNCHLOG%"
+findstr /b /c:"$INSTALLER_REVISION =" "%SCRIPT%" >>"%LAUNCHLOG%" 2>nul
 "%PS%" -NoProfile -STA -ExecutionPolicy Bypass %PS_WINDOW% -Command "$ErrorActionPreference='Stop'; try { Set-Location -LiteralPath $env:NEVE_INSTALLER_ROOT; & $env:NEVE_INSTALLER_SCRIPT; exit 0 } catch { $msg = if ($_.Exception) { $_.Exception.Message } else { [string]$_ }; $log = Join-Path $env:NEVE_INSTALLER_ROOT 'logs\install-launcher.log'; Add-Content -LiteralPath $log -Value ('[FATAL] ' + $msg) -Encoding UTF8; try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('Falha ao abrir o instalador.' + [Environment]::NewLine + [Environment]::NewLine + 'Veja logs\install-launcher.log' + [Environment]::NewLine + [Environment]::NewLine + $msg), 'Neve AI - Instalador', 'OK', 'Error') | Out-Null } catch { Write-Host $msg }; exit 1 }"
 set "RC=%ERRORLEVEL%"
 
