@@ -613,109 +613,6 @@ function ConvertTo-ProcessArgument([string]$arg) {
     return '"' + $escaped + '"'
 }
 
-function Run-Logged([string]$exe, [string[]]$args, [string]$desc) {
-    UI-Log $desc 'info'
-    if ([string]::IsNullOrWhiteSpace($exe)) {
-        throw "Executável vazio ao executar '$desc'."
-    }
-
-    $safeArgs = @()
-    foreach ($a in @($args)) {
-        if ($null -eq $a) {
-            throw "Argumento nulo ao executar '$desc' com '$exe'."
-        }
-        $safeArgs += [string]$a
-    }
-
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $processExe = $exe
-    $processArgs = (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
-    $extension = [System.IO.Path]::GetExtension($exe)
-    if (@('.cmd', '.bat') -contains $extension.ToLowerInvariant()) {
-        $cmdExe = if ($env:ComSpec -and (Test-Path -LiteralPath $env:ComSpec)) { $env:ComSpec } else { Join-Path $env:SystemRoot 'System32\cmd.exe' }
-        $processExe = $cmdExe
-        $quote = [char]34
-        $cmdCommand = $quote + ($exe -replace $quote, ($quote + $quote)) + $quote
-        if ($safeArgs.Count -gt 0) { $cmdCommand += ' ' + (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ') }
-        $processArgs = '/d /s /c ' + $quote + $cmdCommand + $quote
-    }
-
-    $psi.FileName               = $processExe
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
-    $psi.UseShellExecute        = $false
-    $psi.CreateNoWindow         = $true
-    $psi.Arguments              = $processArgs
-    $cmdLine = "CMD: {0} {1}" -f $exe, ($safeArgs -join ' ')
-    UI-Log $cmdLine 'info'
-    Add-Content $LOG $cmdLine
-
-    $queue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]'
-    $stdoutHandler = [System.Diagnostics.DataReceivedEventHandler]{
-        param($sender, $eventArgs)
-        if ($null -ne $eventArgs.Data -and $eventArgs.Data.Length -gt 0) {
-            $queue.Enqueue($eventArgs.Data)
-        }
-    }
-    $stderrHandler = [System.Diagnostics.DataReceivedEventHandler]{
-        param($sender, $eventArgs)
-        if ($null -ne $eventArgs.Data -and $eventArgs.Data.Length -gt 0) {
-            $queue.Enqueue($eventArgs.Data)
-        }
-    }
-
-    function Drain-RunLoggedOutput {
-        $line = $null
-        while ($queue.TryDequeue([ref]$line)) {
-            UI-Log $line 'info'
-            Add-Content $LOG $line
-            $line = $null
-        }
-    }
-
-    $proc = New-Object System.Diagnostics.Process
-    $proc.StartInfo = $psi
-    [void]$proc.add_OutputDataReceived($stdoutHandler)
-    [void]$proc.add_ErrorDataReceived($stderrHandler)
-
-    try {
-        [void]$proc.Start()
-        UI-Log ("[pid {0}] {1} iniciado" -f $proc.Id, $desc) 'info'
-        $startedAt = Get-Date
-        $lastHeartbeat = $startedAt
-
-        $proc.BeginOutputReadLine()
-        $proc.BeginErrorReadLine()
-
-        while (-not $proc.WaitForExit(250)) {
-            Drain-RunLoggedOutput
-            $now = Get-Date
-            if (($now - $lastHeartbeat).TotalSeconds -ge 30) {
-                $elapsedMin = [math]::Max(1, [math]::Floor(($now - $startedAt).TotalMinutes))
-                $line = "... {0} ainda em andamento ({1} min). Aguardando processo responder." -f $desc, $elapsedMin
-                UI-Log $line 'info'
-                Add-Content $LOG $line
-                $lastHeartbeat = $now
-            }
-        }
-
-        $proc.WaitForExit()
-        Drain-RunLoggedOutput
-
-        $elapsed = (Get-Date) - $startedAt
-        $line = "[exit {0}] {1} finalizado em {2:mm\:ss}" -f $proc.ExitCode, $desc, $elapsed
-        UI-Log $line 'info'
-        Add-Content $LOG $line
-        return $proc.ExitCode
-    } finally {
-        try { $proc.CancelOutputRead() } catch {}
-        try { $proc.CancelErrorRead() } catch {}
-        try { $proc.remove_OutputDataReceived($stdoutHandler) } catch {}
-        try { $proc.remove_ErrorDataReceived($stderrHandler) } catch {}
-        $proc.Dispose()
-    }
-}
-
 # =============================================================================
 # Worker - executa em runspace separado
 # =============================================================================
@@ -847,109 +744,6 @@ $ctl.BtnPrimary.Add_Click({
             $escaped = [regex]::Replace($arg, '(\\*)"', '$1$1\"')
             $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1')
             return '"' + $escaped + '"'
-        }
-        function Run([string]$exe, [string[]]$argv, [string]$desc) {
-            Log "==> $desc"
-            if ([string]::IsNullOrWhiteSpace($exe)) {
-                throw "Executável vazio ao executar '$desc'."
-            }
-
-            $safeArgs = @()
-            foreach ($a in @($argv)) {
-                if ($null -eq $a) {
-                    throw "Argumento nulo ao executar '$desc' com '$exe'."
-                }
-                $safeArgs += [string]$a
-            }
-
-            $psi = New-Object System.Diagnostics.ProcessStartInfo
-            $processExe = $exe
-            $processArgs = (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
-            $extension = [System.IO.Path]::GetExtension($exe)
-            if (@('.cmd', '.bat') -contains $extension.ToLowerInvariant()) {
-                $cmdExe = if ($env:ComSpec -and (Test-Path -LiteralPath $env:ComSpec)) { $env:ComSpec } else { Join-Path $env:SystemRoot 'System32\cmd.exe' }
-                $processExe = $cmdExe
-                $quote = [char]34
-                $cmdCommand = $quote + ($exe -replace $quote, ($quote + $quote)) + $quote
-                if ($safeArgs.Count -gt 0) { $cmdCommand += ' ' + (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ') }
-                $processArgs = '/d /s /c ' + $quote + $cmdCommand + $quote
-            }
-
-            $psi.FileName = $processExe
-            $psi.RedirectStandardOutput = $true
-            $psi.RedirectStandardError  = $true
-            $psi.UseShellExecute = $false
-            $psi.CreateNoWindow  = $true
-            $psi.Arguments = $processArgs
-            Log ("CMD: {0} {1}" -f $exe, ($safeArgs -join ' '))
-
-            $queue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]'
-            $stdoutHandler = [System.Diagnostics.DataReceivedEventHandler]{
-                param($sender, $eventArgs)
-                if ($null -ne $eventArgs.Data -and $eventArgs.Data.Length -gt 0) {
-                    $queue.Enqueue($eventArgs.Data)
-                }
-            }
-            $stderrHandler = [System.Diagnostics.DataReceivedEventHandler]{
-                param($sender, $eventArgs)
-                if ($null -ne $eventArgs.Data -and $eventArgs.Data.Length -gt 0) {
-                    $queue.Enqueue($eventArgs.Data)
-                }
-            }
-
-            function Drain-RunOutput {
-                $line = $null
-                while ($queue.TryDequeue([ref]$line)) {
-                    Log $line
-                    $line = $null
-                }
-            }
-
-            $p = $null
-            try {
-                $p = New-Object System.Diagnostics.Process
-                $p.StartInfo = $psi
-                [void]$p.add_OutputDataReceived($stdoutHandler)
-                [void]$p.add_ErrorDataReceived($stderrHandler)
-                [void]$p.Start()
-                Log ("[pid {0}] {1} iniciado" -f $p.Id, $desc)
-            } catch {
-                throw "Falha ao iniciar '$exe' para '$desc': $($_.Exception.Message)"
-            }
-            if ($null -eq $p) {
-                throw "Falha ao iniciar '$exe' para '$desc': Process.Start retornou nulo."
-            }
-
-            try {
-                $startedAt = Get-Date
-                $lastHeartbeat = $startedAt
-
-                $p.BeginOutputReadLine()
-                $p.BeginErrorReadLine()
-
-                while (-not $p.WaitForExit(250)) {
-                    Drain-RunOutput
-                    $now = Get-Date
-                    if (($now - $lastHeartbeat).TotalSeconds -ge 30) {
-                        $elapsedMin = [math]::Max(1, [math]::Floor(($now - $startedAt).TotalMinutes))
-                        Log ("... {0} ainda em andamento ({1} min). Aguardando pip/processo responder." -f $desc, $elapsedMin)
-                        $lastHeartbeat = $now
-                    }
-                }
-
-                $p.WaitForExit()
-                Drain-RunOutput
-
-                $elapsed = (Get-Date) - $startedAt
-                Log ("[exit {0}] {1} finalizado em {2:mm\:ss}" -f $p.ExitCode, $desc, $elapsed)
-                return $p.ExitCode
-            } finally {
-                try { $p.CancelOutputRead() } catch {}
-                try { $p.CancelErrorRead() } catch {}
-                try { $p.remove_OutputDataReceived($stdoutHandler) } catch {}
-                try { $p.remove_ErrorDataReceived($stderrHandler) } catch {}
-                $p.Dispose()
-            }
         }
         function Run-NoPipe([string]$exe, [string[]]$argv, [string]$desc) {
             Log "==> $desc"
@@ -1204,6 +998,16 @@ USER_AGENT=Neve AI
 
             # ---- 5. pip + PyTorch
             Set-InstallState 'installing_python_packages'
+            Set-InstallState 'preparing_pip_environment'
+            $venvScripts = Join-Path $VENV_DIR 'Scripts'
+            $env:VIRTUAL_ENV = $VENV_DIR
+            $env:PATH = "$venvScripts;$env:PATH"
+            $env:PIP_REQUIRE_VIRTUALENV = 'false'
+            $env:PIP_CONFIG_FILE = 'NUL'
+            try { Remove-Item Env:PYTHONHOME -EA SilentlyContinue } catch {}
+            try { Remove-Item Env:PYTHONPATH -EA SilentlyContinue } catch {}
+            Log "[OK] Ambiente pip isolado para o venv (config global ignorada)"
+
             $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'
             $env:PIP_NO_INPUT = '1'
             $env:PIP_DEFAULT_TIMEOUT = '60'
@@ -1212,16 +1016,53 @@ USER_AGENT=Neve AI
             $pipLog = Join-Path (Split-Path -Parent $LOG) 'pip-install.log'
             try { [System.IO.File]::WriteAllText($pipLog, '', [System.Text.UTF8Encoding]::new($false)) } catch {}
             Log "[OK] Log detalhado do pip: $pipLog"
-            $pipInstall = @('-m','pip','--log',$pipLog,'install','--disable-pip-version-check','--no-input','--prefer-binary','--progress-bar','off','--retries','5','--timeout','60')
+            $pipBase = @('-I','-m','pip','--isolated','--log',$pipLog)
+            $pipInstall = $pipBase + @('install','--disable-pip-version-check','--no-input','--prefer-binary','--progress-bar','off','--retries','5','--timeout','60')
 
-            P 32 'Atualizando pip'
+            P 31 'Preparando pip do venv'
+            Set-InstallState 'ensurepip_upgrade'
+            $rc = Run $VENV_PY @('-I','-m','ensurepip','--upgrade','--default-pip') 'ensurepip --upgrade'
+            if ($rc -ne 0) {
+                throw "Falha ao preparar pip do venv (ensurepip exit $rc). Veja logs\pip-install.log."
+            }
+
+            P 32 'Validando pip do venv'
+            Set-InstallState 'verifying_pip'
+            $rc = Run $VENV_PY ($pipBase + @('--version')) 'pip --version'
+            if ($rc -ne 0) {
+                throw "pip do venv não respondeu mesmo em modo isolado (exit $rc). Veja logs\pip-install.log."
+            }
+
+            P 33 'Atualizando pip, setuptools e wheel'
             Set-InstallState 'pip_upgrade'
-            [void](Run $VENV_PY ($pipInstall + @('--upgrade','pip')) 'pip upgrade')
+            $rc = Run $VENV_PY ($pipInstall + @('--upgrade','pip','setuptools','wheel')) 'pip/setuptools/wheel upgrade'
+            if ($rc -ne 0) {
+                throw "Falha ao atualizar pip/setuptools/wheel (exit $rc). Veja logs\pip-install.log."
+            }
 
             P 38 "Instalando PyTorch ($($cfg.cudaVer))"
             Set-InstallState 'installing_torch'
-            $rc = Run $VENV_PY ($pipInstall + @('torch','torchvision','--index-url',$cfg.torchIndex)) 'PyTorch + torchvision'
-            if ($rc -ne 0) { throw "Falha ao instalar PyTorch (exit $rc)" }
+            $torchIndexes = @($cfg.torchIndex)
+            if ($cfg.vendor -eq 'NVIDIA') {
+                $torchIndexes += @('https://download.pytorch.org/whl/cu128','https://download.pytorch.org/whl/cu126','https://download.pytorch.org/whl/cu124')
+            }
+            $torchIndexes = @($torchIndexes | Where-Object { $_ } | Select-Object -Unique)
+            $torchInstalled = $false
+            $torchFailures = @()
+            foreach ($torchIndex in $torchIndexes) {
+                Set-InstallState ("installing_torch_{0}" -f (($torchIndex -replace '^https://download\.pytorch\.org/whl/','') -replace '[^A-Za-z0-9_\-]','_'))
+                $label = if ($torchIndex -match '/([^/]+)$') { $matches[1] } else { $torchIndex }
+                $rc = Run $VENV_PY ($pipInstall + @('torch','torchvision','--index-url',$torchIndex)) "PyTorch + torchvision ($label)"
+                if ($rc -eq 0) {
+                    $torchInstalled = $true
+                    break
+                }
+                $torchFailures += ("{0}: exit {1}" -f $label, $rc)
+                if ($cfg.vendor -eq 'NVIDIA') {
+                    Log "[!] PyTorch CUDA em $label falhou (exit $rc). Tentando outro índice CUDA compatível." 'warn'
+                }
+            }
+            if (-not $torchInstalled) { throw "Falha ao instalar PyTorch sem comprometer a aceleração escolhida. Tentativas: $($torchFailures -join '; '). Veja logs\pip-install.log." }
             Log "[OK] PyTorch instalado"
 
             # ---- 6. Flash Attention (opcional)
@@ -1293,18 +1134,17 @@ USER_AGENT=Neve AI
 
             P 77 'Validando dependências Python'
             Set-InstallState 'pip_check'
-            $rc = Run $VENV_PY @('-m','pip','check') 'pip check'
+            $rc = Run $VENV_PY ($pipBase + @('check')) 'pip check'
             if ($rc -eq 0) { Log "[OK] pip check sem conflitos" } else { Log "[!] pip check encontrou conflitos; verifique o log acima se algo falhar ao iniciar" 'warn' }
 
             # ---- 9. onnxruntime-gpu (substituir CPU)
             if ($cfg.useOnnxGpu) {
                 P 78 'Instalando onnxruntime-gpu'
                 Set-InstallState 'installing_onnxruntime_gpu'
-                [void](Run $VENV_PY @('-m','pip','uninstall','onnxruntime','-y') 'remover onnxruntime CPU')
+                [void](Run $VENV_PY ($pipBase + @('uninstall','onnxruntime','-y')) 'remover onnxruntime CPU')
                 $rc = Run $VENV_PY ($pipInstall + @('onnxruntime-gpu')) 'onnxruntime-gpu'
                 if ($rc -eq 0) { Log "[OK] onnxruntime-gpu instalado" } else {
-                    Log "[!] onnxruntime-gpu falhou, voltando para CPU" 'warn'
-                    [void](Run $VENV_PY ($pipInstall + @('onnxruntime')) 'onnxruntime CPU fallback')
+                    throw "Falha ao instalar onnxruntime-gpu (exit $rc). A instalação foi interrompida para não trocar GPU por CPU silenciosamente. Veja logs\pip-install.log."
                 }
             }
 
