@@ -1,0 +1,103 @@
+# Neve AI runtime dependencies used by instalar.ps1.
+# Keep backend/requirements.txt as the complete upstream/integration reference.
+
+# Core web server
+fastapi==0.135.1
+uvicorn[standard]==0.41.0
+typer
+typing_extensions
+pydantic==2.12.5
+python-multipart==0.0.22
+itsdangerous==2.2.0
+python-dotenv
+PyYAML
+
+# Auth, sessions and realtime
+python-socketio==5.16.1
+python-jose==3.5.0
+cryptography
+bcrypt==5.0.0
+argon2-cffi==25.1.0
+PyJWT[crypto]==2.11.0
+authlib==1.6.9
+
+# HTTP, cache and middleware
+requests==2.32.5
+aiohttp==3.13.2
+async-timeout
+aiocache
+aiofiles
+starlette-compress==1.7.0
+Brotli==1.1.0
+httpx[socks,http2,zstd,cli,brotli]==0.28.1
+starsessions[redis]==2.2.1
+python-mimeparse==2.0.0
+validators==0.35.0
+fake-useragent==2.2.0
+
+# Database and app internals
+sqlalchemy==2.0.48
+alembic==1.18.4
+peewee==3.19.0
+peewee-migrate==1.14.3
+redis
+pycrdt==0.12.47
+APScheduler==3.11.2
+RestrictedPython==8.1
+pytz==2026.1.post1
+loguru==0.7.3
+asgiref==3.11.1
+opentelemetry-api==1.40.0
+psutil
+
+# LLM APIs, tools and local RAG
+mcp==1.26.0
+openai
+anthropic
+google-genai==1.66.0
+tiktoken
+langchain==1.2.10
+langchain-community==0.4.1
+langchain-classic==1.0.1
+langchain-text-splitters==1.1.1
+chromadb==1.5.2
+transformers==5.3.0
+sentence-transformers==5.2.3
+accelerate
+gguf>=0.10.0
+pyarrow==20.0.0
+einops==0.8.2
+sentencepiece
+numpy
+rank-bm25==0.2.2
+onnxruntime==1.24.3
+
+# Files, documents, OCR and media used by built-in routes
+ftfy==6.3.1
+chardet==5.2.0
+pypdf==6.7.5
+fpdf2==2.8.7
+pymdown-extensions==10.21
+docx2txt==0.9
+python-pptx==1.0.2
+unstructured==0.18.31
+msoffcrypto-tool==6.0.0
+nltk==3.9.3
+Markdown==3.10.2
+beautifulsoup4
+pypandoc==1.16.2
+pandas==3.0.1
+openpyxl==3.1.5
+pyxlsb==1.0.10
+xlrd==2.0.2
+pillow==12.1.1
+opencv-python-headless==4.13.0.92
+rapidocr-onnxruntime==1.4.4
+soundfile==0.13.1
+pydub
+
+# Web search and utility endpoints
+ddgs==9.11.2
+youtube-transcript-api==1.2.4
+pytube==15.0.0
+black==26.1.0

@@ -9,8 +9,6 @@ import aiohttp
 from aiocache import cached
 import requests
 
-from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-
 from fastapi import Depends, HTTPException, Request, APIRouter
 from fastapi.responses import (
     FileResponse,
@@ -190,6 +188,8 @@ def get_microsoft_entra_id_access_token():
     Returns the token string or None if authentication fails.
     """
     try:
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
         token_provider = get_bearer_token_provider(
             DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
         )

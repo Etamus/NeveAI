@@ -4,11 +4,9 @@ import ftfy
 import sys
 import json
 
-from azure.identity import DefaultAzureCredential
 from pathlib import Path as _Path
 
 from langchain_community.document_loaders import (
-    AzureAIDocumentIntelligenceLoader,
     BSHTMLLoader,
     Docx2txtLoader,
     OutlookMessageLoader,
@@ -389,6 +387,10 @@ class Loader:
                 ]
             )
         ):
+            from langchain_community.document_loaders import (
+                AzureAIDocumentIntelligenceLoader,
+            )
+
             if self.kwargs.get("DOCUMENT_INTELLIGENCE_KEY") != "":
                 loader = AzureAIDocumentIntelligenceLoader(
                     file_path=file_path,
@@ -397,6 +399,8 @@ class Loader:
                     api_model=self.kwargs.get("DOCUMENT_INTELLIGENCE_MODEL"),
                 )
             else:
+                from azure.identity import DefaultAzureCredential
+
                 loader = AzureAIDocumentIntelligenceLoader(
                     file_path=file_path,
                     api_endpoint=self.kwargs.get("DOCUMENT_INTELLIGENCE_ENDPOINT"),

@@ -418,20 +418,93 @@ function ConvertTo-ProcessArgument([string]$arg) {
 
 function Run-Logged([string]$exe, [string[]]$args, [string]$desc) {
     UI-Log $desc 'info'
+    if ([string]::IsNullOrWhiteSpace($exe)) {
+        throw "Executável vazio ao executar '$desc'."
+    }
+
+    $safeArgs = @()
+    foreach ($a in @($args)) {
+        if ($null -eq $a) {
+            throw "Argumento nulo ao executar '$desc' com '$exe'."
+        }
+        $safeArgs += [string]$a
+    }
+
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName               = $exe
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
     $psi.UseShellExecute        = $false
     $psi.CreateNoWindow         = $true
-    $psi.Arguments              = (($args | ForEach-Object { ConvertTo-ProcessArgument ([string]$_) }) -join ' ')
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    $stdout = $proc.StandardOutput.ReadToEnd()
-    $stderr = $proc.StandardError.ReadToEnd()
-    $proc.WaitForExit()
-    if ($stdout) { Add-Content $LOG $stdout }
-    if ($stderr) { Add-Content $LOG $stderr }
-    return $proc.ExitCode
+    $psi.Arguments              = (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
+    $cmdLine = "CMD: {0} {1}" -f $exe, ($safeArgs -join ' ')
+    UI-Log $cmdLine 'info'
+    Add-Content $LOG $cmdLine
+
+    $queue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]'
+    $stdoutHandler = [System.Diagnostics.DataReceivedEventHandler]{
+        param($sender, $eventArgs)
+        if ($null -ne $eventArgs.Data -and $eventArgs.Data.Length -gt 0) {
+            $queue.Enqueue($eventArgs.Data)
+        }
+    }
+    $stderrHandler = [System.Diagnostics.DataReceivedEventHandler]{
+        param($sender, $eventArgs)
+        if ($null -ne $eventArgs.Data -and $eventArgs.Data.Length -gt 0) {
+            $queue.Enqueue($eventArgs.Data)
+        }
+    }
+
+    function Drain-RunLoggedOutput {
+        $line = $null
+        while ($queue.TryDequeue([ref]$line)) {
+            UI-Log $line 'info'
+            Add-Content $LOG $line
+            $line = $null
+        }
+    }
+
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+    [void]$proc.add_OutputDataReceived($stdoutHandler)
+    [void]$proc.add_ErrorDataReceived($stderrHandler)
+
+    try {
+        [void]$proc.Start()
+        UI-Log ("[pid {0}] {1} iniciado" -f $proc.Id, $desc) 'info'
+        $startedAt = Get-Date
+        $lastHeartbeat = $startedAt
+
+        $proc.BeginOutputReadLine()
+        $proc.BeginErrorReadLine()
+
+        while (-not $proc.WaitForExit(250)) {
+            Drain-RunLoggedOutput
+            $now = Get-Date
+            if (($now - $lastHeartbeat).TotalSeconds -ge 30) {
+                $elapsedMin = [math]::Max(1, [math]::Floor(($now - $startedAt).TotalMinutes))
+                $line = "... {0} ainda em andamento ({1} min). Aguardando processo responder." -f $desc, $elapsedMin
+                UI-Log $line 'info'
+                Add-Content $LOG $line
+                $lastHeartbeat = $now
+            }
+        }
+
+        $proc.WaitForExit()
+        Drain-RunLoggedOutput
+
+        $elapsed = (Get-Date) - $startedAt
+        $line = "[exit {0}] {1} finalizado em {2:mm\:ss}" -f $proc.ExitCode, $desc, $elapsed
+        UI-Log $line 'info'
+        Add-Content $LOG $line
+        return $proc.ExitCode
+    } finally {
+        try { $proc.CancelOutputRead() } catch {}
+        try { $proc.CancelErrorRead() } catch {}
+        try { $proc.remove_OutputDataReceived($stdoutHandler) } catch {}
+        try { $proc.remove_ErrorDataReceived($stderrHandler) } catch {}
+        $proc.Dispose()
+    }
 }
 
 # =============================================================================
@@ -567,11 +640,38 @@ $ctl.BtnPrimary.Add_Click({
             $psi.UseShellExecute = $false
             $psi.CreateNoWindow  = $true
             $psi.Arguments = (($safeArgs | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
-            Add-Content $LOG ("CMD: {0} {1}" -f $exe, ($safeArgs -join ' '))
+            Log ("CMD: {0} {1}" -f $exe, ($safeArgs -join ' '))
+
+            $queue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]'
+            $stdoutHandler = [System.Diagnostics.DataReceivedEventHandler]{
+                param($sender, $eventArgs)
+                if ($null -ne $eventArgs.Data -and $eventArgs.Data.Length -gt 0) {
+                    $queue.Enqueue($eventArgs.Data)
+                }
+            }
+            $stderrHandler = [System.Diagnostics.DataReceivedEventHandler]{
+                param($sender, $eventArgs)
+                if ($null -ne $eventArgs.Data -and $eventArgs.Data.Length -gt 0) {
+                    $queue.Enqueue($eventArgs.Data)
+                }
+            }
+
+            function Drain-RunOutput {
+                $line = $null
+                while ($queue.TryDequeue([ref]$line)) {
+                    Log $line
+                    $line = $null
+                }
+            }
 
             $p = $null
             try {
-                $p = [System.Diagnostics.Process]::Start($psi)
+                $p = New-Object System.Diagnostics.Process
+                $p.StartInfo = $psi
+                [void]$p.add_OutputDataReceived($stdoutHandler)
+                [void]$p.add_ErrorDataReceived($stderrHandler)
+                [void]$p.Start()
+                Log ("[pid {0}] {1} iniciado" -f $p.Id, $desc)
             } catch {
                 throw "Falha ao iniciar '$exe' para '$desc': $($_.Exception.Message)"
             }
@@ -580,13 +680,33 @@ $ctl.BtnPrimary.Add_Click({
             }
 
             try {
-                $out = $p.StandardOutput.ReadToEnd()
-                $err = $p.StandardError.ReadToEnd()
+                $startedAt = Get-Date
+                $lastHeartbeat = $startedAt
+
+                $p.BeginOutputReadLine()
+                $p.BeginErrorReadLine()
+
+                while (-not $p.WaitForExit(250)) {
+                    Drain-RunOutput
+                    $now = Get-Date
+                    if (($now - $lastHeartbeat).TotalSeconds -ge 30) {
+                        $elapsedMin = [math]::Max(1, [math]::Floor(($now - $startedAt).TotalMinutes))
+                        Log ("... {0} ainda em andamento ({1} min). Aguardando pip/processo responder." -f $desc, $elapsedMin)
+                        $lastHeartbeat = $now
+                    }
+                }
+
                 $p.WaitForExit()
-                if ($out) { Add-Content $LOG $out }
-                if ($err) { Add-Content $LOG $err }
+                Drain-RunOutput
+
+                $elapsed = (Get-Date) - $startedAt
+                Log ("[exit {0}] {1} finalizado em {2:mm\:ss}" -f $p.ExitCode, $desc, $elapsed)
                 return $p.ExitCode
             } finally {
+                try { $p.CancelOutputRead() } catch {}
+                try { $p.CancelErrorRead() } catch {}
+                try { $p.remove_OutputDataReceived($stdoutHandler) } catch {}
+                try { $p.remove_ErrorDataReceived($stderrHandler) } catch {}
                 $p.Dispose()
             }
         }
@@ -609,6 +729,21 @@ $ctl.BtnPrimary.Add_Click({
             }
 
             return $false
+        }
+        function Get-RequirementEntries([string]$path) {
+            $entries = @()
+            $lines = Get-Content -LiteralPath $path
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+                $line = ([string]$lines[$i]).Trim()
+                if (-not $line -or $line.StartsWith('#')) { continue }
+                $line = [regex]::Replace($line, '\s+#.*$', '').Trim()
+                if (-not $line) { continue }
+                $entries += [pscustomobject]@{
+                    Line = $i + 1
+                    Spec = $line
+                }
+            }
+            return $entries
         }
 
         try {
@@ -723,11 +858,18 @@ USER_AGENT=Neve AI
             Log "[OK] venv criado"
 
             # ---- 5. pip + PyTorch
+            $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'
+            $env:PIP_NO_INPUT = '1'
+            $env:PIP_DEFAULT_TIMEOUT = '60'
+            $env:PIP_PROGRESS_BAR = 'raw'
+            $env:PYTHONUNBUFFERED = '1'
+            $pipInstall = @('-m','pip','install','--disable-pip-version-check','--no-input','--prefer-binary','--progress-bar','raw','--retries','5','--timeout','60')
+
             P 32 'Atualizando pip'
-            [void](Run $VENV_PY @('-m','pip','install','--upgrade','pip') 'pip upgrade')
+            [void](Run $VENV_PY ($pipInstall + @('--upgrade','pip')) 'pip upgrade')
 
             P 38 "Instalando PyTorch ($($cfg.cudaVer))"
-            $rc = Run $VENV_PY @('-m','pip','install','torch','torchvision','--index-url',$cfg.torchIndex) 'PyTorch + torchvision'
+            $rc = Run $VENV_PY ($pipInstall + @('torch','torchvision','--index-url',$cfg.torchIndex)) 'PyTorch + torchvision'
             if ($rc -ne 0) { throw "Falha ao instalar PyTorch (exit $rc)" }
             Log "[OK] PyTorch instalado"
 
@@ -739,7 +881,7 @@ USER_AGENT=Neve AI
                     Log "[!] Flash Attention Python ignorado: requer MSVC Build Tools. O llama.cpp e o Neve AI funcionam normalmente sem esse pacote." 'warn'
                 } else {
                     P 48 'Compilando Flash Attention Python (~10 min)'
-                    $rc = Run $VENV_PY @('-m','pip','install','flash-attn','--no-build-isolation') 'flash-attn'
+                    $rc = Run $VENV_PY ($pipInstall + @('flash-attn','--no-build-isolation')) 'flash-attn'
                     if ($rc -eq 0) {
                         Log "[OK] Flash Attention Python instalado"
                     } else {
@@ -750,22 +892,62 @@ USER_AGENT=Neve AI
 
             # ---- 7. diffusers
             P 55 'Instalando diffusers'
-            [void](Run $VENV_PY @('-m','pip','install','diffusers') 'diffusers')
+            Log "==> diffusers será instalado separadamente para facilitar diagnóstico"
+            [void](Run $VENV_PY ($pipInstall + @('diffusers')) 'diffusers')
 
             # ---- 8. requirements do backend
             P 60 'Instalando dependências do backend (~5-15 min)'
-            $req = Join-Path $BACKEND 'requirements.txt'
-            $rc = Run $VENV_PY @('-m','pip','install','-r',$req) 'requirements.txt'
-            if ($rc -ne 0) { Log "[!] Algumas dependências podem ter falhado" 'warn' } else { Log "[OK] Dependências do backend instaladas" }
+            $runtimeReq = Join-Path $BACKEND 'requirements-runtime.txt'
+            $fullReq = Join-Path $BACKEND 'requirements.txt'
+            $useFullReq = @('1','true','yes','sim') -contains ([string]$env:NEVE_INSTALL_FULL_REQUIREMENTS).ToLowerInvariant()
+            if ((-not $useFullReq) -and (Test-Path -LiteralPath $runtimeReq)) {
+                $req = $runtimeReq
+                Log "[OK] Usando requirements-runtime.txt (dependências essenciais do Neve AI)"
+                Log "    Para instalar a lista completa antiga, defina NEVE_INSTALL_FULL_REQUIREMENTS=1 antes de abrir o instalador."
+            } else {
+                $req = $fullReq
+                Log "[OK] Usando requirements.txt completo"
+            }
+            if (-not (Test-Path -LiteralPath $req)) {
+                throw "Arquivo de dependências não encontrado em '$req'."
+            }
+            $reqName = Split-Path -Leaf $req
+            $reqEntries = @(Get-RequirementEntries $req)
+            $reqCount = $reqEntries.Count
+            Log "[OK] $reqName encontrado: $reqCount entradas"
+            Log "==> Instalando $reqName pacote por pacote para mostrar progresso e identificar qualquer travamento"
+            $failedRequirements = @()
+            for ($i = 0; $i -lt $reqEntries.Count; $i++) {
+                $entry = $reqEntries[$i]
+                $index = $i + 1
+                $percent = 60 + [math]::Floor(($index / [math]::Max(1, $reqCount)) * 17)
+                P $percent ("{0} {1}/{2}" -f $reqName, $index, $reqCount)
+                Log ("==> {0} [{1}/{2}] linha {3}: {4}" -f $reqName, $index, $reqCount, $entry.Line, $entry.Spec)
+                $rc = Run $VENV_PY ($pipInstall + @($entry.Spec)) ("{0} {1}/{2}: {3}" -f $reqName, $index, $reqCount, $entry.Spec)
+                if ($rc -ne 0) {
+                    $failedRequirements += ("linha {0}: {1} (exit {2})" -f $entry.Line, $entry.Spec, $rc)
+                    Log ("[X] Falha em {0} linha {1}: {2} (exit {3})" -f $reqName, $entry.Line, $entry.Spec, $rc) 'err'
+                    break
+                }
+            }
+
+            if ($failedRequirements.Count -gt 0) {
+                throw ("Falha ao instalar dependência do backend: {0}. Veja o log acima para o pacote exato e a mensagem do pip." -f ($failedRequirements -join '; '))
+            }
+            Log "[OK] Dependências do backend instaladas"
+
+            P 77 'Validando dependências Python'
+            $rc = Run $VENV_PY @('-m','pip','check') 'pip check'
+            if ($rc -eq 0) { Log "[OK] pip check sem conflitos" } else { Log "[!] pip check encontrou conflitos; verifique o log acima se algo falhar ao iniciar" 'warn' }
 
             # ---- 9. onnxruntime-gpu (substituir CPU)
             if ($cfg.useOnnxGpu) {
                 P 78 'Instalando onnxruntime-gpu'
                 [void](Run $VENV_PY @('-m','pip','uninstall','onnxruntime','-y') 'remover onnxruntime CPU')
-                $rc = Run $VENV_PY @('-m','pip','install','onnxruntime-gpu') 'onnxruntime-gpu'
+                $rc = Run $VENV_PY ($pipInstall + @('onnxruntime-gpu')) 'onnxruntime-gpu'
                 if ($rc -eq 0) { Log "[OK] onnxruntime-gpu instalado" } else {
                     Log "[!] onnxruntime-gpu falhou, voltando para CPU" 'warn'
-                    [void](Run $VENV_PY @('-m','pip','install','onnxruntime') 'onnxruntime CPU fallback')
+                    [void](Run $VENV_PY ($pipInstall + @('onnxruntime')) 'onnxruntime CPU fallback')
                 }
             }
 

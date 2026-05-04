@@ -83,9 +83,6 @@ from typing import Optional, List
 
 from ssl import CERT_NONE, CERT_REQUIRED, PROTOCOL_TLS
 
-from ldap3 import Server, Connection, NONE, Tls
-from ldap3.utils.conv import escape_filter_chars
-
 router = APIRouter()
 
 log = logging.getLogger(__name__)
@@ -352,6 +349,15 @@ async def ldap_auth(
         if request.app.state.config.LDAP_CIPHERS
         else "ALL"
     )
+
+    try:
+        from ldap3 import Server, Connection, NONE, Tls
+        from ldap3.utils.conv import escape_filter_chars
+    except ImportError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="LDAP requer a dependência opcional ldap3.",
+        )
 
     try:
         tls = Tls(
