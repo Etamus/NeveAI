@@ -293,7 +293,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                                 <TextBlock Text="OK" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <TextBlock x:Name="LblDoneTitle" Text="Atualização concluída!" FontSize="22" FontWeight="SemiBold" Foreground="#111111" HorizontalAlignment="Center"/>
-                            <TextBlock x:Name="LblDoneSub" Text="Use start.bat para iniciar o Neve AI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
+                            <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar o Neve AI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
                             <Border Background="#FAFAFA" CornerRadius="8" Padding="14,12">
                                 <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="#52525B"/>
                             </Border>
@@ -374,6 +374,31 @@ function Set-Progress([int]$pct, [string]$phase) {
         $ctl.Progress.Value = $pct
         $ctl.LblProgressTxt.Text = "$pct%"
         if ($phase) { $ctl.LblPhase.Text = $phase; $ctl.LblStep.Text = $phase }
+    }
+}
+
+function Test-NeveAppIntegrity([string]$root) {
+    $required = @(
+        @{ Path = 'instalar.bat'; Label = 'instalar.bat' },
+        @{ Path = 'instalar.ps1'; Label = 'instalar.ps1' },
+        @{ Path = 'backend\neveai\__init__.py'; Label = 'pacote backend' },
+        @{ Path = 'backend\neveai\main.py'; Label = 'backend main.py' },
+        @{ Path = 'backend\neveai\models\users.py'; Label = 'backend\neveai\models\users.py' },
+        @{ Path = 'backend\neveai\models\models.py'; Label = 'backend\neveai\models\models.py' },
+        @{ Path = 'backend\neveai\models\auths.py'; Label = 'backend\neveai\models\auths.py' },
+        @{ Path = 'backend\neveai\routers\auths.py'; Label = 'backend\neveai\routers' },
+        @{ Path = 'backend\neveai\utils\auth.py'; Label = 'backend\neveai\utils' }
+    )
+
+    $missing = @()
+    foreach ($item in $required) {
+        $path = Join-Path $root $item.Path
+        if (-not (Test-Path -LiteralPath $path)) { $missing += $item.Label }
+    }
+
+    [pscustomobject]@{
+        Ok      = $missing.Count -eq 0
+        Missing = $missing
     }
 }
 
@@ -777,6 +802,8 @@ try {
     $llamaCheckError = "$_"
 }
 
+$appIntegrity = Test-NeveAppIntegrity $ROOT
+
 $ctl.LblCurrent.Text = $currentVersion
 if ($checkError) {
     $ctl.LblCheckTitle.Text = 'Falha ao verificar atualizações'
@@ -790,11 +817,19 @@ if ($checkError) {
     $ctl.LblLatest.Text = $latestTag
     $notes = $releaseObj.body
     if ([string]::IsNullOrWhiteSpace($notes)) { $notes = '(sem notas de release)' }
+    if (-not $appIntegrity.Ok) {
+        $notes = "Instalação local incompleta. O atualizador vai reparar a partir do release do GitHub.`r`nFaltando: $($appIntegrity.Missing -join ', ')`r`n`r`n$notes"
+    }
     $ctl.LblNotes.Text = $notes
-    if ($currentVersion -eq $latestTag) {
+    if ($currentVersion -eq $latestTag -and $appIntegrity.Ok) {
         $ctl.LblStatus.Text     = 'Atualizado'
         $ctl.LblStatus.Foreground = '#10B981'
         $ctl.ChkUpdateNeve.Visibility = 'Collapsed'
+    } elseif ($currentVersion -eq $latestTag -and -not $appIntegrity.Ok) {
+        $ctl.LblStatus.Text     = 'Reparo necessário'
+        $ctl.LblStatus.Foreground = '#D97706'
+        $ctl.ChkUpdateNeve.Visibility = 'Visible'
+        $ctl.ChkUpdateNeve.IsChecked = $true
     } else {
         $ctl.LblStatus.Text     = 'Pendente'
         $ctl.LblStatus.Foreground = '#D97706'
@@ -832,8 +867,13 @@ if ($ctl.ChkUpdateNeve.Visibility -eq 'Visible' -and $ctl.ChkUpdateLlama.Visibil
     $ctl.LblCheckTitle.Text = 'Atualizações disponíveis'
     $ctl.LblCheckSub.Text = 'Marque uma ou mais atualizações para continuar.'
 } elseif ($ctl.ChkUpdateNeve.Visibility -eq 'Visible') {
-    $ctl.LblCheckTitle.Text = 'Atualização disponível'
-    $ctl.LblCheckSub.Text = 'Uma nova versão está pronta para ser instalada.'
+    if ($currentVersion -eq $latestTag -and -not $appIntegrity.Ok) {
+        $ctl.LblCheckTitle.Text = 'Reparo disponível'
+        $ctl.LblCheckSub.Text = 'Arquivos locais estão faltando; o release do GitHub será reaplicado.'
+    } else {
+        $ctl.LblCheckTitle.Text = 'Atualização disponível'
+        $ctl.LblCheckSub.Text = 'Uma nova versão está pronta para ser instalada.'
+    }
 } elseif ($ctl.ChkUpdateLlama.Visibility -eq 'Visible') {
     $ctl.LblCheckTitle.Text = 'Atualização disponível'
     $ctl.LblCheckSub.Text = 'Uma nova versão está pronta para ser instalada.'
@@ -928,6 +968,15 @@ $ctl.BtnPrimary.Add_Click({
             $psi.RedirectStandardError  = $true
             $psi.UseShellExecute        = $false
             $psi.CreateNoWindow         = $true
+            if ($script:FrontendNodeDir) {
+                try {
+                    $currentPath = $psi.EnvironmentVariables['PATH']
+                    if ([string]::IsNullOrWhiteSpace($currentPath)) { $currentPath = $env:PATH }
+                    $psi.EnvironmentVariables['PATH'] = "$script:FrontendNodeDir;$currentPath"
+                } catch {
+                    L "[!] Não foi possível priorizar Node.js portátil para '$desc': $($_.Exception.Message)" 'warn'
+                }
+            }
             L ("> {0} {1}" -f $exe, ($safeArgs -join ' '))
             $p = $null
             try {
@@ -950,6 +999,149 @@ $ctl.BtnPrimary.Add_Click({
             $exitCode = $p.ExitCode
             $p.Dispose()
             return $exitCode
+        }
+        function Get-NodeMajorFromVersion([string]$version) {
+            if ([string]::IsNullOrWhiteSpace($version)) { return -1 }
+            if ($version -notmatch '^v?(\d+)\.') { return -1 }
+            return [int]$matches[1]
+        }
+        function Test-FrontendNodePair([string]$nodeExe, [string]$npmExe) {
+            try {
+                if ([string]::IsNullOrWhiteSpace($nodeExe) -or -not (Test-Path -LiteralPath $nodeExe)) { return $null }
+                if ([string]::IsNullOrWhiteSpace($npmExe) -or -not (Test-Path -LiteralPath $npmExe)) { return $null }
+
+                $nodePath = (Resolve-Path -LiteralPath $nodeExe).ProviderPath
+                if ($nodePath -match '\\Microsoft\\WindowsApps\\node\.exe$') { return $null }
+
+                $nodeVersionOut = & $nodePath --version 2>&1
+                if ($LASTEXITCODE -ne 0) { return $null }
+                $nodeVersion = (("$nodeVersionOut" -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
+                $nodeMajor = Get-NodeMajorFromVersion $nodeVersion
+                if ($nodeMajor -lt 18 -or $nodeMajor -gt 22) { return $null }
+
+                $npmPath = (Resolve-Path -LiteralPath $npmExe).ProviderPath
+                $npmVersionOut = & $npmPath --version 2>&1
+                if ($LASTEXITCODE -ne 0) { return $null }
+                $npmVersion = (("$npmVersionOut" -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
+                if (-not $npmVersion) { return $null }
+
+                return [pscustomobject]@{
+                    NodeExecutable = $nodePath
+                    NodeVersion    = $nodeVersion
+                    NpmExecutable  = $npmPath
+                    NpmVersion     = $npmVersion
+                    NodeDir        = Split-Path -Parent $nodePath
+                }
+            } catch {
+                return $null
+            }
+        }
+        function Resolve-FrontendNodeLaunch {
+            $nodeCandidates = @()
+            $portableNode = Join-Path $ROOT 'tools\nodejs\node.exe'
+            if (Test-Path -LiteralPath $portableNode) { $nodeCandidates += $portableNode }
+            if ($env:NODE_EXE) { $nodeCandidates += $env:NODE_EXE }
+
+            foreach ($cmd in @(Get-Command node.exe -All -EA SilentlyContinue)) {
+                $nodeCandidates += $cmd.Source
+            }
+            foreach ($nodeBase in (@($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ })) {
+                $path = Join-Path $nodeBase 'nodejs\node.exe'
+                if (Test-Path -LiteralPath $path) { $nodeCandidates += $path }
+            }
+
+            foreach ($nodeCandidate in ($nodeCandidates | Select-Object -Unique)) {
+                $nodeDir = Split-Path -Parent $nodeCandidate
+                foreach ($npmName in @('npm.cmd','npm.exe')) {
+                    $npmPath = Join-Path $nodeDir $npmName
+                    $pair = Test-FrontendNodePair $nodeCandidate $npmPath
+                    if ($pair) { return $pair }
+                }
+            }
+
+            return $null
+        }
+        function Install-PortableNode22 {
+            P 52 'Preparando Node.js 22 portátil'
+            $toolsDir = Join-Path $ROOT 'tools'
+            $nodeDir = Join-Path $toolsDir 'nodejs'
+            $existing = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
+            if ($existing) {
+                L "[OK] Node.js portátil já disponível: $($existing.NodeVersion) / npm $($existing.NpmVersion)"
+                return $existing
+            }
+
+            if (-not (Test-Path -LiteralPath $toolsDir)) { New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null }
+            L '==> Baixando Node.js 22 LTS portátil porque o Node do sistema está ausente ou fora da faixa suportada (18-22)'
+
+            $release = $null
+            try {
+                $index = Invoke-RestMethod 'https://nodejs.org/dist/index.json' -Headers @{ 'User-Agent' = $UA } -TimeoutSec 60
+                $release = $index | Where-Object { $_.version -match '^v22\.' -and $_.files -contains 'win-x64-zip' } | Select-Object -First 1
+            } catch {
+                L "[!] Falha ao consultar versões do Node.js: $($_.Exception.Message)" 'warn'
+            }
+            if (-not $release) { throw 'Não foi possível encontrar Node.js 22 win-x64 no site oficial.' }
+
+            $version = [string]$release.version
+            $url = "https://nodejs.org/dist/$version/node-$version-win-x64.zip"
+            $zipPath = Join-Path $env:TEMP "neve_node_$version.zip"
+            $stageParent = Join-Path $env:TEMP "neve_node_stage_$([guid]::NewGuid().ToString('N'))"
+            $stageTarget = Join-Path $toolsDir "nodejs-stage-$([guid]::NewGuid().ToString('N'))"
+            try {
+                if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue }
+                New-Item -ItemType Directory -Path $stageParent -Force | Out-Null
+                L "==> Baixando $url"
+                Invoke-WebRequest $url -OutFile $zipPath -UseBasicParsing -Headers @{ 'User-Agent' = $UA } -TimeoutSec 300
+                Expand-Archive $zipPath -DestinationPath $stageParent -Force
+                $extracted = Get-ChildItem -LiteralPath $stageParent -Directory | Select-Object -First 1
+                if (-not $extracted) { throw 'Arquivo do Node.js não extraiu a pasta esperada.' }
+                Move-Item -LiteralPath $extracted.FullName -Destination $stageTarget -Force
+
+                $stagedPair = Test-FrontendNodePair (Join-Path $stageTarget 'node.exe') (Join-Path $stageTarget 'npm.cmd')
+                if (-not $stagedPair) { throw 'Node.js portátil extraído não passou na validação.' }
+
+                if (Test-Path -LiteralPath $nodeDir) { Remove-Item -LiteralPath $nodeDir -Recurse -Force -EA SilentlyContinue }
+                Move-Item -LiteralPath $stageTarget -Destination $nodeDir -Force
+
+                $pair = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
+                if (-not $pair) { throw 'Node.js portátil foi copiado, mas não respondeu após a instalação.' }
+                L "[OK] Node.js portátil pronto: $($pair.NodeVersion) / npm $($pair.NpmVersion)"
+                return $pair
+            } finally {
+                try { if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue } } catch {}
+                try { if (Test-Path -LiteralPath $stageParent) { Remove-Item -LiteralPath $stageParent -Recurse -Force -EA SilentlyContinue } } catch {}
+                try { if (Test-Path -LiteralPath $stageTarget) { Remove-Item -LiteralPath $stageTarget -Recurse -Force -EA SilentlyContinue } } catch {}
+            }
+        }
+        function Test-NeveAppIntegrity([string]$root) {
+            $required = @(
+                @{ Path = 'instalar.bat'; Label = 'instalar.bat' },
+                @{ Path = 'instalar.ps1'; Label = 'instalar.ps1' },
+                @{ Path = 'backend\neveai\__init__.py'; Label = 'pacote backend' },
+                @{ Path = 'backend\neveai\main.py'; Label = 'backend main.py' },
+                @{ Path = 'backend\neveai\models\users.py'; Label = 'backend\neveai\models\users.py' },
+                @{ Path = 'backend\neveai\models\models.py'; Label = 'backend\neveai\models\models.py' },
+                @{ Path = 'backend\neveai\models\auths.py'; Label = 'backend\neveai\models\auths.py' },
+                @{ Path = 'backend\neveai\routers\auths.py'; Label = 'backend\neveai\routers' },
+                @{ Path = 'backend\neveai\utils\auth.py'; Label = 'backend\neveai\utils' }
+            )
+            $missing = @()
+            foreach ($item in $required) {
+                $path = Join-Path $root $item.Path
+                if (-not (Test-Path -LiteralPath $path)) { $missing += $item.Label }
+            }
+            [pscustomobject]@{ Ok = $missing.Count -eq 0; Missing = $missing }
+        }
+        function Copy-ReleaseInstallerFiles([string]$sourceRoot, [string]$destinationRoot) {
+            foreach ($fileName in @('instalar.bat','instalar.ps1')) {
+                $sourceFile = Join-Path $sourceRoot $fileName
+                if (-not (Test-Path -LiteralPath $sourceFile)) {
+                    throw "Release do GitHub não contém $fileName; atualização abortada para evitar instalador antigo."
+                }
+                Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $destinationRoot $fileName) -Force
+                L "[OK] $fileName atualizado a partir do release do GitHub"
+            }
         }
         function Get-RelativePath([string]$basePath, [string]$path) {
             $baseFull = [System.IO.Path]::GetFullPath($basePath).TrimEnd('\', '/')
@@ -979,6 +1171,69 @@ $ctl.BtnPrimary.Add_Click({
             }
 
             return $false
+        }
+        function Test-ReleaseProtectedDescendant([string]$relativePath, [string]$directoryPath, [string[]]$excludeDirs, [string[]]$excludeFiles) {
+            $normalized = ($relativePath -replace '/', '\').Trim('\')
+            if ([string]::IsNullOrWhiteSpace($normalized)) { return $true }
+
+            foreach ($dir in $excludeDirs) {
+                $excludedDir = ($dir -replace '/', '\').Trim('\')
+                if ($excludedDir.StartsWith($normalized + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+                    return $true
+                }
+            }
+
+            foreach ($file in $excludeFiles) {
+                try {
+                    $match = Get-ChildItem -LiteralPath $directoryPath -Filter $file -File -Recurse -Force -EA SilentlyContinue | Select-Object -First 1
+                    if ($match) { return $true }
+                } catch {}
+            }
+
+            return $false
+        }
+        function Remove-ReleaseItem([System.IO.FileSystemInfo]$item) {
+            try {
+                Remove-Item -LiteralPath $item.FullName -Recurse -Force -EA Stop
+                $script:RemovedReleaseItems++
+            } catch {
+                throw "Falha ao remover item antigo '$($item.FullName)': $($_.Exception.Message)"
+            }
+        }
+        function Remove-ReleaseOrphans([string]$destinationPath, [string]$sourceRoot, [string]$destinationRoot, [string[]]$excludeDirs, [string[]]$excludeFiles) {
+            if (-not (Test-Path -LiteralPath $destinationPath)) { return }
+
+            $children = @(Get-ChildItem -LiteralPath $destinationPath -Force -EA SilentlyContinue)
+            foreach ($child in $children) {
+                $relativePath = Get-RelativePath $destinationRoot $child.FullName
+
+                if (Test-ReleaseExcluded $relativePath $child.PSIsContainer $excludeDirs $excludeFiles) {
+                    $script:SkippedReleaseItems++
+                    continue
+                }
+
+                $sourcePath = Join-Path $sourceRoot $relativePath
+                if (Test-Path -LiteralPath $sourcePath) {
+                    $sourceItem = Get-Item -LiteralPath $sourcePath -Force
+                    if ($child.PSIsContainer -and $sourceItem.PSIsContainer) {
+                        Remove-ReleaseOrphans $child.FullName $sourceRoot $destinationRoot $excludeDirs $excludeFiles
+                    } elseif ($child.PSIsContainer -ne $sourceItem.PSIsContainer) {
+                        if ($child.PSIsContainer -and (Test-ReleaseProtectedDescendant $relativePath $child.FullName $excludeDirs $excludeFiles)) {
+                            Remove-ReleaseOrphans $child.FullName $sourceRoot $destinationRoot $excludeDirs $excludeFiles
+                        } else {
+                            Remove-ReleaseItem $child
+                        }
+                    }
+                    continue
+                }
+
+                if ($child.PSIsContainer -and (Test-ReleaseProtectedDescendant $relativePath $child.FullName $excludeDirs $excludeFiles)) {
+                    Remove-ReleaseOrphans $child.FullName $sourceRoot $destinationRoot $excludeDirs $excludeFiles
+                    continue
+                }
+
+                Remove-ReleaseItem $child
+            }
         }
         function Copy-ReleaseTree([string]$sourcePath, [string]$sourceRoot, [string]$destinationRoot, [string[]]$excludeDirs, [string[]]$excludeFiles) {
             $item = Get-Item -LiteralPath $sourcePath -Force
@@ -1145,7 +1400,7 @@ $ctl.BtnPrimary.Add_Click({
             }
 
             PN 35 'Aplicando arquivos do Neve AI'
-            $excludeDirs = @('backend\neveai\venv','backend\neveai\frontend','backend\neveai\data','backend\data','backend\__pycache__','models','mmproj','llamacpp-server','node_modules','build','logs','.git','.svelte-kit')
+            $excludeDirs = @('backend\neveai\venv','backend\neveai\frontend','backend\neveai\data','backend\data','backend\__pycache__','models','mmproj','llamacpp-server','node_modules','build','logs','tools\nodejs','.git','.vscode','.svelte-kit')
             $excludeFiles = @('.env', 'version.txt')
             $sourceRoot = (Resolve-Path -LiteralPath $inner.FullName).ProviderPath
             $destinationRoot = (Resolve-Path -LiteralPath $ROOT).ProviderPath
@@ -1156,21 +1411,32 @@ $ctl.BtnPrimary.Add_Click({
             L "[OK] Pasta da release extraída: $sourceRoot"
 
             $script:CopiedReleaseFiles = 0
+            $script:RemovedReleaseItems = 0
             $script:SkippedReleaseItems = 0
+            Remove-ReleaseOrphans $destinationRoot $sourceRoot $destinationRoot $excludeDirs $excludeFiles
             Get-ChildItem -LiteralPath $sourceRoot -Force | ForEach-Object {
                 Copy-ReleaseTree $_.FullName $sourceRoot $destinationRoot $excludeDirs $excludeFiles
             }
-            L "[OK] Arquivos de release aplicados ($script:CopiedReleaseFiles arquivos, $script:SkippedReleaseItems itens preservados)"
+            Copy-ReleaseInstallerFiles $sourceRoot $destinationRoot
+            L "[OK] Arquivos de release aplicados ($script:CopiedReleaseFiles arquivos, $script:RemovedReleaseItems órfãos removidos, $script:SkippedReleaseItems itens preservados)"
+
+            $integrity = Test-NeveAppIntegrity $ROOT
+            if (-not $integrity.Ok) {
+                throw "Release aplicada sem arquivos essenciais: $($integrity.Missing -join ', '). Verifique se o release do GitHub contém backend\neveai\models."
+            }
+            L '[OK] Integridade dos arquivos essenciais validada'
 
             if ($envBackup -and -not (Test-Path -LiteralPath $envFile)) { Copy-Item -LiteralPath $envBackup -Destination $envFile -Force; L '[OK] .env restaurado' }
             if ($envBackup) { Remove-Item -LiteralPath $envBackup -Force -EA SilentlyContinue }
 
             if ($canBuildAndDeploy) {
                 PN 55 'Instalando dependências do frontend'
-                $npmCmd = Get-Command npm.cmd -EA SilentlyContinue
-                if (-not $npmCmd) { $npmCmd = Get-Command npm -EA SilentlyContinue }
-                if (-not $npmCmd) { throw 'npm não encontrado no PATH' }
-                $npmExe = $npmCmd.Source
+                $frontendNode = Resolve-FrontendNodeLaunch
+                if (-not $frontendNode) { $frontendNode = Install-PortableNode22 }
+                if (-not $frontendNode) { throw 'Node.js 18-22 com npm não encontrado e o Node.js 22 portátil não pôde ser preparado.' }
+                $script:FrontendNodeDir = $frontendNode.NodeDir
+                $npmExe = $frontendNode.NpmExecutable
+                L "[OK] Node.js do frontend: $($frontendNode.NodeVersion) / npm $($frontendNode.NpmVersion) em $($frontendNode.NodeDir)"
                 $rc = Run $npmExe @('install', '--no-audit', '--no-fund') 'npm install'
                 if ($rc -ne 0) { throw "npm install falhou (código $rc)" }
 
@@ -1289,7 +1555,7 @@ $ctl.BtnPrimary.Add_Click({
                 $script:Ctl.UpdatePanel.Visibility = 'Collapsed'
                 $script:Ctl.DonePanel.Visibility   = 'Visible'
                 $script:Ctl.LblDoneTitle.Text = $doneTitle
-                $script:Ctl.LblDoneSub.Text   = 'Use start.bat para iniciar o Neve AI.'
+                $script:Ctl.LblDoneSub.Text   = 'Use instalar.bat para iniciar o Neve AI.'
                 $script:Ctl.LblSummary.Text   = ($summary -join "`r`n")
                 $script:Ctl.BtnPrimary.Content   = 'Concluir'
                 $script:Ctl.BtnPrimary.Tag       = 'done'

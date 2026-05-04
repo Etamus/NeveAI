@@ -101,7 +101,7 @@
 			avoidCollisions={false}
 			transition={(e) => fade(e, { duration: 100 })}
 		>
-			{#if profile}
+			{#if profile && $config?.features?.enable_user_status === true}
 				<div class=" flex gap-3.5 w-full p-1.5 items-center">
 					<div class=" items-center flex shrink-0">
 						<img

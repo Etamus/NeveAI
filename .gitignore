@@ -7,6 +7,9 @@
 # Dependências & ambientes virtuais (npm install / pip install via instalar.bat)
 # ──────────────────────────────────────────────────────────────────────────────
 node_modules/
+venv/
+.venv/
+backend/venv/
 backend/neveai/venv/
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -20,9 +23,9 @@ backend/neveai/static/
 # ──────────────────────────────────────────────────────────────────────────────
 # Modelos e binários pesados (baixados pelo usuário / instalar.bat)
 # ──────────────────────────────────────────────────────────────────────────────
-models/
-mmproj/
-llamacpp-server/
+/models/
+/mmproj/
+/llamacpp-server/
 *.gguf
 
 # ──────────────────────────────────────────────────────────────────────────────

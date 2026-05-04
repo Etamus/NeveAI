@@ -32,6 +32,15 @@ if not exist "%VENV_PY%" (
     exit /b 1
 )
 
+if not exist "%BACKEND%\neveai\models\users.py" (
+    echo  [ERRO] Arquivos do backend incompletos.
+    echo         A pasta backend\neveai\models nao foi encontrada ou esta incompleta.
+    echo         Execute instalar.bat para reparar a instalacao.
+    pause
+    POPD
+    exit /b 1
+)
+
 :: Encerra processos anteriores na porta 8080
 echo  Encerrando processos anteriores...
 powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort 8080 -EA SilentlyContinue).OwningProcess | Where-Object { $_ -and $_ -ne 0 } | Sort-Object -Unique | ForEach-Object { Stop-Process -Id $_ -Force -EA SilentlyContinue }"
