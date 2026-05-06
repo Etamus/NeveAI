@@ -84,9 +84,7 @@ async def set_connections_config(
     form_data: ConnectionsConfigForm,
     user=Depends(get_admin_user),
 ):
-    request.app.state.config.ENABLE_DIRECT_CONNECTIONS = (
-        form_data.ENABLE_DIRECT_CONNECTIONS
-    )
+    request.app.state.config.ENABLE_DIRECT_CONNECTIONS = False
     request.app.state.config.ENABLE_BASE_MODELS_CACHE = (
         form_data.ENABLE_BASE_MODELS_CACHE
     )

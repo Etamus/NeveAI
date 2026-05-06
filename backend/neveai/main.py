@@ -74,7 +74,6 @@ from neveai.routers import (
     images,
     llamacpp,
     ollama,
-    openai,
     retrieval,
     pipelines,
     tasks,
@@ -785,6 +784,10 @@ app.state.config.ENABLE_OPENAI_API = ENABLE_OPENAI_API
 app.state.config.OPENAI_API_BASE_URLS = OPENAI_API_BASE_URLS
 app.state.config.OPENAI_API_KEYS = OPENAI_API_KEYS
 app.state.config.OPENAI_API_CONFIGS = OPENAI_API_CONFIGS
+app.state.config.ENABLE_OPENAI_API = False
+app.state.config.OPENAI_API_BASE_URLS = []
+app.state.config.OPENAI_API_KEYS = []
+app.state.config.OPENAI_API_CONFIGS = {}
 
 app.state.OPENAI_MODELS = {}
 
@@ -813,6 +816,7 @@ app.state.TERMINAL_SERVERS = []
 ########################################
 
 app.state.config.ENABLE_DIRECT_CONNECTIONS = ENABLE_DIRECT_CONNECTIONS
+app.state.config.ENABLE_DIRECT_CONNECTIONS = False
 
 ########################################
 #
@@ -1017,6 +1021,8 @@ app.state.config.CHUNK_OVERLAP = CHUNK_OVERLAP
 
 
 app.state.config.RAG_EMBEDDING_ENGINE = RAG_EMBEDDING_ENGINE
+if app.state.config.RAG_EMBEDDING_ENGINE in ("openai", "azure_openai"):
+    app.state.config.RAG_EMBEDDING_ENGINE = ""
 app.state.config.RAG_EMBEDDING_MODEL = RAG_EMBEDDING_MODEL
 app.state.config.RAG_EMBEDDING_BATCH_SIZE = RAG_EMBEDDING_BATCH_SIZE
 app.state.config.ENABLE_ASYNC_EMBEDDING = ENABLE_ASYNC_EMBEDDING
@@ -1158,7 +1164,11 @@ app.state.EMBEDDING_FUNCTION = get_embedding_function(
         else (
             app.state.config.RAG_OLLAMA_BASE_URL
             if app.state.config.RAG_EMBEDDING_ENGINE == "ollama"
-            else app.state.config.RAG_AZURE_OPENAI_BASE_URL
+            else (
+                app.state.config.RAG_AZURE_OPENAI_BASE_URL
+                if app.state.config.RAG_EMBEDDING_ENGINE == "azure_openai"
+                else ""
+            )
         )
     ),
     key=(
@@ -1167,7 +1177,11 @@ app.state.EMBEDDING_FUNCTION = get_embedding_function(
         else (
             app.state.config.RAG_OLLAMA_API_KEY
             if app.state.config.RAG_EMBEDDING_ENGINE == "ollama"
-            else app.state.config.RAG_AZURE_OPENAI_API_KEY
+            else (
+                app.state.config.RAG_AZURE_OPENAI_API_KEY
+                if app.state.config.RAG_EMBEDDING_ENGINE == "azure_openai"
+                else ""
+            )
         )
     ),
     embedding_batch_size=app.state.config.RAG_EMBEDDING_BATCH_SIZE,
@@ -1223,6 +1237,8 @@ app.state.config.CODE_INTERPRETER_JUPYTER_TIMEOUT = CODE_INTERPRETER_JUPYTER_TIM
 ########################################
 
 app.state.config.IMAGE_GENERATION_ENGINE = IMAGE_GENERATION_ENGINE
+if app.state.config.IMAGE_GENERATION_ENGINE in ("openai", "gemini"):
+    app.state.config.IMAGE_GENERATION_ENGINE = ""
 app.state.config.ENABLE_IMAGE_GENERATION = ENABLE_IMAGE_GENERATION
 app.state.config.ENABLE_IMAGE_PROMPT_GENERATION = ENABLE_IMAGE_PROMPT_GENERATION
 app.state.config.ENABLE_MEMORIES = ENABLE_MEMORIES
@@ -1252,6 +1268,8 @@ app.state.config.COMFYUI_WORKFLOW_NODES = COMFYUI_WORKFLOW_NODES
 
 app.state.config.ENABLE_IMAGE_EDIT = ENABLE_IMAGE_EDIT
 app.state.config.IMAGE_EDIT_ENGINE = IMAGE_EDIT_ENGINE
+if app.state.config.IMAGE_EDIT_ENGINE in ("openai", "gemini"):
+    app.state.config.IMAGE_EDIT_ENGINE = ""
 app.state.config.IMAGE_EDIT_MODEL = IMAGE_EDIT_MODEL
 app.state.config.IMAGE_EDIT_SIZE = IMAGE_EDIT_SIZE
 app.state.config.IMAGES_EDIT_OPENAI_API_BASE_URL = IMAGES_EDIT_OPENAI_API_BASE_URL
@@ -1287,6 +1305,8 @@ app.state.config.STABLE_DIFFUSION_GUIDANCE_SCALE = STABLE_DIFFUSION_GUIDANCE_SCA
 ########################################
 
 app.state.config.STT_ENGINE = AUDIO_STT_ENGINE
+if app.state.config.STT_ENGINE == "openai":
+    app.state.config.STT_ENGINE = ""
 app.state.config.STT_MODEL = AUDIO_STT_MODEL
 app.state.config.STT_SUPPORTED_CONTENT_TYPES = AUDIO_STT_SUPPORTED_CONTENT_TYPES
 
@@ -1309,6 +1329,8 @@ app.state.config.AUDIO_STT_MISTRAL_USE_CHAT_COMPLETIONS = (
 )
 
 app.state.config.TTS_ENGINE = AUDIO_TTS_ENGINE
+if app.state.config.TTS_ENGINE == "openai":
+    app.state.config.TTS_ENGINE = ""
 
 app.state.config.TTS_MODEL = AUDIO_TTS_MODEL
 app.state.config.TTS_VOICE = AUDIO_TTS_VOICE
@@ -1508,16 +1530,6 @@ async def check_url(request: Request, call_next):
             scheme="Bearer", credentials=request.cookies.get("token")
         )
 
-    # Fallback to x-api-key header for Anthropic Messages API routes
-    if request.state.token is None and request.headers.get("x-api-key"):
-        request_path = request.url.path
-        if request_path in ("/api/message", "/api/v1/messages"):
-            from fastapi.security import HTTPAuthorizationCredentials
-
-            request.state.token = HTTPAuthorizationCredentials(
-                scheme="Bearer", credentials=request.headers.get("x-api-key")
-            )
-
     request.state.enable_api_keys = app.state.config.ENABLE_API_KEYS
     response = await call_next(request)
     process_time = int(time.time()) - start_time
@@ -1556,9 +1568,8 @@ app.mount("/ws", socket_app)
 
 
 app.include_router(llamacpp.router, prefix="/llamacpp", tags=["llamacpp"])
-# Ollama and OpenAI external routers disabled (Neve AI uses only llamacpp)
+# Ollama external router disabled (Neve AI uses llamacpp by default)
 # app.include_router(ollama.router, prefix="/ollama", tags=["ollama"])
-# app.include_router(openai.router, prefix="/openai", tags=["openai"])
 
 
 app.include_router(pipelines.router, prefix="/api/v1/pipelines", tags=["pipelines"])
@@ -1998,68 +2009,6 @@ async def chat_completion(
 # Alias for chat_completion (Legacy)
 generate_chat_completions = chat_completion
 generate_chat_completion = chat_completion
-
-
-##################################
-#
-# Anthropic Messages API Compatible Endpoint
-#
-##################################
-
-
-from neveai.utils.anthropic import (
-    convert_anthropic_to_openai_payload,
-    convert_openai_to_anthropic_response,
-    openai_stream_to_anthropic_stream,
-)
-
-
-@app.post("/api/message")
-@app.post("/api/v1/messages")  # Anthropic Messages API compatible endpoint
-async def generate_messages(
-    request: Request,
-    form_data: dict,
-    user=Depends(get_verified_user),
-):
-    """
-    Anthropic Messages API compatible endpoint.
-
-    Accepts the Anthropic Messages API format, converts internally to OpenAI
-    Chat Completions format, routes through the existing chat completion
-    pipeline, then converts the response back to Anthropic Messages format.
-
-    Supports both streaming and non-streaming requests.
-    All models configured in Neve are accessible via this endpoint.
-
-    Authentication: Supports both standard Authorization header and
-    Anthropic's x-api-key header (via middleware translation).
-    """
-    # Convert Anthropic payload to OpenAI format
-    requested_model = form_data.get("model", "")
-
-    openai_payload = convert_anthropic_to_openai_payload(form_data)
-
-    # Route through the existing chat_completion handler
-    response = await chat_completion(request, openai_payload, user)
-
-    # Convert response back to Anthropic format
-    if isinstance(response, StreamingResponse):
-        # Streaming response: wrap the generator to convert SSE format
-        return StreamingResponse(
-            openai_stream_to_anthropic_stream(
-                response.body_iterator, model=requested_model
-            ),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-            },
-        )
-    elif isinstance(response, dict):
-        return convert_openai_to_anthropic_response(response, model=requested_model)
-    else:
-        # Passthrough for error responses (JSONResponse, PlainTextResponse, etc.)
-        return response
 
 
 @app.post("/api/chat/completed")

@@ -10,7 +10,7 @@ import json
 import uuid
 import asyncio
 
-from fastapi import Request, status
+from fastapi import HTTPException, Request, status
 from starlette.responses import Response, StreamingResponse, JSONResponse
 
 
@@ -22,10 +22,6 @@ from neveai.socket.main import (
     get_event_emitter,
 )
 from neveai.functions import generate_function_chat_completion
-
-from neveai.routers.openai import (
-    generate_chat_completion as generate_openai_chat_completion,
-)
 
 from neveai.routers.ollama import (
     generate_chat_completion as generate_ollama_chat_completion,
@@ -295,12 +291,9 @@ async def generate_chat_completion(
             else:
                 return convert_response_ollama_to_openai(response)
         else:
-            return await generate_openai_chat_completion(
-                request=request,
-                form_data=form_data,
-                user=user,
-                bypass_filter=bypass_filter,
-                bypass_system_prompt=bypass_system_prompt,
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported external model backend.",
             )
 
 

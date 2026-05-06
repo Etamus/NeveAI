@@ -296,6 +296,12 @@ foreach ($name in 'LogoImg','BtnClose','LblGpu','CmbBackend','CmbVram','ChkFlash
     $ctl[$name] = $window.FindName($name)
 }
 
+$script:InstallProcessList = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
+$script:InstallControl = [hashtable]::Synchronized(@{
+    CancelRequested = $false
+    Processes = $script:InstallProcessList
+})
+
 $window.Dispatcher.add_UnhandledException({
     param($sender, $eventArgs)
     $msg = if ($eventArgs.Exception) { $eventArgs.Exception.Message } else { 'Falha inesperada no instalador.' }
@@ -335,16 +341,71 @@ $window.Add_MouseLeftButtonDown({
     if ($e.ButtonState -eq 'Pressed') { try { $window.DragMove() } catch {} }
 })
 
+function Stop-InstallerProcessTree([int]$ProcessId) {
+    try {
+        $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$ProcessId" -EA SilentlyContinue)
+        foreach ($child in $children) { Stop-InstallerProcessTree ([int]$child.ProcessId) }
+    } catch {}
+    try {
+        $proc = Get-Process -Id $ProcessId -EA SilentlyContinue
+        if ($proc -and -not $proc.HasExited) { Stop-Process -Id $ProcessId -Force -EA SilentlyContinue }
+    } catch {}
+}
+
+function Stop-RegisteredInstallerProcesses {
+    try {
+        foreach ($proc in @($script:InstallControl.Processes)) {
+            if ($proc -and -not $proc.HasExited) { Stop-InstallerProcessTree ([int]$proc.Id) }
+        }
+    } catch {}
+}
+
+function Request-InstallCancel {
+    if ($script:InstallControl.CancelRequested) { return }
+    $script:InstallControl.CancelRequested = $true
+    try { [System.IO.File]::WriteAllText($STATE_FILE, 'cancelled', [System.Text.UTF8Encoding]::new($false)) } catch {}
+    try { Add-Content -LiteralPath $LOG -Value '[!] Instalação cancelada pelo usuário.' -Encoding UTF8 } catch {}
+
+    try {
+        $ctl.BtnCancel.IsEnabled = $false
+        $ctl.BtnCancel.Content = 'Cancelando...'
+        $ctl.LblStep.Text = 'Cancelando instalação...'
+        $ctl.LblPhase.Text = 'Cancelando instalação...'
+        $ctl.LogBox.AppendText("[!] Instalação cancelada pelo usuário.`r`n")
+        $ctl.LogScroll.ScrollToEnd()
+    } catch {}
+
+    Stop-RegisteredInstallerProcesses
+
+    try {
+        if ($script:InstallerPowerShell) { $script:InstallerPowerShell.Stop() }
+    } catch {}
+    try {
+        if ($script:InstallerRunspace -and $script:InstallerRunspace.RunspaceStateInfo.State -eq 'Opened') {
+            $script:InstallerRunspace.Close()
+        }
+    } catch {}
+    try { if ($script:InstallerPowerShell) { $script:InstallerPowerShell.Dispose() } } catch {}
+    try { if ($script:InstallerRunspace) { $script:InstallerRunspace.Dispose() } } catch {}
+
+    $window.Tag = 'cancelled'
+    try { $window.Close() } catch {}
+}
+
 # Botoes basicos
-$ctl.BtnClose.Add_Click({ $window.Close() })
-$ctl.BtnCancel.Add_Click({ $window.Close() })
+$ctl.BtnClose.Add_Click({
+    if ([string]$window.Tag -eq 'installing') { Request-InstallCancel; return }
+    $window.Close()
+})
+$ctl.BtnCancel.Add_Click({
+    if ([string]$window.Tag -eq 'installing') { Request-InstallCancel; return }
+    $window.Close()
+})
 $window.Add_Closing({
     param($sender, $eventArgs)
     if ([string]$window.Tag -eq 'installing') {
         $eventArgs.Cancel = $true
-        [System.Windows.MessageBox]::Show(
-            'A instalação está em andamento. A janela não será fechada até concluir ou falhar com log visível.',
-            'Neve AI - Instalador', 'OK', 'Information') | Out-Null
+        Request-InstallCancel
     }
 })
 
@@ -651,11 +712,14 @@ $ctl.BtnPrimary.Add_Click({
 
     # Trocar para a tela de instalacao
     $window.Tag = 'installing'
+    $script:InstallControl.CancelRequested = $false
+    try { $script:InstallControl.Processes.Clear() } catch {}
     try { [System.IO.File]::WriteAllText($STATE_FILE, 'running', [System.Text.UTF8Encoding]::new($false)) } catch {}
     $ctl.ConfigPanel.Visibility = 'Collapsed'
     $ctl.InstallPanel.Visibility = 'Visible'
     $ctl.BtnPrimary.IsEnabled = $false
-    $ctl.BtnCancel.IsEnabled  = $false
+    $ctl.BtnCancel.IsEnabled  = $true
+    $ctl.BtnCancel.Content    = 'Cancelar'
     $ctl.BtnClose.IsEnabled = $false
 
     # ---- Atalho: se TUDO ja esta instalado, marca como concluido
@@ -704,7 +768,7 @@ $ctl.BtnPrimary.Add_Click({
 
     # Worker em runspace separado, usando as funcoes UI-* via $window
     $worker = {
-        param($cfg, $flashAttn, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG, $STATE_FILE, $PYTHON_EXE, $NODE_EXE, $NPM_EXE, $INSTALLER_REVISION, $SCRIPT_PATH)
+        param($cfg, $flashAttn, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG, $STATE_FILE, $PYTHON_EXE, $NODE_EXE, $NPM_EXE, $INSTALLER_REVISION, $SCRIPT_PATH, $INSTALL_CONTROL)
 
         # Helpers (definidas dentro do runspace)
         function Log([string]$m, [string]$k='info') {
@@ -733,6 +797,22 @@ $ctl.BtnPrimary.Add_Click({
         function Set-InstallState([string]$state) {
             try { [System.IO.File]::WriteAllText($STATE_FILE, $state, [System.Text.UTF8Encoding]::new($false)) } catch {}
         }
+        function Test-InstallCancelled {
+            if ($INSTALL_CONTROL -and $INSTALL_CONTROL.CancelRequested) {
+                Set-InstallState 'cancelled'
+                throw [System.OperationCanceledException]::new('Instalação cancelada pelo usuário.')
+            }
+        }
+        function Stop-ProcessTree([int]$ProcessId) {
+            try {
+                $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$ProcessId" -EA SilentlyContinue)
+                foreach ($child in $children) { Stop-ProcessTree ([int]$child.ProcessId) }
+            } catch {}
+            try {
+                $proc = Get-Process -Id $ProcessId -EA SilentlyContinue
+                if ($proc -and -not $proc.HasExited) { Stop-Process -Id $ProcessId -Force -EA SilentlyContinue }
+            } catch {}
+        }
         function ConvertTo-ProcessArgument([string]$arg) {
             if ($null -eq $arg) { throw 'Argumento nulo.' }
             if ($arg.Length -gt 0 -and $arg -notmatch '[\s"]') { return $arg }
@@ -741,6 +821,7 @@ $ctl.BtnPrimary.Add_Click({
             return '"' + $escaped + '"'
         }
         function Run-NoPipe([string]$exe, [string[]]$argv, [string]$desc) {
+            Test-InstallCancelled
             Log "==> $desc"
             if ([string]::IsNullOrWhiteSpace($exe)) { throw "Executável vazio ao executar '$desc'." }
 
@@ -793,6 +874,7 @@ $ctl.BtnPrimary.Add_Click({
                 $p = New-Object System.Diagnostics.Process
                 $p.StartInfo = $psi
                 [void]$p.Start()
+                if ($INSTALL_CONTROL -and $INSTALL_CONTROL.Processes) { [void]$INSTALL_CONTROL.Processes.Add($p) }
                 Log ("[pid {0}] {1} iniciado (sem pipes de stdout/stderr para evitar fechamento do WPF)" -f $p.Id, $desc)
             } catch {
                 throw "Falha ao iniciar '$exe' para '$desc': $($_.Exception.Message)"
@@ -803,6 +885,11 @@ $ctl.BtnPrimary.Add_Click({
                 $startedAt = Get-Date
                 $lastHeartbeat = $startedAt
                 while (-not $p.WaitForExit(1000)) {
+                    if ($INSTALL_CONTROL -and $INSTALL_CONTROL.CancelRequested) {
+                        Log ("[!] Cancelando {0} (pid {1})." -f $desc, $p.Id) 'warn'
+                        Stop-ProcessTree ([int]$p.Id)
+                        throw [System.OperationCanceledException]::new('Instalação cancelada pelo usuário.')
+                    }
                     $now = Get-Date
                     if (($now - $lastHeartbeat).TotalSeconds -ge 10) {
                         $elapsedSec = [math]::Floor(($now - $startedAt).TotalSeconds)
@@ -815,6 +902,7 @@ $ctl.BtnPrimary.Add_Click({
                 Log ("[exit {0}] {1} finalizado em {2:mm\:ss}" -f $p.ExitCode, $desc, $elapsed)
                 return $p.ExitCode
             } finally {
+                try { if ($INSTALL_CONTROL -and $INSTALL_CONTROL.Processes -and $p) { [void]$INSTALL_CONTROL.Processes.Remove($p) } } catch {}
                 try { $p.Dispose() } catch {}
             }
         }
@@ -994,6 +1082,7 @@ $ctl.BtnPrimary.Add_Click({
         }
 
         try {
+            Test-InstallCancelled
             Set-Location -LiteralPath $ROOT
             Log "[OK] Instalador revisão: $INSTALLER_REVISION"
             Log "[OK] Script em execução: $SCRIPT_PATH"
@@ -1572,6 +1661,11 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 $script:Window.Tag = 'done'
             })
         } catch {
+            if (($INSTALL_CONTROL -and $INSTALL_CONTROL.CancelRequested) -or ($_.Exception -is [System.OperationCanceledException])) {
+                Set-InstallState 'cancelled'
+                Log '[!] Instalação cancelada pelo usuário.' 'warn'
+                return
+            }
             $errMsg = "$($_.Exception.Message)"
             if (-not $errMsg) { $errMsg = "$_" }
             Set-InstallState 'failed'
@@ -1600,10 +1694,11 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
 
     $ps = [PowerShell]::Create()
     $ps.Runspace = $runspace
-    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($flashAttn).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($STATE_FILE).AddArgument($PYTHON_EXE).AddArgument($NODE_EXE).AddArgument($NPM_EXE).AddArgument($INSTALLER_REVISION).AddArgument($SCRIPT_PATH)
+    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($flashAttn).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($STATE_FILE).AddArgument($PYTHON_EXE).AddArgument($NODE_EXE).AddArgument($NPM_EXE).AddArgument($INSTALLER_REVISION).AddArgument($SCRIPT_PATH).AddArgument($script:InstallControl)
     [void]$ps.add_InvocationStateChanged({
         param($sender, $eventArgs)
         if ($eventArgs.InvocationStateInfo.State -eq 'Failed') {
+            if ($script:InstallControl -and $script:InstallControl.CancelRequested) { return }
             $fatal = $eventArgs.InvocationStateInfo.Reason
             $msg = if ($fatal) { $fatal.Message } else { 'Falha fatal no processo de instalação.' }
             try { [System.IO.File]::WriteAllText($STATE_FILE, 'failed', [System.Text.UTF8Encoding]::new($false)) } catch {}

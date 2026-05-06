@@ -21,9 +21,6 @@ from neveai.env import AIOHTTP_CLIENT_SESSION_SSL
 from neveai.config import CACHE_DIR
 from neveai.constants import ERROR_MESSAGES
 
-
-from neveai.routers.openai import get_all_models_responses
-
 from neveai.utils.auth import get_admin_user
 
 log = logging.getLogger(__name__)
@@ -175,24 +172,7 @@ router = APIRouter()
 
 @router.get("/list")
 async def get_pipelines_list(request: Request, user=Depends(get_admin_user)):
-    responses = await get_all_models_responses(request, user)
-    log.debug(f"get_pipelines_list: get_openai_models_responses returned {responses}")
-
-    urlIdxs = [
-        idx
-        for idx, response in enumerate(responses)
-        if response is not None and "pipelines" in response
-    ]
-
-    return {
-        "data": [
-            {
-                "url": request.app.state.config.OPENAI_API_BASE_URLS[urlIdx],
-                "idx": urlIdx,
-            }
-            for urlIdx in urlIdxs
-        ]
-    }
+    return {"data": []}
 
 
 @router.post("/upload")

@@ -50,11 +50,8 @@ asgiref==3.11.1
 opentelemetry-api==1.40.0
 psutil
 
-# LLM APIs, tools and local RAG
+# Tools and local RAG
 mcp==1.26.0
-openai
-anthropic
-google-genai==1.66.0
 tiktoken
 langchain==1.2.10
 langchain-community==0.4.1

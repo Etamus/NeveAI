@@ -46,13 +46,6 @@
 
 	let rerankingModel = '';
 
-	let OpenAIUrl = '';
-	let OpenAIKey = '';
-
-	let AzureOpenAIUrl = '';
-	let AzureOpenAIKey = '';
-	let AzureOpenAIVersion = '';
-
 	let OllamaUrl = '';
 	let OllamaKey = '';
 
@@ -84,21 +77,9 @@
 			return;
 		}
 
-		if (RAG_EMBEDDING_ENGINE === 'openai' && RAG_EMBEDDING_MODEL === '') {
-			toast.error(
-				$i18n.t(
-					'Model filesystem path detected. Model shortname is required for update, cannot continue.'
-				)
-			);
-			return;
-		}
-
-		if (
-			RAG_EMBEDDING_ENGINE === 'azure_openai' &&
-			(AzureOpenAIKey === '' || AzureOpenAIUrl === '' || AzureOpenAIVersion === '')
-		) {
-			toast.error($i18n.t('OpenAI URL/Key required.'));
-			return;
+		if (['openai', 'azure_openai'].includes(RAG_EMBEDDING_ENGINE)) {
+			RAG_EMBEDDING_ENGINE = '';
+			RAG_EMBEDDING_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
 		}
 
 		console.debug('Update embedding model attempt:', {
@@ -119,15 +100,6 @@
 			ollama_config: {
 				key: OllamaKey,
 				url: OllamaUrl
-			},
-			openai_config: {
-				key: OpenAIKey,
-				url: OpenAIUrl
-			},
-			azure_openai_config: {
-				key: AzureOpenAIKey,
-				url: AzureOpenAIUrl,
-				version: AzureOpenAIVersion
 			}
 		}).catch(async (error) => {
 			toast.error(`${error}`);
@@ -252,15 +224,8 @@
 			ENABLE_ASYNC_EMBEDDING = embeddingConfig.ENABLE_ASYNC_EMBEDDING ?? true;
 			RAG_EMBEDDING_CONCURRENT_REQUESTS = embeddingConfig.RAG_EMBEDDING_CONCURRENT_REQUESTS ?? 0;
 
-			OpenAIKey = embeddingConfig.openai_config.key;
-			OpenAIUrl = embeddingConfig.openai_config.url;
-
 			OllamaKey = embeddingConfig.ollama_config.key;
 			OllamaUrl = embeddingConfig.ollama_config.url;
-
-			AzureOpenAIKey = embeddingConfig.azure_openai_config.key;
-			AzureOpenAIUrl = embeddingConfig.azure_openai_config.url;
-			AzureOpenAIVersion = embeddingConfig.azure_openai_config.version;
 		}
 	};
 	onMount(async () => {
@@ -359,10 +324,6 @@
 										on:change={(e) => {
 											if (e.target.value === 'ollama') {
 												RAG_EMBEDDING_MODEL = '';
-											} else if (e.target.value === 'openai') {
-												RAG_EMBEDDING_MODEL = 'text-embedding-3-small';
-											} else if (e.target.value === 'azure_openai') {
-												RAG_EMBEDDING_MODEL = 'text-embedding-3-small';
 											} else if (e.target.value === '') {
 												RAG_EMBEDDING_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
 											}
@@ -370,28 +331,11 @@
 									>
 										<option value="">{$i18n.t('Default (SentenceTransformers)')}</option>
 										<option value="ollama">{$i18n.t('Ollama')}</option>
-										<option value="openai">{$i18n.t('OpenAI')}</option>
-										<option value="azure_openai">{$i18n.t('Azure OpenAI')}</option>
 									</select>
 								</div>
 							</div>
 
-							{#if RAG_EMBEDDING_ENGINE === 'openai'}
-								<div class="my-0.5 flex gap-2 pr-2">
-									<input
-										class="flex-1 w-full text-sm bg-transparent outline-hidden"
-										placeholder={$i18n.t('API Base URL')}
-										bind:value={OpenAIUrl}
-										required
-									/>
-
-									<SensitiveInput
-										placeholder={$i18n.t('API Key')}
-										bind:value={OpenAIKey}
-										required={false}
-									/>
-								</div>
-							{:else if RAG_EMBEDDING_ENGINE === 'ollama'}
+							{#if RAG_EMBEDDING_ENGINE === 'ollama'}
 								<div class="my-0.5 flex gap-2 pr-2">
 									<input
 										class="flex-1 w-full text-sm bg-transparent outline-hidden"
@@ -405,26 +349,6 @@
 										bind:value={OllamaKey}
 										required={false}
 									/>
-								</div>
-							{:else if RAG_EMBEDDING_ENGINE === 'azure_openai'}
-								<div class="my-0.5 flex flex-col gap-2 pr-2 w-full">
-									<div class="flex gap-2">
-										<input
-											class="flex-1 w-full text-sm bg-transparent outline-hidden"
-											placeholder={$i18n.t('API Base URL')}
-											bind:value={AzureOpenAIUrl}
-											required
-										/>
-										<SensitiveInput placeholder={$i18n.t('API Key')} bind:value={AzureOpenAIKey} />
-									</div>
-									<div class="flex gap-2">
-										<input
-											class="flex-1 w-full text-sm bg-transparent outline-hidden"
-											placeholder={$i18n.t('Version')}
-											bind:value={AzureOpenAIVersion}
-											required
-										/>
-									</div>
 								</div>
 							{/if}
 						</div>
@@ -513,7 +437,7 @@
 							</div>
 						</div>
 
-						{#if RAG_EMBEDDING_ENGINE === 'ollama' || RAG_EMBEDDING_ENGINE === 'openai' || RAG_EMBEDDING_ENGINE === 'azure_openai'}
+						{#if RAG_EMBEDDING_ENGINE === 'ollama'}
 							<div class="  mb-2.5 flex w-full justify-between">
 								<div class="self-center text-xs font-medium">
 									<Tooltip

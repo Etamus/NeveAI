@@ -129,6 +129,21 @@ export interface NeveCatalogModel {
 	size_label?: string;
 }
 
+export interface NeveDownloadState {
+	task_id: string;
+	model_id?: string;
+	name?: string;
+	status: string;
+	progress?: number;
+	current_file?: string;
+	file_index?: number;
+	file_total?: number;
+	downloaded?: number;
+	total?: number;
+	message?: string;
+	error?: string;
+}
+
 export const getNeveCatalog = async (token: string = ''): Promise<NeveCatalogModel[]> => {
 	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/catalog`, {
 		method: 'GET',
@@ -163,22 +178,63 @@ export const startNeveDownload = async (token: string = '', model_id: string): P
 	return data.task_id as string;
 };
 
+export const getActiveNeveDownload = async (token: string = ''): Promise<NeveDownloadState | null> => {
+	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/download/active`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	});
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ detail: 'Falha ao buscar download ativo' }));
+		throw new Error(err.detail || 'Falha ao buscar download ativo');
+	}
+	const data = await res.json();
+	return data.task ?? null;
+};
+
+export const cancelNeveDownload = async (
+	token: string = '',
+	task_id: string
+): Promise<NeveDownloadState> => {
+	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/download/cancel/${task_id}`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	});
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ detail: 'Falha ao cancelar download' }));
+		throw new Error(err.detail || 'Falha ao cancelar download');
+	}
+	const data = await res.json();
+	return data.task;
+};
+
 export const streamNeveDownload = (
 	task_id: string,
-	onUpdate: (state: any) => void,
-	onDone: (state: any) => void,
-	onError: (err: any) => void
+	onUpdate: (state: NeveDownloadState) => void,
+	onDone: (state: NeveDownloadState) => void,
+	onError: (err: any) => void,
+	onCancel?: (state: NeveDownloadState) => void
 ): EventSource => {
 	const url = `${WEBUI_BASE_URL}/llamacpp/download/status/${task_id}`;
 	const es = new EventSource(url);
 	es.onmessage = (e) => {
 		try {
-			const state = JSON.parse(e.data);
+			const state = JSON.parse(e.data) as NeveDownloadState;
 			onUpdate(state);
-			if (state.status === 'completed' || state.status === 'error') {
+			if (state.status === 'completed' || state.status === 'error' || state.status === 'cancelled') {
 				es.close();
-				if (state.status === 'completed') onDone(state);
-				else onError(new Error(state.error || 'Falha no download'));
+				if (state.status === 'completed') {
+					onDone(state);
+				} else if (state.status === 'cancelled') {
+					onCancel?.(state);
+				} else {
+					onError(new Error(state.error || 'Falha no download'));
+				}
 			}
 		} catch (err) {
 			onError(err);

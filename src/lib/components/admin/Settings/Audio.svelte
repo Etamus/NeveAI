@@ -19,27 +19,21 @@
 
 	import type { Writable } from 'svelte/store';
 	import type { i18n as i18nType } from 'i18next';
-	import Textarea from '$lib/components/common/Textarea.svelte';
 
 	const i18n = getContext<Writable<i18nType>>('i18n');
 
 	export let saveHandler: () => void;
 
 	// Audio
-	let TTS_OPENAI_API_BASE_URL = '';
-	let TTS_OPENAI_API_KEY = '';
 	let TTS_API_KEY = '';
 	let TTS_ENGINE = '';
 	let TTS_MODEL = '';
 	let TTS_VOICE = '';
-	let TTS_OPENAI_PARAMS = '';
 	let TTS_SPLIT_ON: TTS_RESPONSE_SPLIT = TTS_RESPONSE_SPLIT.PUNCTUATION;
 	let TTS_AZURE_SPEECH_REGION = '';
 	let TTS_AZURE_SPEECH_BASE_URL = '';
 	let TTS_AZURE_SPEECH_OUTPUT_FORMAT = '';
 
-	let STT_OPENAI_API_BASE_URL = '';
-	let STT_OPENAI_API_KEY = '';
 	let STT_ENGINE = '';
 	let STT_MODEL = '';
 	let STT_SUPPORTED_CONTENT_TYPES = '';
@@ -103,20 +97,18 @@
 	};
 
 	const updateConfigHandler = async () => {
-		let openaiParams = {};
-		try {
-			openaiParams = TTS_OPENAI_PARAMS ? JSON.parse(TTS_OPENAI_PARAMS) : {};
-			TTS_OPENAI_PARAMS = JSON.stringify(openaiParams, null, 2);
-		} catch (e) {
-			toast.error($i18n.t('Invalid JSON format for Parameters'));
-			return;
+		if (STT_ENGINE === 'openai') {
+			STT_ENGINE = '';
+		}
+		if (TTS_ENGINE === 'openai') {
+			TTS_ENGINE = '';
 		}
 
 		const res = await updateAudioConfig(localStorage.token, {
 			tts: {
-				OPENAI_API_BASE_URL: TTS_OPENAI_API_BASE_URL,
-				OPENAI_API_KEY: TTS_OPENAI_API_KEY,
-				OPENAI_PARAMS: openaiParams,
+				OPENAI_API_BASE_URL: '',
+				OPENAI_API_KEY: '',
+				OPENAI_PARAMS: {},
 				API_KEY: TTS_API_KEY,
 				ENGINE: TTS_ENGINE,
 				MODEL: TTS_MODEL,
@@ -127,8 +119,8 @@
 				SPLIT_ON: TTS_SPLIT_ON
 			},
 			stt: {
-				OPENAI_API_BASE_URL: STT_OPENAI_API_BASE_URL,
-				OPENAI_API_KEY: STT_OPENAI_API_KEY,
+				OPENAI_API_BASE_URL: '',
+				OPENAI_API_KEY: '',
 				ENGINE: STT_ENGINE,
 				MODEL: STT_MODEL,
 				SUPPORTED_CONTENT_TYPES: STT_SUPPORTED_CONTENT_TYPES.split(','),
@@ -162,9 +154,6 @@
 
 		if (res) {
 			console.log(res);
-			TTS_OPENAI_API_BASE_URL = res.tts.OPENAI_API_BASE_URL;
-			TTS_OPENAI_API_KEY = res.tts.OPENAI_API_KEY;
-			TTS_OPENAI_PARAMS = JSON.stringify(res?.tts?.OPENAI_PARAMS ?? '', null, 2);
 			TTS_API_KEY = res.tts.API_KEY;
 
 			TTS_ENGINE = res.tts.ENGINE;
@@ -176,9 +165,6 @@
 			TTS_AZURE_SPEECH_REGION = res.tts.AZURE_SPEECH_REGION;
 			TTS_AZURE_SPEECH_BASE_URL = res.tts.AZURE_SPEECH_BASE_URL;
 			TTS_AZURE_SPEECH_OUTPUT_FORMAT = res.tts.AZURE_SPEECH_OUTPUT_FORMAT;
-
-			STT_OPENAI_API_BASE_URL = res.stt.OPENAI_API_BASE_URL;
-			STT_OPENAI_API_KEY = res.stt.OPENAI_API_KEY;
 
 			STT_ENGINE = res.stt.ENGINE;
 			STT_MODEL = res.stt.MODEL;
@@ -240,7 +226,6 @@
 							placeholder={$i18n.t('Select an engine')}
 						>
 							<option value="">{$i18n.t('Whisper (Local)')}</option>
-							<option value="openai">{$i18n.t('OpenAI')}</option>
 							<option value="web">{$i18n.t('Web API')}</option>
 							<option value="deepgram">{$i18n.t('Deepgram')}</option>
 							<option value="azure">{$i18n.t('Azure AI Speech')}</option>
@@ -249,40 +234,7 @@
 					</div>
 				</div>
 
-				{#if STT_ENGINE === 'openai'}
-					<div>
-						<div class="mt-1 flex gap-2 mb-1">
-							<input
-								class="flex-1 w-full bg-transparent outline-hidden"
-								placeholder={$i18n.t('API Base URL')}
-								bind:value={STT_OPENAI_API_BASE_URL}
-								required
-							/>
-
-							<SensitiveInput placeholder={$i18n.t('API Key')} bind:value={STT_OPENAI_API_KEY} />
-						</div>
-					</div>
-
-					<hr class="border-gray-100/30 dark:border-gray-850/30 my-2" />
-
-					<div>
-						<div class=" mb-1.5 text-xs font-medium">{$i18n.t('STT Model')}</div>
-						<div class="flex w-full">
-							<div class="flex-1">
-								<input
-									list="model-list"
-									class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
-									bind:value={STT_MODEL}
-									placeholder={$i18n.t('Select a model')}
-								/>
-
-								<datalist id="model-list">
-									<option value="whisper-1" />
-								</datalist>
-							</div>
-						</div>
-					</div>
-				{:else if STT_ENGINE === 'deepgram'}
+				{#if STT_ENGINE === 'deepgram'}
 					<div>
 						<div class="mt-1 flex gap-2 mb-1">
 							<SensitiveInput placeholder={$i18n.t('API Key')} bind:value={STT_DEEPGRAM_API_KEY} />
@@ -514,38 +466,19 @@
 								await getVoices();
 								await getModels();
 
-								if (e.target?.value === 'openai') {
-									TTS_VOICE = 'alloy';
-									TTS_MODEL = 'tts-1';
-								} else {
-									TTS_VOICE = '';
-									TTS_MODEL = '';
-								}
+								TTS_VOICE = '';
+								TTS_MODEL = '';
 							}}
 						>
 							<option value="">{$i18n.t('Web API')}</option>
 							<option value="transformers">{$i18n.t('Transformers')} ({$i18n.t('Local')})</option>
-							<option value="openai">{$i18n.t('OpenAI')}</option>
 							<option value="elevenlabs">{$i18n.t('ElevenLabs')}</option>
 							<option value="azure">{$i18n.t('Azure AI Speech')}</option>
 						</select>
 					</div>
 				</div>
 
-				{#if TTS_ENGINE === 'openai'}
-					<div>
-						<div class="mt-1 flex gap-2 mb-1">
-							<input
-								class="flex-1 w-full bg-transparent outline-hidden"
-								placeholder={$i18n.t('API Base URL')}
-								bind:value={TTS_OPENAI_API_BASE_URL}
-								required
-							/>
-
-							<SensitiveInput placeholder={$i18n.t('API Key')} bind:value={TTS_OPENAI_API_KEY} />
-						</div>
-					</div>
-				{:else if TTS_ENGINE === 'elevenlabs'}
+				{#if TTS_ENGINE === 'elevenlabs'}
 					<div>
 						<div class="mt-1 flex gap-2 mb-1">
 							<SensitiveInput placeholder={$i18n.t('API Key')} bind:value={TTS_API_KEY} required />
@@ -648,63 +581,6 @@
 								>
 									{$i18n.t(`click here`)}.
 								</a>
-							</div>
-						</div>
-					{:else if TTS_ENGINE === 'openai'}
-						<div class=" flex gap-2">
-							<div class="w-full">
-								<div class=" mb-1.5 text-xs font-medium">{$i18n.t('TTS Voice')}</div>
-								<div class="flex w-full">
-									<div class="flex-1">
-										<input
-											list="voice-list"
-											class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
-											bind:value={TTS_VOICE}
-											placeholder={$i18n.t('Select a voice')}
-										/>
-
-										<datalist id="voice-list">
-											{#each voices as voice}
-												<option value={voice.id}>{voice.name}</option>
-											{/each}
-										</datalist>
-									</div>
-								</div>
-							</div>
-							<div class="w-full">
-								<div class=" mb-1.5 text-xs font-medium">{$i18n.t('TTS Model')}</div>
-								<div class="flex w-full">
-									<div class="flex-1">
-										<input
-											list="tts-model-list"
-											class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
-											bind:value={TTS_MODEL}
-											placeholder={$i18n.t('Select a model')}
-										/>
-
-										<datalist id="tts-model-list">
-											{#each models as model}
-												<option value={model.id} class="bg-gray-50 dark:bg-gray-700" />
-											{/each}
-										</datalist>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div class="mt-2 mb-1 text-xs text-gray-400 dark:text-gray-500">
-							<div class="w-full">
-								<div class=" mb-1.5 text-xs font-medium">{$i18n.t('Additional Parameters')}</div>
-								<div class="flex w-full">
-									<div class="flex-1">
-										<Textarea
-											className="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
-											bind:value={TTS_OPENAI_PARAMS}
-											placeholder={$i18n.t('Enter additional parameters in JSON format')}
-											minSize={100}
-										/>
-									</div>
-								</div>
 							</div>
 						</div>
 					{:else if TTS_ENGINE === 'elevenlabs'}

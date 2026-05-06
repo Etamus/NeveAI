@@ -8,7 +8,6 @@ from neveai.models.models import Models
 from neveai.utils.models import check_model_access
 from neveai.env import GLOBAL_LOG_LEVEL, BYPASS_MODEL_ACCESS_CONTROL
 
-from neveai.routers.openai import embeddings as openai_embeddings
 from neveai.routers.ollama import (
     embed as ollama_embed,
     GenerateEmbedForm,
@@ -80,9 +79,4 @@ async def generate_embeddings(
         )
         return convert_embedding_response_ollama_to_openai(response)
 
-    # Default: OpenAI or compatible backend
-    return await openai_embeddings(
-        request=request,
-        form_data=form_data,
-        user=user,
-    )
+    raise Exception("Unsupported external embedding backend")

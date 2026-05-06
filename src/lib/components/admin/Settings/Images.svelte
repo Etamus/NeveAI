@@ -112,16 +112,13 @@
 			config.ENABLE_IMAGE_GENERATION = false;
 
 			return null;
-		} else if (config.IMAGE_GENERATION_ENGINE === 'openai' && config.IMAGES_OPENAI_API_KEY === '') {
-			toast.error($i18n.t('OpenAI API Key is required.'));
-			config.ENABLE_IMAGE_GENERATION = false;
+		}
 
-			return null;
-		} else if (config.IMAGE_GENERATION_ENGINE === 'gemini' && config.IMAGES_GEMINI_API_KEY === '') {
-			toast.error($i18n.t('Gemini API Key is required.'));
-			config.ENABLE_IMAGE_GENERATION = false;
-
-			return null;
+		if (['openai', 'gemini'].includes(config.IMAGE_GENERATION_ENGINE)) {
+			config.IMAGE_GENERATION_ENGINE = '';
+		}
+		if (['openai', 'gemini'].includes(config.IMAGE_EDIT_ENGINE)) {
+			config.IMAGE_EDIT_ENGINE = '';
 		}
 
 		const res = await updateConfig(localStorage.token, {
@@ -130,11 +127,7 @@
 				typeof config.AUTOMATIC1111_PARAMS === 'string' && config.AUTOMATIC1111_PARAMS.trim() !== ''
 					? JSON.parse(config.AUTOMATIC1111_PARAMS)
 					: {},
-			IMAGES_OPENAI_API_PARAMS:
-				typeof config.IMAGES_OPENAI_API_PARAMS === 'string' &&
-				config.IMAGES_OPENAI_API_PARAMS.trim() !== ''
-					? JSON.parse(config.IMAGES_OPENAI_API_PARAMS)
-					: {}
+			IMAGES_OPENAI_API_PARAMS: {}
 		}).catch((error) => {
 			toast.error(`${error}`);
 			return null;
@@ -253,11 +246,6 @@
 					console.error(e);
 				}
 			}
-
-			config.IMAGES_OPENAI_API_PARAMS =
-				typeof config.IMAGES_OPENAI_API_PARAMS === 'object'
-					? JSON.stringify(config.IMAGES_OPENAI_API_PARAMS ?? {}, null, 2)
-					: config.IMAGES_OPENAI_API_PARAMS;
 
 			config.AUTOMATIC1111_PARAMS =
 				typeof config.AUTOMATIC1111_PARAMS === 'object'
@@ -406,96 +394,14 @@
 								bind:value={config.IMAGE_GENERATION_ENGINE}
 								placeholder={$i18n.t('Select Engine')}
 							>
-								<option value="openai">{$i18n.t('Default (Open AI)')}</option>
+								<option value="">{$i18n.t('Automatic1111')}</option>
 								<option value="comfyui">{$i18n.t('ComfyUI')}</option>
 								<option value="automatic1111">{$i18n.t('Automatic1111')}</option>
-								<option value="gemini">{$i18n.t('Gemini')}</option>
 							</select>
 						</div>
 					</div>
 
-					{#if config?.IMAGE_GENERATION_ENGINE === 'openai'}
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('OpenAI API Base URL')}
-									</div>
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<input
-											class="w-full text-sm bg-transparent outline-hidden text-right"
-											placeholder={$i18n.t('API Base URL')}
-											bind:value={config.IMAGES_OPENAI_API_BASE_URL}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('OpenAI API Key')}
-									</div>
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<SensitiveInput
-											inputClassName="text-right w-full"
-											placeholder={$i18n.t('API Key')}
-											bind:value={config.IMAGES_OPENAI_API_KEY}
-											required={false}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('OpenAI API Version')}
-									</div>
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<input
-											class="w-full text-sm bg-transparent outline-hidden text-right"
-											placeholder={$i18n.t('API Version')}
-											bind:value={config.IMAGES_OPENAI_API_VERSION}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('Additional Parameters')}
-									</div>
-								</div>
-							</div>
-							<div class="mt-1.5 flex w-full">
-								<div class="flex-1 mr-2">
-									<Textarea
-										className="rounded-lg w-full py-2 px-3 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
-										bind:value={config.IMAGES_OPENAI_API_PARAMS}
-										placeholder={$i18n.t('Enter additional parameters in JSON format')}
-										minSize={100}
-									/>
-								</div>
-							</div>
-						</div>
-					{:else if (config?.IMAGE_GENERATION_ENGINE ?? 'automatic1111') === 'automatic1111'}
+					{#if (config?.IMAGE_GENERATION_ENGINE ?? 'automatic1111') === 'automatic1111'}
 						<div class="mb-2.5">
 							<div class="flex w-full justify-between items-center">
 								<div class="text-xs pr-2 shrink-0">
@@ -816,66 +722,6 @@
 								</div>
 							</div>
 						{/if}
-					{:else if config?.IMAGE_GENERATION_ENGINE === 'gemini'}
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('Gemini Base URL')}
-									</div>
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<input
-											class="w-full text-sm bg-transparent outline-hidden text-right"
-											placeholder={$i18n.t('API Base URL')}
-											bind:value={config.IMAGES_GEMINI_API_BASE_URL}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('Gemini API Key')}
-									</div>
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<SensitiveInput
-											inputClassName="text-right w-full"
-											placeholder={$i18n.t('API Key')}
-											bind:value={config.IMAGES_GEMINI_API_KEY}
-											required={true}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2">
-									<div class="">
-										{$i18n.t('Gemini Endpoint Method')}
-									</div>
-								</div>
-
-								<select
-									class="w-fit pr-8 cursor-pointer rounded-sm px-2 text-xs bg-transparent outline-hidden text-right"
-									bind:value={config.IMAGES_GEMINI_ENDPOINT_METHOD}
-									placeholder={$i18n.t('Select Method')}
-								>
-									<option value="predict">predict</option>
-									<option value="generateContent">generateContent</option>
-								</select>
-							</div>
-						</div>
 					{/if}
 				</div>
 
@@ -954,75 +800,13 @@
 								bind:value={config.IMAGE_EDIT_ENGINE}
 								placeholder={$i18n.t('Select Engine')}
 							>
-								<option value="openai">{$i18n.t('Default (Open AI)')}</option>
+								<option value="">{$i18n.t('Disabled')}</option>
 								<option value="comfyui">{$i18n.t('ComfyUI')}</option>
-								<option value="gemini">{$i18n.t('Gemini')}</option>
 							</select>
 						</div>
 					</div>
 
-					{#if config?.IMAGE_EDIT_ENGINE === 'openai'}
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('OpenAI API Base URL')}
-									</div>
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<input
-											class="w-full text-sm bg-transparent outline-hidden text-right"
-											placeholder={$i18n.t('API Base URL')}
-											bind:value={config.IMAGES_EDIT_OPENAI_API_BASE_URL}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('OpenAI API Key')}
-									</div>
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<SensitiveInput
-											inputClassName="text-right w-full"
-											placeholder={$i18n.t('API Key')}
-											bind:value={config.IMAGES_EDIT_OPENAI_API_KEY}
-											required={false}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('OpenAI API Version')}
-									</div>
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<input
-											class="w-full text-sm bg-transparent outline-hidden text-right"
-											placeholder={$i18n.t('API Version')}
-											bind:value={config.IMAGES_EDIT_OPENAI_API_VERSION}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-					{:else if config?.IMAGE_EDIT_ENGINE === 'comfyui'}
+					{#if config?.IMAGE_EDIT_ENGINE === 'comfyui'}
 						<div class="mb-2.5">
 							<div class="flex w-full justify-between items-center">
 								<div class="text-xs pr-2 shrink-0">
@@ -1221,47 +1005,6 @@
 								</div>
 							</div>
 						{/if}
-					{:else if config?.IMAGE_EDIT_ENGINE === 'gemini'}
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('Gemini Base URL')}
-									</div>
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<input
-											class="w-full text-sm bg-transparent outline-hidden text-right"
-											placeholder={$i18n.t('API Base URL')}
-											bind:value={config.IMAGES_EDIT_GEMINI_API_BASE_URL}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
-
-						<div class="mb-2.5">
-							<div class="flex w-full justify-between items-center">
-								<div class="text-xs pr-2 shrink-0">
-									<div class="">
-										{$i18n.t('Gemini API Key')}
-									</div>
-								</div>
-
-								<div class="flex w-full">
-									<div class="flex-1">
-										<SensitiveInput
-											inputClassName="text-right w-full"
-											placeholder={$i18n.t('API Key')}
-											bind:value={config.IMAGES_EDIT_GEMINI_API_KEY}
-											required={true}
-										/>
-									</div>
-								</div>
-							</div>
-						</div>
 					{/if}
 				</div>
 			</div>

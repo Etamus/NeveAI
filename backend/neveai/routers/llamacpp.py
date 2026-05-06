@@ -1456,17 +1456,70 @@ NEVE_CATALOG = [
 # In-memory task registry: { task_id: { status, progress, total, downloaded, message, files: [...] } }
 _DOWNLOAD_TASKS: dict = {}
 _DOWNLOAD_TASKS_LOCK = threading.Lock()
+_DOWNLOAD_ACTIVE_STATUSES = {"queued", "resolving", "downloading", "cancelling"}
+
+
+class _DownloadCancelled(Exception):
+    pass
 
 
 def _set_task(task_id: str, **fields):
     with _DOWNLOAD_TASKS_LOCK:
-        task = _DOWNLOAD_TASKS.setdefault(task_id, {})
+        task = _DOWNLOAD_TASKS.setdefault(task_id, {"task_id": task_id})
         task.update(fields)
 
 
 def _get_task(task_id: str) -> dict:
     with _DOWNLOAD_TASKS_LOCK:
-        return dict(_DOWNLOAD_TASKS.get(task_id, {}))
+        task = dict(_DOWNLOAD_TASKS.get(task_id, {}))
+        if task:
+            task["task_id"] = task_id
+        return task
+
+
+def _find_active_download(model_id: Optional[str] = None) -> Optional[tuple[str, dict]]:
+    with _DOWNLOAD_TASKS_LOCK:
+        for task_id, task in _DOWNLOAD_TASKS.items():
+            if task.get("status") not in _DOWNLOAD_ACTIVE_STATUSES:
+                continue
+            if model_id is not None and task.get("model_id") != model_id:
+                continue
+            return task_id, {**task, "task_id": task_id}
+    return None
+
+
+def _is_download_cancel_requested(task_id: str) -> bool:
+    with _DOWNLOAD_TASKS_LOCK:
+        return bool(_DOWNLOAD_TASKS.get(task_id, {}).get("cancel_requested"))
+
+
+def _raise_if_download_cancelled(task_id: str):
+    if _is_download_cancel_requested(task_id):
+        raise _DownloadCancelled()
+
+
+def _cleanup_download_artifacts(task_id: str):
+    task = _get_task(task_id)
+    paths: set[Path] = set()
+
+    for key in ("current_tmp_path", "current_dest_path"):
+        value = task.get(key)
+        if value:
+            paths.add(Path(value))
+
+    for key in ("tmp_paths", "target_paths", "downloaded_paths"):
+        for value in task.get(key, []) or []:
+            if value:
+                path = Path(value)
+                paths.add(path)
+                paths.add(path.with_suffix(path.suffix + ".part"))
+
+    for path in paths:
+        try:
+            if path.is_file():
+                path.unlink()
+        except Exception:
+            log.warning("Failed to remove partial Neve download artifact: %s", path)
 
 
 def _catalog_entry(model_id: str) -> Optional[dict]:
@@ -1581,6 +1634,7 @@ async def _stream_download_file(
     url = f"https://huggingface.co/{repo_id}/resolve/main/{repo_path}"
     tmp_path = dest_path.with_suffix(dest_path.suffix + ".part")
     dest_path.parent.mkdir(parents=True, exist_ok=True)
+    _raise_if_download_cancelled(task_id)
 
     async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
         async with client.stream("GET", url) as r:
@@ -1596,9 +1650,12 @@ async def _stream_download_file(
                 downloaded=0,
                 total=total,
                 progress=0.0,
+                current_tmp_path=str(tmp_path),
+                current_dest_path=str(dest_path),
             )
             with open(tmp_path, "wb") as f:
                 async for chunk in r.aiter_bytes(chunk_size=1024 * 1024):
+                    _raise_if_download_cancelled(task_id)
                     if not chunk:
                         continue
                     f.write(chunk)
@@ -1610,7 +1667,12 @@ async def _stream_download_file(
                         total=total,
                         progress=progress,
                     )
+    _raise_if_download_cancelled(task_id)
     tmp_path.replace(dest_path)
+    task = _get_task(task_id)
+    downloaded_paths = list(task.get("downloaded_paths", []) or [])
+    downloaded_paths.append(str(dest_path))
+    _set_task(task_id, downloaded_paths=downloaded_paths)
 
 
 async def _run_download_task(task_id: str, model_id: str, app=None):
@@ -1621,7 +1683,9 @@ async def _run_download_task(task_id: str, model_id: str, app=None):
     repo_id = entry["repo"]
     try:
         _set_task(task_id, status="resolving", model_id=model_id, repo_id=repo_id, name=entry["name"])
+        _raise_if_download_cancelled(task_id)
         files = await _hf_list_files(repo_id)
+        _raise_if_download_cancelled(task_id)
         main_file = _pick_main_gguf(files)
         if not main_file:
             _set_task(task_id, status="error", error=f"Nenhum .gguf encontrado em {repo_id}")
@@ -1638,11 +1702,20 @@ async def _run_download_task(task_id: str, model_id: str, app=None):
             _set_task(task_id, status="completed", message="Já instalado", progress=1.0)
             return
 
+        _set_task(
+            task_id,
+            target_paths=[str(dest_path) for _, dest_path, _ in targets],
+            tmp_paths=[str(dest_path.with_suffix(dest_path.suffix + ".part")) for _, dest_path, _ in targets],
+        )
+
         total_files = len(targets)
         main_model_downloaded = False
         for i, (repo_path, dest_path, is_main_model) in enumerate(targets, start=1):
+            _raise_if_download_cancelled(task_id)
             await _stream_download_file(task_id, repo_id, repo_path, dest_path, i, total_files)
             main_model_downloaded = main_model_downloaded or is_main_model
+
+        _raise_if_download_cancelled(task_id)
 
         defaults_status = None
         if main_model_downloaded:
@@ -1664,6 +1737,18 @@ async def _run_download_task(task_id: str, model_id: str, app=None):
             progress=1.0,
             message="Download concluído",
             defaults_status=defaults_status,
+        )
+    except _DownloadCancelled:
+        _cleanup_download_artifacts(task_id)
+        _set_task(
+            task_id,
+            status="cancelled",
+            progress=0.0,
+            downloaded=0,
+            total=0,
+            message="Download cancelado",
+            current_tmp_path=None,
+            current_dest_path=None,
         )
     except httpx.HTTPStatusError as e:
         _set_task(task_id, status="error", error=f"HTTP {e.response.status_code} ao baixar de {repo_id}")
@@ -1690,6 +1775,13 @@ async def get_neve_catalog():
     return {"models": items}
 
 
+@router.get("/download/active")
+async def get_active_download():
+    """Return the active Neve catalog download, if any."""
+    active = _find_active_download()
+    return {"task": active[1] if active else None}
+
+
 class DownloadModelRequest(BaseModel):
     model_id: str
 
@@ -1699,10 +1791,34 @@ async def start_download(req: DownloadModelRequest, request: Request):
     """Start a background download of a Neve catalog model. Returns task_id."""
     if not _catalog_entry(req.model_id):
         raise HTTPException(status_code=404, detail="Modelo não encontrado no catálogo")
+
+    active = _find_active_download(req.model_id)
+    if active:
+        return {"task_id": active[0], "active": True}
+
     task_id = uuid.uuid4().hex
     _set_task(task_id, status="queued", model_id=req.model_id, progress=0.0)
     asyncio.create_task(_run_download_task(task_id, req.model_id, request.app))
     return {"task_id": task_id}
+
+
+@router.post("/download/cancel/{task_id}")
+async def cancel_download(task_id: str):
+    """Request cancellation of an active Neve catalog download."""
+    task = _get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada")
+
+    if task.get("status") in ("completed", "error", "cancelled"):
+        return {"task": task}
+
+    _set_task(
+        task_id,
+        cancel_requested=True,
+        status="cancelling",
+        message="Cancelando download...",
+    )
+    return {"task": _get_task(task_id)}
 
 
 @router.get("/download/status/{task_id}")
@@ -1720,7 +1836,7 @@ async def stream_download_status(task_id: str):
                 yield f"data: {payload}\n\n"
                 last_serialized = payload
             status = task.get("status")
-            if status in ("completed", "error"):
+            if status in ("completed", "error", "cancelled"):
                 break
             await asyncio.sleep(0.5)
 
