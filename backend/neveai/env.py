@@ -321,11 +321,8 @@ if FROM_INIT_PY:
 # Database
 ####################################
 
-# Check if the file exists (legacy migrations: ollama.db -> webui.db -> neve.db)
-if os.path.exists(f"{DATA_DIR}/ollama.db") and not os.path.exists(f"{DATA_DIR}/neve.db"):
-    os.rename(f"{DATA_DIR}/ollama.db", f"{DATA_DIR}/neve.db")
-    log.info("Database migrated from Ollama-WebUI successfully.")
-elif os.path.exists(f"{DATA_DIR}/webui.db") and not os.path.exists(f"{DATA_DIR}/neve.db"):
+# Check if the file exists (legacy migrations: webui.db -> neve.db)
+if os.path.exists(f"{DATA_DIR}/webui.db") and not os.path.exists(f"{DATA_DIR}/neve.db"):
     os.rename(f"{DATA_DIR}/webui.db", f"{DATA_DIR}/neve.db")
     log.info("Database migrated to neve.db successfully.")
 else:
@@ -495,7 +492,7 @@ except ValueError:
 # WEBUI_AUTH (Required for security)
 ####################################
 
-WEBUI_AUTH = os.environ.get("NEVE_AUTH", "True").lower() == "true"
+WEBUI_AUTH = False
 
 ENABLE_INITIAL_ADMIN_SIGNUP = (
     os.environ.get("ENABLE_INITIAL_ADMIN_SIGNUP", "False").lower() == "true"

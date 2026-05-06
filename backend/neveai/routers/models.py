@@ -525,7 +525,7 @@ async def update_model_access_by_id(
 ):
     model = Models.get_model_by_id(form_data.id, db=db)
 
-    # Non-preset models (e.g. direct Ollama/OpenAI models) may not have a DB
+    # Non-preset models may not have a DB
     # entry yet. Create a minimal one so access grants can be stored.
     if not model:
         if user.role != "admin":

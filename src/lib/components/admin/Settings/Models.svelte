@@ -560,9 +560,7 @@
 										content={marked.parse(
 											!!model?.meta?.description
 												? model?.meta?.description
-												: model?.ollama?.digest
-													? `${model?.ollama?.digest} **(${model?.ollama?.modified_at})**`
-													: model.id
+												: model.id
 										)}
 										className=" w-fit"
 										placement="top-start"
@@ -577,9 +575,7 @@
 										<span class=" line-clamp-1">
 											{!!model?.meta?.description
 												? model?.meta?.description
-												: model?.ollama?.digest
-													? `${model.id} (${model?.ollama?.digest})`
-													: model.id}
+												: model.id}
 										</span>
 									</div>
 								</div>

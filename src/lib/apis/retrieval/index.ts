@@ -182,10 +182,6 @@ export const getEmbeddingConfig = async (token: string) => {
 
 type EmbeddingModelUpdateForm = {
 	[key: string]: unknown;
-	ollama_config?: {
-		key: string;
-		url: string;
-	};
 	embedding_batch_size?: number;
 };
 

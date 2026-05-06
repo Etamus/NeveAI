@@ -8,13 +8,6 @@ from neveai.models.models import Models
 from neveai.utils.models import check_model_access
 from neveai.env import GLOBAL_LOG_LEVEL, BYPASS_MODEL_ACCESS_CONTROL
 
-from neveai.routers.ollama import (
-    embed as ollama_embed,
-    GenerateEmbedForm,
-)
-
-from neveai.utils.payload import convert_embed_payload_openai_to_ollama
-from neveai.utils.response import convert_embedding_response_ollama_to_openai
 
 logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
@@ -27,7 +20,7 @@ async def generate_embeddings(
     bypass_filter: bool = False,
 ):
     """
-    Dispatch and handle embeddings generation based on the model type (OpenAI, Ollama).
+    Dispatch and handle embeddings generation based on the model type.
 
     Args:
         request (Request): The FastAPI request context.
@@ -68,15 +61,5 @@ async def generate_embeddings(
     if not getattr(request.state, "direct", False):
         if not bypass_filter and user.role == "user":
             check_model_access(user, model)
-
-    # Ollama backend — use /api/embed which supports batch input natively
-    if model.get("owned_by") == "ollama":
-        ollama_payload = convert_embed_payload_openai_to_ollama(form_data)
-        response = await ollama_embed(
-            request=request,
-            form_data=GenerateEmbedForm(**ollama_payload),
-            user=user,
-        )
-        return convert_embedding_response_ollama_to_openai(response)
 
     raise Exception("Unsupported external embedding backend")

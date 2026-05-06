@@ -268,6 +268,10 @@ $window.Add_MouseLeftButtonDown({
 })
 
 $script:IsRunning = $false
+$script:CancelRequested = $false
+$script:CloseAfterCancel = $false
+$script:CurrentProcess = $null
+$script:ExitCode = 0
 
 function Set-UI([scriptblock]$sb) {
     [void]$window.Dispatcher.Invoke([Action]$sb)
@@ -301,6 +305,43 @@ function Set-Progress([int]$pct, [string]$phase) {
     }
 }
 
+function Stop-ProcessTree([int]$processId) {
+    try {
+        Get-CimInstance Win32_Process -Filter "ParentProcessId=$processId" -ErrorAction SilentlyContinue | ForEach-Object {
+            Stop-ProcessTree ([int]$_.ProcessId)
+        }
+    } catch {}
+
+    try {
+        Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+    } catch {}
+}
+
+function Test-CancelRequested {
+    if ($script:CancelRequested) {
+        throw [System.OperationCanceledException]::new('Build cancelado pelo usuario.')
+    }
+}
+
+function Request-Cancel {
+    if (-not $script:IsRunning) {
+        $window.Close()
+        return
+    }
+
+    if ($script:CancelRequested) { return }
+    $script:CancelRequested = $true
+    $script:CloseAfterCancel = $true
+    Append-Log 'Cancelamento solicitado; encerrando processo em andamento...' 'warn'
+    Set-Progress 0 'Cancelando'
+    Set-UI { $ctl.BtnCancel.IsEnabled = $false }
+
+    $proc = $script:CurrentProcess
+    if ($proc -and -not $proc.HasExited) {
+        Stop-ProcessTree $proc.Id
+    }
+}
+
 function ConvertTo-ProcessArgument([string]$arg) {
     if ($null -eq $arg) { return '""' }
     if ($arg -notmatch '[\s"]') { return $arg }
@@ -308,6 +349,7 @@ function ConvertTo-ProcessArgument([string]$arg) {
 }
 
 function Invoke-LoggedProcess([string]$fileName, [string[]]$arguments, [string]$description) {
+    Test-CancelRequested
     Append-Log $description 'step'
     Append-Log ("> " + $fileName + ' ' + ($arguments -join ' '))
 
@@ -336,14 +378,26 @@ function Invoke-LoggedProcess([string]$fileName, [string[]]$arguments, [string]$
     $proc.add_OutputDataReceived($outHandler)
     $proc.add_ErrorDataReceived($errHandler)
 
-    [void]$proc.Start()
-    $proc.BeginOutputReadLine()
-    $proc.BeginErrorReadLine()
-    $proc.WaitForExit()
-    $proc.WaitForExit()
+    try {
+        [void]$proc.Start()
+        $script:CurrentProcess = $proc
+        $proc.BeginOutputReadLine()
+        $proc.BeginErrorReadLine()
 
-    $proc.remove_OutputDataReceived($outHandler)
-    $proc.remove_ErrorDataReceived($errHandler)
+        while (-not $proc.WaitForExit(200)) {
+            if ($script:CancelRequested) {
+                Stop-ProcessTree $proc.Id
+                throw [System.OperationCanceledException]::new('Build cancelado pelo usuario.')
+            }
+        }
+        $proc.WaitForExit()
+    } finally {
+        $script:CurrentProcess = $null
+        $proc.remove_OutputDataReceived($outHandler)
+        $proc.remove_ErrorDataReceived($errHandler)
+    }
+
+    Test-CancelRequested
 
     if ($proc.ExitCode -eq 0) {
         Append-Log "$description concluido" 'ok'
@@ -355,6 +409,7 @@ function Invoke-LoggedProcess([string]$fileName, [string[]]$arguments, [string]$
 }
 
 function Set-Done([bool]$ok, [string]$summary) {
+    $script:ExitCode = if ($ok) { 0 } else { 1 }
     Set-UI {
         $ctl.IntroPanel.Visibility = 'Collapsed'
         $ctl.WorkPanel.Visibility = 'Collapsed'
@@ -394,8 +449,11 @@ function Start-BuildDeploy {
         $ctl.LblPhase.Text = 'Preparando'
         $ctl.LblStep.Text = 'Preparando build...'
         $ctl.BtnPrimary.IsEnabled = $false
-        $ctl.BtnCancel.IsEnabled = $false
+        $ctl.BtnCancel.IsEnabled = $true
     }
+
+    $script:CancelRequested = $false
+    $script:CloseAfterCancel = $false
 
     $worker = New-Object System.ComponentModel.BackgroundWorker
 
@@ -404,6 +462,7 @@ function Start-BuildDeploy {
         try {
             Set-Location -LiteralPath $ROOT
             Append-Log "Pasta do build: $ROOT" 'ok'
+            Test-CancelRequested
 
             Set-Progress 5 'Verificando npm'
             $npmCmd = Get-Command npm.cmd -EA SilentlyContinue
@@ -411,8 +470,22 @@ function Start-BuildDeploy {
             if (-not $npmCmd) { throw 'npm nao encontrado no PATH.' }
             $npmExe = $npmCmd.Source
             Append-Log "npm: $npmExe" 'ok'
+            Test-CancelRequested
+
+            if (-not (Test-Path (Join-Path $ROOT 'node_modules'))) {
+                Set-Progress 10 'Instalando dependencias'
+                if (Test-Path (Join-Path $ROOT 'package-lock.json')) {
+                    $rc = Invoke-LoggedProcess $npmExe @('ci') 'npm ci'
+                } else {
+                    $rc = Invoke-LoggedProcess $npmExe @('install') 'npm install'
+                }
+                if ($rc -ne 0) { throw "Instalacao de dependencias falhou (codigo $rc)." }
+            } else {
+                Append-Log 'node_modules encontrado; instalacao de dependencias ignorada' 'ok'
+            }
 
             Set-Progress 12 'Limpando build antigo'
+            Test-CancelRequested
             if (Test-Path $BUILD_DIR) {
                 Remove-Item $BUILD_DIR -Recurse -Force
                 Append-Log 'Pasta build antiga removida' 'ok'
@@ -423,22 +496,18 @@ function Start-BuildDeploy {
             Set-Progress 22 'Executando npm run build'
             $rc = Invoke-LoggedProcess $npmExe @('run', 'build') 'npm run build'
             if ($rc -ne 0) { throw "npm run build falhou (codigo $rc)." }
+            Test-CancelRequested
 
             $srcIndex = Join-Path $BUILD_DIR 'index.html'
             if (-not (Test-Path $srcIndex)) { throw 'build\index.html nao foi gerado.' }
 
-            Set-Progress 82 'Limpando destino do backend'
-            if (Test-Path $DEPLOY_DIR) {
-                Get-ChildItem -LiteralPath $DEPLOY_DIR -Force | Remove-Item -Recurse -Force
-                Append-Log 'Destino backend\neveai\frontend limpo' 'ok'
-            } else {
-                New-Item $DEPLOY_DIR -ItemType Directory -Force | Out-Null
-                Append-Log 'Destino backend\neveai\frontend criado' 'ok'
-            }
-
-            Set-Progress 88 'Copiando build para o backend'
-            Copy-Item -Path (Join-Path $BUILD_DIR '*') -Destination $DEPLOY_DIR -Recurse -Force
-            Append-Log 'Arquivos copiados para backend\neveai\frontend' 'ok'
+            Set-Progress 84 'Publicando build no backend'
+            $robocopyCmd = Get-Command robocopy.exe -EA SilentlyContinue
+            if (-not $robocopyCmd) { throw 'robocopy.exe nao encontrado no Windows.' }
+            $rc = Invoke-LoggedProcess $robocopyCmd.Source @($BUILD_DIR, $DEPLOY_DIR, '/MIR', '/R:2', '/W:1', '/NP') 'robocopy build backend\neveai\frontend'
+            if ($rc -gt 7) { throw "robocopy falhou (codigo $rc)." }
+            Append-Log "robocopy concluido com codigo $rc" 'ok'
+            Test-CancelRequested
 
             Set-Progress 94 'Verificando hash do deploy'
             $dstIndex = Join-Path $DEPLOY_DIR 'index.html'
@@ -455,6 +524,12 @@ function Start-BuildDeploy {
                 Ok = $true
                 Summary = "Build:  $BUILD_DIR`nDeploy: $DEPLOY_DIR`nArquivos publicados: $fileCount`nSHA256 index.html: $($srcHash.Hash)"
             }
+        } catch [System.OperationCanceledException] {
+            Append-Log $_.Exception.Message 'warn'
+            $eventArgs.Result = [pscustomobject]@{
+                Ok = $false
+                Summary = "Cancelado pelo usuario.`nLog:  $LOG"
+            }
         } catch {
             Append-Log $_.Exception.Message 'err'
             $eventArgs.Result = [pscustomobject]@{
@@ -468,6 +543,16 @@ function Start-BuildDeploy {
         param($sender, $eventArgs)
         $script:IsRunning = $false
         $result = $eventArgs.Result
+        $wasCancelClose = $script:CancelRequested -and $script:CloseAfterCancel
+        $script:CancelRequested = $false
+        $script:CloseAfterCancel = $false
+
+        if ($wasCancelClose) {
+            $script:ExitCode = 1
+            $window.Close()
+            return
+        }
+
         if ($result -and $result.Ok) {
             Set-Done $true $result.Summary
         } else {
@@ -479,8 +564,8 @@ function Start-BuildDeploy {
     $worker.RunWorkerAsync()
 }
 
-$ctl.BtnClose.Add_Click({ if (-not $script:IsRunning) { $window.Close() } })
-$ctl.BtnCancel.Add_Click({ if (-not $script:IsRunning) { $window.Close() } })
+$ctl.BtnClose.Add_Click({ Request-Cancel })
+$ctl.BtnCancel.Add_Click({ Request-Cancel })
 $ctl.BtnPrimary.Add_Click({
     if ($ctl.BtnPrimary.Tag -eq 'close') {
         $window.Close()
@@ -490,3 +575,4 @@ $ctl.BtnPrimary.Add_Click({
 })
 
 [void]$window.ShowDialog()
+exit $script:ExitCode

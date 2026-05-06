@@ -668,7 +668,7 @@ def parse_duration(duration: str) -> Optional[timedelta]:
     return total_duration
 
 
-def parse_ollama_modelfile(model_text):
+def parse_legacy_modelfile(model_text):
     parameters_meta = {
         "mirostat": int,
         "mirostat_eta": float,
