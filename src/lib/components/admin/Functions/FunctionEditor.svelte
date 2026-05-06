@@ -114,7 +114,6 @@ from typing import Optional, Union, Generator, Iterator
 from neveai.utils.misc import get_last_user_message
 
 import os
-import requests
 
 
 # Filter Class: This class is designed to serve as a pre-processor and post-processor
@@ -173,86 +172,32 @@ class Filter:
 
 
 
-# Pipe Class: This class functions as a customizable pipeline.
-# It can be adapted to work with any external or internal models,
-# making it versatile for various use cases outside of just OpenAI models.
+# Pipe Class: This class functions as a customizable local pipeline.
 class Pipe:
     class Valves(BaseModel):
-        OPENAI_API_BASE_URL: str = "https://api.openai.com/v1"
-        OPENAI_API_KEY: str = "your-key"
+		prefix: str = "local"
         pass
 
     def __init__(self):
         self.type = "manifold"
         self.valves = self.Valves()
-        self.pipes = self.get_openai_models()
+		self.pipes = [
+			{
+				"id": "echo",
+				"name": "Local Echo",
+			},
+		]
         pass
 
-    def get_openai_models(self):
-        if self.valves.OPENAI_API_KEY:
-            try:
-                headers = {}
-                headers["Authorization"] = f"Bearer {self.valves.OPENAI_API_KEY}"
-                headers["Content-Type"] = "application/json"
-
-                r = requests.get(
-                    f"{self.valves.OPENAI_API_BASE_URL}/models", headers=headers
-                )
-
-                models = r.json()
-                return [
-                    {
-                        "id": model["id"],
-                        "name": model["name"] if "name" in model else model["id"],
-                    }
-                    for model in models["data"]
-                    if "gpt" in model["id"]
-                ]
-
-            except Exception as e:
-
-                print(f"Error: {e}")
-                return [
-                    {
-                        "id": "error",
-                        "name": "Could not fetch models from OpenAI, please update the API Key in the valves.",
-                    },
-                ]
-        else:
-            return []
-
     def pipe(self, body: dict) -> Union[str, Generator, Iterator]:
-        # This is where you can add your custom pipelines like RAG.
         print(f"pipe:{__name__}")
 
         if "user" in body:
             print(body["user"])
             del body["user"]
 
-        headers = {}
-        headers["Authorization"] = f"Bearer {self.valves.OPENAI_API_KEY}"
-        headers["Content-Type"] = "application/json"
-
-        model_id = body["model"][body["model"].find(".") + 1 :]
-        payload = {**body, "model": model_id}
-        print(payload)
-
-        try:
-            r = requests.post(
-                url=f"{self.valves.OPENAI_API_BASE_URL}/chat/completions",
-                json=payload,
-                headers=headers,
-                stream=True,
-            )
-
-            r.raise_for_status()
-
-            if body["stream"]:
-                return r.iter_lines()
-            else:
-                return r.json()
-        except Exception as e:
-            return f"Error: {e}"
+		prompt = get_last_user_message(body.get("messages", []))
+		return f"{self.valves.prefix}: {prompt}"
 `;
 
 	const saveHandler = async () => {

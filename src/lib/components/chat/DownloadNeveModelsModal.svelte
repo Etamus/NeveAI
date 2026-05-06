@@ -8,10 +8,13 @@
 	import { WEBUI_BASE_URL } from '$lib/constants';
 
 	import {
+		cancelNeveDownload,
+		getActiveNeveDownload,
 		getNeveCatalog,
 		startNeveDownload,
 		streamNeveDownload,
-		type NeveCatalogModel
+		type NeveCatalogModel,
+		type NeveDownloadState
 	} from '$lib/apis/llamacpp';
 
 	const i18n = getContext('i18n');
@@ -21,11 +24,18 @@
 	let loading = false;
 	let catalog: NeveCatalogModel[] = [];
 	let selectedId: string | null = null;
+	let wasShown = false;
 
 	let downloading = false;
+	let cancelling = false;
 	let progress = 0;
 	let progressLabel = '';
+	let currentTaskId: string | null = null;
+	let downloadingModelId: string | null = null;
+	let downloadingModelName = '';
 	let currentEs: EventSource | null = null;
+
+	const activeStatuses = ['queued', 'resolving', 'downloading', 'cancelling'];
 
 	const fmtBytes = (n: number): string => {
 		if (!n) return '';
@@ -48,12 +58,137 @@
 		}
 	};
 
-	$: if (show) {
-		loadCatalog();
-		selectedId = null;
+	const modelNameFor = (modelId?: string | null) => {
+		return catalog.find((model) => model.id === modelId)?.name || downloadingModelName || 'Modelo';
+	};
+
+	const applyDownloadState = (state: NeveDownloadState) => {
+		if (state.task_id) {
+			currentTaskId = state.task_id;
+		}
+		if (state.model_id) {
+			downloadingModelId = state.model_id;
+			selectedId = state.model_id;
+		}
+		if (state.name) {
+			downloadingModelName = state.name;
+		}
+
+		downloading = activeStatuses.includes(state.status);
+		cancelling = state.status === 'cancelling';
+		progress = typeof state.progress === 'number' ? state.progress : progress;
+
+		if (state.status === 'resolving') {
+			progressLabel = 'Procurando arquivos...';
+		} else if (state.status === 'downloading') {
+			const fileLabel = state.file_total && state.file_total > 1 ? ` (${state.file_index}/${state.file_total})` : '';
+			const sz = state.total ? `${fmtBytes(state.downloaded ?? 0)} / ${fmtBytes(state.total)}` : '';
+			progressLabel = `Baixando${fileLabel} ${sz}`.trim();
+		} else if (state.status === 'queued') {
+			progressLabel = 'Na fila...';
+		} else if (state.status === 'cancelling') {
+			progressLabel = 'Cancelando e limpando arquivos...';
+		} else if (state.status === 'completed') {
+			progress = 1;
+			progressLabel = 'Download concluído';
+		} else if (state.status === 'cancelled') {
+			progressLabel = 'Download cancelado';
+		} else if (state.status === 'error') {
+			progressLabel = 'Falha no download';
+		}
+	};
+
+	const clearDownloadState = (keepSelectedId: string | null = null) => {
 		downloading = false;
+		cancelling = false;
 		progress = 0;
 		progressLabel = '';
+		currentTaskId = null;
+		downloadingModelId = null;
+		downloadingModelName = '';
+		selectedId = keepSelectedId;
+		currentEs = null;
+	};
+
+	const attachToDownload = (taskId: string, initialState?: NeveDownloadState | null) => {
+		if (currentTaskId === taskId && currentEs) {
+			if (initialState) {
+				applyDownloadState(initialState);
+			}
+			return;
+		}
+
+		if (currentEs) {
+			currentEs.close();
+			currentEs = null;
+		}
+
+		currentTaskId = taskId;
+		downloading = true;
+		cancelling = false;
+
+		if (initialState) {
+			applyDownloadState(initialState);
+		}
+
+		currentEs = streamNeveDownload(
+			taskId,
+			applyDownloadState,
+			async (state) => {
+				const name = modelNameFor(state.model_id ?? downloadingModelId);
+				clearDownloadState(null);
+				if (state.message === 'Já instalado') {
+					toast.info(`${name}: já instalado`);
+				} else {
+					toast.success(`${name} baixado com sucesso`);
+				}
+				await loadCatalog();
+			},
+			(err: any) => {
+				const retryId = downloadingModelId;
+				clearDownloadState(retryId);
+				toast.error(err?.message || 'Falha no download');
+			},
+			async (state) => {
+				const retryId = state.model_id ?? downloadingModelId;
+				const name = modelNameFor(retryId);
+				clearDownloadState(retryId ?? null);
+				toast.info(`${name}: download cancelado e arquivos parciais removidos`);
+				await loadCatalog();
+			}
+		);
+	};
+
+	const hydrateModal = async () => {
+		loading = true;
+		const [catalogResult, activeResult] = await Promise.allSettled([
+			getNeveCatalog(localStorage.token),
+			getActiveNeveDownload(localStorage.token)
+		]);
+
+		if (catalogResult.status === 'fulfilled') {
+			catalog = catalogResult.value;
+		} else {
+			toast.error(catalogResult.reason?.message || 'Falha ao carregar catálogo');
+			catalog = [];
+		}
+
+		if (activeResult.status === 'fulfilled' && activeResult.value?.task_id) {
+			attachToDownload(activeResult.value.task_id, activeResult.value);
+		} else if (!downloading) {
+			progress = 0;
+			progressLabel = '';
+			cancelling = false;
+		}
+
+		loading = false;
+	};
+
+	$: if (show && !wasShown) {
+		wasShown = true;
+		void hydrateModal();
+	} else if (!show && wasShown) {
+		wasShown = false;
 	}
 
 	const handleDownload = async () => {
@@ -61,45 +196,51 @@
 		const entry = catalog.find((m) => m.id === selectedId);
 		if (!entry) return;
 		downloading = true;
+		cancelling = false;
+		downloadingModelId = entry.id;
+		downloadingModelName = entry.name;
 		progress = 0;
 		progressLabel = 'Conectando...';
 		try {
-			const taskId = await startNeveDownload(localStorage.token, selectedId);
-			currentEs = streamNeveDownload(
-				taskId,
-				(state) => {
-					const p = typeof state.progress === 'number' ? state.progress : 0;
-					progress = p;
-					if (state.status === 'resolving') {
-						progressLabel = 'Procurando arquivos...';
-					} else if (state.status === 'downloading') {
-						const fileLabel = state.file_total > 1 ? ` (${state.file_index}/${state.file_total})` : '';
-						const sz = state.total ? `${fmtBytes(state.downloaded)} / ${fmtBytes(state.total)}` : '';
-						progressLabel = `Baixando${fileLabel} ${sz}`.trim();
-					} else if (state.status === 'queued') {
-						progressLabel = 'Na fila...';
-					}
-				},
-				async (state) => {
-					downloading = false;
-					selectedId = null;
-					progress = 0;
-					progressLabel = '';
-					if (state.message === 'Já instalado') {
-						toast.info(`${entry.name}: já instalado`);
-					} else {
-						toast.success(`${entry.name} baixado com sucesso`);
-					}
-					await loadCatalog();
-				},
-				(err: any) => {
-					downloading = false;
-					toast.error(err?.message || 'Falha no download');
+			const activeDownload = await getActiveNeveDownload(localStorage.token);
+			if (activeDownload?.task_id) {
+				attachToDownload(activeDownload.task_id, activeDownload);
+				if (activeDownload.model_id !== entry.id) {
+					toast.info('Já existe um download de modelo em andamento');
 				}
-			);
+				return;
+			}
+
+			const taskId = await startNeveDownload(localStorage.token, selectedId);
+			attachToDownload(taskId, {
+				task_id: taskId,
+				model_id: entry.id,
+				name: entry.name,
+				status: 'queued',
+				progress: 0
+			});
 		} catch (e: any) {
-			downloading = false;
+			clearDownloadState(selectedId);
 			toast.error(e?.message || 'Falha ao iniciar download');
+		}
+	};
+
+	const handleCancelDownload = async () => {
+		if (!currentTaskId || !downloading || cancelling) return;
+
+		cancelling = true;
+		progressLabel = 'Cancelando e limpando arquivos...';
+		try {
+			const state = await cancelNeveDownload(localStorage.token, currentTaskId);
+			applyDownloadState(state);
+			if (state.status === 'cancelled') {
+				const retryId = state.model_id ?? downloadingModelId;
+				clearDownloadState(retryId ?? null);
+				await loadCatalog();
+			}
+		} catch (e: any) {
+			cancelling = false;
+			toast.error(e?.message || 'Falha ao cancelar download');
 		}
 	};
 
@@ -129,12 +270,21 @@
 
 		<div class="flex flex-col w-full px-5 pt-4 pb-4 dark:text-gray-200">
 			<div class="flex flex-col gap-1 max-h-[22rem] overflow-y-auto pr-1">
-				{#each catalog as item (item.id)}
+				{#if loading && catalog.length === 0}
+					<div class="flex justify-center py-8">
+						<Spinner className="size-5" />
+					</div>
+				{:else if catalog.length === 0}
+					<div class="text-center text-xs text-gray-500 dark:text-gray-400 py-8">
+						{$i18n.t('Nenhum modelo disponível')}
+					</div>
+				{:else}
+					{#each catalog as item (item.id)}
 					<label
 						class="relative flex items-center gap-3 px-3 py-2 rounded-lg transition border {item.installed
 							? 'opacity-60 cursor-default border-transparent'
 							: selectedId === item.id
-							? 'cursor-pointer border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-850'
+							? `${downloading ? 'cursor-default' : 'cursor-pointer'} border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-850`
 							: 'cursor-pointer border-transparent hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
 					>
 						<input
@@ -153,11 +303,14 @@
 						<div class="flex-1 min-w-0 text-sm truncate">{item.name}</div>
 						{#if item.installed}
 							<span class="text-xs font-medium text-green-600 dark:text-green-500 shrink-0">Instalado</span>
+						{:else if downloading && downloadingModelId === item.id}
+							<span class="text-xs font-medium text-blue-600 dark:text-blue-400 shrink-0">Baixando</span>
 						{:else if item.size_label}
 							<span class="text-xs text-gray-400 dark:text-gray-500 shrink-0">{item.size_label}</span>
 						{/if}
 					</label>
-				{/each}
+					{/each}
+				{/if}
 			</div>
 
 			{#if downloading}
@@ -175,17 +328,27 @@
 				</div>
 			{/if}
 
-			<div class="flex justify-end pt-4">
-				<button
-					class="px-4 py-1.5 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg disabled:opacity-40 flex items-center gap-2"
-					disabled={!selectedId || downloading}
-					on:click={handleDownload}
-				>
-					{#if downloading}
-						<Spinner className="size-3" />
-					{/if}
-					{$i18n.t('Baixar')}
-				</button>
+			<div class="flex justify-end gap-2 pt-4">
+				{#if downloading}
+					<button
+						class="px-4 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-850 transition rounded-lg disabled:opacity-40 flex items-center gap-2"
+						disabled={cancelling}
+						on:click={handleCancelDownload}
+					>
+						{#if cancelling}
+							<Spinner className="size-3" />
+						{/if}
+						{$i18n.t(cancelling ? 'Cancelando...' : 'Cancelar')}
+					</button>
+				{:else}
+					<button
+						class="px-4 py-1.5 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg disabled:opacity-40 flex items-center gap-2"
+						disabled={!selectedId || loading}
+						on:click={handleDownload}
+					>
+						{$i18n.t('Baixar')}
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>

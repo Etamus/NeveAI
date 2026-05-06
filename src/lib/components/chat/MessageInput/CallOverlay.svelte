@@ -6,7 +6,7 @@
 
 	import { blobToFile } from '$lib/utils';
 	import { generateEmoji } from '$lib/apis';
-	import { synthesizeOpenAISpeech, transcribeAudio } from '$lib/apis/audio';
+	import { synthesizeSpeech, transcribeAudio } from '$lib/apis/audio';
 
 	import { toast } from 'svelte-sonner';
 
@@ -491,7 +491,7 @@
 						audioCache.set(content, new Audio(url));
 					}
 				} else if ($config.audio.tts.engine !== '') {
-					const res = await synthesizeOpenAISpeech(localStorage.token, getVoiceId(), content).catch(
+					const res = await synthesizeSpeech(localStorage.token, getVoiceId(), content).catch(
 						(error) => {
 							console.error(error);
 							return null;

@@ -1075,47 +1075,28 @@ OLLAMA_API_CONFIGS = PersistentConfig(
 )
 
 ####################################
-# OPENAI_API
+# External GPT/Claude/Gemini providers disabled
 ####################################
 
 
 ENABLE_OPENAI_API = PersistentConfig(
     "ENABLE_OPENAI_API",
     "openai.enable",
-    os.environ.get("ENABLE_OPENAI_API", "True").lower() == "true",
+    False,
 )
 
 
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_API_BASE_URL = os.environ.get("OPENAI_API_BASE_URL", "")
+OPENAI_API_KEY = ""
+OPENAI_API_BASE_URL = ""
+GEMINI_API_KEY = ""
+GEMINI_API_BASE_URL = ""
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_API_BASE_URL = os.environ.get("GEMINI_API_BASE_URL", "")
-
-
-if OPENAI_API_BASE_URL == "":
-    OPENAI_API_BASE_URL = "https://api.openai.com/v1"
-else:
-    if OPENAI_API_BASE_URL.endswith("/"):
-        OPENAI_API_BASE_URL = OPENAI_API_BASE_URL[:-1]
-
-OPENAI_API_KEYS = os.environ.get("OPENAI_API_KEYS", "")
-OPENAI_API_KEYS = OPENAI_API_KEYS if OPENAI_API_KEYS != "" else OPENAI_API_KEY
-
-OPENAI_API_KEYS = [url.strip() for url in OPENAI_API_KEYS.split(";")]
+OPENAI_API_KEYS = []
 OPENAI_API_KEYS = PersistentConfig(
     "OPENAI_API_KEYS", "openai.api_keys", OPENAI_API_KEYS
 )
 
-OPENAI_API_BASE_URLS = os.environ.get("OPENAI_API_BASE_URLS", "")
-OPENAI_API_BASE_URLS = (
-    OPENAI_API_BASE_URLS if OPENAI_API_BASE_URLS != "" else OPENAI_API_BASE_URL
-)
-
-OPENAI_API_BASE_URLS = [
-    url.strip() if url != "" else "https://api.openai.com/v1"
-    for url in OPENAI_API_BASE_URLS.split(";")
-]
+OPENAI_API_BASE_URLS = []
 OPENAI_API_BASE_URLS = PersistentConfig(
     "OPENAI_API_BASE_URLS", "openai.api_base_urls", OPENAI_API_BASE_URLS
 )
@@ -1125,16 +1106,6 @@ OPENAI_API_CONFIGS = PersistentConfig(
     "openai.api_configs",
     {},
 )
-
-# Get the actual OpenAI API key based on the base URL
-OPENAI_API_KEY = ""
-try:
-    OPENAI_API_KEY = OPENAI_API_KEYS.value[
-        OPENAI_API_BASE_URLS.value.index("https://api.openai.com/v1")
-    ]
-except Exception:
-    pass
-OPENAI_API_BASE_URL = "https://api.openai.com/v1"
 
 
 ####################################
@@ -3181,12 +3152,12 @@ RAG_TEMPLATE = PersistentConfig(
 RAG_OPENAI_API_BASE_URL = PersistentConfig(
     "RAG_OPENAI_API_BASE_URL",
     "rag.openai_api_base_url",
-    os.getenv("RAG_OPENAI_API_BASE_URL", OPENAI_API_BASE_URL),
+    "",
 )
 RAG_OPENAI_API_KEY = PersistentConfig(
     "RAG_OPENAI_API_KEY",
     "rag.openai_api_key",
-    os.getenv("RAG_OPENAI_API_KEY", OPENAI_API_KEY),
+    "",
 )
 
 RAG_AZURE_OPENAI_BASE_URL = PersistentConfig(
@@ -3666,7 +3637,7 @@ ENABLE_IMAGE_GENERATION = PersistentConfig(
 IMAGE_GENERATION_ENGINE = PersistentConfig(
     "IMAGE_GENERATION_ENGINE",
     "image_generation.engine",
-    os.getenv("IMAGE_GENERATION_ENGINE", "openai"),
+    "" if os.getenv("IMAGE_GENERATION_ENGINE", "") in ("openai", "gemini") else os.getenv("IMAGE_GENERATION_ENGINE", ""),
 )
 
 IMAGE_GENERATION_MODEL = PersistentConfig(
@@ -3866,7 +3837,7 @@ COMFYUI_WORKFLOW_NODES = PersistentConfig(
 IMAGES_OPENAI_API_BASE_URL = PersistentConfig(
     "IMAGES_OPENAI_API_BASE_URL",
     "image_generation.openai.api_base_url",
-    os.getenv("IMAGES_OPENAI_API_BASE_URL", OPENAI_API_BASE_URL),
+    "",
 )
 IMAGES_OPENAI_API_VERSION = PersistentConfig(
     "IMAGES_OPENAI_API_VERSION",
@@ -3877,7 +3848,7 @@ IMAGES_OPENAI_API_VERSION = PersistentConfig(
 IMAGES_OPENAI_API_KEY = PersistentConfig(
     "IMAGES_OPENAI_API_KEY",
     "image_generation.openai.api_key",
-    os.getenv("IMAGES_OPENAI_API_KEY", OPENAI_API_KEY),
+    "",
 )
 
 images_openai_params = os.getenv("IMAGES_OPENAI_PARAMS", "")
@@ -3895,12 +3866,12 @@ IMAGES_OPENAI_API_PARAMS = PersistentConfig(
 IMAGES_GEMINI_API_BASE_URL = PersistentConfig(
     "IMAGES_GEMINI_API_BASE_URL",
     "image_generation.gemini.api_base_url",
-    os.getenv("IMAGES_GEMINI_API_BASE_URL", GEMINI_API_BASE_URL),
+    "",
 )
 IMAGES_GEMINI_API_KEY = PersistentConfig(
     "IMAGES_GEMINI_API_KEY",
     "image_generation.gemini.api_key",
-    os.getenv("IMAGES_GEMINI_API_KEY", GEMINI_API_KEY),
+    "",
 )
 
 IMAGES_GEMINI_ENDPOINT_METHOD = PersistentConfig(
@@ -3918,7 +3889,7 @@ ENABLE_IMAGE_EDIT = PersistentConfig(
 IMAGE_EDIT_ENGINE = PersistentConfig(
     "IMAGE_EDIT_ENGINE",
     "images.edit.engine",
-    os.getenv("IMAGE_EDIT_ENGINE", "openai"),
+    "" if os.getenv("IMAGE_EDIT_ENGINE", "") in ("openai", "gemini") else os.getenv("IMAGE_EDIT_ENGINE", ""),
 )
 
 IMAGE_EDIT_MODEL = PersistentConfig(
@@ -3934,7 +3905,7 @@ IMAGE_EDIT_SIZE = PersistentConfig(
 IMAGES_EDIT_OPENAI_API_BASE_URL = PersistentConfig(
     "IMAGES_EDIT_OPENAI_API_BASE_URL",
     "images.edit.openai.api_base_url",
-    os.getenv("IMAGES_EDIT_OPENAI_API_BASE_URL", OPENAI_API_BASE_URL),
+    "",
 )
 IMAGES_EDIT_OPENAI_API_VERSION = PersistentConfig(
     "IMAGES_EDIT_OPENAI_API_VERSION",
@@ -3945,18 +3916,18 @@ IMAGES_EDIT_OPENAI_API_VERSION = PersistentConfig(
 IMAGES_EDIT_OPENAI_API_KEY = PersistentConfig(
     "IMAGES_EDIT_OPENAI_API_KEY",
     "images.edit.openai.api_key",
-    os.getenv("IMAGES_EDIT_OPENAI_API_KEY", OPENAI_API_KEY),
+    "",
 )
 
 IMAGES_EDIT_GEMINI_API_BASE_URL = PersistentConfig(
     "IMAGES_EDIT_GEMINI_API_BASE_URL",
     "images.edit.gemini.api_base_url",
-    os.getenv("IMAGES_EDIT_GEMINI_API_BASE_URL", GEMINI_API_BASE_URL),
+    "",
 )
 IMAGES_EDIT_GEMINI_API_KEY = PersistentConfig(
     "IMAGES_EDIT_GEMINI_API_KEY",
     "images.edit.gemini.api_key",
-    os.getenv("IMAGES_EDIT_GEMINI_API_KEY", GEMINI_API_KEY),
+    "",
 )
 
 
@@ -4077,13 +4048,13 @@ ELEVENLABS_API_BASE_URL = os.getenv(
 AUDIO_STT_OPENAI_API_BASE_URL = PersistentConfig(
     "AUDIO_STT_OPENAI_API_BASE_URL",
     "audio.stt.openai.api_base_url",
-    os.getenv("AUDIO_STT_OPENAI_API_BASE_URL", OPENAI_API_BASE_URL),
+    "",
 )
 
 AUDIO_STT_OPENAI_API_KEY = PersistentConfig(
     "AUDIO_STT_OPENAI_API_KEY",
     "audio.stt.openai.api_key",
-    os.getenv("AUDIO_STT_OPENAI_API_KEY", OPENAI_API_KEY),
+    "",
 )
 
 AUDIO_STT_ENGINE = PersistentConfig(
@@ -4161,12 +4132,12 @@ AUDIO_STT_MISTRAL_USE_CHAT_COMPLETIONS = PersistentConfig(
 AUDIO_TTS_OPENAI_API_BASE_URL = PersistentConfig(
     "AUDIO_TTS_OPENAI_API_BASE_URL",
     "audio.tts.openai.api_base_url",
-    os.getenv("AUDIO_TTS_OPENAI_API_BASE_URL", OPENAI_API_BASE_URL),
+    "",
 )
 AUDIO_TTS_OPENAI_API_KEY = PersistentConfig(
     "AUDIO_TTS_OPENAI_API_KEY",
     "audio.tts.openai.api_key",
-    os.getenv("AUDIO_TTS_OPENAI_API_KEY", OPENAI_API_KEY),
+    "",
 )
 
 audio_tts_openai_params = os.getenv("AUDIO_TTS_OPENAI_PARAMS", "")

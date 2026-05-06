@@ -747,7 +747,7 @@
 					const [, sessionUser] = await Promise.all([
 						setupSocket($config.features?.enable_websocket ?? true),
 						getSessionUser(localStorage.token).catch((error) => {
-							toast.error(`${error}`);
+							console.warn('Sessão local inválida; redirecionando para autenticação.', error);
 							return null;
 						})
 					]);

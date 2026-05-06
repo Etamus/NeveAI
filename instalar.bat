@@ -63,6 +63,7 @@ echo [%date% %time%] PowerShell saiu com codigo %RC%; estado=%STATE%.>>"%LAUNCHL
 if not "%RC%"=="0" goto installer_failed
 if /i "%STATE%"=="done" exit /b 0
 if /i "%STATE%"=="idle" exit /b 0
+if /i "%STATE%"=="cancelled" exit /b 0
 if /i "%STATE%"=="failed" goto installer_failed
 goto installer_unexpected_close
 

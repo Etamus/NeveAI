@@ -8,7 +8,7 @@ from aiocache import cached
 from fastapi import Request
 
 from neveai.socket.utils import RedisDict
-from neveai.routers import openai, ollama, llamacpp
+from neveai.routers import ollama, llamacpp
 from neveai.functions import get_function_models
 
 
@@ -54,11 +54,6 @@ async def fetch_ollama_models(request: Request, user: UserModel = None):
     ]
 
 
-async def fetch_openai_models(request: Request, user: UserModel = None):
-    openai_response = await openai.get_all_models(request, user=user)
-    return openai_response["data"]
-
-
 async def fetch_llamacpp_models(request: Request = None, user: UserModel = None):
     """Fetch locally loaded GGUF models from llama-cpp-python."""
     try:
@@ -70,11 +65,6 @@ async def fetch_llamacpp_models(request: Request = None, user: UserModel = None)
 
 
 async def get_all_base_models(request: Request, user: UserModel = None):
-    openai_task = (
-        fetch_openai_models(request, user)
-        if request.app.state.config.ENABLE_OPENAI_API
-        else asyncio.sleep(0, result=[])
-    )
     ollama_task = (
         fetch_ollama_models(request, user)
         if request.app.state.config.ENABLE_OLLAMA_API
@@ -83,11 +73,11 @@ async def get_all_base_models(request: Request, user: UserModel = None):
     function_task = get_function_models(request)
     llamacpp_task = fetch_llamacpp_models(request, user)
 
-    openai_models, ollama_models, function_models, llamacpp_models = await asyncio.gather(
-        openai_task, ollama_task, function_task, llamacpp_task
+    ollama_models, function_models, llamacpp_models = await asyncio.gather(
+        ollama_task, function_task, llamacpp_task
     )
 
-    return function_models + openai_models + ollama_models + llamacpp_models
+    return function_models + ollama_models + llamacpp_models
 
 
 async def get_all_models(request, refresh: bool = False, user: UserModel = None):

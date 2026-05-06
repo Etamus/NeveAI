@@ -42,10 +42,6 @@ asgiref==3.11.1
 tiktoken
 mcp==1.26.0
 
-openai
-anthropic
-google-genai==1.66.0
-
 langchain==1.2.10
 langchain-community==0.4.1
 langchain-classic==1.0.1
@@ -98,7 +94,7 @@ youtube-transcript-api==1.2.4
 pytube==15.0.0
 
 pydub
-ddgs==9.11.2
+ddgs==9.14.2
 
 azure-ai-documentintelligence==1.0.2
 azure-identity==1.25.2

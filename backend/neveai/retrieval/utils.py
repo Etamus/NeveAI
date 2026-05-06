@@ -7,7 +7,6 @@ import aiohttp
 import asyncio
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
-import time
 import re
 
 from urllib.parse import quote
@@ -557,184 +556,6 @@ async def query_collection_with_hybrid_search(
     return merge_and_sort_query_results(results, k=k)
 
 
-def generate_openai_batch_embeddings(
-    model: str,
-    texts: list[str],
-    url: str = "https://api.openai.com/v1",
-    key: str = "",
-    prefix: str = None,
-    user: UserModel = None,
-) -> Optional[list[list[float]]]:
-    try:
-        log.debug(
-            f"generate_openai_batch_embeddings:model {model} batch size: {len(texts)}"
-        )
-        json_data = {"input": texts, "model": model}
-        if isinstance(RAG_EMBEDDING_PREFIX_FIELD_NAME, str) and isinstance(prefix, str):
-            json_data[RAG_EMBEDDING_PREFIX_FIELD_NAME] = prefix
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {key}",
-        }
-        if ENABLE_FORWARD_USER_INFO_HEADERS and user:
-            headers = include_user_info_headers(headers, user)
-
-        r = requests.post(
-            f"{url}/embeddings",
-            headers=headers,
-            json=json_data,
-        )
-        r.raise_for_status()
-        data = r.json()
-        if "data" in data:
-            return [elem["embedding"] for elem in data["data"]]
-        else:
-            raise ValueError(
-                "Unexpected OpenAI embeddings response: missing 'data' key"
-            )
-    except Exception as e:
-        log.exception(f"Error generating openai batch embeddings: {e}")
-        return None
-
-
-async def agenerate_openai_batch_embeddings(
-    model: str,
-    texts: list[str],
-    url: str = "https://api.openai.com/v1",
-    key: str = "",
-    prefix: str = None,
-    user: UserModel = None,
-) -> Optional[list[list[float]]]:
-    try:
-        log.debug(
-            f"agenerate_openai_batch_embeddings:model {model} batch size: {len(texts)}"
-        )
-        form_data = {"input": texts, "model": model}
-        if isinstance(RAG_EMBEDDING_PREFIX_FIELD_NAME, str) and isinstance(prefix, str):
-            form_data[RAG_EMBEDDING_PREFIX_FIELD_NAME] = prefix
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {key}",
-        }
-        if ENABLE_FORWARD_USER_INFO_HEADERS and user:
-            headers = include_user_info_headers(headers, user)
-
-        async with aiohttp.ClientSession(
-            trust_env=True, timeout=aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT)
-        ) as session:
-            async with session.post(
-                f"{url}/embeddings",
-                headers=headers,
-                json=form_data,
-                ssl=AIOHTTP_CLIENT_SESSION_SSL,
-            ) as r:
-                r.raise_for_status()
-                data = await r.json()
-                if "data" in data:
-                    return [item["embedding"] for item in data["data"]]
-                else:
-                    raise Exception("Something went wrong :/")
-    except Exception as e:
-        log.exception(f"Error generating openai batch embeddings: {e}")
-        return None
-
-
-def generate_azure_openai_batch_embeddings(
-    model: str,
-    texts: list[str],
-    url: str,
-    key: str = "",
-    version: str = "",
-    prefix: str = None,
-    user: UserModel = None,
-) -> Optional[list[list[float]]]:
-    try:
-        log.debug(
-            f"generate_azure_openai_batch_embeddings:deployment {model} batch size: {len(texts)}"
-        )
-        json_data = {"input": texts}
-        if isinstance(RAG_EMBEDDING_PREFIX_FIELD_NAME, str) and isinstance(prefix, str):
-            json_data[RAG_EMBEDDING_PREFIX_FIELD_NAME] = prefix
-
-        url = f"{url}/openai/deployments/{model}/embeddings?api-version={version}"
-
-        for _ in range(5):
-            headers = {
-                "Content-Type": "application/json",
-                "api-key": key,
-            }
-            if ENABLE_FORWARD_USER_INFO_HEADERS and user:
-                headers = include_user_info_headers(headers, user)
-
-            r = requests.post(
-                url,
-                headers=headers,
-                json=json_data,
-            )
-            if r.status_code == 429:
-                retry = float(r.headers.get("Retry-After", "1"))
-                time.sleep(retry)
-                continue
-            r.raise_for_status()
-            data = r.json()
-            if "data" in data:
-                return [elem["embedding"] for elem in data["data"]]
-            else:
-                raise Exception("Something went wrong :/")
-        return None
-    except Exception as e:
-        log.exception(f"Error generating azure openai batch embeddings: {e}")
-        return None
-
-
-async def agenerate_azure_openai_batch_embeddings(
-    model: str,
-    texts: list[str],
-    url: str,
-    key: str = "",
-    version: str = "",
-    prefix: str = None,
-    user: UserModel = None,
-) -> Optional[list[list[float]]]:
-    try:
-        log.debug(
-            f"agenerate_azure_openai_batch_embeddings:deployment {model} batch size: {len(texts)}"
-        )
-        form_data = {"input": texts}
-        if isinstance(RAG_EMBEDDING_PREFIX_FIELD_NAME, str) and isinstance(prefix, str):
-            form_data[RAG_EMBEDDING_PREFIX_FIELD_NAME] = prefix
-
-        full_url = f"{url}/openai/deployments/{model}/embeddings?api-version={version}"
-
-        headers = {
-            "Content-Type": "application/json",
-            "api-key": key,
-        }
-        if ENABLE_FORWARD_USER_INFO_HEADERS and user:
-            headers = include_user_info_headers(headers, user)
-
-        async with aiohttp.ClientSession(
-            trust_env=True, timeout=aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT)
-        ) as session:
-            async with session.post(
-                full_url,
-                headers=headers,
-                json=form_data,
-                ssl=AIOHTTP_CLIENT_SESSION_SSL,
-            ) as r:
-                r.raise_for_status()
-                data = await r.json()
-                if "data" in data:
-                    return [item["embedding"] for item in data["data"]]
-                else:
-                    raise Exception("Something went wrong :/")
-    except Exception as e:
-        log.exception(f"Error generating azure openai batch embeddings: {e}")
-        return None
-
-
 def generate_ollama_batch_embeddings(
     model: str,
     texts: list[str],
@@ -834,7 +655,7 @@ def get_embedding_function(
     if embedding_engine == "":
         # Sentence transformers: CPU-bound sync operation.
         # Enforce a minimum batch_size of 32 regardless of the stored config
-        # (which defaults to 1, intended for OpenAI API rate limits).
+        # (which defaults to 1 for external API-style embeddings).
         # batch_size=1 on a local model serialises every encode call and turns
         # a 5-second job into a 10-minute one for large documents.
         _local_batch_size = max(int(embedding_batch_size), 32)
@@ -853,7 +674,7 @@ def get_embedding_function(
             )
 
         return async_embedding_function
-    elif embedding_engine in ["ollama", "openai", "azure_openai"]:
+    elif embedding_engine == "ollama":
         embedding_function = lambda query, prefix=None, user=None: generate_embeddings(
             engine=embedding_engine,
             model=embedding_model,
@@ -954,23 +775,7 @@ async def generate_embeddings(
             }
         )
         return embeddings[0] if isinstance(text, str) else embeddings
-    elif engine == "openai":
-        embeddings = await agenerate_openai_batch_embeddings(
-            model, text if isinstance(text, list) else [text], url, key, prefix, user
-        )
-        return embeddings[0] if isinstance(text, str) else embeddings
-    elif engine == "azure_openai":
-        azure_api_version = kwargs.get("azure_api_version", "")
-        embeddings = await agenerate_azure_openai_batch_embeddings(
-            model,
-            text if isinstance(text, list) else [text],
-            url,
-            key,
-            azure_api_version,
-            prefix,
-            user,
-        )
-        return embeddings[0] if isinstance(text, str) else embeddings
+    raise ValueError(f"Unknown embedding engine: {engine}")
 
 
 def get_reranking_function(reranking_engine, reranking_model, reranking_function):

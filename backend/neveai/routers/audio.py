@@ -235,11 +235,11 @@ async def get_audio_config(request: Request, user=Depends(get_admin_user)):
 async def update_audio_config(
     request: Request, form_data: AudioConfigUpdateForm, user=Depends(get_admin_user)
 ):
-    request.app.state.config.TTS_OPENAI_API_BASE_URL = form_data.tts.OPENAI_API_BASE_URL
-    request.app.state.config.TTS_OPENAI_API_KEY = form_data.tts.OPENAI_API_KEY
-    request.app.state.config.TTS_OPENAI_PARAMS = form_data.tts.OPENAI_PARAMS
+    request.app.state.config.TTS_OPENAI_API_BASE_URL = ""
+    request.app.state.config.TTS_OPENAI_API_KEY = ""
+    request.app.state.config.TTS_OPENAI_PARAMS = {}
     request.app.state.config.TTS_API_KEY = form_data.tts.API_KEY
-    request.app.state.config.TTS_ENGINE = form_data.tts.ENGINE
+    request.app.state.config.TTS_ENGINE = "" if form_data.tts.ENGINE == "openai" else form_data.tts.ENGINE
     request.app.state.config.TTS_MODEL = form_data.tts.MODEL
     request.app.state.config.TTS_VOICE = form_data.tts.VOICE
     request.app.state.config.TTS_SPLIT_ON = form_data.tts.SPLIT_ON
@@ -251,9 +251,9 @@ async def update_audio_config(
         form_data.tts.AZURE_SPEECH_OUTPUT_FORMAT
     )
 
-    request.app.state.config.STT_OPENAI_API_BASE_URL = form_data.stt.OPENAI_API_BASE_URL
-    request.app.state.config.STT_OPENAI_API_KEY = form_data.stt.OPENAI_API_KEY
-    request.app.state.config.STT_ENGINE = form_data.stt.ENGINE
+    request.app.state.config.STT_OPENAI_API_BASE_URL = ""
+    request.app.state.config.STT_OPENAI_API_KEY = ""
+    request.app.state.config.STT_ENGINE = "" if form_data.stt.ENGINE == "openai" else form_data.stt.ENGINE
     request.app.state.config.STT_MODEL = form_data.stt.MODEL
     request.app.state.config.STT_SUPPORTED_CONTENT_TYPES = (
         form_data.stt.SUPPORTED_CONTENT_TYPES
@@ -373,67 +373,7 @@ async def speech(request: Request, user=Depends(get_verified_user)):
         log.exception(e)
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    r = None
-    if request.app.state.config.TTS_ENGINE == "openai":
-        payload["model"] = request.app.state.config.TTS_MODEL
-
-        try:
-            timeout = aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT)
-            async with aiohttp.ClientSession(
-                timeout=timeout, trust_env=True
-            ) as session:
-                payload = {
-                    **payload,
-                    **(request.app.state.config.TTS_OPENAI_PARAMS or {}),
-                }
-
-                headers = {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {request.app.state.config.TTS_OPENAI_API_KEY}",
-                }
-                if ENABLE_FORWARD_USER_INFO_HEADERS:
-                    headers = include_user_info_headers(headers, user)
-
-                r = await session.post(
-                    url=f"{request.app.state.config.TTS_OPENAI_API_BASE_URL}/audio/speech",
-                    json=payload,
-                    headers=headers,
-                    ssl=AIOHTTP_CLIENT_SESSION_SSL,
-                )
-
-                r.raise_for_status()
-
-                async with aiofiles.open(file_path, "wb") as f:
-                    await f.write(await r.read())
-
-                async with aiofiles.open(file_body_path, "w") as f:
-                    await f.write(json.dumps(payload))
-
-            return FileResponse(file_path)
-
-        except Exception as e:
-            log.exception(e)
-            detail = None
-
-            status_code = 500
-            detail = f"Neve: Server Connection Error"
-
-            if r is not None:
-                status_code = r.status
-
-                try:
-                    res = await r.json()
-                    if "error" in res:
-                        detail = f"External: {res['error']}"
-                except Exception:
-                    detail = f"External: {e}"
-
-            raise HTTPException(
-                status_code=status_code,
-                detail=detail,
-            )
-
-    elif request.app.state.config.TTS_ENGINE == "elevenlabs":
+    if request.app.state.config.TTS_ENGINE == "elevenlabs":
         voice_id = payload.get("voice", "")
 
         if voice_id not in get_available_voices(request):
@@ -628,59 +568,6 @@ def transcription_handler(request, file_path, metadata, user=None):
 
         log.debug(data)
         return data
-    elif request.app.state.config.STT_ENGINE == "openai":
-        r = None
-        try:
-            for language in languages:
-                payload = {
-                    "model": request.app.state.config.STT_MODEL,
-                }
-
-                if language:
-                    payload["language"] = language
-
-                headers = {
-                    "Authorization": f"Bearer {request.app.state.config.STT_OPENAI_API_KEY}"
-                }
-                if user and ENABLE_FORWARD_USER_INFO_HEADERS:
-                    headers = include_user_info_headers(headers, user)
-
-                with open(file_path, "rb") as audio_file:
-                    r = requests.post(
-                        url=f"{request.app.state.config.STT_OPENAI_API_BASE_URL}/audio/transcriptions",
-                        headers=headers,
-                        files={"file": (filename, audio_file)},
-                        data=payload,
-                        timeout=AIOHTTP_CLIENT_TIMEOUT,
-                    )
-
-                if r.status_code == 200:
-                    # Successful transcription
-                    break
-
-            r.raise_for_status()
-            data = r.json()
-
-            # save the transcript to a json file
-            transcript_file = f"{file_dir}/{id}.json"
-            with open(transcript_file, "w") as f:
-                json.dump(data, f)
-
-            return data
-        except Exception as e:
-            log.exception(e)
-
-            detail = None
-            if r is not None:
-                try:
-                    res = r.json()
-                    if "error" in res:
-                        detail = f"External: {res['error'].get('message', '')}"
-                except Exception:
-                    detail = f"External: {e}"
-
-            raise Exception(detail if detail else "Neve: Server Connection Error")
-
     elif request.app.state.config.STT_ENGINE == "deepgram":
         try:
             # Determine the MIME type of the file
@@ -1274,25 +1161,7 @@ def transcription(
 
 def get_available_models(request: Request) -> list[dict]:
     available_models = []
-    if request.app.state.config.TTS_ENGINE == "openai":
-        # Use custom endpoint if not using the official OpenAI API URL
-        if not request.app.state.config.TTS_OPENAI_API_BASE_URL.startswith(
-            "https://api.openai.com"
-        ):
-            try:
-                response = requests.get(
-                    f"{request.app.state.config.TTS_OPENAI_API_BASE_URL}/audio/models",
-                    timeout=AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST,
-                )
-                response.raise_for_status()
-                data = response.json()
-                available_models = data.get("models", [])
-            except Exception as e:
-                log.error(f"Error fetching models from custom endpoint: {str(e)}")
-                available_models = [{"id": "tts-1"}, {"id": "tts-1-hd"}]
-        else:
-            available_models = [{"id": "tts-1"}, {"id": "tts-1-hd"}]
-    elif request.app.state.config.TTS_ENGINE == "elevenlabs":
+    if request.app.state.config.TTS_ENGINE == "elevenlabs":
         try:
             response = requests.get(
                 f"{ELEVENLABS_API_BASE_URL}/v1/models",
@@ -1321,40 +1190,7 @@ async def get_models(request: Request, user=Depends(get_verified_user)):
 def get_available_voices(request) -> dict:
     """Returns {voice_id: voice_name} dict"""
     available_voices = {}
-    if request.app.state.config.TTS_ENGINE == "openai":
-        # Use custom endpoint if not using the official OpenAI API URL
-        if not request.app.state.config.TTS_OPENAI_API_BASE_URL.startswith(
-            "https://api.openai.com"
-        ):
-            try:
-                response = requests.get(
-                    f"{request.app.state.config.TTS_OPENAI_API_BASE_URL}/audio/voices",
-                    timeout=AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST,
-                )
-                response.raise_for_status()
-                data = response.json()
-                voices_list = data.get("voices", [])
-                available_voices = {voice["id"]: voice["name"] for voice in voices_list}
-            except Exception as e:
-                log.error(f"Error fetching voices from custom endpoint: {str(e)}")
-                available_voices = {
-                    "alloy": "alloy",
-                    "echo": "echo",
-                    "fable": "fable",
-                    "onyx": "onyx",
-                    "nova": "nova",
-                    "shimmer": "shimmer",
-                }
-        else:
-            available_voices = {
-                "alloy": "alloy",
-                "echo": "echo",
-                "fable": "fable",
-                "onyx": "onyx",
-                "nova": "nova",
-                "shimmer": "shimmer",
-            }
-    elif request.app.state.config.TTS_ENGINE == "elevenlabs":
+    if request.app.state.config.TTS_ENGINE == "elevenlabs":
         try:
             available_voices = get_elevenlabs_voices(
                 api_key=request.app.state.config.TTS_API_KEY
