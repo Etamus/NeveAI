@@ -1,5 +1,5 @@
 <script>
-	// socket.io-client (~75KB) is loaded lazily inside setupSocket() to avoid blocking the auth screen
+	// socket.io-client (~75KB) is loaded lazily inside setupSocket() to keep startup light.
 	import PyodideWorker from '$lib/workers/pyodide.worker?worker';
 	import { Toaster, toast } from 'svelte-sonner';
 
@@ -52,7 +52,7 @@
 	import 'tippy.js/dist/tippy.css';
 
 	import { executeToolServer, getBackendConfig, getVersion } from '$lib/apis';
-	import { getSessionUser, userSignOut } from '$lib/apis/auths';
+	import { getSessionUser, userSignIn, userSignOut } from '$lib/apis/auths';
 	import { getAllTags, getChatList } from '$lib/apis/chats';
 
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL, WEBUI_HOSTNAME } from '$lib/constants';
@@ -577,8 +577,37 @@
 			user.set(null);
 			localStorage.removeItem('token');
 
-			location.href = res?.redirect_url ?? '/auth';
+			location.href = res?.redirect_url ?? '/';
 		}
+	};
+
+	const ensureLocalSession = async () => {
+		let sessionUser = null;
+
+		if (localStorage.token) {
+			sessionUser = await getSessionUser(localStorage.token).catch((error) => {
+				console.warn('Sessao local invalida; criando uma nova sessao local.', error);
+				return null;
+			});
+		}
+
+		if (!sessionUser) {
+			localStorage.removeItem('token');
+			sessionUser = await userSignIn('', '').catch((error) => {
+				console.error('Erro criando sessao local:', error);
+				return null;
+			});
+		}
+
+		if (sessionUser?.token) {
+			localStorage.token = sessionUser.token;
+		}
+
+		if (sessionUser) {
+			await user.set(sessionUser);
+		}
+
+		return sessionUser;
 	};
 
 	const windowMessageEventHandler = async (event) => {
@@ -739,33 +768,14 @@
 			await WEBUI_NAME.set(backendConfig.name);
 
 			if ($config) {
-				const currentUrl = `${window.location.pathname}${window.location.search}`;
-				const encodedUrl = encodeURIComponent(currentUrl);
+				const sessionUser = await ensureLocalSession();
 
-				if (localStorage.token) {
-					// Run socket setup and session user fetch in parallel
-					const [, sessionUser] = await Promise.all([
-						setupSocket($config.features?.enable_websocket ?? true),
-						getSessionUser(localStorage.token).catch((error) => {
-							console.warn('Sessão local inválida; redirecionando para autenticação.', error);
-							return null;
-						})
-					]);
-
-					if (sessionUser) {
-						await user.set(sessionUser);
-					} else {
-						// Redirect Invalid Session User to /auth Page
-						localStorage.removeItem('token');
-						await goto(`/auth?redirect=${encodedUrl}`);
-					}
+				if (sessionUser) {
+					void setupSocket($config.features?.enable_websocket ?? true).catch((error) => {
+						console.error('Failed to setup socket:', error);
+					});
 				} else {
-					await setupSocket($config.features?.enable_websocket ?? true);
-					// Don't redirect if we're already on the auth page
-					// Needed because we pass in tokens from OAuth logins via URL fragments
-					if ($page.url.pathname !== '/auth') {
-						await goto(`/auth?redirect=${encodedUrl}`);
-					}
+					await goto('/error');
 				}
 			}
 		} else {

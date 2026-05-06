@@ -73,7 +73,7 @@
 						class="text-xs text-center w-full mt-2 text-gray-400 underline"
 						on:click={async () => {
 							localStorage.removeItem('token');
-							location.href = '/auth';
+							location.href = '/';
 						}}>{$i18n.t('Sign Out')}</button
 					>
 				</div>

@@ -36,6 +36,7 @@ from neveai.env import (
     PASSWORD_VALIDATION_HINT,
     PASSWORD_VALIDATION_REGEX_PATTERN,
     REDIS_KEY_PREFIX,
+    WEBUI_AUTH,
     pk,
     WEBUI_SECRET_KEY,
     TRUSTED_SIGNATURE_KEY,
@@ -155,6 +156,30 @@ def get_license_data(app, key):
 
 
 bearer_security = HTTPBearer(auto_error=False)
+
+LOCAL_NO_AUTH_EMAIL = "admin@localhost"
+
+
+def get_local_user_for_no_auth(db=None):
+    user = Users.get_user_by_email(LOCAL_NO_AUTH_EMAIL, db=db)
+    if user:
+        return user
+
+    users = Users.get_users(filter={"roles": ["admin"]}, limit=1, db=db).get("users", [])
+    if users:
+        return users[0]
+
+    user = Users.get_first_user(db=db)
+    if user:
+        return user
+
+    return Auths.insert_new_auth(
+        email=LOCAL_NO_AUTH_EMAIL,
+        password=get_password_hash(str(uuid.uuid4())),
+        name="Usuario",
+        role="admin",
+        db=db,
+    )
 
 
 def get_password_hash(password: str) -> str:
@@ -292,6 +317,20 @@ async def get_current_user(
     if token is None and hasattr(request.state, "token") and request.state.token:
         token = request.state.token.credentials
 
+    if token is None and not WEBUI_AUTH:
+        user = get_local_user_for_no_auth()
+        if user:
+            current_span = trace.get_current_span()
+            if current_span:
+                current_span.set_attribute("client.user.id", user.id)
+                current_span.set_attribute("client.user.email", user.email)
+                current_span.set_attribute("client.user.role", user.role)
+                current_span.set_attribute("client.auth.type", "local")
+
+            if background_tasks:
+                background_tasks.add_task(Users.update_last_active_by_id, user.id)
+            return user
+
     if token is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -372,6 +411,11 @@ async def get_current_user(
         # Delete OAuth session if present
         if request.cookies.get("oauth_session_id"):
             response.delete_cookie("oauth_session_id")
+
+        if not WEBUI_AUTH:
+            user = get_local_user_for_no_auth()
+            if user:
+                return user
 
         raise e
 

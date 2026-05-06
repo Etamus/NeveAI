@@ -63,6 +63,7 @@ from neveai.utils.auth import (
     invalidate_token,
     create_api_key,
     create_token,
+    get_local_user_for_no_auth,
     get_admin_user,
     get_verified_user,
     get_current_user,
@@ -174,6 +175,20 @@ async def get_session_user(
 
     auth_header = request.headers.get("Authorization")
     auth_token = get_http_authorization_cred(auth_header)
+
+    if auth_token is None and not WEBUI_AUTH:
+        session = create_session_response(request, user, db, response, set_cookie=True)
+        return {
+            **session,
+            "profile_image_url": user.profile_image_url,
+            "bio": user.bio,
+            "gender": user.gender,
+            "date_of_birth": user.date_of_birth,
+            "status_emoji": user.status_emoji,
+            "status_message": user.status_message,
+            "status_expires_at": user.status_expires_at,
+        }
+
     token = auth_token.credentials
     data = decode_token(token)
 
@@ -592,13 +607,19 @@ async def signin(
     form_data: SigninForm,
     db: Session = Depends(get_session),
 ):
-    if not ENABLE_PASSWORD_AUTH:
+    if WEBUI_AUTH == False:
+        user = get_local_user_for_no_auth(db=db)
+        if not user:
+            raise HTTPException(400, detail=ERROR_MESSAGES.DEFAULT())
+    elif not ENABLE_PASSWORD_AUTH:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ERROR_MESSAGES.ACTION_PROHIBITED,
         )
 
-    if WEBUI_AUTH_TRUSTED_EMAIL_HEADER:
+    if WEBUI_AUTH == False:
+        pass
+    elif WEBUI_AUTH_TRUSTED_EMAIL_HEADER:
         if WEBUI_AUTH_TRUSTED_EMAIL_HEADER not in request.headers:
             raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_TRUSTED_HEADER)
 
@@ -631,33 +652,6 @@ async def signin(
             if group_names:
                 Groups.sync_groups_by_group_names(user.id, group_names, db=db)
 
-    elif WEBUI_AUTH == False:
-        admin_email = "admin@localhost"
-        admin_password = "admin"
-
-        if Users.get_user_by_email(admin_email.lower(), db=db):
-            user = Auths.authenticate_user(
-                admin_email.lower(),
-                lambda pw: verify_password(admin_password, pw),
-                db=db,
-            )
-        else:
-            if Users.has_users(db=db):
-                raise HTTPException(400, detail=ERROR_MESSAGES.EXISTING_USERS)
-
-            await signup_handler(
-                request,
-                admin_email,
-                admin_password,
-                "Usuário",
-                db=db,
-            )
-
-            user = Auths.authenticate_user(
-                admin_email.lower(),
-                lambda pw: verify_password(admin_password, pw),
-                db=db,
-            )
     else:
         if signin_rate_limiter.is_limited(form_data.email.lower()):
             raise HTTPException(

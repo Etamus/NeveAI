@@ -711,9 +711,7 @@
 													<span class="line-clamp-1">
 														{!!am?.meta?.description
 															? am?.meta?.description
-															: am?.ollama?.digest
-																? `${am.id} (${am?.ollama?.digest})`
-																: am.id}
+															: am.id}
 													</span>
 												{/if}
 											</div>

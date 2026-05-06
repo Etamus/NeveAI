@@ -189,9 +189,27 @@
 		tools.set(toolsData);
 	};
 
+	const loadAppData = async () => {
+		try {
+			await Promise.all([
+				checkLocalDBChats().catch((e) => console.error('Failed to check local chats:', e)),
+				setBanners().catch((e) => console.error('Failed to load banners:', e)),
+				setTools().catch((e) => console.error('Failed to load tools:', e)),
+				setUserSettings(async () => {
+					await Promise.all([
+						setModels().catch((e) => console.error('Failed to load models:', e)),
+						setToolServers().catch((e) => console.error('Failed to load tool servers:', e))
+					]);
+				}).catch((e) => console.error('Failed to load user settings:', e))
+			]);
+		} catch (e) {
+			console.error('App data hydration failed:', e);
+		}
+	};
+
 	onMount(async () => {
 		if ($user === undefined || $user === null) {
-			await goto('/auth');
+			await goto('/error');
 			return;
 		}
 		if (!['user', 'admin'].includes($user?.role)) {
@@ -199,21 +217,16 @@
 		}
 
 		clearChatInputStorage();
-		try {
-		await Promise.all([
-			checkLocalDBChats(),
-			setBanners().catch((e) => console.error('Failed to load banners:', e)),
-			setTools().catch((e) => console.error('Failed to load tools:', e)),
-			setUserSettings(async () => {
-				await Promise.all([
-					setModels().catch((e) => console.error('Failed to load models:', e)),
-					setToolServers().catch((e) => console.error('Failed to load tool servers:', e))
-				]);
-			}).catch((e) => console.error('Failed to load user settings:', e))
-		]);
-		} catch(e) {
-			console.error('Promise.all failed:', e);
-		}
+
+		showControls.set(!$mobile ? localStorage.showControls === 'true' : false);
+		showControls.subscribe((value) => {
+			localStorage.showControls = value ? 'true' : 'false';
+		});
+
+		loaded = true;
+		await tick();
+
+		void loadAppData();
 
 		// Load emoji shortcodes in background (not blocking)
 		loadShortCodesToEmojis();
@@ -339,16 +352,6 @@
 				checkForVersionUpdates();
 			}
 		}
-		// Persist showControls: track open/close state separately from saved size
-		// chatControlsSize always retains the last width for openPane()
-		await showControls.set(!$mobile ? localStorage.showControls === 'true' : false);
-		showControls.subscribe((value) => {
-			localStorage.showControls = value ? 'true' : 'false';
-		});
-
-		await tick();
-
-		loaded = true;
 	});
 
 	const checkForVersionUpdates = async () => {

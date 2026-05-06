@@ -5,48 +5,18 @@
 	const dispatch = createEventDispatcher();
 	const i18n = getContext('i18n');
 
-	import { getOllamaConfig, updateOllamaConfig } from '$lib/apis/ollama';
 	import { getModels as _getModels, getBackendConfig } from '$lib/apis';
 	import { getConnectionsConfig, setConnectionsConfig } from '$lib/apis/configs';
-
 	import { config, models, user } from '$lib/stores';
 
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import Plus from '$lib/components/icons/Plus.svelte';
-
-	import AddConnectionModal from '$lib/components/AddConnectionModal.svelte';
-	import OllamaConnection from './Connections/OllamaConnection.svelte';
 
 	const getModels = async () => {
 		return await _getModels(localStorage.token, null, false, true);
 	};
 
-	let OLLAMA_BASE_URLS = [''];
-	let OLLAMA_API_CONFIGS = {};
-	let ENABLE_OLLAMA_API: null | boolean = null;
 	let connectionsConfig: any = null;
-	let showAddOllamaConnectionModal = false;
-
-	const updateOllamaHandler = async () => {
-		if (ENABLE_OLLAMA_API !== null) {
-			OLLAMA_BASE_URLS = OLLAMA_BASE_URLS.map((url) => url.replace(/\/$/, ''));
-
-			const res = await updateOllamaConfig(localStorage.token, {
-				ENABLE_OLLAMA_API,
-				OLLAMA_BASE_URLS,
-				OLLAMA_API_CONFIGS
-			}).catch((error) => {
-				toast.error(`${error}`);
-			});
-
-			if (res) {
-				toast.success($i18n.t('Ollama API settings updated'));
-				await models.set(await getModels());
-			}
-		}
-	};
 
 	const updateConnectionsHandler = async () => {
 		const res = await setConnectionsConfig(localStorage.token, {
@@ -58,148 +28,45 @@
 
 		if (res) {
 			connectionsConfig = res;
+			connectionsConfig.ENABLE_DIRECT_CONNECTIONS = false;
 			await models.set(await getModels());
 			await config.set(await getBackendConfig());
 		}
 	};
 
-	const addOllamaConnectionHandler = async (connection) => {
-		OLLAMA_BASE_URLS = [...OLLAMA_BASE_URLS, connection.url];
-		OLLAMA_API_CONFIGS[OLLAMA_BASE_URLS.length - 1] = {
-			...connection.config,
-			key: connection.key
-		};
-
-		await updateOllamaHandler();
-	};
-
 	onMount(async () => {
 		if ($user?.role === 'admin') {
-			let ollamaConfig: any = {};
-
-			await Promise.all([
-				(async () => {
-					ollamaConfig = await getOllamaConfig(localStorage.token);
-				})(),
-				(async () => {
-					connectionsConfig = await getConnectionsConfig(localStorage.token);
-				})()
-			]);
-
-			ENABLE_OLLAMA_API = ollamaConfig.ENABLE_OLLAMA_API;
-			OLLAMA_BASE_URLS = ollamaConfig.OLLAMA_BASE_URLS;
-			OLLAMA_API_CONFIGS = ollamaConfig.OLLAMA_API_CONFIGS;
+			connectionsConfig = await getConnectionsConfig(localStorage.token);
 			connectionsConfig.ENABLE_DIRECT_CONNECTIONS = false;
-
-			if (ENABLE_OLLAMA_API) {
-				for (const [idx, url] of OLLAMA_BASE_URLS.entries()) {
-					if (!OLLAMA_API_CONFIGS[idx]) {
-						OLLAMA_API_CONFIGS[idx] = OLLAMA_API_CONFIGS[url] || {};
-					}
-				}
-			}
 		}
 	});
 
 	const submitHandler = async () => {
-		await updateOllamaHandler();
 		await updateConnectionsHandler();
-
 		dispatch('save');
-
 		await config.set(await getBackendConfig());
 	};
 </script>
 
-<AddConnectionModal
-	ollama
-	bind:show={showAddOllamaConnectionModal}
-	onSubmit={addOllamaConnectionHandler}
-/>
-
 <form class="flex flex-col h-full justify-between text-sm" on:submit|preventDefault={submitHandler}>
-	<div class=" overflow-y-scroll scrollbar-hidden h-full">
-		{#if ENABLE_OLLAMA_API !== null && connectionsConfig !== null}
+	<div class="overflow-y-scroll scrollbar-hidden h-full">
+		{#if connectionsConfig !== null}
 			<div class="mb-3.5">
-				<div class=" mt-0.5 mb-2.5 text-base font-medium">{$i18n.t('General')}</div>
+				<div class="mt-0.5 mb-2.5 text-base font-medium">{$i18n.t('General')}</div>
 
-				<hr class=" border-gray-100/30 dark:border-gray-850/30 my-2" />
-
-				<div class=" my-2">
-					<div class="flex justify-between items-center text-sm mb-2">
-						<div class="  font-medium">{$i18n.t('Ollama API')}</div>
-
-						<div class="mt-1">
-							<Switch
-								bind:state={ENABLE_OLLAMA_API}
-								on:change={async () => {
-									updateOllamaHandler();
-								}}
-							/>
-						</div>
-					</div>
-
-					{#if ENABLE_OLLAMA_API}
-						<div class="">
-							<div class="flex justify-between items-center">
-								<div class="font-medium text-xs">{$i18n.t('Manage Ollama API Connections')}</div>
-
-								<Tooltip content={$i18n.t(`Add Connection`)}>
-									<button
-										class="px-1"
-										on:click={() => {
-											showAddOllamaConnectionModal = true;
-										}}
-										type="button"
-									>
-										<Plus />
-									</button>
-								</Tooltip>
-							</div>
-
-							<div class="flex w-full gap-1.5">
-								<div class="flex-1 flex flex-col gap-1.5 mt-1.5">
-									{#each OLLAMA_BASE_URLS as url, idx}
-										<OllamaConnection
-											bind:url={OLLAMA_BASE_URLS[idx]}
-											bind:config={OLLAMA_API_CONFIGS[idx]}
-											{idx}
-											onSubmit={() => {
-												updateOllamaHandler();
-											}}
-											onDelete={() => {
-												OLLAMA_BASE_URLS = OLLAMA_BASE_URLS.filter((url, urlIdx) => idx !== urlIdx);
-
-												let newConfig = {};
-												OLLAMA_BASE_URLS.forEach((url, newIdx) => {
-													newConfig[newIdx] =
-														OLLAMA_API_CONFIGS[newIdx < idx ? newIdx : newIdx + 1];
-												});
-												OLLAMA_API_CONFIGS = newConfig;
-											}}
-										/>
-									{/each}
-								</div>
-							</div>
-						</div>
-					{/if}
-				</div>
-
-				<hr class=" border-gray-100/30 dark:border-gray-850/30 my-2" />
+				<hr class="border-gray-100/30 dark:border-gray-850/30 my-2" />
 
 				<div class="my-2">
 					<div class="flex justify-between items-center text-sm">
-						<div class=" text-xs font-medium">{$i18n.t('Cache Base Model List')}</div>
+						<div class="text-xs font-medium">{$i18n.t('Cache Base Model List')}</div>
 
 						<div class="flex items-center">
-							<div class="">
-								<Switch
-									bind:state={connectionsConfig.ENABLE_BASE_MODELS_CACHE}
-									on:change={async () => {
-										updateConnectionsHandler();
-									}}
-								/>
-							</div>
+							<Switch
+								bind:state={connectionsConfig.ENABLE_BASE_MODELS_CACHE}
+								on:change={async () => {
+									updateConnectionsHandler();
+								}}
+							/>
 						</div>
 					</div>
 

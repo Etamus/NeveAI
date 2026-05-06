@@ -8,7 +8,7 @@ from aiocache import cached
 from fastapi import Request
 
 from neveai.socket.utils import RedisDict
-from neveai.routers import ollama, llamacpp
+from neveai.routers import llamacpp
 from neveai.functions import get_function_models
 
 
@@ -37,23 +37,6 @@ logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
 
 
-async def fetch_ollama_models(request: Request, user: UserModel = None):
-    raw_ollama_models = await ollama.get_all_models(request, user=user)
-    return [
-        {
-            "id": model["model"],
-            "name": model["name"],
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": "ollama",
-            "ollama": model,
-            "connection_type": model.get("connection_type", "local"),
-            "tags": model.get("tags", []),
-        }
-        for model in raw_ollama_models["models"]
-    ]
-
-
 async def fetch_llamacpp_models(request: Request = None, user: UserModel = None):
     """Fetch locally loaded GGUF models from llama-cpp-python."""
     try:
@@ -65,19 +48,14 @@ async def fetch_llamacpp_models(request: Request = None, user: UserModel = None)
 
 
 async def get_all_base_models(request: Request, user: UserModel = None):
-    ollama_task = (
-        fetch_ollama_models(request, user)
-        if request.app.state.config.ENABLE_OLLAMA_API
-        else asyncio.sleep(0, result=[])
-    )
     function_task = get_function_models(request)
     llamacpp_task = fetch_llamacpp_models(request, user)
 
-    ollama_models, function_models, llamacpp_models = await asyncio.gather(
-        ollama_task, function_task, llamacpp_task
+    function_models, llamacpp_models = await asyncio.gather(
+        function_task, llamacpp_task
     )
 
-    return function_models + ollama_models + llamacpp_models
+    return function_models + llamacpp_models
 
 
 async def get_all_models(request, refresh: bool = False, user: UserModel = None):
@@ -151,12 +129,7 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
 
     custom_models = Models.get_all_models()
 
-    # Single O(1) lookup: Ollama base names first, then exact IDs (exact wins).
-    base_model_lookup = {}
-    for model in models:
-        if model.get("owned_by") == "ollama":
-            base_model_lookup.setdefault(model["id"].split(":")[0], model)
-        base_model_lookup[model["id"]] = model
+    base_model_lookup = {model["id"]: model for model in models}
 
     existing_ids = {m["id"] for m in models}
 

@@ -1167,7 +1167,7 @@ async def generate_chat_completion(
     messages = form_data.get("messages", [])
     log.info(f"generate_chat_completion: requested model_id='{model_id}'")
 
-    # Apply model system prompt and params from Model Editor (same as ollama/openai routers)
+    # Apply model system prompt and params from Model Editor
     metadata = form_data.pop("metadata", {})
     model_info = Models.get_model_by_id(model_id)
 
