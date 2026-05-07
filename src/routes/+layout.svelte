@@ -1,5 +1,5 @@
 <script>
-	// socket.io-client (~75KB) is loaded lazily inside setupSocket() to keep startup light.
+	// socket.io-client (~75KB) is loaded lazily inside setupSocket() to avoid blocking the auth screen
 	import PyodideWorker from '$lib/workers/pyodide.worker?worker';
 	import { Toaster, toast } from 'svelte-sonner';
 
@@ -52,7 +52,7 @@
 	import 'tippy.js/dist/tippy.css';
 
 	import { executeToolServer, getBackendConfig, getVersion } from '$lib/apis';
-	import { getSessionUser, userSignIn, userSignOut } from '$lib/apis/auths';
+	import { getNoAuthSession, getSessionUser, userSignOut } from '$lib/apis/auths';
 	import { getAllTags, getChatList } from '$lib/apis/chats';
 
 	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL, WEBUI_HOSTNAME } from '$lib/constants';
@@ -564,6 +564,10 @@
 
 	const TOKEN_EXPIRY_BUFFER = 60; // seconds
 	const checkTokenExpiry = async () => {
+		if ($config?.features?.auth === false) {
+			return;
+		}
+
 		const exp = $user?.expires_at; // token expiry time in unix timestamp
 		const now = Math.floor(Date.now() / 1000); // current time in unix timestamp
 
@@ -579,35 +583,6 @@
 
 			location.href = res?.redirect_url ?? '/';
 		}
-	};
-
-	const ensureLocalSession = async () => {
-		let sessionUser = null;
-
-		if (localStorage.token) {
-			sessionUser = await getSessionUser(localStorage.token).catch((error) => {
-				console.warn('Sessao local invalida; criando uma nova sessao local.', error);
-				return null;
-			});
-		}
-
-		if (!sessionUser) {
-			localStorage.removeItem('token');
-			sessionUser = await userSignIn('', '').catch((error) => {
-				console.error('Erro criando sessao local:', error);
-				return null;
-			});
-		}
-
-		if (sessionUser?.token) {
-			localStorage.token = sessionUser.token;
-		}
-
-		if (sessionUser) {
-			await user.set(sessionUser);
-		}
-
-		return sessionUser;
 	};
 
 	const windowMessageEventHandler = async (event) => {
@@ -740,12 +715,13 @@
 				}
 				setTextScale($settings?.textScale ?? 1.15);
 
-				// Set up the token expiry check
-				if (tokenTimer) {
-					clearInterval(tokenTimer);
+				if ($config?.features?.auth !== false) {
+					if (tokenTimer) {
+						clearInterval(tokenTimer);
+					}
+					// Token JWT lasts 24h+, checking once per minute is plenty
+					tokenTimer = setInterval(checkTokenExpiry, 60000);
 				}
-				// Token JWT lasts 24h+, checking once per minute is plenty
-				tokenTimer = setInterval(checkTokenExpiry, 60000);
 			} else {
 				$socket?.off('events', chatEventHandler);
 				$socket?.off('events:channel', channelEventHandler);
@@ -768,13 +744,55 @@
 			await WEBUI_NAME.set(backendConfig.name);
 
 			if ($config) {
-				const sessionUser = await ensureLocalSession();
+				const enableWebsocket = $config.features?.enable_websocket ?? true;
 
-				if (sessionUser) {
-					void setupSocket($config.features?.enable_websocket ?? true).catch((error) => {
-						console.error('Failed to setup socket:', error);
-					});
+				if ($config.features?.auth === false) {
+					let sessionUser = null;
+
+					if (localStorage.token) {
+						sessionUser = await getSessionUser(localStorage.token).catch((error) => {
+							console.warn('Sessao local sem auth invalida; criando uma nova sessao.', error);
+							return null;
+						});
+					}
+
+					if (!sessionUser) {
+						localStorage.removeItem('token');
+						sessionUser = await getNoAuthSession().catch((error) => {
+							console.error('Error creating no-auth session:', error);
+							return null;
+						});
+					}
+
+					if (!sessionUser) {
+						await goto('/error');
+						return;
+					}
+
+					if (sessionUser.token) {
+						localStorage.token = sessionUser.token;
+					}
+
+					await setupSocket(enableWebsocket);
+					await user.set(sessionUser);
+				} else if (localStorage.token) {
+					// Run socket setup and session user fetch in parallel
+					const [, sessionUser] = await Promise.all([
+						setupSocket(enableWebsocket),
+						getSessionUser(localStorage.token).catch((error) => {
+							console.warn('Sessão local inválida; redirecionando para autenticação.', error);
+							return null;
+						})
+					]);
+
+					if (sessionUser) {
+						await user.set(sessionUser);
+					} else {
+						localStorage.removeItem('token');
+						await goto('/error');
+					}
 				} else {
+					await setupSocket(enableWebsocket);
 					await goto('/error');
 				}
 			}

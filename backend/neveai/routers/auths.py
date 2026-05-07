@@ -63,7 +63,7 @@ from neveai.utils.auth import (
     invalidate_token,
     create_api_key,
     create_token,
-    get_local_user_for_no_auth,
+    get_or_create_no_auth_user,
     get_admin_user,
     get_verified_user,
     get_current_user,
@@ -175,22 +175,15 @@ async def get_session_user(
 
     auth_header = request.headers.get("Authorization")
     auth_token = get_http_authorization_cred(auth_header)
+    token = auth_token.credentials if auth_token else request.cookies.get("token")
 
-    if auth_token is None and not WEBUI_AUTH:
-        session = create_session_response(request, user, db, response, set_cookie=True)
-        return {
-            **session,
-            "profile_image_url": user.profile_image_url,
-            "bio": user.bio,
-            "gender": user.gender,
-            "date_of_birth": user.date_of_birth,
-            "status_emoji": user.status_emoji,
-            "status_message": user.status_message,
-            "status_expires_at": user.status_expires_at,
-        }
+    if token is None and WEBUI_AUTH == False:
+        return create_session_response(request, user, db, response, set_cookie=True)
 
-    token = auth_token.credentials
     data = decode_token(token)
+
+    if data is None and WEBUI_AUTH == False:
+        return create_session_response(request, user, db, response, set_cookie=True)
 
     expires_at = None
 
@@ -198,6 +191,11 @@ async def get_session_user(
         expires_at = data.get("exp")
 
         if (expires_at is not None) and int(time.time()) > expires_at:
+            if WEBUI_AUTH == False:
+                return create_session_response(
+                    request, user, db, response, set_cookie=True
+                )
+
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=ERROR_MESSAGES.INVALID_TOKEN,
@@ -600,6 +598,22 @@ async def ldap_auth(
 ############################
 
 
+@router.post("/noauth", response_model=SessionUserResponse)
+async def noauth(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_session),
+):
+    if WEBUI_AUTH:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No-auth session is disabled",
+        )
+
+    user = get_or_create_no_auth_user(db=db)
+    return create_session_response(request, user, db, response, set_cookie=True)
+
+
 @router.post("/signin", response_model=SessionUserResponse)
 async def signin(
     request: Request,
@@ -608,17 +622,12 @@ async def signin(
     db: Session = Depends(get_session),
 ):
     if WEBUI_AUTH == False:
-        user = get_local_user_for_no_auth(db=db)
-        if not user:
-            raise HTTPException(400, detail=ERROR_MESSAGES.DEFAULT())
+        user = get_or_create_no_auth_user(db=db)
     elif not ENABLE_PASSWORD_AUTH:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ERROR_MESSAGES.ACTION_PROHIBITED,
         )
-
-    if WEBUI_AUTH == False:
-        pass
     elif WEBUI_AUTH_TRUSTED_EMAIL_HEADER:
         if WEBUI_AUTH_TRUSTED_EMAIL_HEADER not in request.headers:
             raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_TRUSTED_HEADER)

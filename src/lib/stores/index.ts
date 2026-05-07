@@ -45,6 +45,9 @@ export const isApp = writable(false);
 export const appInfo = writable(null);
 export const appData = writable(null);
 
+// Frontend
+export const MODEL_DOWNLOAD_POOL = writable({});
+
 export const mobile = writable(false);
 
 export const socket: Writable<null | Socket> = writable(null);
@@ -124,20 +127,54 @@ export const currentChatPage = writable(1);
 export const isLastActiveTab = writable(true);
 export const playingNotificationSound = writable(false);
 
-export type Model = BaseModel;
+export type Model = OpenAIModel | OllamaModel;
 
-export type BaseModel = {
+type BaseModel = {
 	id: string;
 	name: string;
 	info?: ModelConfig;
-	owned_by: 'openai' | 'arena' | 'llamacpp' | 'function' | string;
-	external?: boolean;
+	owned_by: 'ollama' | 'openai' | 'arena';
+};
+
+export interface OpenAIModel extends BaseModel {
+	owned_by: 'openai';
+	external: boolean;
 	source?: string;
-	connection_type?: 'local' | 'external' | string;
-	direct?: boolean;
-	tags?: { name: string }[];
-	llamacpp?: unknown;
-	[key: string]: unknown;
+}
+
+export interface OllamaModel extends BaseModel {
+	owned_by: 'ollama';
+	details: OllamaModelDetails;
+	size: number;
+	description: string;
+	model: string;
+	modified_at: string;
+	digest: string;
+	ollama?: {
+		name?: string;
+		model?: string;
+		modified_at: string;
+		size?: number;
+		digest?: string;
+		details?: {
+			parent_model?: string;
+			format?: string;
+			family?: string;
+			families?: string[];
+			parameter_size?: string;
+			quantization_level?: string;
+		};
+		urls?: number[];
+	};
+}
+
+type OllamaModelDetails = {
+	parent_model: string;
+	format: string;
+	family: string;
+	families: string[] | null;
+	parameter_size: string;
+	quantization_level: string;
 };
 
 type Settings = {

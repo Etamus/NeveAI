@@ -157,30 +157,6 @@ def get_license_data(app, key):
 
 bearer_security = HTTPBearer(auto_error=False)
 
-LOCAL_NO_AUTH_EMAIL = "admin@localhost"
-
-
-def get_local_user_for_no_auth(db=None):
-    user = Users.get_user_by_email(LOCAL_NO_AUTH_EMAIL, db=db)
-    if user:
-        return user
-
-    users = Users.get_users(filter={"roles": ["admin"]}, limit=1, db=db).get("users", [])
-    if users:
-        return users[0]
-
-    user = Users.get_first_user(db=db)
-    if user:
-        return user
-
-    return Auths.insert_new_auth(
-        email=LOCAL_NO_AUTH_EMAIL,
-        password=get_password_hash(str(uuid.uuid4())),
-        name="Usuario",
-        role="admin",
-        db=db,
-    )
-
 
 def get_password_hash(password: str) -> str:
     """Hash a password using bcrypt"""
@@ -285,6 +261,30 @@ def create_api_key():
     return f"sk-{key}"
 
 
+NO_AUTH_USER_EMAIL = "admin@localhost"
+NO_AUTH_USER_NAME = "Usuario"
+
+
+def get_or_create_no_auth_user(db=None):
+    user = Users.get_user_by_email(NO_AUTH_USER_EMAIL, db=db)
+
+    if user is None:
+        user = Auths.insert_new_auth(
+            email=NO_AUTH_USER_EMAIL,
+            password=get_password_hash(str(uuid.uuid4())),
+            name=NO_AUTH_USER_NAME,
+            role="admin",
+            db=db,
+        )
+    elif user.role != "admin":
+        user = Users.update_user_role_by_id(user.id, "admin", db=db) or user
+
+    if user is None:
+        raise HTTPException(status_code=500, detail=ERROR_MESSAGES.CREATE_USER_ERROR)
+
+    return user
+
+
 def get_http_authorization_cred(auth_header: Optional[str]):
     if not auth_header:
         return None
@@ -317,21 +317,19 @@ async def get_current_user(
     if token is None and hasattr(request.state, "token") and request.state.token:
         token = request.state.token.credentials
 
-    if token is None and not WEBUI_AUTH:
-        user = get_local_user_for_no_auth()
-        if user:
+    if token is None:
+        if not WEBUI_AUTH:
+            user = get_or_create_no_auth_user()
             current_span = trace.get_current_span()
             if current_span:
                 current_span.set_attribute("client.user.id", user.id)
                 current_span.set_attribute("client.user.email", user.email)
                 current_span.set_attribute("client.user.role", user.role)
-                current_span.set_attribute("client.auth.type", "local")
-
+                current_span.set_attribute("client.auth.type", "no_auth")
             if background_tasks:
                 background_tasks.add_task(Users.update_last_active_by_id, user.id)
             return user
 
-    if token is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
     # auth by api key
@@ -413,9 +411,7 @@ async def get_current_user(
             response.delete_cookie("oauth_session_id")
 
         if not WEBUI_AUTH:
-            user = get_local_user_for_no_auth()
-            if user:
-                return user
+            return get_or_create_no_auth_user()
 
         raise e
 

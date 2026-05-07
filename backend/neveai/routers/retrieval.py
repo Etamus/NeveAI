@@ -53,6 +53,7 @@ from neveai.retrieval.loaders.youtube import YoutubeLoader
 # Web search engines
 from neveai.retrieval.web.main import SearchResult
 from neveai.retrieval.web.utils import get_web_loader
+from neveai.retrieval.web.ollama import search_ollama_cloud
 from neveai.retrieval.web.perplexity_search import search_perplexity_search
 from neveai.retrieval.web.brave import search_brave
 from neveai.retrieval.web.kagi import search_kagi
@@ -284,10 +285,20 @@ async def get_embedding_config(request: Request, user=Depends(get_admin_user)):
         "RAG_EMBEDDING_BATCH_SIZE": request.app.state.config.RAG_EMBEDDING_BATCH_SIZE,
         "ENABLE_ASYNC_EMBEDDING": request.app.state.config.ENABLE_ASYNC_EMBEDDING,
         "RAG_EMBEDDING_CONCURRENT_REQUESTS": request.app.state.config.RAG_EMBEDDING_CONCURRENT_REQUESTS,
+        "ollama_config": {
+            "url": request.app.state.config.RAG_OLLAMA_BASE_URL,
+            "key": request.app.state.config.RAG_OLLAMA_API_KEY,
+        },
     }
 
 
+class OllamaConfigForm(BaseModel):
+    url: str
+    key: str
+
+
 class EmbeddingModelUpdateForm(BaseModel):
+    ollama_config: Optional[OllamaConfigForm] = None
     RAG_EMBEDDING_ENGINE: str
     RAG_EMBEDDING_MODEL: str
     RAG_EMBEDDING_BATCH_SIZE: Optional[int] = 1
@@ -335,6 +346,17 @@ async def update_embedding_config(
             form_data.RAG_EMBEDDING_CONCURRENT_REQUESTS
         )
 
+        if request.app.state.config.RAG_EMBEDDING_ENGINE in [
+            "ollama",
+        ]:
+            if form_data.ollama_config is not None:
+                request.app.state.config.RAG_OLLAMA_BASE_URL = (
+                    form_data.ollama_config.url
+                )
+                request.app.state.config.RAG_OLLAMA_API_KEY = (
+                    form_data.ollama_config.key
+                )
+
         request.app.state.ef = get_ef(
             request.app.state.config.RAG_EMBEDDING_ENGINE,
             request.app.state.config.RAG_EMBEDDING_MODEL,
@@ -344,8 +366,12 @@ async def update_embedding_config(
             request.app.state.config.RAG_EMBEDDING_ENGINE,
             request.app.state.config.RAG_EMBEDDING_MODEL,
             request.app.state.ef,
-            "",
-            "",
+            request.app.state.config.RAG_OLLAMA_BASE_URL
+            if request.app.state.config.RAG_EMBEDDING_ENGINE == "ollama"
+            else "",
+            request.app.state.config.RAG_OLLAMA_API_KEY
+            if request.app.state.config.RAG_EMBEDDING_ENGINE == "ollama"
+            else "",
             request.app.state.config.RAG_EMBEDDING_BATCH_SIZE,
             azure_api_version=None,
             enable_async=request.app.state.config.ENABLE_ASYNC_EMBEDDING,
@@ -359,6 +385,10 @@ async def update_embedding_config(
             "RAG_EMBEDDING_BATCH_SIZE": request.app.state.config.RAG_EMBEDDING_BATCH_SIZE,
             "ENABLE_ASYNC_EMBEDDING": request.app.state.config.ENABLE_ASYNC_EMBEDDING,
             "RAG_EMBEDDING_CONCURRENT_REQUESTS": request.app.state.config.RAG_EMBEDDING_CONCURRENT_REQUESTS,
+            "ollama_config": {
+                "url": request.app.state.config.RAG_OLLAMA_BASE_URL,
+                "key": request.app.state.config.RAG_OLLAMA_API_KEY,
+            },
         }
     except Exception as e:
         log.exception(f"Problem updating embedding model: {e}")
@@ -447,6 +477,7 @@ async def get_rag_config(request: Request, user=Depends(get_admin_user)):
             "WEB_SEARCH_DOMAIN_FILTER_LIST": request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
             "BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL": request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL,
             "BYPASS_WEB_SEARCH_WEB_LOADER": request.app.state.config.BYPASS_WEB_SEARCH_WEB_LOADER,
+            "OLLAMA_CLOUD_WEB_SEARCH_API_KEY": request.app.state.config.OLLAMA_CLOUD_WEB_SEARCH_API_KEY,
             "SEARXNG_QUERY_URL": request.app.state.config.SEARXNG_QUERY_URL,
             "SEARXNG_LANGUAGE": request.app.state.config.SEARXNG_LANGUAGE,
             "YACY_QUERY_URL": request.app.state.config.YACY_QUERY_URL,
@@ -513,6 +544,7 @@ class WebConfig(BaseModel):
     WEB_SEARCH_DOMAIN_FILTER_LIST: Optional[List[str]] = []
     BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL: Optional[bool] = None
     BYPASS_WEB_SEARCH_WEB_LOADER: Optional[bool] = None
+    OLLAMA_CLOUD_WEB_SEARCH_API_KEY: Optional[str] = None
     SEARXNG_QUERY_URL: Optional[str] = None
     SEARXNG_LANGUAGE: Optional[str] = None
     YACY_QUERY_URL: Optional[str] = None
@@ -1025,6 +1057,9 @@ async def update_rag_config(
         request.app.state.config.BYPASS_WEB_SEARCH_WEB_LOADER = (
             form_data.web.BYPASS_WEB_SEARCH_WEB_LOADER
         )
+        request.app.state.config.OLLAMA_CLOUD_WEB_SEARCH_API_KEY = (
+            form_data.web.OLLAMA_CLOUD_WEB_SEARCH_API_KEY
+        )
         request.app.state.config.SEARXNG_QUERY_URL = form_data.web.SEARXNG_QUERY_URL
         request.app.state.config.SEARXNG_LANGUAGE = form_data.web.SEARXNG_LANGUAGE
         request.app.state.config.YACY_QUERY_URL = form_data.web.YACY_QUERY_URL
@@ -1198,6 +1233,7 @@ async def update_rag_config(
             "WEB_SEARCH_DOMAIN_FILTER_LIST": request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
             "BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL": request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL,
             "BYPASS_WEB_SEARCH_WEB_LOADER": request.app.state.config.BYPASS_WEB_SEARCH_WEB_LOADER,
+            "OLLAMA_CLOUD_WEB_SEARCH_API_KEY": request.app.state.config.OLLAMA_CLOUD_WEB_SEARCH_API_KEY,
             "SEARXNG_QUERY_URL": request.app.state.config.SEARXNG_QUERY_URL,
             "SEARXNG_LANGUAGE": request.app.state.config.SEARXNG_LANGUAGE,
             "YACY_QUERY_URL": request.app.state.config.YACY_QUERY_URL,
@@ -1481,8 +1517,12 @@ def save_docs_to_vector_db(
             request.app.state.config.RAG_EMBEDDING_ENGINE,
             request.app.state.config.RAG_EMBEDDING_MODEL,
             request.app.state.ef,
-            "",
-            "",
+            request.app.state.config.RAG_OLLAMA_BASE_URL
+            if request.app.state.config.RAG_EMBEDDING_ENGINE == "ollama"
+            else "",
+            request.app.state.config.RAG_OLLAMA_API_KEY
+            if request.app.state.config.RAG_EMBEDDING_ENGINE == "ollama"
+            else "",
             request.app.state.config.RAG_EMBEDDING_BATCH_SIZE,
             azure_api_version=None,
             enable_async=request.app.state.config.ENABLE_ASYNC_EMBEDDING,
@@ -1914,7 +1954,15 @@ def search_web(
     """
 
     # TODO: add playwright to search the web
-    if engine == "perplexity_search":
+    if engine == "ollama_cloud":
+        return search_ollama_cloud(
+            "https://ollama.com",
+            request.app.state.config.OLLAMA_CLOUD_WEB_SEARCH_API_KEY,
+            query,
+            request.app.state.config.WEB_SEARCH_RESULT_COUNT,
+            request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
+        )
+    elif engine == "perplexity_search":
         if request.app.state.config.PERPLEXITY_API_KEY:
             return search_perplexity_search(
                 request.app.state.config.PERPLEXITY_API_KEY,

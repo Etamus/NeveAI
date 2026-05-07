@@ -23,7 +23,9 @@
 	import ResetUploadDirConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ResetVectorDBConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import ReindexKnowledgeFilesConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
 	import Textarea from '$lib/components/common/Textarea.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
@@ -44,6 +46,9 @@
 
 	let rerankingModel = '';
 
+	let OllamaUrl = '';
+	let OllamaKey = '';
+
 	let querySettings = {
 		template: '',
 		r: 0.0,
@@ -63,6 +68,15 @@
 			);
 			return;
 		}
+		if (RAG_EMBEDDING_ENGINE === 'ollama' && RAG_EMBEDDING_MODEL === '') {
+			toast.error(
+				$i18n.t(
+					'Model filesystem path detected. Model shortname is required for update, cannot continue.'
+				)
+			);
+			return;
+		}
+
 		if (['openai', 'azure_openai'].includes(RAG_EMBEDDING_ENGINE)) {
 			RAG_EMBEDDING_ENGINE = '';
 			RAG_EMBEDDING_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
@@ -82,7 +96,11 @@
 			RAG_EMBEDDING_MODEL: RAG_EMBEDDING_MODEL,
 			RAG_EMBEDDING_BATCH_SIZE: RAG_EMBEDDING_BATCH_SIZE,
 			ENABLE_ASYNC_EMBEDDING: ENABLE_ASYNC_EMBEDDING,
-			RAG_EMBEDDING_CONCURRENT_REQUESTS: RAG_EMBEDDING_CONCURRENT_REQUESTS
+			RAG_EMBEDDING_CONCURRENT_REQUESTS: RAG_EMBEDDING_CONCURRENT_REQUESTS,
+			ollama_config: {
+				key: OllamaKey,
+				url: OllamaUrl
+			}
 		}).catch(async (error) => {
 			toast.error(`${error}`);
 			await setEmbeddingConfig();
@@ -206,6 +224,8 @@
 			ENABLE_ASYNC_EMBEDDING = embeddingConfig.ENABLE_ASYNC_EMBEDDING ?? true;
 			RAG_EMBEDDING_CONCURRENT_REQUESTS = embeddingConfig.RAG_EMBEDDING_CONCURRENT_REQUESTS ?? 0;
 
+			OllamaKey = embeddingConfig.ollama_config.key;
+			OllamaUrl = embeddingConfig.ollama_config.url;
 		}
 	};
 	onMount(async () => {
@@ -302,22 +322,54 @@
 										bind:value={RAG_EMBEDDING_ENGINE}
 										placeholder={$i18n.t('Select an embedding model engine')}
 										on:change={(e) => {
-											if (e.target.value === '') {
+											if (e.target.value === 'ollama') {
+												RAG_EMBEDDING_MODEL = '';
+											} else if (e.target.value === '') {
 												RAG_EMBEDDING_MODEL = 'sentence-transformers/all-MiniLM-L6-v2';
 											}
 										}}
 									>
 										<option value="">{$i18n.t('Default (SentenceTransformers)')}</option>
+										<option value="ollama">{$i18n.t('Ollama')}</option>
 									</select>
 								</div>
 							</div>
+
+							{#if RAG_EMBEDDING_ENGINE === 'ollama'}
+								<div class="my-0.5 flex gap-2 pr-2">
+									<input
+										class="flex-1 w-full text-sm bg-transparent outline-hidden"
+										placeholder={$i18n.t('API Base URL')}
+										bind:value={OllamaUrl}
+										required
+									/>
+
+									<SensitiveInput
+										placeholder={$i18n.t('API Key')}
+										bind:value={OllamaKey}
+										required={false}
+									/>
+								</div>
+							{/if}
 						</div>
 
 						<div class="  mb-2.5 flex flex-col w-full">
 							<div class=" mb-1 text-xs font-medium">{$i18n.t('Embedding Model')}</div>
 
 							<div class="">
-								<div class="flex w-full">
+								{#if RAG_EMBEDDING_ENGINE === 'ollama'}
+									<div class="flex w-full">
+										<div class="flex-1 mr-2">
+											<input
+												class="flex-1 w-full text-sm bg-transparent outline-hidden"
+												bind:value={RAG_EMBEDDING_MODEL}
+												placeholder={$i18n.t('Set embedding model')}
+												required
+											/>
+										</div>
+									</div>
+								{:else}
+									<div class="flex w-full">
 										<div class="flex-1 mr-2">
 											<input
 												class="flex-1 w-full text-sm bg-transparent outline-hidden"
@@ -357,7 +409,8 @@
 												{/if}
 											</button>
 										{/if}
-								</div>
+									</div>
+								{/if}
 							</div>
 
 							<div class="mt-1 mb-1 text-xs text-gray-400 dark:text-gray-500">
@@ -383,6 +436,46 @@
 								/>
 							</div>
 						</div>
+
+						{#if RAG_EMBEDDING_ENGINE === 'ollama'}
+							<div class="  mb-2.5 flex w-full justify-between">
+								<div class="self-center text-xs font-medium">
+									<Tooltip
+										content={$i18n.t(
+											'Runs embedding tasks concurrently to speed up processing. Turn off if rate limits become an issue.'
+										)}
+										placement="top-start"
+									>
+										{$i18n.t('Async Embedding Processing')}
+									</Tooltip>
+								</div>
+								<div class="flex items-center relative">
+									<Switch bind:state={ENABLE_ASYNC_EMBEDDING} />
+								</div>
+							</div>
+
+							<div class="  mb-2.5 flex w-full justify-between">
+								<div class="self-center text-xs font-medium">
+									<Tooltip
+										content={$i18n.t(
+											'Limits the number of concurrent embedding requests. Set to 0 for unlimited.'
+										)}
+										placement="top-start"
+									>
+										{$i18n.t('Embedding Concurrent Requests')}
+									</Tooltip>
+								</div>
+								<div class="">
+									<input
+										bind:value={RAG_EMBEDDING_CONCURRENT_REQUESTS}
+										type="number"
+										class=" bg-transparent text-center w-14 outline-none"
+										min="0"
+										step="1"
+									/>
+								</div>
+							</div>
+						{/if}
 					</div>
 
 				{/if}

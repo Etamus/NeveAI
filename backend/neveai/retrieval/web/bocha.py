@@ -41,7 +41,7 @@ def search_bocha(
         api_key (str): A Bocha Search API key
         query (str): The query to search for
     """
-    url = "https://api.bochaai.com/v1/web-search?utm_source=neve"
+    url = "https://api.bochaai.com/v1/web-search?utm_source=ollama"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
     payload = json.dumps(

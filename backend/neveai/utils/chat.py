@@ -23,6 +23,10 @@ from neveai.socket.main import (
 )
 from neveai.functions import generate_function_chat_completion
 
+from neveai.routers.ollama import (
+    generate_chat_completion as generate_ollama_chat_completion,
+)
+
 from neveai.routers.llamacpp import (
     generate_chat_completion as generate_llamacpp_chat_completion,
 )
@@ -36,6 +40,11 @@ from neveai.models.functions import Functions
 from neveai.models.models import Models
 
 from neveai.utils.models import get_all_models, check_model_access
+from neveai.utils.payload import convert_payload_openai_to_ollama
+from neveai.utils.response import (
+    convert_response_ollama_to_openai,
+    convert_streaming_response_ollama_to_openai,
+)
 from neveai.utils.filter import (
     get_sorted_filter_ids,
     process_filter_functions,
@@ -262,10 +271,30 @@ async def generate_chat_completion(
                 bypass_filter=bypass_filter,
                 bypass_system_prompt=bypass_system_prompt,
             )
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Unsupported external model backend.",
-        )
+        if model.get("owned_by") == "ollama":
+            # Using /ollama/api/chat endpoint
+            form_data = convert_payload_openai_to_ollama(form_data)
+            response = await generate_ollama_chat_completion(
+                request=request,
+                form_data=form_data,
+                user=user,
+                bypass_filter=bypass_filter,
+                bypass_system_prompt=bypass_system_prompt,
+            )
+            if form_data.get("stream"):
+                response.headers["content-type"] = "text/event-stream"
+                return StreamingResponse(
+                    convert_streaming_response_ollama_to_openai(response),
+                    headers=dict(response.headers),
+                    background=response.background,
+                )
+            else:
+                return convert_response_ollama_to_openai(response)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported external model backend.",
+            )
 
 
 chat_completion = generate_chat_completion
