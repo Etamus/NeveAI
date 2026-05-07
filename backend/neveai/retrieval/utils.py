@@ -2,6 +2,8 @@ import logging
 import os
 from typing import Awaitable, Optional, Union
 
+import requests
+import aiohttp
 import asyncio
 import hashlib
 from concurrent.futures import ThreadPoolExecutor
@@ -29,6 +31,7 @@ from neveai.models.notes import Notes
 from neveai.models.access_grants import AccessGrants
 
 from neveai.retrieval.vector.main import GetResult
+from neveai.utils.headers import include_user_info_headers
 from neveai.utils.misc import get_message_list
 
 from neveai.retrieval.web.utils import get_web_loader
@@ -36,7 +39,10 @@ from neveai.retrieval.loaders.youtube import YoutubeLoader
 
 
 from neveai.env import (
+    AIOHTTP_CLIENT_TIMEOUT,
     OFFLINE_MODE,
+    ENABLE_FORWARD_USER_INFO_HEADERS,
+    AIOHTTP_CLIENT_SESSION_SSL,
 )
 from neveai.config import (
     RAG_EMBEDDING_QUERY_PREFIX,
@@ -550,6 +556,91 @@ async def query_collection_with_hybrid_search(
     return merge_and_sort_query_results(results, k=k)
 
 
+def generate_ollama_batch_embeddings(
+    model: str,
+    texts: list[str],
+    url: str,
+    key: str = "",
+    prefix: str = None,
+    user: UserModel = None,
+) -> Optional[list[list[float]]]:
+    try:
+        log.debug(
+            f"generate_ollama_batch_embeddings:model {model} batch size: {len(texts)}"
+        )
+        json_data = {"input": texts, "model": model}
+        if isinstance(RAG_EMBEDDING_PREFIX_FIELD_NAME, str) and isinstance(prefix, str):
+            json_data[RAG_EMBEDDING_PREFIX_FIELD_NAME] = prefix
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {key}",
+        }
+        if ENABLE_FORWARD_USER_INFO_HEADERS and user:
+            headers = include_user_info_headers(headers, user)
+
+        r = requests.post(
+            f"{url}/api/embed",
+            headers=headers,
+            json=json_data,
+        )
+        r.raise_for_status()
+        data = r.json()
+
+        if "embeddings" in data:
+            return data["embeddings"]
+        else:
+            raise ValueError(
+                "Unexpected Ollama embeddings response: missing 'embeddings' key"
+            )
+    except Exception as e:
+        log.exception(f"Error generating ollama batch embeddings: {e}")
+        return None
+
+
+async def agenerate_ollama_batch_embeddings(
+    model: str,
+    texts: list[str],
+    url: str,
+    key: str = "",
+    prefix: str = None,
+    user: UserModel = None,
+) -> Optional[list[list[float]]]:
+    try:
+        log.debug(
+            f"agenerate_ollama_batch_embeddings:model {model} batch size: {len(texts)}"
+        )
+        form_data = {"input": texts, "model": model}
+        if isinstance(RAG_EMBEDDING_PREFIX_FIELD_NAME, str) and isinstance(prefix, str):
+            form_data[RAG_EMBEDDING_PREFIX_FIELD_NAME] = prefix
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {key}",
+        }
+        if ENABLE_FORWARD_USER_INFO_HEADERS and user:
+            headers = include_user_info_headers(headers, user)
+
+        async with aiohttp.ClientSession(
+            trust_env=True, timeout=aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT)
+        ) as session:
+            async with session.post(
+                f"{url}/api/embed",
+                headers=headers,
+                json=form_data,
+                ssl=AIOHTTP_CLIENT_SESSION_SSL,
+            ) as r:
+                r.raise_for_status()
+                data = await r.json()
+                if "embeddings" in data:
+                    return data["embeddings"]
+                else:
+                    raise Exception("Something went wrong :/")
+    except Exception as e:
+        log.exception(f"Error generating ollama batch embeddings: {e}")
+        return None
+
+
 def get_embedding_function(
     embedding_engine,
     embedding_model,
@@ -583,6 +674,74 @@ def get_embedding_function(
             )
 
         return async_embedding_function
+    elif embedding_engine == "ollama":
+        embedding_function = lambda query, prefix=None, user=None: generate_embeddings(
+            engine=embedding_engine,
+            model=embedding_model,
+            text=query,
+            prefix=prefix,
+            url=url,
+            key=key,
+            user=user,
+            azure_api_version=azure_api_version,
+        )
+
+        async def async_embedding_function(query, prefix=None, user=None):
+            if isinstance(query, list):
+                # Create batches
+                batches = [
+                    query[i : i + embedding_batch_size]
+                    for i in range(0, len(query), embedding_batch_size)
+                ]
+
+                if enable_async:
+                    log.debug(
+                        f"generate_multiple_async: Processing {len(batches)} batches in parallel"
+                    )
+                    # Use semaphore to limit concurrent embedding API requests
+                    # 0 = unlimited (no semaphore)
+                    if concurrent_requests:
+                        semaphore = asyncio.Semaphore(concurrent_requests)
+
+                        async def generate_batch_with_semaphore(batch):
+                            async with semaphore:
+                                return await embedding_function(
+                                    batch, prefix=prefix, user=user
+                                )
+
+                        tasks = [
+                            generate_batch_with_semaphore(batch) for batch in batches
+                        ]
+                    else:
+                        tasks = [
+                            embedding_function(batch, prefix=prefix, user=user)
+                            for batch in batches
+                        ]
+                    batch_results = await asyncio.gather(*tasks)
+                else:
+                    log.debug(
+                        f"generate_multiple_async: Processing {len(batches)} batches sequentially"
+                    )
+                    batch_results = []
+                    for batch in batches:
+                        batch_results.append(
+                            await embedding_function(batch, prefix=prefix, user=user)
+                        )
+
+                # Flatten results
+                embeddings = []
+                for batch_embeddings in batch_results:
+                    if isinstance(batch_embeddings, list):
+                        embeddings.extend(batch_embeddings)
+
+                log.debug(
+                    f"generate_multiple_async: Generated {len(embeddings)} embeddings from {len(batches)} parallel batches"
+                )
+                return embeddings
+            else:
+                return await embedding_function(query, prefix, user)
+
+        return async_embedding_function
     else:
         raise ValueError(f"Unknown embedding engine: {embedding_engine}")
 
@@ -604,6 +763,18 @@ async def generate_embeddings(
         else:
             text = f"{prefix}{text}"
 
+    if engine == "ollama":
+        embeddings = await agenerate_ollama_batch_embeddings(
+            **{
+                "model": model,
+                "texts": text if isinstance(text, list) else [text],
+                "url": url,
+                "key": key,
+                "prefix": prefix,
+                "user": user,
+            }
+        )
+        return embeddings[0] if isinstance(text, str) else embeddings
     raise ValueError(f"Unknown embedding engine: {engine}")
 
 

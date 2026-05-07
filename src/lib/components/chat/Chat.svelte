@@ -599,7 +599,7 @@
 						params = { ...params, ...populated };
 					}
 				} catch (_) {
-					// Base models have no custom model entry; skip silently.
+					// Base Ollama/OpenAI models have no custom model entry — skip silently
 				}
 			}
 		}

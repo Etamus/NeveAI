@@ -3,6 +3,7 @@
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding = [Console]::OutputEncoding
+$ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
@@ -159,12 +160,14 @@ if (-not (Test-Path $LOGO_PATH)) {
                             <TextBlock Grid.Row="1" Grid.Column="1" x:Name="LblDeployPath" Text="backend\neveai\frontend" FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,12" TextTrimming="CharacterEllipsis"/>
 
                             <TextBlock Grid.Row="2" Grid.Column="0" Text="Comando:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
-                            <TextBlock Grid.Row="2" Grid.Column="1" Text="npm run build" FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,12"/>
+                            <TextBlock Grid.Row="2" Grid.Column="1" Text="npm portatil run build" FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,12"/>
 
                             <Border Grid.Row="3" Grid.ColumnSpan="2" Background="#FAFAFA" CornerRadius="8" Padding="14,12" Margin="0,8,0,0">
                                 <StackPanel>
                                     <TextBlock Text="O que sera feito:" FontWeight="SemiBold" FontSize="13" Foreground="#111111" Margin="0,0,0,4"/>
                                     <TextBlock Text="- Limpar a pasta build antiga" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="- Preparar Node.js/npm portatil se necessario" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="- Instalar pacotes npm se estiverem ausentes" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="- Rodar npm run build" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="- Limpar backend\neveai\frontend" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="- Copiar build para o backend" FontSize="12" Foreground="#52525B"/>
@@ -268,9 +271,6 @@ $window.Add_MouseLeftButtonDown({
 })
 
 $script:IsRunning = $false
-$script:CancelRequested = $false
-$script:CloseAfterCancel = $false
-$script:CurrentProcess = $null
 $script:ExitCode = 0
 
 function Set-UI([scriptblock]$sb) {
@@ -305,43 +305,6 @@ function Set-Progress([int]$pct, [string]$phase) {
     }
 }
 
-function Stop-ProcessTree([int]$processId) {
-    try {
-        Get-CimInstance Win32_Process -Filter "ParentProcessId=$processId" -ErrorAction SilentlyContinue | ForEach-Object {
-            Stop-ProcessTree ([int]$_.ProcessId)
-        }
-    } catch {}
-
-    try {
-        Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
-    } catch {}
-}
-
-function Test-CancelRequested {
-    if ($script:CancelRequested) {
-        throw [System.OperationCanceledException]::new('Build cancelado pelo usuario.')
-    }
-}
-
-function Request-Cancel {
-    if (-not $script:IsRunning) {
-        $window.Close()
-        return
-    }
-
-    if ($script:CancelRequested) { return }
-    $script:CancelRequested = $true
-    $script:CloseAfterCancel = $true
-    Append-Log 'Cancelamento solicitado; encerrando processo em andamento...' 'warn'
-    Set-Progress 0 'Cancelando'
-    Set-UI { $ctl.BtnCancel.IsEnabled = $false }
-
-    $proc = $script:CurrentProcess
-    if ($proc -and -not $proc.HasExited) {
-        Stop-ProcessTree $proc.Id
-    }
-}
-
 function ConvertTo-ProcessArgument([string]$arg) {
     if ($null -eq $arg) { return '""' }
     if ($arg -notmatch '[\s"]') { return $arg }
@@ -349,7 +312,6 @@ function ConvertTo-ProcessArgument([string]$arg) {
 }
 
 function Invoke-LoggedProcess([string]$fileName, [string[]]$arguments, [string]$description) {
-    Test-CancelRequested
     Append-Log $description 'step'
     Append-Log ("> " + $fileName + ' ' + ($arguments -join ' '))
 
@@ -361,6 +323,13 @@ function Invoke-LoggedProcess([string]$fileName, [string[]]$arguments, [string]$
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
+
+    $npmCache = Join-Path $ROOT 'tools\npm-cache'
+    if (-not (Test-Path -LiteralPath $npmCache)) { New-Item -ItemType Directory -Path $npmCache -Force | Out-Null }
+    $psi.EnvironmentVariables['npm_config_cache'] = $npmCache
+    $psi.EnvironmentVariables['npm_config_audit'] = 'false'
+    $psi.EnvironmentVariables['npm_config_fund'] = 'false'
+    $psi.EnvironmentVariables['npm_config_update_notifier'] = 'false'
 
     $proc = New-Object System.Diagnostics.Process
     $proc.StartInfo = $psi
@@ -380,24 +349,17 @@ function Invoke-LoggedProcess([string]$fileName, [string[]]$arguments, [string]$
 
     try {
         [void]$proc.Start()
-        $script:CurrentProcess = $proc
-        $proc.BeginOutputReadLine()
-        $proc.BeginErrorReadLine()
-
-        while (-not $proc.WaitForExit(200)) {
-            if ($script:CancelRequested) {
-                Stop-ProcessTree $proc.Id
-                throw [System.OperationCanceledException]::new('Build cancelado pelo usuario.')
-            }
-        }
-        $proc.WaitForExit()
-    } finally {
-        $script:CurrentProcess = $null
-        $proc.remove_OutputDataReceived($outHandler)
-        $proc.remove_ErrorDataReceived($errHandler)
+    } catch {
+        throw "Falha ao iniciar '$fileName' para '$description': $($_.Exception.Message)"
     }
 
-    Test-CancelRequested
+    $proc.BeginOutputReadLine()
+    $proc.BeginErrorReadLine()
+    $proc.WaitForExit()
+    $proc.WaitForExit()
+
+    $proc.remove_OutputDataReceived($outHandler)
+    $proc.remove_ErrorDataReceived($errHandler)
 
     if ($proc.ExitCode -eq 0) {
         Append-Log "$description concluido" 'ok'
@@ -408,8 +370,171 @@ function Invoke-LoggedProcess([string]$fileName, [string[]]$arguments, [string]$
     return $proc.ExitCode
 }
 
+function Get-NodeMajorFromVersion([string]$version) {
+    if ([string]::IsNullOrWhiteSpace($version)) { return -1 }
+    if ($version -notmatch '^v?(\d+)\.') { return -1 }
+    return [int]$matches[1]
+}
+
+function Test-FrontendNodePair([string]$nodeExe, [string]$npmExe) {
+    try {
+        if ([string]::IsNullOrWhiteSpace($nodeExe) -or -not (Test-Path -LiteralPath $nodeExe)) { return $null }
+        if ([string]::IsNullOrWhiteSpace($npmExe) -or -not (Test-Path -LiteralPath $npmExe)) { return $null }
+
+        $nodePath = (Resolve-Path -LiteralPath $nodeExe).ProviderPath
+        if ($nodePath -match '\\Microsoft\\WindowsApps\\node\.exe$') { return $null }
+
+        $nodeVersionOut = & $nodePath --version 2>&1
+        if ($LASTEXITCODE -ne 0) { return $null }
+        $nodeVersion = (("$nodeVersionOut" -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
+        $nodeMajor = Get-NodeMajorFromVersion $nodeVersion
+        if ($nodeMajor -lt 18 -or $nodeMajor -gt 22) { return $null }
+
+        $npmPath = (Resolve-Path -LiteralPath $npmExe).ProviderPath
+        $npmVersionOut = & $npmPath --version 2>&1
+        if ($LASTEXITCODE -ne 0) { return $null }
+        $npmVersion = (("$npmVersionOut" -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
+        if (-not $npmVersion) { return $null }
+
+        return [pscustomobject]@{
+            NodeExecutable = $nodePath
+            NodeVersion    = $nodeVersion
+            NpmExecutable  = $npmPath
+            NpmVersion     = $npmVersion
+            NodeDir        = Split-Path -Parent $nodePath
+        }
+    } catch {
+        return $null
+    }
+}
+
+function Resolve-FrontendNodeLaunch {
+    $nodeCandidates = @()
+    $portableNode = Join-Path $ROOT 'tools\nodejs\node.exe'
+    if (Test-Path -LiteralPath $portableNode) { $nodeCandidates += $portableNode }
+    if ($env:NODE_EXE) { $nodeCandidates += $env:NODE_EXE }
+
+    foreach ($cmd in @(Get-Command node.exe -All -EA SilentlyContinue)) {
+        $nodeCandidates += $cmd.Source
+    }
+
+    foreach ($nodeBase in (@($env:ProgramFiles, ${env:ProgramFiles(x86)}) | Where-Object { $_ })) {
+        $path = Join-Path $nodeBase 'nodejs\node.exe'
+        if (Test-Path -LiteralPath $path) { $nodeCandidates += $path }
+    }
+
+    foreach ($nodeCandidate in ($nodeCandidates | Select-Object -Unique)) {
+        $nodeDir = Split-Path -Parent $nodeCandidate
+        foreach ($npmName in @('npm.cmd', 'npm.exe')) {
+            $npmPath = Join-Path $nodeDir $npmName
+            $pair = Test-FrontendNodePair $nodeCandidate $npmPath
+            if ($pair) { return $pair }
+        }
+    }
+
+    return $null
+}
+
+function Install-PortableNode22 {
+    Set-Progress 8 'Preparando Node.js portatil'
+    $toolsDir = Join-Path $ROOT 'tools'
+    $nodeDir = Join-Path $toolsDir 'nodejs'
+
+    $existing = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
+    if ($existing) {
+        Append-Log "Node.js portatil ja disponivel: $($existing.NodeVersion) / npm $($existing.NpmVersion)" 'ok'
+        return $existing
+    }
+
+    if (-not (Test-Path -LiteralPath $toolsDir)) { New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null }
+    Append-Log 'Baixando Node.js 22 LTS portatil porque nenhum Node.js 18-22 valido foi encontrado' 'step'
+
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+    } catch {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    }
+
+    $release = $null
+    try {
+        $index = Invoke-RestMethod 'https://nodejs.org/dist/index.json' -Headers @{ 'User-Agent' = 'Neve-Buildar/1.0' } -TimeoutSec 60
+        $release = $index | Where-Object { $_.version -match '^v22\.' -and $_.files -contains 'win-x64-zip' } | Select-Object -First 1
+    } catch {
+        Append-Log "Falha ao consultar versoes do Node.js: $($_.Exception.Message)" 'warn'
+    }
+
+    if (-not $release) { throw 'Nao foi possivel encontrar Node.js 22 win-x64 no site oficial.' }
+
+    $version = [string]$release.version
+    $url = "https://nodejs.org/dist/$version/node-$version-win-x64.zip"
+    $zipPath = Join-Path $env:TEMP "neve_node_$version.zip"
+    $stageParent = Join-Path $env:TEMP "neve_node_stage_$([guid]::NewGuid().ToString('N'))"
+    $stageTarget = Join-Path $toolsDir "nodejs-stage-$([guid]::NewGuid().ToString('N'))"
+
+    try {
+        if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue }
+        New-Item -ItemType Directory -Path $stageParent -Force | Out-Null
+        Append-Log "Baixando $url"
+        Invoke-WebRequest $url -OutFile $zipPath -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Buildar/1.0' } -TimeoutSec 300
+
+        Append-Log 'Extraindo Node.js portatil'
+        Expand-Archive $zipPath -DestinationPath $stageParent -Force
+        $extracted = Get-ChildItem -LiteralPath $stageParent -Directory | Select-Object -First 1
+        if (-not $extracted) { throw 'Arquivo do Node.js nao extraiu a pasta esperada.' }
+        Move-Item -LiteralPath $extracted.FullName -Destination $stageTarget -Force
+
+        $stagedPair = Test-FrontendNodePair (Join-Path $stageTarget 'node.exe') (Join-Path $stageTarget 'npm.cmd')
+        if (-not $stagedPair) { throw 'Node.js portatil extraido nao passou na validacao.' }
+
+        if (Test-Path -LiteralPath $nodeDir) { Remove-Item -LiteralPath $nodeDir -Recurse -Force -EA SilentlyContinue }
+        Move-Item -LiteralPath $stageTarget -Destination $nodeDir -Force
+
+        $pair = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
+        if (-not $pair) { throw 'Node.js portatil foi copiado, mas nao respondeu apos a instalacao.' }
+        Append-Log "Node.js portatil pronto: $($pair.NodeVersion) / npm $($pair.NpmVersion)" 'ok'
+        return $pair
+    } finally {
+        try { if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue } } catch {}
+        try { if (Test-Path -LiteralPath $stageParent) { Remove-Item -LiteralPath $stageParent -Recurse -Force -EA SilentlyContinue } } catch {}
+        try { if (Test-Path -LiteralPath $stageTarget) { Remove-Item -LiteralPath $stageTarget -Recurse -Force -EA SilentlyContinue } } catch {}
+    }
+}
+
+function Resolve-OrInstallFrontendNode {
+    $frontendNode = Resolve-FrontendNodeLaunch
+    if (-not $frontendNode) { $frontendNode = Install-PortableNode22 }
+    if (-not $frontendNode) { throw 'Node.js 18-22 com npm nao encontrado e o Node.js 22 portatil nao pode ser preparado.' }
+
+    $env:PATH = "$($frontendNode.NodeDir);$env:PATH"
+    $env:npm_config_cache = Join-Path $ROOT 'tools\npm-cache'
+    $env:npm_config_audit = 'false'
+    $env:npm_config_fund = 'false'
+    $env:npm_config_update_notifier = 'false'
+
+    Append-Log "Node.js do build: $($frontendNode.NodeVersion) / npm $($frontendNode.NpmVersion) em $($frontendNode.NodeDir)" 'ok'
+    return $frontendNode
+}
+
+function Test-FrontendDependencies {
+    $vite = Join-Path $ROOT 'node_modules\vite\bin\vite.js'
+    $svelteKit = Join-Path $ROOT 'node_modules\@sveltejs\kit\package.json'
+    return ((Test-Path -LiteralPath $vite) -and (Test-Path -LiteralPath $svelteKit))
+}
+
+function Ensure-FrontendDependencies([string]$npmExe) {
+    if (Test-FrontendDependencies) {
+        Append-Log 'Pacotes npm ja estao presentes' 'ok'
+        return
+    }
+
+    Set-Progress 15 'Instalando pacotes npm'
+    $rc = Invoke-LoggedProcess $npmExe @('install', '--no-audit', '--no-fund') 'npm install'
+    if ($rc -ne 0) { throw "npm install falhou (codigo $rc)." }
+}
+
 function Set-Done([bool]$ok, [string]$summary) {
     $script:ExitCode = if ($ok) { 0 } else { 1 }
+
     Set-UI {
         $ctl.IntroPanel.Visibility = 'Collapsed'
         $ctl.WorkPanel.Visibility = 'Collapsed'
@@ -449,11 +574,8 @@ function Start-BuildDeploy {
         $ctl.LblPhase.Text = 'Preparando'
         $ctl.LblStep.Text = 'Preparando build...'
         $ctl.BtnPrimary.IsEnabled = $false
-        $ctl.BtnCancel.IsEnabled = $true
+        $ctl.BtnCancel.IsEnabled = $false
     }
-
-    $script:CancelRequested = $false
-    $script:CloseAfterCancel = $false
 
     $worker = New-Object System.ComponentModel.BackgroundWorker
 
@@ -462,30 +584,14 @@ function Start-BuildDeploy {
         try {
             Set-Location -LiteralPath $ROOT
             Append-Log "Pasta do build: $ROOT" 'ok'
-            Test-CancelRequested
 
-            Set-Progress 5 'Verificando npm'
-            $npmCmd = Get-Command npm.cmd -EA SilentlyContinue
-            if (-not $npmCmd) { $npmCmd = Get-Command npm -EA SilentlyContinue }
-            if (-not $npmCmd) { throw 'npm nao encontrado no PATH.' }
-            $npmExe = $npmCmd.Source
-            Append-Log "npm: $npmExe" 'ok'
-            Test-CancelRequested
+            Set-Progress 5 'Preparando Node.js/npm'
+            $frontendNode = Resolve-OrInstallFrontendNode
+            $npmExe = $frontendNode.NpmExecutable
 
-            if (-not (Test-Path (Join-Path $ROOT 'node_modules'))) {
-                Set-Progress 10 'Instalando dependencias'
-                if (Test-Path (Join-Path $ROOT 'package-lock.json')) {
-                    $rc = Invoke-LoggedProcess $npmExe @('ci') 'npm ci'
-                } else {
-                    $rc = Invoke-LoggedProcess $npmExe @('install') 'npm install'
-                }
-                if ($rc -ne 0) { throw "Instalacao de dependencias falhou (codigo $rc)." }
-            } else {
-                Append-Log 'node_modules encontrado; instalacao de dependencias ignorada' 'ok'
-            }
+            Ensure-FrontendDependencies $npmExe
 
-            Set-Progress 12 'Limpando build antigo'
-            Test-CancelRequested
+            Set-Progress 22 'Limpando build antigo'
             if (Test-Path $BUILD_DIR) {
                 Remove-Item $BUILD_DIR -Recurse -Force
                 Append-Log 'Pasta build antiga removida' 'ok'
@@ -493,21 +599,25 @@ function Start-BuildDeploy {
                 Append-Log 'Nenhuma pasta build antiga encontrada'
             }
 
-            Set-Progress 22 'Executando npm run build'
+            Set-Progress 32 'Executando npm run build'
             $rc = Invoke-LoggedProcess $npmExe @('run', 'build') 'npm run build'
             if ($rc -ne 0) { throw "npm run build falhou (codigo $rc)." }
-            Test-CancelRequested
 
             $srcIndex = Join-Path $BUILD_DIR 'index.html'
             if (-not (Test-Path $srcIndex)) { throw 'build\index.html nao foi gerado.' }
 
-            Set-Progress 84 'Publicando build no backend'
-            $robocopyCmd = Get-Command robocopy.exe -EA SilentlyContinue
-            if (-not $robocopyCmd) { throw 'robocopy.exe nao encontrado no Windows.' }
-            $rc = Invoke-LoggedProcess $robocopyCmd.Source @($BUILD_DIR, $DEPLOY_DIR, '/MIR', '/R:2', '/W:1', '/NP') 'robocopy build backend\neveai\frontend'
-            if ($rc -gt 7) { throw "robocopy falhou (codigo $rc)." }
-            Append-Log "robocopy concluido com codigo $rc" 'ok'
-            Test-CancelRequested
+            Set-Progress 82 'Limpando destino do backend'
+            if (Test-Path $DEPLOY_DIR) {
+                Get-ChildItem -LiteralPath $DEPLOY_DIR -Force | Remove-Item -Recurse -Force
+                Append-Log 'Destino backend\neveai\frontend limpo' 'ok'
+            } else {
+                New-Item $DEPLOY_DIR -ItemType Directory -Force | Out-Null
+                Append-Log 'Destino backend\neveai\frontend criado' 'ok'
+            }
+
+            Set-Progress 88 'Copiando build para o backend'
+            Copy-Item -Path (Join-Path $BUILD_DIR '*') -Destination $DEPLOY_DIR -Recurse -Force
+            Append-Log 'Arquivos copiados para backend\neveai\frontend' 'ok'
 
             Set-Progress 94 'Verificando hash do deploy'
             $dstIndex = Join-Path $DEPLOY_DIR 'index.html'
@@ -524,12 +634,6 @@ function Start-BuildDeploy {
                 Ok = $true
                 Summary = "Build:  $BUILD_DIR`nDeploy: $DEPLOY_DIR`nArquivos publicados: $fileCount`nSHA256 index.html: $($srcHash.Hash)"
             }
-        } catch [System.OperationCanceledException] {
-            Append-Log $_.Exception.Message 'warn'
-            $eventArgs.Result = [pscustomobject]@{
-                Ok = $false
-                Summary = "Cancelado pelo usuario.`nLog:  $LOG"
-            }
         } catch {
             Append-Log $_.Exception.Message 'err'
             $eventArgs.Result = [pscustomobject]@{
@@ -542,21 +646,22 @@ function Start-BuildDeploy {
     $worker.add_RunWorkerCompleted({
         param($sender, $eventArgs)
         $script:IsRunning = $false
-        $result = $eventArgs.Result
-        $wasCancelClose = $script:CancelRequested -and $script:CloseAfterCancel
-        $script:CancelRequested = $false
-        $script:CloseAfterCancel = $false
-
-        if ($wasCancelClose) {
-            $script:ExitCode = 1
-            $window.Close()
+        if ($eventArgs.Error) {
+            Append-Log $eventArgs.Error.Message 'err'
+            Set-Done $false "Erro: $($eventArgs.Error.Message)`nLog:  $LOG"
             return
         }
 
+        if ($eventArgs.Cancelled) {
+            Set-Done $false "Build cancelado.`nLog:  $LOG"
+            return
+        }
+
+        $result = $eventArgs.Result
         if ($result -and $result.Ok) {
             Set-Done $true $result.Summary
         } else {
-            $summary = if ($result) { $result.Summary } else { "Erro desconhecido.`nLog: $LOG" }
+            $summary = if ($result) { $result.Summary } else { "Build terminou sem retornar detalhes. Consulte o log: $LOG" }
             Set-Done $false $summary
         }
     })
@@ -564,8 +669,8 @@ function Start-BuildDeploy {
     $worker.RunWorkerAsync()
 }
 
-$ctl.BtnClose.Add_Click({ Request-Cancel })
-$ctl.BtnCancel.Add_Click({ Request-Cancel })
+$ctl.BtnClose.Add_Click({ if (-not $script:IsRunning) { $window.Close() } })
+$ctl.BtnCancel.Add_Click({ if (-not $script:IsRunning) { $window.Close() } })
 $ctl.BtnPrimary.Add_Click({
     if ($ctl.BtnPrimary.Tag -eq 'close') {
         $window.Close()
