@@ -258,6 +258,9 @@ class ProcessUrlForm(CollectionNameForm):
 
 class SearchForm(BaseModel):
     queries: List[str]
+    engine: Optional[str] = None
+    result_count: Optional[int] = None
+    max_loaded_urls: Optional[int] = None
 
 
 @router.get("/")
@@ -1929,7 +1932,11 @@ async def process_web(
 
 
 def search_web(
-    request: Request, engine: str, query: str, user=None
+    request: Request,
+    engine: str,
+    query: str,
+    user=None,
+    result_count: Optional[int] = None,
 ) -> list[SearchResult]:
     """Search the web using a search engine and return the results as a list of SearchResult objects.
     Will look for a search engine API key in environment variables in the following order:
@@ -1952,6 +1959,8 @@ def search_web(
     Args:
         query (str): The query to search for
     """
+
+    result_count = result_count or request.app.state.config.WEB_SEARCH_RESULT_COUNT
 
     # TODO: add playwright to search the web
     if engine == "ollama_cloud":
@@ -2089,7 +2098,7 @@ def search_web(
     elif engine == "duckduckgo":
         return search_duckduckgo(
             query,
-            request.app.state.config.WEB_SEARCH_RESULT_COUNT,
+            result_count,
             request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
             concurrent_requests=request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS,
             backend=request.app.state.config.DDGS_BACKEND,
@@ -2264,8 +2273,10 @@ async def process_web_search(
     result_items = []
 
     try:
+        search_engine = form_data.engine or request.app.state.config.WEB_SEARCH_ENGINE
+        result_count = form_data.result_count or request.app.state.config.WEB_SEARCH_RESULT_COUNT
         logging.debug(
-            f"trying to web search with {request.app.state.config.WEB_SEARCH_ENGINE, form_data.queries}"
+            f"trying to web search with {search_engine, form_data.queries}"
         )
 
         # Use semaphore to limit concurrent requests based on WEB_SEARCH_CONCURRENT_REQUESTS
@@ -2282,9 +2293,10 @@ async def process_web_search(
                     return await run_in_threadpool(
                         search_web,
                         request,
-                        request.app.state.config.WEB_SEARCH_ENGINE,
+                        search_engine,
                         query,
                         user,
+                        result_count,
                     )
 
             search_tasks = [
@@ -2296,9 +2308,10 @@ async def process_web_search(
                 run_in_threadpool(
                     search_web,
                     request,
-                    request.app.state.config.WEB_SEARCH_ENGINE,
+                    search_engine,
                     query,
                     user,
+                    result_count,
                 )
                 for query in form_data.queries
             ]
@@ -2313,6 +2326,17 @@ async def process_web_search(
                         urls.append(item.link)
 
         urls = list(dict.fromkeys(urls))
+        searched_urls = urls[:]
+        searched_result_items = []
+        seen_result_links = set()
+        for item in result_items:
+            if item.link in seen_result_links:
+                continue
+            searched_result_items.append(dict(item))
+            seen_result_links.add(item.link)
+        if form_data.max_loaded_urls:
+            urls = urls[: form_data.max_loaded_urls]
+            result_items = [item for item in result_items if item.link in urls]
         log.debug(f"urls: {urls}")
 
     except Exception as e:
@@ -2360,7 +2384,7 @@ async def process_web_search(
         urls = [
             doc.metadata.get("source") for doc in docs if doc.metadata.get("source")
         ]  # only keep the urls returned by the loader
-        result_items = [
+        loaded_result_items = [
             dict(item) for item in result_items if item.link in urls
         ]  # only keep the search results that have been loaded
 
@@ -2369,7 +2393,9 @@ async def process_web_search(
                 "status": True,
                 "collection_name": None,
                 "filenames": urls,
-                "items": result_items,
+                "items": searched_result_items,
+                "loaded_items": loaded_result_items,
+                "searched_count": len(searched_urls),
                 "docs": [
                     {
                         "content": doc.page_content,
@@ -2402,8 +2428,10 @@ async def process_web_search(
             return {
                 "status": True,
                 "collection_names": [collection_name],
-                "items": result_items,
+                "items": searched_result_items,
+                "loaded_items": loaded_result_items,
                 "filenames": urls,
+                "searched_count": len(searched_urls),
                 "loaded_count": len(docs),
             }
     except Exception as e:

@@ -79,6 +79,7 @@
 
 	import XMark from '../icons/XMark.svelte';
 	import GlobeAlt from '../icons/GlobeAlt.svelte';
+	import GlobeSearch from '../icons/GlobeSearch.svelte';
 	import Photo from '../icons/Photo.svelte';
 	import Wrench from '../icons/Wrench.svelte';
 	import Sparkles from '../icons/Sparkles.svelte';
@@ -133,6 +134,7 @@
 
 	export let imageGenerationEnabled = false;
 	export let webSearchEnabled = false;
+	export let deepSearchEnabled = false;
 	export let codeInterpreterEnabled = false;
 	export let codeExecutionEnabled = false;
 	export let stableDiffusionEnabled = false;
@@ -171,6 +173,7 @@
 		selectedFilterIds,
 		imageGenerationEnabled,
 		webSearchEnabled,
+		deepSearchEnabled,
 		codeInterpreterEnabled,
 		codeExecutionEnabled,
 		stableDiffusionEnabled,
@@ -182,6 +185,7 @@
 		!history?.currentId &&
 		files.length === 0 &&
 		!webSearchEnabled &&
+		!deepSearchEnabled &&
 		!imageGenerationEnabled &&
 		!codeInterpreterEnabled &&
 		!codeExecutionEnabled &&
@@ -1406,6 +1410,8 @@
 											</div>
 										{:else}
 											<FileItem
+												className="w-36 shrink-0"
+												inputChip={true}
 												item={file}
 												name={file.name}
 												type={file.type}
@@ -1489,6 +1495,7 @@
 								bind:selectedToolIds
 								bind:selectedFilterIds
 								bind:webSearchEnabled
+								bind:deepSearchEnabled
 								bind:imageGenerationEnabled
 								bind:codeInterpreterEnabled
 								bind:codeExecutionEnabled
@@ -1857,6 +1864,7 @@
 									bind:selectedToolIds
 									bind:selectedFilterIds
 									bind:webSearchEnabled
+									bind:deepSearchEnabled
 									bind:imageGenerationEnabled
 									bind:codeInterpreterEnabled
 									bind:codeExecutionEnabled
@@ -1963,6 +1971,24 @@
 													</span>
 												</div>
 												<span class="text-[0.8125rem] font-medium hidden @sm:inline">Busca</span>
+											</button>
+										{/if}
+
+										{#if deepSearchEnabled}
+											<button
+												on:click|preventDefault={() => (deepSearchEnabled = !deepSearchEnabled)}
+												type="button"
+												class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-sky-600 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-600/10"
+											>
+												<div class="relative size-4 shrink-0 flex items-center justify-center">
+													<span class="group-hover:hidden flex items-center justify-center">
+														<GlobeSearch className="size-4" />
+													</span>
+													<span class="hidden group-hover:flex items-center justify-center">
+														<XMark className="size-4" strokeWidth="1.75" />
+													</span>
+												</div>
+												<span class="text-[0.8125rem] font-medium hidden @sm:inline">{$i18n.t('Deep Search')}</span>
 											</button>
 										{/if}
 

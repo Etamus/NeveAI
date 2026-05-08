@@ -852,6 +852,8 @@
 											</div>
 										{:else}
 											<FileItem
+												className="w-36 shrink-0"
+												inputChip={true}
 												item={file}
 												name={file.name}
 												type={file.type}

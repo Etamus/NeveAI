@@ -29,7 +29,7 @@ $LOG_DIR  = Join-Path $ROOT 'logs'
 if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
 $LOG = Join-Path $LOG_DIR 'install.log'
 $STATE_FILE = Join-Path $LOG_DIR 'install-state.txt'
-$INSTALLER_REVISION = '2026-05-04-release-models-v6'
+$INSTALLER_REVISION = '2026-05-08-deep-search-runtime-v1'
 '' | Set-Content $LOG
 Add-Content -LiteralPath $LOG -Value ("[INSTALLER] revision={0}; script={1}; root={2}" -f $INSTALLER_REVISION, $SCRIPT_PATH, $ROOT) -Encoding UTF8
 [System.IO.File]::WriteAllText($STATE_FILE, 'idle', [System.Text.UTF8Encoding]::new($false))
@@ -1061,6 +1061,25 @@ $ctl.BtnPrimary.Add_Click({
             $name = ($name -replace '\[.*?\]', '').Trim()
             return $name
         }
+        function Get-UnpinnedRequirementSpec([string]$spec) {
+            if ([string]::IsNullOrWhiteSpace($spec)) { return '' }
+            $text = ([string]$spec).Trim()
+            if (-not $text -or $text.StartsWith('-')) { return '' }
+
+            $parts = $text -split ';', 2
+            $requirement = $parts[0].Trim()
+            if (-not $requirement -or $requirement.StartsWith('-')) { return '' }
+            if ($requirement -match '\s@\s') { return '' }
+
+            $base = ($requirement -split '\s*(===|==|~=|!=|>=|<=|>|<)\s*', 2)[0].Trim()
+            if (-not $base -or $base -eq $requirement) { return '' }
+
+            if ($parts.Count -gt 1) {
+                $marker = $parts[1].Trim()
+                if ($marker) { return ("{0}; {1}" -f $base, $marker) }
+            }
+            return $base
+        }
         function Get-RequirementEntries([string]$path) {
             $entries = @()
             $lines = Get-Content -LiteralPath $path
@@ -1549,8 +1568,22 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
 
                 $rc = Invoke-PipInstall -InstallArgs @($entry.Spec) -Desc ("{0} {1}/{2}: {3}" -f $reqName, $index, $reqCount, $entry.Spec)
                 if ($rc -ne 0) {
+                    $fallbackSpec = Get-UnpinnedRequirementSpec $entry.Spec
+                    if ($fallbackSpec) {
+                        Log ("[!] Falha em {0} linha {1}: {2} (exit {3}); tentando sem versão: {4}" -f $reqName, $entry.Line, $entry.Spec, $rc, $fallbackSpec) 'warn'
+                        $fallbackRc = Invoke-PipInstall -InstallArgs @($fallbackSpec) -Desc ("{0} {1}/{2} fallback sem versão: {3}" -f $reqName, $index, $reqCount, $fallbackSpec)
+                        if ($fallbackRc -eq 0) {
+                            Log ("[OK] Fallback sem versão instalado para linha {0}: {1}" -f $entry.Line, $fallbackSpec)
+                            if ($entry.Package) { Mark-PythonPackageInstalled $entry.Package }
+                            continue
+                        }
+                        $failedRequirements += ("linha {0}: {1} (exit {2}); fallback {3} (exit {4})" -f $entry.Line, $entry.Spec, $rc, $fallbackSpec, $fallbackRc)
+                        Log ("[!] Fallback sem versão também falhou em {0} linha {1}: {2} (exit {3}); continuando com as demais" -f $reqName, $entry.Line, $fallbackSpec, $fallbackRc) 'warn'
+                        continue
+                    }
+
                     $failedRequirements += ("linha {0}: {1} (exit {2})" -f $entry.Line, $entry.Spec, $rc)
-                    Log ("[!] Falha em {0} linha {1}: {2} (exit {3}); continuando com as demais" -f $reqName, $entry.Line, $entry.Spec, $rc) 'warn'
+                    Log ("[!] Falha em {0} linha {1}: {2} (exit {3}); sem fallback aplicável, continuando com as demais" -f $reqName, $entry.Line, $entry.Spec, $rc) 'warn'
                     continue
                 }
                 if ($entry.Package) { Mark-PythonPackageInstalled $entry.Package }

@@ -76,10 +76,28 @@ fpdf2==2.8.7
 pymdown-extensions==10.21
 docx2txt==0.9
 python-pptx==1.0.2
+unstructured==0.18.31
+msoffcrypto-tool==6.0.0
+nltk==3.9.3
 Markdown==3.10.2
 beautifulsoup4
+pypandoc==1.16.2
 pandas==3.0.1
 openpyxl==3.1.5
+pyxlsb==1.0.10
 xlrd==2.0.2
 pillow==12.1.1
-ddgs=9.14.2
+opencv-python-headless==4.13.0.92
+rapidocr-onnxruntime==1.4.4
+
+# Audio, video transcripts and local speech-to-text
+soundfile==0.13.1
+onnxruntime==1.24.3
+faster-whisper==1.2.1
+youtube-transcript-api==1.2.4
+pytube==15.0.0
+pydub
+av==14.0.1
+
+# Web search
+ddgs==9.14.2

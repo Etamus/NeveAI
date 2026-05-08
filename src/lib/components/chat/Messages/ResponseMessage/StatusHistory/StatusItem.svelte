@@ -3,6 +3,7 @@
 	const i18n = getContext('i18n');
 	import WebSearchResults from '../WebSearchResults.svelte';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
+	import GlobeSearch from '$lib/components/icons/GlobeSearch.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import { t } from 'i18next';
@@ -12,6 +13,10 @@
 
 	$: statusAction = String(status?.action ?? '').toLowerCase();
 	$: statusDescription = String(status?.description ?? '').toLowerCase();
+	$: isDeepSearchStatus = Boolean(status?.deep_search) || statusAction.includes('deep_search');
+	$: searchedCount =
+		status?.searched_count ??
+		(status?.items?.length ? status.items.length : (status?.urls || []).length);
 	$: isImageStatus =
 		statusAction.includes('image') ||
 		statusAction.includes('stable_diffusion') ||
@@ -26,7 +31,7 @@
 				<span class="text-sm">
 					{#if status?.description?.includes('{{count}}')}
 						{$i18n.t(status?.description, {
-							count: (status?.urls || status?.items).length
+							count: searchedCount
 						})}
 					{:else if status?.description === 'No search query generated'}
 						{$i18n.t('No search query generated')}
@@ -48,6 +53,8 @@
 						>
 							{#if isImageStatus}
 								<Photo className="size-3.5" strokeWidth="1.6" />
+							{:else if isDeepSearchStatus}
+								<GlobeSearch className="size-3.5" />
 							{:else}
 								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
 							{/if}
@@ -101,6 +108,8 @@
 						>
 							{#if isImageStatus}
 								<Photo className="size-3.5" strokeWidth="1.6" />
+							{:else if isDeepSearchStatus}
+								<GlobeSearch className="size-3.5" />
 							{:else}
 								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
 							{/if}
@@ -131,7 +140,11 @@
 						<span
 							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
 						>
-							<GlobeAlt className="size-3.5" strokeWidth="1.6" />
+							{#if isDeepSearchStatus}
+								<GlobeSearch className="size-3.5" />
+							{:else}
+								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
+							{/if}
 						</span>
 						<span class="relative min-w-0 truncate text-sm leading-5 {(done || status?.done) === false ? 'shimmer' : ''}">{$i18n.t(`Querying`)}</span>
 					</div>
@@ -157,7 +170,11 @@
 						<span
 							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
 						>
-							<GlobeAlt className="size-3.5" strokeWidth="1.6" />
+							{#if isDeepSearchStatus}
+								<GlobeSearch className="size-3.5" />
+							{:else}
+								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
+							{/if}
 						</span>
 
 						<span class="relative min-w-0 truncate text-sm leading-5 {(done || status?.done) === false ? 'shimmer' : ''}">
@@ -189,6 +206,8 @@
 						>
 							{#if isImageStatus}
 								<Photo className="size-3.5" strokeWidth="1.6" />
+							{:else if isDeepSearchStatus}
+								<GlobeSearch className="size-3.5" />
 							{:else}
 								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
 							{/if}

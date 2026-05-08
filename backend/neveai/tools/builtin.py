@@ -165,13 +165,17 @@ async def search_web(
         return json.dumps({"error": "Request context not available"})
 
     try:
-        engine = __request__.app.state.config.WEB_SEARCH_ENGINE
+        deep_search_enabled = bool(getattr(__request__.state, "deep_search_enabled", False))
+        engine = "duckduckgo" if deep_search_enabled else __request__.app.state.config.WEB_SEARCH_ENGINE
         user = UserModel(**__user__) if __user__ else None
 
         # Use admin-configured result count if configured, falling back to model-provided count of provided, else default to 5
-        count = __request__.app.state.config.WEB_SEARCH_RESULT_COUNT or count
+        count = 25 if deep_search_enabled else (__request__.app.state.config.WEB_SEARCH_RESULT_COUNT or count)
+        search_result_count = 50 if deep_search_enabled else count
 
-        results = await asyncio.to_thread(_search_web, __request__, engine, query, user)
+        results = await asyncio.to_thread(
+            _search_web, __request__, engine, query, user, search_result_count
+        )
 
         # Limit results
         results = results[:count] if results else []

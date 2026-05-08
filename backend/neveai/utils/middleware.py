@@ -15,6 +15,7 @@ import html
 import inspect
 import re
 import ast
+from urllib.parse import unquote
 
 from uuid import uuid4
 from concurrent.futures import ThreadPoolExecutor
@@ -963,6 +964,124 @@ def apply_source_context_to_messages(
         )
 
 
+def get_unique_source_ids(sources: list) -> set:
+    unique_ids = set()
+    for source in sources or []:
+        if not source or len(source.keys()) == 0:
+            continue
+
+        documents = source.get("document") or []
+        metadatas = source.get("metadata") or []
+        src_info = source.get("source") or {}
+
+        for index, _ in enumerate(documents):
+            metadata = metadatas[index] if index < len(metadatas) else None
+            source_id = (
+                (metadata or {}).get("source")
+                or (metadata or {}).get("url")
+                or (src_info or {}).get("id")
+                or (src_info or {}).get("url")
+                or "N/A"
+            )
+            unique_ids.add(source_id)
+    return unique_ids
+
+
+def add_deep_search_source_floor(
+    files: list, sources: list, target_source_count: int
+) -> list:
+    sources = sources or []
+    unique_ids = get_unique_source_ids(sources)
+    if len(unique_ids) >= target_source_count:
+        return sources
+
+    supplemental_sources = []
+    for file in files or []:
+        if file.get("type") != "web_search" or not file.get("deep_search"):
+            continue
+
+        for item in file.get("items") or []:
+            link = item.get("link") or item.get("url") or item.get("source")
+            if not link or link in unique_ids:
+                continue
+
+            title = item.get("title") or link
+            snippet = item.get("snippet") or item.get("content") or ""
+            document = "\n".join(part for part in [title, snippet, link] if part)
+            supplemental_sources.append(
+                {
+                    "source": {
+                        "id": link,
+                        "name": title,
+                        "type": "web_search",
+                        "url": link,
+                    },
+                    "document": [document],
+                    "metadata": [
+                        {
+                            "source": link,
+                            "name": title,
+                            "title": title,
+                            "url": link,
+                            "snippet": snippet,
+                        }
+                    ],
+                }
+            )
+            unique_ids.add(link)
+
+            if len(unique_ids) >= target_source_count:
+                return [*sources, *supplemental_sources]
+
+    return [*sources, *supplemental_sources]
+
+
+TRAILING_SEARCH_QUERY_ARTIFACT_PATTERNS = (
+    re.compile(r"(?i)(?:^|[\s,;:._/\\-]+)20[\d%]{0,5}[\s,;:._/\\-]*services?$"),
+    re.compile(r"(?i)(?:^|[\s,;:._/\\-]+)services?[\s,;:._/\\-]*20[\d%]{0,5}$"),
+    re.compile(r"(?i)(?:^|[\s,;:._/\\-]+)20(?=[\d%]*%)[\d%]{1,5}$"),
+    re.compile(r"(?i)20[\d%]{0,5}[\s,;:._/\\-]*services?$"),
+    re.compile(r"(?i)20(?=[\d%]*%)[\d%]{1,5}$"),
+)
+
+
+def sanitize_generated_search_query(query: Any) -> str:
+    if not isinstance(query, str):
+        return ""
+
+    cleaned = html.unescape(unquote(query))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().strip("\"'`.,;:")
+
+    previous = None
+    while cleaned and previous != cleaned:
+        previous = cleaned
+        for pattern in TRAILING_SEARCH_QUERY_ARTIFACT_PATTERNS:
+            cleaned = pattern.sub("", cleaned).strip().strip("\"'`.,;:")
+
+    return cleaned
+
+
+def sanitize_generated_search_queries(
+    queries: list, fallback_query: Optional[str] = None
+) -> list[str]:
+    sanitized = []
+    seen = set()
+
+    for query in queries or []:
+        cleaned = sanitize_generated_search_query(query)
+        key = cleaned.casefold()
+        if cleaned and key not in seen:
+            sanitized.append(cleaned)
+            seen.add(key)
+
+    if not sanitized and fallback_query:
+        fallback = re.sub(r"\s+", " ", str(fallback_query)).strip()
+        if fallback:
+            sanitized.append(fallback)
+
+    return sanitized
+
+
 def process_tool_result(
     request,
     tool_function_name,
@@ -1632,11 +1751,18 @@ async def chat_web_search_handler(
     request: Request, form_data: dict, extra_params: dict, user
 ):
     event_emitter = extra_params["__event_emitter__"]
+    features = extra_params.get("__features__", {}) or {}
+    deep_search_enabled = bool(features.get("deep_search"))
+    deep_search_result_count = 50
+    deep_search_loaded_count = 50
+    deep_search_context_count = 25
+    request.state.deep_search_enabled = deep_search_enabled
     await event_emitter(
         {
             "type": "status",
             "data": {
                 "action": "web_search",
+                "deep_search": deep_search_enabled,
                 "description": "Searching the web",
                 "done": False,
             },
@@ -1675,12 +1801,14 @@ async def chat_web_search_handler(
         except Exception as e:
             queries = [response]
 
-        if ENABLE_QUERIES_CACHE:
-            request.state.cached_queries = queries
-
     except Exception as e:
         log.exception(e)
         queries = [user_message]
+
+    queries = sanitize_generated_search_queries(queries, user_message)
+
+    if ENABLE_QUERIES_CACHE:
+        request.state.cached_queries = queries
 
     # Check if generated queries are empty
     if len(queries) == 1 and queries[0].strip() == "":
@@ -1693,6 +1821,7 @@ async def chat_web_search_handler(
                 "type": "status",
                 "data": {
                     "action": "web_search",
+                    "deep_search": deep_search_enabled,
                     "description": "No search query generated",
                     "done": True,
                 },
@@ -1705,6 +1834,7 @@ async def chat_web_search_handler(
             "type": "status",
             "data": {
                 "action": "web_search_queries_generated",
+                "deep_search": deep_search_enabled,
                 "queries": queries,
                 "done": False,
             },
@@ -1715,7 +1845,14 @@ async def chat_web_search_handler(
     try:
         results = await process_web_search(
             request,
-            SearchForm(queries=queries),
+            SearchForm(
+                queries=queries,
+                engine="duckduckgo" if deep_search_enabled else None,
+                result_count=deep_search_result_count if deep_search_enabled else None,
+                max_loaded_urls=deep_search_loaded_count
+                if deep_search_enabled
+                else None,
+            ),
             user=user,
         )
 
@@ -1732,7 +1869,9 @@ async def chat_web_search_handler(
                             "name": ", ".join(queries),
                             "type": "web_search",
                             "urls": results["filenames"],
+                            "items": results.get("items", []),
                             "queries": queries,
+                            "deep_search": deep_search_enabled,
                         }
                     )
             elif results.get("docs"):
@@ -1744,7 +1883,9 @@ async def chat_web_search_handler(
                         "name": ", ".join(queries),
                         "type": "web_search",
                         "urls": results["filenames"],
+                        "items": results.get("items", []),
                         "queries": queries,
+                        "deep_search": deep_search_enabled,
                     }
                 )
 
@@ -1755,9 +1896,13 @@ async def chat_web_search_handler(
                     "type": "status",
                     "data": {
                         "action": "web_search",
+                        "deep_search": deep_search_enabled,
                         "description": "Searched {{count}} sites",
                         "urls": results["filenames"],
                         "items": results.get("items", []),
+                        "searched_count": results.get(
+                            "searched_count", len(results.get("items", []))
+                        ),
                         "done": True,
                     },
                 }
@@ -1769,6 +1914,7 @@ async def chat_web_search_handler(
                     "type": "status",
                     "data": {
                         "action": "web_search",
+                        "deep_search": deep_search_enabled,
                         "description": "No search results found",
                         "done": True,
                         "error": True,
@@ -1784,6 +1930,7 @@ async def chat_web_search_handler(
                 "type": "status",
                 "data": {
                     "action": "web_search",
+                    "deep_search": deep_search_enabled,
                     "description": "An error occurred while searching the web",
                     "queries": queries,
                     "done": True,
@@ -1800,6 +1947,7 @@ async def chat_web_search_handler(
                     "type": "status",
                     "data": {
                         "action": "web_search",
+                        "deep_search": deep_search_enabled,
                         "description": "Web search completed with no results",
                         "done": True,
                         "error": True,
@@ -2096,6 +2244,12 @@ async def chat_completion_files_handler(
     request: Request, body: dict, extra_params: dict, user: UserModel
 ) -> tuple[dict, dict[str, list]]:
     __event_emitter__ = extra_params["__event_emitter__"]
+    features = extra_params.get("__features__", {}) or {}
+    deep_search_enabled = bool(
+        features.get("deep_search")
+        or getattr(request.state, "deep_search_enabled", False)
+    )
+    deep_search_context_count = 25
     sources = []
 
     if files := body.get("metadata", {}).get("files", None):
@@ -2133,11 +2287,17 @@ async def chat_completion_files_handler(
             except:
                 pass
 
+            queries = sanitize_generated_search_queries(
+                queries,
+                get_last_user_message(body["messages"]),
+            )
+
             await __event_emitter__(
                 {
                     "type": "status",
                     "data": {
                         "action": "queries_generated",
+                        "deep_search": deep_search_enabled,
                         "queries": queries,
                         "done": False,
                     },
@@ -2146,6 +2306,19 @@ async def chat_completion_files_handler(
 
         if len(queries) == 0:
             queries = [get_last_user_message(body["messages"])]
+            queries = sanitize_generated_search_queries(
+                queries,
+                get_last_user_message(body["messages"]),
+            )
+
+        retrieval_k = request.app.state.config.TOP_K
+        retrieval_k_reranker = request.app.state.config.TOP_K_RERANKER
+        if deep_search_enabled:
+            retrieval_k = max(retrieval_k or 0, deep_search_context_count)
+            retrieval_k_reranker = max(
+                retrieval_k_reranker or 0,
+                deep_search_context_count,
+            )
 
         try:
             # Directly await async get_sources_from_items (no thread needed - fully async now)
@@ -2156,7 +2329,7 @@ async def chat_completion_files_handler(
                 embedding_function=lambda query, prefix: request.app.state.EMBEDDING_FUNCTION(
                     query, prefix=prefix, user=user
                 ),
-                k=request.app.state.config.TOP_K,
+                k=retrieval_k,
                 reranking_function=(
                     (
                         lambda query, documents: request.app.state.RERANKING_FUNCTION(
@@ -2166,7 +2339,7 @@ async def chat_completion_files_handler(
                     if request.app.state.RERANKING_FUNCTION
                     else None
                 ),
-                k_reranker=request.app.state.config.TOP_K_RERANKER,
+                k_reranker=retrieval_k_reranker,
                 r=request.app.state.config.RELEVANCE_THRESHOLD,
                 hybrid_bm25_weight=request.app.state.config.HYBRID_BM25_WEIGHT,
                 hybrid_search=request.app.state.config.ENABLE_RAG_HYBRID_SEARCH,
@@ -2174,35 +2347,24 @@ async def chat_completion_files_handler(
                 or request.app.state.config.RAG_FULL_CONTEXT,
                 user=user,
             )
+            if deep_search_enabled:
+                sources = add_deep_search_source_floor(
+                    files,
+                    sources,
+                    deep_search_context_count,
+                )
         except Exception as e:
             log.exception(e)
 
         log.debug(f"rag_contexts:sources: {sources}")
 
-        unique_ids = set()
-        for source in sources or []:
-            if not source or len(source.keys()) == 0:
-                continue
-
-            documents = source.get("document") or []
-            metadatas = source.get("metadata") or []
-            src_info = source.get("source") or {}
-
-            for index, _ in enumerate(documents):
-                metadata = metadatas[index] if index < len(metadatas) else None
-                _id = (
-                    (metadata or {}).get("source")
-                    or (src_info or {}).get("id")
-                    or "N/A"
-                )
-                unique_ids.add(_id)
-
-        sources_count = len(unique_ids)
+        sources_count = len(get_unique_source_ids(sources))
         await __event_emitter__(
             {
                 "type": "status",
                 "data": {
                     "action": "sources_retrieved",
+                    "deep_search": deep_search_enabled,
                     "count": sources_count,
                     "done": True,
                 },
@@ -2545,6 +2707,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     features = form_data.pop("features", None) or {}
     extra_params["__features__"] = features
+    request.state.deep_search_enabled = bool(features.get("deep_search"))
     if features:
         if "voice" in features and features["voice"]:
             if request.app.state.config.VOICE_MODE_PROMPT_TEMPLATE != None:

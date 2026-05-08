@@ -23,6 +23,7 @@
 	import Wrench from '$lib/components/icons/Wrench.svelte';
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
+	import GlobeSearch from '$lib/components/icons/GlobeSearch.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import Terminal from '$lib/components/icons/Terminal.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
@@ -53,6 +54,7 @@
 	export let selectedFilterIds: string[] = [];
 	export let showWebSearchButton = false;
 	export let webSearchEnabled = false;
+	export let deepSearchEnabled = false;
 	export let showImageGenerationButton = false;
 	export let imageGenerationEnabled = false;
 	export let showCodeInterpreterButton = false;
@@ -100,6 +102,42 @@
 		}
 		selectedToolIds = selectedToolIds.filter((id) => tools && Object.keys(tools).includes(id));
 	};
+
+	const disabledToggleClass = (disabled: boolean) =>
+		disabled ? 'opacity-40 pointer-events-none' : '';
+
+	$: hasToolOrFilterEnabled = selectedToolIds.length > 0 || selectedFilterIds.length > 0;
+	$: webSearchBlocked =
+		!webSearchEnabled &&
+		(deepSearchEnabled || stableDiffusionEnabled || codeInterpreterEnabled || imageGenerationEnabled);
+	$: deepSearchBlocked =
+		!deepSearchEnabled &&
+		(webSearchEnabled ||
+			imageGenerationEnabled ||
+			codeInterpreterEnabled ||
+			codeExecutionEnabled ||
+			stableDiffusionEnabled ||
+			hasToolOrFilterEnabled);
+	$: imageGenerationBlocked =
+		!imageGenerationEnabled &&
+		(deepSearchEnabled ||
+			stableDiffusionEnabled ||
+			webSearchEnabled ||
+			codeInterpreterEnabled ||
+			codeExecutionEnabled);
+	$: codeInterpreterBlocked =
+		!codeInterpreterEnabled &&
+		(deepSearchEnabled || stableDiffusionEnabled || webSearchEnabled || imageGenerationEnabled);
+	$: codeExecutionBlocked =
+		!codeExecutionEnabled && (deepSearchEnabled || stableDiffusionEnabled || imageGenerationEnabled);
+	$: stableDiffusionBlocked =
+		!stableDiffusionEnabled &&
+		(deepSearchEnabled ||
+			webSearchEnabled ||
+			imageGenerationEnabled ||
+			codeInterpreterEnabled ||
+			codeExecutionEnabled);
+	$: toolsAndFiltersBlocked = deepSearchEnabled;
 
 	let fileUploadEnabled = true;
 	$: fileUploadEnabled =
@@ -367,8 +405,8 @@
 					{#if tools}
 						{#if Object.keys(tools).length > 0}
 							<button
-								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
-								on:click={() => { tab = 'tools'; }}
+								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(toolsAndFiltersBlocked)}"
+								on:click={() => { if (toolsAndFiltersBlocked) return; tab = 'tools'; }}
 							>
 								<Wrench />
 								<div class="flex items-center w-full justify-between">
@@ -388,11 +426,13 @@
 						{#each toggleFilters.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })) as filter (filter.id)}
 							<Tooltip content={filter?.description} placement="top-start">
 								<button
-									class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
+									class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(toolsAndFiltersBlocked)}"
 									on:click={() => {
+										if (toolsAndFiltersBlocked) return;
 										if (selectedFilterIds.includes(filter.id)) {
 											selectedFilterIds = selectedFilterIds.filter((id) => id !== filter.id);
 										} else {
+											deepSearchEnabled = false;
 											selectedFilterIds = [...selectedFilterIds, filter.id];
 										}
 									}}
@@ -430,7 +470,7 @@
 
 					{#if showWebSearchButton}
 						<Tooltip content="" placement="top-start">
-							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {stableDiffusionEnabled || codeInterpreterEnabled || imageGenerationEnabled ? 'opacity-40 pointer-events-none' : ''}" on:click={() => { webSearchEnabled = !webSearchEnabled; if (webSearchEnabled) { codeInterpreterEnabled = false; imageGenerationEnabled = false; } }}>
+							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(webSearchBlocked)}" on:click={() => { if (webSearchBlocked) return; webSearchEnabled = !webSearchEnabled; if (webSearchEnabled) { deepSearchEnabled = false; codeInterpreterEnabled = false; imageGenerationEnabled = false; stableDiffusionEnabled = false; } }}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0"><GlobeAlt /></div>
@@ -444,7 +484,7 @@
 
 					{#if showImageGenerationButton}
 						<Tooltip content="" placement="top-start">
-					<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {stableDiffusionEnabled || webSearchEnabled || codeInterpreterEnabled || codeExecutionEnabled ? 'opacity-40 pointer-events-none' : ''}" on:click={() => { imageGenerationEnabled = !imageGenerationEnabled; if (imageGenerationEnabled) { webSearchEnabled = false; codeInterpreterEnabled = false; codeExecutionEnabled = false; } }}>
+							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(imageGenerationBlocked)}" on:click={() => { if (imageGenerationBlocked) return; imageGenerationEnabled = !imageGenerationEnabled; if (imageGenerationEnabled) { webSearchEnabled = false; deepSearchEnabled = false; codeInterpreterEnabled = false; codeExecutionEnabled = false; stableDiffusionEnabled = false; selectedToolIds = []; selectedFilterIds = []; } }}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0"><Photo className="size-4" strokeWidth="1.5" /></div>
@@ -458,7 +498,7 @@
 
 					{#if showCodeInterpreterButton}
 						<Tooltip content="" placement="top-start">
-							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {stableDiffusionEnabled || webSearchEnabled || imageGenerationEnabled ? 'opacity-40 pointer-events-none' : ''}" aria-pressed={codeInterpreterEnabled} on:click={() => { codeInterpreterEnabled = !codeInterpreterEnabled; if (codeInterpreterEnabled) { webSearchEnabled = false; imageGenerationEnabled = false; } }}>
+							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(codeInterpreterBlocked)}" aria-pressed={codeInterpreterEnabled} on:click={() => { if (codeInterpreterBlocked) return; codeInterpreterEnabled = !codeInterpreterEnabled; if (codeInterpreterEnabled) { webSearchEnabled = false; deepSearchEnabled = false; imageGenerationEnabled = false; stableDiffusionEnabled = false; } }}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0"><Terminal className="size-3.5" strokeWidth="1.75" /></div>
@@ -472,7 +512,7 @@
 
 					{#if showCodeExecutionButton}
 						<Tooltip content="" placement="top-start">
-							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {stableDiffusionEnabled || imageGenerationEnabled ? 'opacity-40 pointer-events-none' : ''}" aria-pressed={codeExecutionEnabled} on:click={() => { codeExecutionEnabled = !codeExecutionEnabled; if (codeExecutionEnabled) { imageGenerationEnabled = false; } }}>
+							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(codeExecutionBlocked)}" aria-pressed={codeExecutionEnabled} on:click={() => { if (codeExecutionBlocked) return; codeExecutionEnabled = !codeExecutionEnabled; if (codeExecutionEnabled) { deepSearchEnabled = false; imageGenerationEnabled = false; stableDiffusionEnabled = false; } }}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0">
@@ -488,12 +528,28 @@
 						</Tooltip>
 					{/if}
 
+					{#if showWebSearchButton}
+						<Tooltip content="" placement="top-start">
+							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(deepSearchBlocked)}" on:click={() => { if (deepSearchBlocked) return; deepSearchEnabled = !deepSearchEnabled; if (deepSearchEnabled) { webSearchEnabled = false; imageGenerationEnabled = false; codeInterpreterEnabled = false; codeExecutionEnabled = false; stableDiffusionEnabled = false; selectedToolIds = []; selectedFilterIds = []; } }}>
+								<div class="flex-1 truncate">
+									<div class="flex flex-1 gap-2 items-center">
+										<div class="shrink-0"><GlobeSearch /></div>
+										<div class=" truncate">{$i18n.t('Deep Search')}</div>
+									</div>
+								</div>
+								<div class=" shrink-0"><Switch state={deepSearchEnabled} on:change={async (e) => { const state = e.detail; await tick(); }} /></div>
+							</button>
+						</Tooltip>
+					{/if}
+
 					{#if showStableDiffusionButton}
 						<Tooltip content="" placement="top-start">
-<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {webSearchEnabled || imageGenerationEnabled || codeInterpreterEnabled || codeExecutionEnabled ? 'opacity-40 pointer-events-none' : ''}" on:click={() => {
+							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(stableDiffusionBlocked)}" on:click={() => {
+							if (stableDiffusionBlocked) return;
 							stableDiffusionEnabled = !stableDiffusionEnabled;
 							if (stableDiffusionEnabled) {
 								webSearchEnabled = false;
+								deepSearchEnabled = false;
 								imageGenerationEnabled = false;
 								codeInterpreterEnabled = false;
 								codeExecutionEnabled = false;
@@ -529,8 +585,9 @@
 					</button>
 					{#each Object.keys(tools) as toolId}
 						<button
-							class="relative flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
+							class="relative flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(toolsAndFiltersBlocked)}"
 							on:click={async (e) => {
+								if (toolsAndFiltersBlocked) return;
 								if (!(tools[toolId]?.authenticated ?? true)) {
 									e.preventDefault();
 									let parts = toolId.split(':');
@@ -542,6 +599,7 @@
 									const state = tools[toolId].enabled;
 									await tick();
 									if (state) {
+										deepSearchEnabled = false;
 										selectedToolIds = [...selectedToolIds, toolId];
 									} else {
 										selectedToolIds = selectedToolIds.filter((id) => id !== toolId);

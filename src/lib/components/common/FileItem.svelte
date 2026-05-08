@@ -26,6 +26,7 @@
 	export let item = null;
 	export let edit = false;
 	export let small = false;
+	export let inputChip = false;
 
 	export let name: string;
 	export let type: string;
@@ -53,8 +54,12 @@
 
 <div class="relative group {className}">
 <button
-	class="w-full flex items-center gap-1 {colorClassName} {small
-		? 'rounded-lg p-1.5'
+	class="w-full flex items-center gap-1 {inputChip
+		? 'bg-gray-100/90 dark:bg-gray-800/80 border border-gray-200/70 dark:border-gray-700/50 text-gray-700 dark:text-gray-200 hover:bg-gray-200/80 dark:hover:bg-gray-700/70'
+		: colorClassName} {small
+		? inputChip
+			? 'rounded-lg px-1.5 py-1'
+			: 'rounded-lg p-1.5'
 		: 'rounded-xl p-1.5'} text-left"
 	type="button"
 	on:click={async () => {
@@ -122,11 +127,52 @@
 					{:else if type === 'note'}
 						<PageEdit />
 					{:else if type === 'chat'}
-						<ChatBubble />
+						{#if inputChip}
+							<svg
+								aria-hidden="true"
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="1.7"
+								stroke="currentColor"
+								class="size-3.5"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									d="M20.25 11.5c0 4.14-3.69 7.5-8.25 7.5-1.08 0-2.1-.19-3.02-.53L4.5 20.25l1.25-3.43C4.5 15.47 3.75 13.64 3.75 11.5 3.75 7.36 7.44 4 12 4s8.25 3.36 8.25 7.5Z"
+								/>
+							</svg>
+						{:else}
+							<ChatBubble />
+						{/if}
 					{:else if type === 'folder'}
 						<Folder />
 					{:else}
-						<DocumentPage />
+						{#if inputChip}
+							<svg
+								aria-hidden="true"
+								xmlns="http://www.w3.org/2000/svg"
+								fill="none"
+								viewBox="0 0 24 24"
+								stroke-width="1.7"
+								stroke="currentColor"
+								class="size-3.5"
+							>
+								<path
+									d="M6.75 3.25h7.35c.36 0 .71.14.96.4l3.29 3.29c.26.25.4.6.4.96v11.35c0 .83-.67 1.5-1.5 1.5H6.75c-.83 0-1.5-.67-1.5-1.5V4.75c0-.83.67-1.5 1.5-1.5Z"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+								<path
+									d="M14.25 3.5v3.25c0 .55.45 1 1 1h3.25"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+								/>
+							</svg>
+						{:else}
+							<DocumentPage />
+						{/if}
 					{/if}
 				</Tooltip>
 			{:else}
@@ -164,7 +210,7 @@
 		</div>
 	{:else}
 		<Tooltip content={decodeString(name)} className="flex flex-col w-full min-w-0" placement="top-start">
-			<div class="flex flex-col justify-center w-full min-w-0 px-1">
+			<div class="flex flex-col justify-center w-full min-w-0 {inputChip ? 'px-0.5' : 'px-1'}">
 				<div class="dark:text-gray-100 text-xs flex justify-between items-center gap-1">
 					<div class="line-clamp-1 flex-1 min-w-0">{decodeString(name)}</div>
 					{#if dismissible}

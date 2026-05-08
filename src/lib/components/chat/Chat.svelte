@@ -159,6 +159,7 @@
 
 	let imageGenerationEnabled = false;
 	let webSearchEnabled = false;
+	let deepSearchEnabled = false;
 	let codeInterpreterEnabled = false;
 	let codeExecutionEnabled = false;
 	let stableDiffusionEnabled = false;
@@ -382,6 +383,7 @@
 		selectedToolIds = [];
 		selectedFilterIds = [];
 		webSearchEnabled = false;
+		deepSearchEnabled = false;
 		imageGenerationEnabled = false;
 		stableDiffusionEnabled = false;
 
@@ -433,6 +435,7 @@
 						selectedToolIds = input.selectedToolIds;
 						selectedFilterIds = input.selectedFilterIds;
 						webSearchEnabled = input.webSearchEnabled;
+						deepSearchEnabled = input.deepSearchEnabled ?? false;
 						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeInterpreterEnabled = input.codeInterpreterEnabled;
 						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
@@ -497,13 +500,30 @@
 		selectedToolIds = [];
 		selectedFilterIds = [];
 		webSearchEnabled = false;
+		deepSearchEnabled = false;
 		imageGenerationEnabled = false;
 		codeInterpreterEnabled = false;
 		codeExecutionEnabled = false;
+		stableDiffusionEnabled = false;
 		params = {};
 
 		if (selectedModelIds.filter((id) => id).length > 0) {
 			setDefaults();
+		}
+	};
+
+	const normalizeExclusiveFeatureToggles = () => {
+		const hasOtherIntegrationEnabled =
+			webSearchEnabled ||
+			imageGenerationEnabled ||
+			codeInterpreterEnabled ||
+			codeExecutionEnabled ||
+			stableDiffusionEnabled ||
+			selectedToolIds.length > 0 ||
+			selectedFilterIds.length > 0;
+
+		if (deepSearchEnabled && hasOtherIntegrationEnabled) {
+			deepSearchEnabled = false;
 		}
 	};
 
@@ -542,6 +562,12 @@
 
 			// Set Default Features
 			if (model?.info?.meta?.defaultFeatureIds) {
+				deepSearchEnabled = Boolean(
+					model.info.meta.defaultFeatureIds.includes('deep_search') &&
+					$config?.features?.enable_web_search &&
+					($user?.role === 'admin' || $user?.permissions?.features?.web_search)
+				);
+
 				if (
 					model.info?.meta?.capabilities?.['image_generation'] &&
 					$config?.features?.enable_image_generation &&
@@ -577,6 +603,8 @@
 					stableDiffusionEnabled = model.info.meta.defaultFeatureIds?.includes('stable_diffusion') ?? false;
 				}
 			}
+
+			normalizeExclusiveFeatureToggles();
 
 	        // Auto-populate Chat Controls params from model settings
 			// model.info.params is stripped by the backend for security; fetch full model via dedicated API
@@ -954,6 +982,7 @@
 				selectedToolIds = [];
 				selectedFilterIds = [];
 				webSearchEnabled = false;
+				deepSearchEnabled = false;
 				imageGenerationEnabled = false;
 				codeInterpreterEnabled = false;
 				codeExecutionEnabled = false;
@@ -968,6 +997,7 @@
 						selectedToolIds = input.selectedToolIds;
 						selectedFilterIds = input.selectedFilterIds;
 						webSearchEnabled = input.webSearchEnabled;
+						deepSearchEnabled = input.deepSearchEnabled ?? false;
 						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeInterpreterEnabled = input.codeInterpreterEnabled;
 						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
@@ -2366,6 +2396,16 @@
 	};
 
 	const getFeatures = () => {
+		const effectiveDeepSearchEnabled =
+			deepSearchEnabled &&
+			!webSearchEnabled &&
+			!imageGenerationEnabled &&
+			!codeInterpreterEnabled &&
+			!codeExecutionEnabled &&
+			!stableDiffusionEnabled &&
+			selectedToolIds.length === 0 &&
+			selectedFilterIds.length === 0;
+
 		let features = {};
 
 		if ($config?.features)
@@ -2384,7 +2424,12 @@
 				web_search:
 					$config?.features?.enable_web_search &&
 					($user?.role === 'admin' || $user?.permissions?.features?.web_search)
-						? webSearchEnabled
+						? webSearchEnabled || effectiveDeepSearchEnabled
+						: false,
+				deep_search:
+					$config?.features?.enable_web_search &&
+					($user?.role === 'admin' || $user?.permissions?.features?.web_search)
+						? effectiveDeepSearchEnabled
 						: false,
 				code_execution:
 					$config?.features?.enable_code_execution
@@ -3249,6 +3294,7 @@
 									bind:codeInterpreterEnabled
 									bind:codeExecutionEnabled
 									bind:webSearchEnabled
+									bind:deepSearchEnabled
 									bind:stableDiffusionEnabled
 									bind:thinkingEnabled
 									bind:atSelectedModel
@@ -3324,6 +3370,7 @@
 									bind:codeInterpreterEnabled
 									bind:codeExecutionEnabled
 									bind:webSearchEnabled
+									bind:deepSearchEnabled
 									bind:stableDiffusionEnabled
 									bind:thinkingEnabled
 									bind:atSelectedModel

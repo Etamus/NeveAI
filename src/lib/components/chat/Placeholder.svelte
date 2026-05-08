@@ -52,6 +52,7 @@
 	export let codeInterpreterEnabled = false;
 	export let codeExecutionEnabled = false;
 	export let webSearchEnabled = false;
+	export let deepSearchEnabled = false;
 	export let stableDiffusionEnabled = false;
 	export let thinkingEnabled = true;
 
@@ -132,6 +133,7 @@
 					bind:codeInterpreterEnabled
 					bind:codeExecutionEnabled
 					bind:webSearchEnabled
+					bind:deepSearchEnabled
 					bind:stableDiffusionEnabled
 					bind:thinkingEnabled
 					bind:atSelectedModel

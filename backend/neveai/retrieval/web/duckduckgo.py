@@ -36,20 +36,74 @@ def search_duckduckgo(
         if concurrent_requests:
             ddgs.threads = concurrent_requests
 
+        def collect_results(search_backend: str) -> list[dict]:
+            collected = []
+            seen_links = set()
+            max_pages = 1 if count <= 25 else 6
+
+            for page in range(1, max_pages + 1):
+                try:
+                    page_results = ddgs.text(
+                        query,
+                        safesearch="moderate",
+                        max_results=count,
+                        backend=search_backend,
+                        page=page,
+                    )
+                except Exception:
+                    if collected:
+                        return collected
+                    raise
+
+                new_items = 0
+                for result in page_results or []:
+                    link = result.get("href")
+                    if not link or link in seen_links:
+                        continue
+                    collected.append(result)
+                    seen_links.add(link)
+                    new_items += 1
+
+                    if len(collected) >= count:
+                        return collected
+
+                if page > 1 and new_items == 0:
+                    break
+
+            return collected
+
+        def merge_unique_results(base_results: list[dict], extra_results: list[dict]) -> list[dict]:
+            merged = []
+            seen_links = set()
+
+            for result in [*base_results, *extra_results]:
+                link = result.get("href")
+                if not link or link in seen_links:
+                    continue
+
+                merged.append(result)
+                seen_links.add(link)
+
+                if len(merged) >= count:
+                    break
+
+            return merged
+
         # Use the ddgs.text() method to perform the search
         try:
-            search_results = ddgs.text(
-                query, safesearch="moderate", max_results=count, backend="duckduckgo"
-            )
+            search_results = collect_results("duckduckgo")
+            if len(search_results) < count:
+                search_results = merge_unique_results(
+                    search_results,
+                    collect_results("auto"),
+                )
         except RatelimitException as e:
             log.error(f"RatelimitException: {e}")
         except Exception as e:
             log.error(f"DuckDuckGo search error (duckduckgo backend): {e}")
             # Fallback: try auto backend
             try:
-                search_results = ddgs.text(
-                    query, safesearch="moderate", max_results=count, backend="auto"
-                )
+                search_results = collect_results("auto")
             except Exception as e2:
                 log.error(f"DuckDuckGo fallback search error (auto backend): {e2}")
     if filter_list:
