@@ -4,6 +4,7 @@ import base64
 import json
 import asyncio
 import logging
+import time
 
 from neveai.models.groups import Groups
 from neveai.models.models import (
@@ -18,6 +19,13 @@ from neveai.models.models import (
     Models,
 )
 from neveai.models.access_grants import AccessGrants
+from neveai.routers import llamacpp
+from neveai.utils.model_defaults import (
+    get_effective_model_metadata,
+    get_effective_model_params,
+    mark_model_form_user_customized,
+    model_has_user_edits,
+)
 
 from pydantic import BaseModel
 from neveai.constants import ERROR_MESSAGES
@@ -45,6 +53,43 @@ router = APIRouter()
 
 def is_valid_model_id(model_id: str) -> bool:
     return model_id and len(model_id) <= 256
+
+
+def get_local_base_model_by_id(model_id: str) -> Optional[dict]:
+    if not model_id.startswith("local/"):
+        return None
+
+    for model in llamacpp.model_manager.scan_models():
+        if model.get("id") == model_id:
+            return model
+
+    return None
+
+
+def local_model_display_name(model: dict) -> str:
+    return (
+        model.get("filename", "")
+        .replace(".gguf", "")
+        .replace("-", " ")
+        .replace("_", " ")
+        .title()
+    )
+
+
+def build_model_response_with_defaults(
+    request: Request, model: ModelModel, write_access: bool
+) -> ModelAccessResponse:
+    default_params = getattr(request.app.state.config, "DEFAULT_MODEL_PARAMS", None) or {}
+    default_metadata = getattr(request.app.state.config, "DEFAULT_MODEL_METADATA", None) or {}
+    user_customized = model_has_user_edits(model)
+
+    model_data = model.model_dump()
+    model_data["params"] = get_effective_model_params(model, default_params)
+    model_data["meta"] = get_effective_model_metadata(
+        model_data.get("meta"), default_metadata, user_customized=user_customized
+    )
+
+    return ModelAccessResponse(**model_data, write_access=write_access)
 
 
 ###########################
@@ -339,7 +384,11 @@ class ModelIdForm(BaseModel):
 # Note: We're not using the typical url path param here, but instead using a query parameter to allow '/' in the id
 @router.get("/model", response_model=Optional[ModelAccessResponse])
 async def get_model_by_id(
-    id: str, user=Depends(get_verified_user), db: Session = Depends(get_session)
+    request: Request,
+    id: str,
+    raw: bool = False,
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
 ):
     model = Models.get_model_by_id(id, db=db)
     if model:
@@ -354,31 +403,51 @@ async def get_model_by_id(
                 db=db,
             )
         ):
-            return ModelAccessResponse(
-                **model.model_dump(),
-                write_access=(
-                    (user.role == "admin" and BYPASS_ADMIN_ACCESS_CONTROL)
-                    or user.id == model.user_id
-                    or AccessGrants.has_access(
-                        user_id=user.id,
-                        resource_type="model",
-                        resource_id=model.id,
-                        permission="write",
-                        db=db,
-                    )
-                ),
+            write_access = (
+                (user.role == "admin" and BYPASS_ADMIN_ACCESS_CONTROL)
+                or user.id == model.user_id
+                or AccessGrants.has_access(
+                    user_id=user.id,
+                    resource_type="model",
+                    resource_id=model.id,
+                    permission="write",
+                    db=db,
+                )
             )
+            if raw:
+                return ModelAccessResponse(**model.model_dump(), write_access=write_access)
+
+            return build_model_response_with_defaults(request, model, write_access)
         else:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
             )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERROR_MESSAGES.NOT_FOUND,
+
+    local_model = get_local_base_model_by_id(id)
+    if local_model and user.role == "admin":
+        timestamp = int(local_model.get("loaded_at") or time.time())
+        default_params = getattr(request.app.state.config, "DEFAULT_MODEL_PARAMS", None) or {}
+        default_metadata = getattr(request.app.state.config, "DEFAULT_MODEL_METADATA", None) or {}
+
+        return ModelAccessResponse(
+            id=id,
+            user_id=user.id,
+            base_model_id=None,
+            name=local_model_display_name(local_model),
+            params={} if raw else get_effective_model_params(None, default_params),
+            meta={} if raw else get_effective_model_metadata({}, default_metadata, user_customized=False),
+            access_grants=[],
+            is_active=True,
+            updated_at=timestamp,
+            created_at=timestamp,
+            write_access=True,
         )
 
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=ERROR_MESSAGES.NOT_FOUND,
+    )
 
 ###########################
 # GetModelById
@@ -472,12 +541,21 @@ async def toggle_model_by_id(
 
 @router.post("/model/update", response_model=Optional[ModelModel])
 async def update_model_by_id(
+    request: Request,
     form_data: ModelForm,
     user=Depends(get_verified_user),
     db: Session = Depends(get_session),
 ):
     model = Models.get_model_by_id(form_data.id, db=db)
     if not model:
+        local_model = get_local_base_model_by_id(form_data.id)
+        if local_model and user.role == "admin":
+            form_data = mark_model_form_user_customized(form_data)
+            model = Models.insert_new_model(form_data, user.id, db=db)
+            if model:
+                request.app.state.BASE_MODELS = None
+                return model
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=ERROR_MESSAGES.NOT_FOUND,
@@ -499,9 +577,9 @@ async def update_model_by_id(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    model = Models.update_model_by_id(
-        form_data.id, ModelForm(**form_data.model_dump()), db=db
-    )
+    form_data = mark_model_form_user_customized(form_data)
+    model = Models.update_model_by_id(form_data.id, ModelForm(**form_data.model_dump()), db=db)
+    request.app.state.BASE_MODELS = None
     return model
 
 

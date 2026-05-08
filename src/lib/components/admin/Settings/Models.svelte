@@ -11,6 +11,7 @@
 		createNewModel,
 		deleteAllModels,
 		getBaseModels,
+		getModelById,
 		toggleModelById,
 		updateModelById,
 		importModels
@@ -61,6 +62,8 @@
 
 	let filteredModels = [];
 	let selectedModelId = null;
+	let selectedModel = null;
+	let selectedModelLoadId = null;
 
 	let showConfigModal = false;
 	let showManageModal = false;
@@ -311,6 +314,32 @@
 		settings.set({ ...$settings, pinnedModels: pinnedModels });
 		await updateUserSettings(localStorage.token, { ui: $settings });
 	};
+
+	const loadSelectedModel = async (modelId) => {
+		const fallbackModel = models?.find((m) => m.id === modelId) ?? null;
+		selectedModel = null;
+
+		try {
+			const rawModel = await getModelById(localStorage.token, modelId, { raw: true });
+			if (selectedModelLoadId === modelId) {
+				selectedModel = rawModel ?? fallbackModel;
+			}
+		} catch (error) {
+			if (selectedModelLoadId === modelId) {
+				selectedModel = fallbackModel;
+			}
+		}
+	};
+
+	$: if (selectedModelId && selectedModelLoadId !== selectedModelId) {
+		selectedModelLoadId = selectedModelId;
+		loadSelectedModel(selectedModelId);
+	}
+
+	$: if (selectedModelId === null && selectedModelLoadId !== null) {
+		selectedModelLoadId = null;
+		selectedModel = null;
+	}
 
 	onMount(async () => {
 		await init();
@@ -694,9 +723,10 @@
 		</div><!-- end h-full wrapper -->
 	{:else}
 		<div style="height: 62.6vh; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
+			{#if selectedModel}
 			<ModelEditor
 				edit
-				model={models.find((m) => m.id === selectedModelId)}
+				model={selectedModel}
 				preset={false}
 				onSubmit={async (model) => {
 					console.log(model);
@@ -708,6 +738,11 @@
 					await init();
 				}}
 			/>
+			{:else}
+				<div class="h-full w-full flex justify-center items-center">
+					<Spinner className="size-5" />
+				</div>
+			{/if}
 		</div>
 	{/if}
 {:else}

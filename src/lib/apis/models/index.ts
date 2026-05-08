@@ -178,11 +178,14 @@ export const createNewModel = async (token: string, model: object) => {
 	return res;
 };
 
-export const getModelById = async (token: string, id: string) => {
+export const getModelById = async (token: string, id: string, options: { raw?: boolean } = {}) => {
 	let error = null;
 
 	const searchParams = new URLSearchParams();
 	searchParams.append('id', id);
+	if (options.raw) {
+		searchParams.append('raw', 'true');
+	}
 
 	const res = await fetch(`${WEBUI_API_BASE_URL}/models/model?${searchParams.toString()}`, {
 		method: 'GET',

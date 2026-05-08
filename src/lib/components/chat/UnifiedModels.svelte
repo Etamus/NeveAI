@@ -74,6 +74,11 @@
 	let contextModalModel: LocalModel | null = null;
 	let contextModalSize: number = 8192;
 
+	const getCacheTypeForLoad = () => {
+		const { cache } = getLocalModelLoadPreferences();
+		return cache === 'default' ? undefined : cache;
+	};
+
 	// ─── ADMIN MODEL STATE ───────────────────────────────────────────────────
 	let shiftKey = false;
 	let modelsImportInProgress = false;
@@ -191,8 +196,7 @@
 		localError = '';
 		localSuccess = '';
 		try {
-			const ct = localStorage.getItem('llamacpp_cache_type') || 'q8_0';
-			await loadLocalModel(localStorage.token, model.filename, gpuLayers, contextSize, '', ct);
+			await loadLocalModel(localStorage.token, model.filename, gpuLayers, contextSize, '', getCacheTypeForLoad());
 			localSuccess = `${model.filename} carregado com sucesso!`;
 			await refreshLocalModels();
 			_models.set(await getModels(localStorage.token));
@@ -277,14 +281,13 @@
 		localError = '';
 		localSuccess = '';
 		try {
-			const ct = localStorage.getItem('llamacpp_cache_type') || 'q8_0';
 			await loadLocalModel(
 				localStorage.token,
 				model.filename,
 				gpuLayers,
 				contextSize,
 				mmprojFile,
-				ct
+				getCacheTypeForLoad()
 			);
 			localSuccess = `${model.filename} carregado! (visão: ${mmprojFile})`;
 			await refreshLocalModels();

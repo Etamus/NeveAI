@@ -7,11 +7,14 @@
 	import { flyAndScale } from '$lib/utils/transitions';
 	import {
 		LOCAL_MODEL_CONTEXT_OPTIONS,
+		getCachePreferenceLabel,
 		getContextPreferenceLabel,
 		getLocalModelLoadPreferences,
 		getVisionPreferenceLabel,
+		setLocalModelCachePreference,
 		setLocalModelContextPreference,
 		setLocalModelVisionPreference,
+		type LocalModelCachePreference,
 		type LocalModelContextPreference,
 		type LocalModelVisionPreference
 	} from '$lib/utils/llamacppLoadPreferences';
@@ -19,9 +22,11 @@
 	let show = false;
 	let contextPreference: LocalModelContextPreference = 'ask';
 	let visionPreference: LocalModelVisionPreference = 'ask';
+	let cachePreference: LocalModelCachePreference = 'default';
 
 	const contextOptions: LocalModelContextPreference[] = ['ask', ...LOCAL_MODEL_CONTEXT_OPTIONS];
 	const visionOptions: LocalModelVisionPreference[] = ['ask', 'yes', 'no'];
+	const cacheOptions: LocalModelCachePreference[] = ['default', 'q8_0', 'q4_0', 'f16'];
 
 	$: contextOptionIndex =
 		typeof contextPreference === 'number'
@@ -51,6 +56,12 @@
 		setLocalModelVisionPreference(visionPreference);
 	};
 
+	const cycleCachePreference = () => {
+		const idx = cacheOptions.indexOf(cachePreference);
+		cachePreference = cacheOptions[(idx + 1) % cacheOptions.length];
+		setLocalModelCachePreference(cachePreference);
+	};
+
 	const resetContextPreference = () => {
 		contextPreference = 'ask';
 		setLocalModelContextPreference(contextPreference);
@@ -61,6 +72,11 @@
 		setLocalModelVisionPreference(visionPreference);
 	};
 
+	const resetCachePreference = () => {
+		cachePreference = 'default';
+		setLocalModelCachePreference(cachePreference);
+	};
+
 	const stopEventPropagation = (event: Event) => {
 		event.stopPropagation();
 	};
@@ -69,6 +85,7 @@
 		const preferences = getLocalModelLoadPreferences();
 		contextPreference = preferences.context;
 		visionPreference = preferences.vision;
+		cachePreference = preferences.cache;
 	});
 </script>
 
@@ -168,6 +185,27 @@
 					on:click|stopPropagation={cycleVisionPreference}
 				>
 					{getVisionPreferenceLabel(visionPreference)}
+				</button>
+			</div>
+
+			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
+				{#if cachePreference === 'default'}
+					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Cache KV Quantizado</div>
+				{:else}
+					<button
+						type="button"
+						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
+						on:click|stopPropagation={resetCachePreference}
+					>
+						Cache KV Quantizado
+					</button>
+				{/if}
+				<button
+					type="button"
+					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
+					on:click|stopPropagation={cycleCachePreference}
+				>
+					{getCachePreferenceLabel(cachePreference)}
 				</button>
 			</div>
 		</div>

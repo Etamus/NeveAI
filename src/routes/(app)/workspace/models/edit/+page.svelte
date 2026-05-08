@@ -18,7 +18,7 @@
 	onMount(async () => {
 		const _id = $page.url.searchParams.get('id');
 		if (_id) {
-			model = await getModelById(localStorage.token, _id).catch((e) => {
+			model = await getModelById(localStorage.token, _id, { raw: true }).catch((e) => {
 				return null;
 			});
 
