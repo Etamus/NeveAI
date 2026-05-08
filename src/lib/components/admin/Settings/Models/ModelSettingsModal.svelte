@@ -7,7 +7,7 @@
 
 	import { models, config as _config, settings } from '$lib/stores';
 	import { DEFAULT_CAPABILITIES } from '$lib/constants';
-	import { deleteAllModels, updateModelById } from '$lib/apis/models';
+	import { deleteAllModels } from '$lib/apis/models';
 	import { getModelsConfig, setModelsConfig, setDefaultPromptSuggestions } from '$lib/apis/configs';
 	import { getBackendConfig } from '$lib/apis';
 	import { getModels } from '$lib/apis';
@@ -60,18 +60,48 @@
 	let defaultParams = {};
 	let builtinTools = {};
 	let promptSuggestions = [];
+	let initializedForSave = false;
+	let autoSaveTimer = null;
+	let lastSavedSignature = '';
+	let saving = false;
+	let saveAgainAfterCurrent = false;
+
+	const getCleanDefaultParams = () =>
+		Object.fromEntries(
+			Object.entries(defaultParams).filter(
+				([key, value]) =>
+					key !== 'cache_type' && value !== null && value !== '' && value !== undefined
+			)
+		);
+
+	const getModelsConfigPayload = () => ({
+		DEFAULT_MODELS: defaultModelIds.join(','),
+		DEFAULT_PINNED_MODELS: defaultPinnedModelIds.join(','),
+		MODEL_ORDER_LIST: modelIds,
+		DEFAULT_MODEL_METADATA: {
+			capabilities: defaultCapabilities,
+			...(defaultFeatureIds.length > 0 ? { defaultFeatureIds } : {}),
+			...(Object.keys(builtinTools).length > 0 ? { builtinTools } : {})
+		},
+		DEFAULT_MODEL_PARAMS: getCleanDefaultParams()
+	});
+
+	const getCurrentSignature = () =>
+		JSON.stringify({
+			modelsConfig: getModelsConfigPayload(),
+			promptSuggestions: promptSuggestions.filter((p) => p.content !== '')
+		});
+
+	const hasUnsavedChanges = () => initializedForSave && getCurrentSignature() !== lastSavedSignature;
 
 	$: {
 		if (show && !initializedForOpen) {
 			initializedForOpen = true;
 			init();
 		}
-
-		if (!show && initializedForOpen) {
-			initializedForOpen = false;
-		}
 	}
 	const init = async () => {
+		initializedForSave = false;
 		config = await getModelsConfig(localStorage.token);
 
 		if (config?.DEFAULT_MODELS) {
@@ -108,73 +138,98 @@
 		defaultParams = config?.DEFAULT_MODEL_PARAMS ?? {};
 
 		promptSuggestions = $_config?.default_prompt_suggestions ?? [];
+		lastSavedSignature = getCurrentSignature();
+		initializedForSave = true;
 	};
-	const submitHandler = async () => {
-		loading = true;
 
-		const metadata = {
-			capabilities: defaultCapabilities,
-			...(defaultFeatureIds.length > 0 ? { defaultFeatureIds } : {}),
-			...(Object.keys(builtinTools).length > 0 ? { builtinTools } : {})
-		};
-
-		const res = await setModelsConfig(localStorage.token, {
-			DEFAULT_MODELS: defaultModelIds.join(','),
-			DEFAULT_PINNED_MODELS: defaultPinnedModelIds.join(','),
-			MODEL_ORDER_LIST: modelIds,
-			DEFAULT_MODEL_METADATA: metadata,
-			DEFAULT_MODEL_PARAMS: Object.fromEntries(
-				Object.entries(defaultParams).filter(([_, v]) => v !== null && v !== '' && v !== undefined)
-			)
-		});
-
-		if (res) {
-			promptSuggestions = promptSuggestions.filter((p) => p.content !== '');
-			promptSuggestions = await setDefaultPromptSuggestions(localStorage.token, promptSuggestions);
-			await _config.set(await getBackendConfig());
-
-			// Apply defaultParams to each selected model individually
-			const cleanParams = Object.fromEntries(
-				Object.entries(defaultParams).filter(([_, v]) => v !== null && v !== '' && v !== undefined)
-			);
-			if (Object.keys(cleanParams).length > 0) {
-				for (const modelId of defaultModelIds) {
-					const model = $models.find((m) => m.id === modelId);
-					if (model) {
-						try {
-							await updateModelById(localStorage.token, modelId, {
-								...model,
-								params: { ...(model.params || {}), ...cleanParams }
-							});
-						} catch (e) {
-							console.debug(`Skipped updating params for ${modelId}:`, e);
-						}
-					}
-				}
-			}
-
-			toast.success($i18n.t('Models configuration saved successfully'));
-			models.set(
-				await getModels(
-					localStorage.token,
-					$_config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-				)
-			);
-			initHandler();
-			show = false;
-		} else {
-			toast.error($i18n.t('Failed to save models configuration'));
+	const saveSettings = async ({ close = false, silent = true, force = false } = {}) => {
+		if (!config || !initializedForSave) {
+			if (close) show = false;
+			return false;
 		}
 
-		loading = false;
+		if (autoSaveTimer) {
+			clearTimeout(autoSaveTimer);
+			autoSaveTimer = null;
+		}
+
+		if (!force && !hasUnsavedChanges()) {
+			if (close) show = false;
+			return true;
+		}
+
+		if (saving) {
+			saveAgainAfterCurrent = true;
+			if (close) show = false;
+			return true;
+		}
+
+		saving = true;
+		loading = true;
+
+		let res = null;
+		try {
+			const modelsConfigPayload = getModelsConfigPayload();
+			const cleanedPromptSuggestions = promptSuggestions.filter((p) => p.content !== '');
+			res = await setModelsConfig(localStorage.token, modelsConfigPayload);
+
+			if (res) {
+				promptSuggestions = await setDefaultPromptSuggestions(localStorage.token, cleanedPromptSuggestions);
+				await _config.set(await getBackendConfig());
+				lastSavedSignature = getCurrentSignature();
+
+				if (!silent) {
+					toast.success($i18n.t('Models configuration saved successfully'));
+				}
+				models.set(
+					await getModels(
+						localStorage.token,
+						$_config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
+					)
+				);
+				initHandler();
+
+				if (close) {
+					show = false;
+				}
+			} else {
+				toast.error($i18n.t('Failed to save models configuration'));
+			}
+		} catch (error) {
+			console.error(error);
+			toast.error($i18n.t('Failed to save models configuration'));
+		} finally {
+			saving = false;
+			loading = false;
+		}
+
+		if (saveAgainAfterCurrent) {
+			saveAgainAfterCurrent = false;
+			await saveSettings({ close: false, silent: true, force: false });
+		}
+
+		return Boolean(res);
+	};
+
+	const submitHandler = async () => {
+		await saveSettings({ close: true, silent: false, force: true });
+	};
+
+	const scheduleAutoSave = () => {
+		if (!hasUnsavedChanges()) return;
+		if (autoSaveTimer) clearTimeout(autoSaveTimer);
+		autoSaveTimer = setTimeout(() => {
+			autoSaveTimer = null;
+			saveSettings({ close: false, silent: true, force: false });
+		}, 350);
+	};
+
+	const closeHandler = async () => {
+		await saveSettings({ close: true, silent: true, force: false });
 	};
 
 	const saveModelOrder = async () => {
-		await setModelsConfig(localStorage.token, {
-			DEFAULT_MODELS: defaultModelIds.join(','),
-			DEFAULT_PINNED_MODELS: defaultPinnedModelIds.join(','),
-			MODEL_ORDER_LIST: modelIds
-		});
+		await saveSettings({ close: false, silent: true, force: false });
 	};
 
 	const scheduleSaveModelOrder = () => {
@@ -184,9 +239,16 @@
 
 		saveModelOrderTimer = setTimeout(() => {
 			saveModelOrderTimer = null;
-			saveModelOrder();
+			scheduleAutoSave();
 		}, 350);
 	};
+
+	$: defaultModelIds, defaultPinnedModelIds, modelIds, defaultCapabilities, defaultFeatureIds, defaultParams, builtinTools, promptSuggestions, scheduleAutoSave();
+
+	$: if (!show && initializedForOpen) {
+		initializedForOpen = false;
+		closeHandler();
+	}
 
 	onMount(async () => {
 		init();
@@ -195,7 +257,12 @@
 	onDestroy(() => {
 		if (saveModelOrderTimer) {
 			clearTimeout(saveModelOrderTimer);
-			saveModelOrder();
+			saveSettings({ close: false, silent: true, force: false });
+		}
+
+		if (autoSaveTimer) {
+			clearTimeout(autoSaveTimer);
+			saveSettings({ close: false, silent: true, force: false });
 		}
 	});
 </script>
@@ -221,9 +288,7 @@
 			</div>
 			<button
 				class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
-				on:click={() => {
-					show = false;
-				}}
+				on:click={closeHandler}
 			>
 				<XMark className={'size-5'} />
 			</button>

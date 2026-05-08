@@ -525,6 +525,7 @@ from neveai.utils.models import (
     check_model_access,
     get_filtered_models,
 )
+from neveai.utils.model_defaults import get_effective_model_params
 from neveai.utils.chat import (
     generate_chat_completion as chat_completion_handler,
     chat_completed as chat_completed_handler,
@@ -635,10 +636,16 @@ async def lifespan(app: FastAPI):
             # Disable signup since we now have an admin
             app.state.config.ENABLE_SIGNUP = False
 
-    # This should be blocking (sync) so functions are not deactivated on first /get_models calls
-    # when the first user lands on the / route.
-    log.info("Installing external dependencies of functions and tools...")
-    install_tool_and_function_dependencies()
+    async def install_tool_and_function_dependencies_background():
+        log.info("Installing external dependencies of functions and tools...")
+        try:
+            await asyncio.to_thread(install_tool_and_function_dependencies)
+        except Exception as e:
+            log.warning(f"Failed to install function/tool dependencies in background: {e}")
+
+    app.state.tool_dependency_install_task = asyncio.create_task(
+        install_tool_and_function_dependencies_background()
+    )
 
     app.state.redis = get_redis_connection(
         redis_url=REDIS_URL,
@@ -1771,14 +1778,7 @@ async def chat_completion(
         default_model_params = (
             getattr(request.app.state.config, "DEFAULT_MODEL_PARAMS", None) or {}
         )
-        model_info_params = {
-            **default_model_params,
-            **(
-                model_info.params.model_dump()
-                if model_info and model_info.params
-                else {}
-            ),
-        }
+        model_info_params = get_effective_model_params(model_info, default_model_params)
 
         # Check base model existence for custom models
         if model_info and model_info.base_model_id:

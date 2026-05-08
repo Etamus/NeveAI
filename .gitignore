@@ -11,6 +11,7 @@ venv/
 .venv/
 backend/venv/
 backend/neveai/venv/
+tools/
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Build & artefatos de compilação (npm run build / SvelteKit)

@@ -25,11 +25,15 @@
 	// Load settings
 	let gpuLayers: number = -1;
 	let contextSize: number = 8192;
-	let cacheType: string = localStorage.getItem('llamacpp_cache_type') || 'q8_0';
 
 	// Context size modal
 	let contextModalModel: LocalModel | null = null;
 	let contextModalSize: number = 8192;
+
+	const getCacheTypeForLoad = () => {
+		const { cache } = getLocalModelLoadPreferences();
+		return cache === 'default' ? undefined : cache;
+	};
 
 	async function refreshModels() {
 		loading = true;
@@ -51,8 +55,7 @@
 		errorMessage = '';
 		successMessage = '';
 		try {
-			const ct = localStorage.getItem('llamacpp_cache_type') || 'q8_0';
-			await loadLocalModel(localStorage.token, model.filename, gpuLayers, contextSize, '', ct);
+			await loadLocalModel(localStorage.token, model.filename, gpuLayers, contextSize, '', getCacheTypeForLoad());
 			successMessage = `${model.filename} carregado com sucesso!`;
 			await refreshModels();
 			// Refresh global models list so it appears in chat
@@ -122,8 +125,7 @@
 		errorMessage = '';
 		successMessage = '';
 		try {
-			const ct = localStorage.getItem('llamacpp_cache_type') || 'q8_0';
-			await loadLocalModel(localStorage.token, model.filename, gpuLayers, contextSize, mmprojFile, ct);
+			await loadLocalModel(localStorage.token, model.filename, gpuLayers, contextSize, mmprojFile, getCacheTypeForLoad());
 			successMessage = `${model.filename} carregado com sucesso! (visão: ${mmprojFile})`;
 			await refreshModels();
 			models.set(await getModels(localStorage.token));

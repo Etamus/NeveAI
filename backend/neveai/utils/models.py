@@ -1,4 +1,3 @@
-import copy
 import time
 import logging
 import asyncio
@@ -16,6 +15,7 @@ from neveai.models.functions import Functions
 from neveai.models.models import Models
 from neveai.models.access_grants import AccessGrants
 from neveai.models.groups import Groups
+from neveai.utils.model_defaults import apply_default_model_metadata, model_has_user_edits
 
 
 from neveai.utils.plugin import (
@@ -170,6 +170,9 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
                     model["name"] = custom_model.name
                     model["info"] = custom_model.model_dump()
 
+                    if model_has_user_edits(custom_model):
+                        model["info"]["_skip_global_model_defaults"] = True
+
                     action_ids = []
                     filter_ids = []
 
@@ -221,6 +224,9 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
             }
 
             info = custom_model.model_dump()
+            if model_has_user_edits(custom_model):
+                info["_skip_global_model_defaults"] = True
+
             if "params" in info:
                 # Remove params to avoid exposing sensitive info
                 del info["params"]
@@ -310,28 +316,15 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
         except Exception as e:
             log.info(f"Failed to load function module for {function_id}: {e}")
 
-    # Apply global model defaults to all models
-    # Per-model overrides take precedence over global defaults
+    # Apply global model defaults to all models.
+    # User-customized models keep their own values; unedited local models inherit the modal defaults.
     default_metadata = (
         getattr(request.app.state.config, "DEFAULT_MODEL_METADATA", None) or {}
     )
 
     if default_metadata:
         for model in models:
-            info = model.get("info")
-
-            if info is None:
-                model["info"] = {"meta": copy.deepcopy(default_metadata)}
-                continue
-
-            meta = info.setdefault("meta", {})
-            for key, value in default_metadata.items():
-                if key == "capabilities":
-                    # Merge capabilities: defaults as base, per-model overrides win
-                    existing = meta.get("capabilities") or {}
-                    meta["capabilities"] = {**value, **existing}
-                elif meta.get(key) is None:
-                    meta[key] = copy.deepcopy(value)
+            apply_default_model_metadata(model, default_metadata)
 
     # Batch-fetch all function valves in one query to avoid N+1 DB hits
     # inside get_action_priority (previously called per action × per model).

@@ -56,13 +56,13 @@
 			<div class=" text-lg font-medium self-center">{$i18n.t('Memory')}</div>
 			<div class="flex items-center gap-1.5">
 				<button
-					class="px-3 py-1 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg"
+					class="px-4 py-1.5 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg"
 					on:click={() => {
 						showAddMemoryModal = true;
 					}}>{$i18n.t('Adicionar')}</button
 				>
 				<button
-					class="px-3 py-1 text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition rounded-lg"
+					class="px-4 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition rounded-lg"
 					on:click={() => {
 						if (memories.length > 0) {
 							showClearConfirmDialog = true;

@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from neveai.env import SRC_LOG_LEVELS, GLOBAL_LOG_LEVEL, BASE_DIR
 from neveai.models.models import ModelForm, Models
+from neveai.utils.model_defaults import get_effective_model_params
 from neveai.utils.payload import apply_model_params_to_body_openai, apply_system_prompt_to_body
 
 log = logging.getLogger(__name__)
@@ -45,6 +46,10 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 # Separate directory for mmproj (vision encoder) files
 MMPROJ_DIR = BASE_DIR / "mmproj"
 MMPROJ_DIR.mkdir(parents=True, exist_ok=True)
+
+LLAMACPP_LOG_DIR = BASE_DIR / "logs" / "llamacpp"
+LLAMACPP_LOG_DIR.mkdir(parents=True, exist_ok=True)
+LLAMACPP_HEALTH_POLL_INTERVAL = 0.2
 
 # ---------------------------------------------------------------------------
 # mmproj compatibility helpers
@@ -312,7 +317,27 @@ class LocalModelManager:
         self._processes: dict[str, subprocess.Popen] = {}
         # model_id -> port
         self._ports: dict[str, int] = {}
+        # model_id -> llama-server log path
+        self._log_paths: dict[str, Path] = {}
         self._lock = asyncio.Lock()
+
+    def _get_log_path(self, model_id: str) -> Path:
+        safe_model_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", model_id).strip("_")
+        return LLAMACPP_LOG_DIR / f"{safe_model_id or 'llama-server'}.log"
+
+    def _read_log_tail(self, model_id: str, max_chars: int = 2000) -> str:
+        log_path = self._log_paths.get(model_id)
+        if not log_path or not log_path.exists():
+            return ""
+
+        try:
+            with log_path.open("rb") as log_file:
+                log_file.seek(0, os.SEEK_END)
+                size = log_file.tell()
+                log_file.seek(max(0, size - max_chars * 4))
+                return log_file.read().decode("utf-8", errors="replace")[-max_chars:]
+        except Exception:
+            return ""
 
     # -- scanning --------------------------------------------------------
 
@@ -415,6 +440,7 @@ class LocalModelManager:
             log.warning(f"_cleanup_stale: removing dead model entry '{model_id}' (process no longer alive)")
             self._loaded.pop(model_id, None)
             proc = self._processes.pop(model_id, None)
+            self._log_paths.pop(model_id, None)
             port = self._ports.pop(model_id, None)
             # Close stale HTTP client
             if port and port in _http_clients:
@@ -642,14 +668,29 @@ class LocalModelManager:
         if sys.platform == "win32":
             creation_flags = subprocess.CREATE_NO_WINDOW
 
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-            creationflags=creation_flags,
-            cwd=str(LLAMACPP_SERVER_DIR),
-        )
+        log_path = self._get_log_path(model_id)
+        self._log_paths[model_id] = log_path
+
+        try:
+            with log_path.open("wb") as log_file:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    creationflags=creation_flags,
+                    cwd=str(LLAMACPP_SERVER_DIR),
+                )
+        except Exception:
+            self._log_paths.pop(model_id, None)
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=env,
+                creationflags=creation_flags,
+                cwd=str(LLAMACPP_SERVER_DIR),
+            )
         self._processes[model_id] = proc
 
         # Wait for server to be ready
@@ -665,17 +706,14 @@ class LocalModelManager:
             proc = self._processes.get(model_id)
             # Check if process died
             if proc and proc.poll() is not None:
-                stderr = ""
-                try:
-                    stderr = proc.stderr.read().decode("utf-8", errors="replace")
-                except Exception:
-                    pass
+                log_tail = self._read_log_tail(model_id)
                 # Clean up
                 self._processes.pop(model_id, None)
                 self._ports.pop(model_id, None)
+                self._log_paths.pop(model_id, None)
                 raise RuntimeError(
                     f"llama-server exited with code {proc.returncode}.\n"
-                    f"Stderr: {stderr[-2000:]}"
+                    f"Log: {log_tail}"
                 )
 
             try:
@@ -692,19 +730,21 @@ class LocalModelManager:
             except Exception as e:
                 last_error = e
 
-            await asyncio.sleep(1)
+            await asyncio.sleep(LLAMACPP_HEALTH_POLL_INTERVAL)
 
         # Timeout — clean up
+        log_tail = self._read_log_tail(model_id)
         await self._kill_server(model_id)
         raise TimeoutError(
             f"llama-server on port {port} did not become ready within {timeout}s. "
-            f"Last error: {last_error}"
+            f"Last error: {last_error}. Log: {log_tail}"
         )
 
     async def _kill_server(self, model_id: str):
         """Kill the llama-server subprocess for a specific model."""
         proc = self._processes.pop(model_id, None)
         port = self._ports.pop(model_id, None)
+        self._log_paths.pop(model_id, None)
 
         # Close and remove the HTTP client for this port
         if port and port in _http_clients:
@@ -1186,15 +1226,15 @@ async def generate_chat_completion(
     else:
         log.info(f"generate_chat_completion: no model_info found for '{model_id}', using as-is")
 
-    if model_info:
-        params = model_info.params.model_dump()
-        if params:
-            system = params.pop("system", None)
-            form_data = apply_model_params_to_body_openai(params, form_data)
-            if not bypass_system_prompt:
-                form_data = apply_system_prompt_to_body(system, form_data, metadata, user)
-            # Re-read messages after system prompt injection
-            messages = form_data.get("messages", messages)
+    default_model_params = getattr(request.app.state.config, "DEFAULT_MODEL_PARAMS", None) or {}
+    params = get_effective_model_params(model_info, default_model_params)
+    if params:
+        system = params.pop("system", None)
+        form_data = apply_model_params_to_body_openai(params, form_data)
+        if not bypass_system_prompt:
+            form_data = apply_system_prompt_to_body(system, form_data, metadata, user)
+        # Re-read messages after system prompt injection
+        messages = form_data.get("messages", messages)
 
     # --- Thinking/Reasoning toggle ---
     no_think = form_data.pop("no_think", False)

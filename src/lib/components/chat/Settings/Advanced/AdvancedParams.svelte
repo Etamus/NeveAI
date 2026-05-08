@@ -33,8 +33,7 @@
 		xtc_probability: null,
 		dry_multiplier: null,
 		dry_allowed_length: null,
-		dry_base: null,
-		cache_type: null
+		dry_base: null
 	};
 
 	export let params = defaultParams;
@@ -260,75 +259,6 @@
 						<span class="ml-2 self-center">{$i18n.t('Off')}</span>
 					{:else}
 						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
-					{/if}
-				</button>
-			</div>
-		</Tooltip>
-	</div>
-	{/if}
-	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5">
-			<Tooltip
-				content={tooltipsEnabled ? $i18n.t('Tipo de quantização do KV cache. Q8_0 reduz ~50% da VRAM com qualidade praticamente igual. Q4_0 reduz ~75%. FP16 não quantiza. Requer recarregar o modelo para aplicar.') : ""}
-				placement="top-start"
-				className="inline-tooltip"
-			>
-				{#if (params?.cache_type ?? null) === null}
-					<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('cache_type')}</div>
-				{:else}
-					<button type="button" class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.cache_type = null; localStorage.removeItem('llamacpp_cache_type'); }}>{$i18n.t('cache_type')}</button>
-				{/if}
-			</Tooltip>
-			<button
-				type="button"
-				class="text-xs px-2.5 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition shrink-0"
-				on:click={() => {
-					const order = [null, 'q8_0', 'q4_0', 'f16'];
-					const idx = order.indexOf(params?.cache_type ?? null);
-					const next = order[(idx + 1) % order.length];
-					params.cache_type = next;
-					if (next) { localStorage.setItem('llamacpp_cache_type', next); } else { localStorage.removeItem('llamacpp_cache_type'); }
-				}}
-			>
-				{#if (params?.cache_type ?? null) === null}Padrão{:else if params.cache_type === 'q8_0'}Q8_0{:else if params.cache_type === 'q4_0'}Q4_0{:else if params.cache_type === 'f16'}FP16{/if}
-			</button>
-		</div>
-	{:else}
-		<div class=" py-0.5 w-full justify-between">
-		<Tooltip
-			content={tooltipsEnabled ? $i18n.t(
-				'Tipo de quantização do KV cache. Q8_0 reduz ~50% da VRAM com qualidade praticamente igual. Q4_0 reduz ~75%. FP16 não quantiza. Requer recarregar o modelo para aplicar.'
-			) : ""}
-			placement="top-start"
-			className="inline-tooltip"
-		>
-			<div class="flex w-full justify-between">
-				<div class=" self-center text-xs">
-					{$i18n.t('cache_type')}
-				</div>
-				<button
-					class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
-					type="button"
-					on:click={() => {
-						const order = [null, 'q8_0', 'q4_0', 'f16'];
-						const idx = order.indexOf(params?.cache_type ?? null);
-						const next = order[(idx + 1) % order.length];
-						params.cache_type = next;
-						if (next) {
-							localStorage.setItem('llamacpp_cache_type', next);
-						} else {
-							localStorage.removeItem('llamacpp_cache_type');
-						}
-					}}
-				>
-					{#if (params?.cache_type ?? null) === null}
-						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
-					{:else if params.cache_type === 'q8_0'}
-						<span class="ml-2 self-center">Q8_0</span>
-					{:else if params.cache_type === 'q4_0'}
-						<span class="ml-2 self-center">Q4_0</span>
-					{:else if params.cache_type === 'f16'}
-						<span class="ml-2 self-center">FP16</span>
 					{/if}
 				</button>
 			</div>

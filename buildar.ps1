@@ -333,19 +333,6 @@ function Invoke-LoggedProcess([string]$fileName, [string[]]$arguments, [string]$
 
     $proc = New-Object System.Diagnostics.Process
     $proc.StartInfo = $psi
-    $proc.EnableRaisingEvents = $true
-
-    $outHandler = [System.Diagnostics.DataReceivedEventHandler]{
-        param($sender, $eventArgs)
-        if ($eventArgs.Data) { Append-Log $eventArgs.Data }
-    }
-    $errHandler = [System.Diagnostics.DataReceivedEventHandler]{
-        param($sender, $eventArgs)
-        if ($eventArgs.Data) { Append-Log $eventArgs.Data 'warn' }
-    }
-
-    $proc.add_OutputDataReceived($outHandler)
-    $proc.add_ErrorDataReceived($errHandler)
 
     try {
         [void]$proc.Start()
@@ -353,13 +340,18 @@ function Invoke-LoggedProcess([string]$fileName, [string[]]$arguments, [string]$
         throw "Falha ao iniciar '$fileName' para '$description': $($_.Exception.Message)"
     }
 
-    $proc.BeginOutputReadLine()
-    $proc.BeginErrorReadLine()
+    $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+    $stderrTask = $proc.StandardError.ReadToEndAsync()
     $proc.WaitForExit()
-    $proc.WaitForExit()
+    $stdoutTask.Wait()
+    $stderrTask.Wait()
 
-    $proc.remove_OutputDataReceived($outHandler)
-    $proc.remove_ErrorDataReceived($errHandler)
+    foreach ($line in [regex]::Split($stdoutTask.Result, "\r?\n")) {
+        if (-not [string]::IsNullOrWhiteSpace($line)) { Append-Log $line }
+    }
+    foreach ($line in [regex]::Split($stderrTask.Result, "\r?\n")) {
+        if (-not [string]::IsNullOrWhiteSpace($line)) { Append-Log $line 'warn' }
+    }
 
     if ($proc.ExitCode -eq 0) {
         Append-Log "$description concluido" 'ok'
@@ -577,96 +569,62 @@ function Start-BuildDeploy {
         $ctl.BtnCancel.IsEnabled = $false
     }
 
-    $worker = New-Object System.ComponentModel.BackgroundWorker
+    try {
+        Set-Location -LiteralPath $ROOT
+        Append-Log "Pasta do build: $ROOT" 'ok'
 
-    $worker.add_DoWork({
-        param($sender, $eventArgs)
-        try {
-            Set-Location -LiteralPath $ROOT
-            Append-Log "Pasta do build: $ROOT" 'ok'
+        Set-Progress 5 'Preparando Node.js/npm'
+        $frontendNode = Resolve-OrInstallFrontendNode
+        $npmExe = $frontendNode.NpmExecutable
 
-            Set-Progress 5 'Preparando Node.js/npm'
-            $frontendNode = Resolve-OrInstallFrontendNode
-            $npmExe = $frontendNode.NpmExecutable
+        Ensure-FrontendDependencies $npmExe
 
-            Ensure-FrontendDependencies $npmExe
-
-            Set-Progress 22 'Limpando build antigo'
-            if (Test-Path $BUILD_DIR) {
-                Remove-Item $BUILD_DIR -Recurse -Force
-                Append-Log 'Pasta build antiga removida' 'ok'
-            } else {
-                Append-Log 'Nenhuma pasta build antiga encontrada'
-            }
-
-            Set-Progress 32 'Executando npm run build'
-            $rc = Invoke-LoggedProcess $npmExe @('run', 'build') 'npm run build'
-            if ($rc -ne 0) { throw "npm run build falhou (codigo $rc)." }
-
-            $srcIndex = Join-Path $BUILD_DIR 'index.html'
-            if (-not (Test-Path $srcIndex)) { throw 'build\index.html nao foi gerado.' }
-
-            Set-Progress 82 'Limpando destino do backend'
-            if (Test-Path $DEPLOY_DIR) {
-                Get-ChildItem -LiteralPath $DEPLOY_DIR -Force | Remove-Item -Recurse -Force
-                Append-Log 'Destino backend\neveai\frontend limpo' 'ok'
-            } else {
-                New-Item $DEPLOY_DIR -ItemType Directory -Force | Out-Null
-                Append-Log 'Destino backend\neveai\frontend criado' 'ok'
-            }
-
-            Set-Progress 88 'Copiando build para o backend'
-            Copy-Item -Path (Join-Path $BUILD_DIR '*') -Destination $DEPLOY_DIR -Recurse -Force
-            Append-Log 'Arquivos copiados para backend\neveai\frontend' 'ok'
-
-            Set-Progress 94 'Verificando hash do deploy'
-            $dstIndex = Join-Path $DEPLOY_DIR 'index.html'
-            if (-not (Test-Path $dstIndex)) { throw 'backend\neveai\frontend\index.html nao foi publicado.' }
-            $srcHash = Get-FileHash $srcIndex -Algorithm SHA256
-            $dstHash = Get-FileHash $dstIndex -Algorithm SHA256
-            if ($srcHash.Hash -ne $dstHash.Hash) { throw 'Hash do index.html nao bate entre build e deploy.' }
-            Append-Log 'deploy hash match' 'ok'
-
-            $fileCount = (Get-ChildItem -LiteralPath $DEPLOY_DIR -Recurse -File | Measure-Object).Count
-            Set-Progress 100 'Concluido'
-
-            $eventArgs.Result = [pscustomobject]@{
-                Ok = $true
-                Summary = "Build:  $BUILD_DIR`nDeploy: $DEPLOY_DIR`nArquivos publicados: $fileCount`nSHA256 index.html: $($srcHash.Hash)"
-            }
-        } catch {
-            Append-Log $_.Exception.Message 'err'
-            $eventArgs.Result = [pscustomobject]@{
-                Ok = $false
-                Summary = "Erro: $($_.Exception.Message)`nLog:  $LOG"
-            }
-        }
-    })
-
-    $worker.add_RunWorkerCompleted({
-        param($sender, $eventArgs)
-        $script:IsRunning = $false
-        if ($eventArgs.Error) {
-            Append-Log $eventArgs.Error.Message 'err'
-            Set-Done $false "Erro: $($eventArgs.Error.Message)`nLog:  $LOG"
-            return
-        }
-
-        if ($eventArgs.Cancelled) {
-            Set-Done $false "Build cancelado.`nLog:  $LOG"
-            return
-        }
-
-        $result = $eventArgs.Result
-        if ($result -and $result.Ok) {
-            Set-Done $true $result.Summary
+        Set-Progress 22 'Limpando build antigo'
+        if (Test-Path $BUILD_DIR) {
+            Remove-Item $BUILD_DIR -Recurse -Force
+            Append-Log 'Pasta build antiga removida' 'ok'
         } else {
-            $summary = if ($result) { $result.Summary } else { "Build terminou sem retornar detalhes. Consulte o log: $LOG" }
-            Set-Done $false $summary
+            Append-Log 'Nenhuma pasta build antiga encontrada'
         }
-    })
 
-    $worker.RunWorkerAsync()
+        Set-Progress 32 'Executando npm run build'
+        $rc = Invoke-LoggedProcess $npmExe @('run', 'build') 'npm run build'
+        if ($rc -ne 0) { throw "npm run build falhou (codigo $rc)." }
+
+        $srcIndex = Join-Path $BUILD_DIR 'index.html'
+        if (-not (Test-Path $srcIndex)) { throw 'build\index.html nao foi gerado.' }
+
+        Set-Progress 82 'Limpando destino do backend'
+        if (Test-Path $DEPLOY_DIR) {
+            Get-ChildItem -LiteralPath $DEPLOY_DIR -Force | Remove-Item -Recurse -Force
+            Append-Log 'Destino backend\neveai\frontend limpo' 'ok'
+        } else {
+            New-Item $DEPLOY_DIR -ItemType Directory -Force | Out-Null
+            Append-Log 'Destino backend\neveai\frontend criado' 'ok'
+        }
+
+        Set-Progress 88 'Copiando build para o backend'
+        Copy-Item -Path (Join-Path $BUILD_DIR '*') -Destination $DEPLOY_DIR -Recurse -Force
+        Append-Log 'Arquivos copiados para backend\neveai\frontend' 'ok'
+
+        Set-Progress 94 'Verificando hash do deploy'
+        $dstIndex = Join-Path $DEPLOY_DIR 'index.html'
+        if (-not (Test-Path $dstIndex)) { throw 'backend\neveai\frontend\index.html nao foi publicado.' }
+        $srcHash = Get-FileHash $srcIndex -Algorithm SHA256
+        $dstHash = Get-FileHash $dstIndex -Algorithm SHA256
+        if ($srcHash.Hash -ne $dstHash.Hash) { throw 'Hash do index.html nao bate entre build e deploy.' }
+        Append-Log 'deploy hash match' 'ok'
+
+        $fileCount = (Get-ChildItem -LiteralPath $DEPLOY_DIR -Recurse -File | Measure-Object).Count
+        Set-Progress 100 'Concluido'
+
+        $script:IsRunning = $false
+        Set-Done $true "Build:  $BUILD_DIR`nDeploy: $DEPLOY_DIR`nArquivos publicados: $fileCount`nSHA256 index.html: $($srcHash.Hash)"
+    } catch {
+        Append-Log $_.Exception.Message 'err'
+        $script:IsRunning = $false
+        Set-Done $false "Erro: $($_.Exception.Message)`nLog:  $LOG"
+    }
 }
 
 $ctl.BtnClose.Add_Click({ if (-not $script:IsRunning) { $window.Close() } })

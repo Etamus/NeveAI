@@ -301,13 +301,17 @@
 				}
 			}
 
+			const standbyLoadPreferences = getLocalModelLoadPreferences();
+			const standbyCacheType =
+				standbyLoadPreferences.cache === 'default' ? undefined : standbyLoadPreferences.cache;
+
 			await loadLocalModel(
 				localStorage.token,
 				standbyModel.filename,
 				standbyModel.n_gpu_layers ?? -1,
 				standbyModel.n_ctx ?? 8192,
 				standbyModel.mmproj_filename ?? null,
-				localStorage.getItem('llamacpp_cache_type') || 'q8_0'
+				standbyCacheType
 			);
 
 			stableDiffusionStandbyModel = null;
@@ -586,7 +590,7 @@
 						'mirostat', 'mirostat_eta', 'mirostat_tau', 'seed', 'stop',
 						'xtc_threshold', 'xtc_probability', 'dry_multiplier',
 						'dry_allowed_length', 'dry_base', 'stream_response',
-						'reasoning_tags', 'num_ctx', 'cache_type'
+						'reasoning_tags', 'num_ctx'
 					];
 					const populated: Record<string, any> = {};
 					for (const key of samplingKeys) {
@@ -2073,16 +2077,8 @@
 							const llamacppInfo = (model as any).llamacpp ?? {};
 							const modelFilename = llamacppInfo.filename ?? modelId;
 
-							// Resolve cache_type: params > localStorage > saved model > default
-							let resolvedCacheType =
-								(params as any)?.cache_type ||
-								localStorage.getItem('llamacpp_cache_type');
-							if (!resolvedCacheType) {
-								try {
-									const fullModel = await getModelById(localStorage.token, model.id);
-									resolvedCacheType = fullModel?.params?.cache_type;
-								} catch (_) {}
-							}
+							const resolvedCacheType =
+								loadPreferences.cache === 'default' ? undefined : loadPreferences.cache;
 
 							const mmProjFiles = await getMmProjFiles(localStorage.token);
 							const matchingMmproj = findMatchingMmproj(modelFilename, mmProjFiles);
@@ -2102,7 +2098,7 @@
 								llamacppInfo.n_gpu_layers ?? -1,
 								chosenSize,
 								selectedMmproj,
-								resolvedCacheType || 'q8_0'
+								resolvedCacheType
 							);
 							try {
 								await doLoad();

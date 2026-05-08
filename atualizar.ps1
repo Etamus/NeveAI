@@ -3,6 +3,7 @@
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding           = [Console]::OutputEncoding
+$ErrorActionPreference    = 'Stop'
 
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
@@ -20,7 +21,7 @@ $VERSION_FILE= Join-Path $ROOT 'version.txt'
 $LOG_DIR     = Join-Path $ROOT 'logs'
 if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
 $LOG = Join-Path $LOG_DIR 'update.log'
-'' | Set-Content $LOG
+'' | Set-Content $LOG -Encoding UTF8
 
 $REPO_OWNER  = 'Etamus'
 $REPO_NAME   = 'NeveAI'
@@ -351,7 +352,14 @@ $window.Add_MouseLeftButtonDown({
     if ($e.ButtonState -eq 'Pressed') { try { $window.DragMove() } catch {} }
 })
 
-$ctl.BtnClose.Add_Click({ $window.Close() })
+$script:ExitCode = 0
+$window.Add_Closing({
+    if ($ctl.BtnPrimary.Tag -eq 'error') { $script:ExitCode = 1 }
+})
+$ctl.BtnClose.Add_Click({
+    if ($ctl.BtnPrimary.Tag -eq 'error') { $script:ExitCode = 1 }
+    $window.Close()
+})
 $ctl.BtnCancel.Add_Click({ $window.Close() })
 
 # =============================================================================
@@ -721,7 +729,7 @@ $ctl.BtnLlama.Add_Click({
             $script:Window.Dispatcher.Invoke([Action]{
                 $script:Ctl.LblStep.Text = 'Falha ao atualizar llama.cpp.'
                 $script:Ctl.BtnPrimary.Content   = 'Fechar'
-                $script:Ctl.BtnPrimary.Tag       = 'close'
+                $script:Ctl.BtnPrimary.Tag       = 'error'
                 $script:Ctl.BtnPrimary.IsEnabled = $true
                 $script:Ctl.BtnLlama.IsEnabled   = $true
                 [System.Windows.MessageBox]::Show(
@@ -889,6 +897,7 @@ Update-PrimaryButtonState
 # =============================================================================
 $ctl.BtnPrimary.Add_Click({
     $tag = $ctl.BtnPrimary.Tag
+    if ($tag -eq 'error')  { $script:ExitCode = 1; $window.Close(); return }
     if ($tag -eq 'close')  { $window.Close(); return }
     if ($tag -eq 'done')   { $window.Close(); return }
     if ($tag -ne 'update') { return }
@@ -968,6 +977,12 @@ $ctl.BtnPrimary.Add_Click({
             $psi.RedirectStandardError  = $true
             $psi.UseShellExecute        = $false
             $psi.CreateNoWindow         = $true
+            $npmCache = Join-Path $ROOT 'tools\npm-cache'
+            if (-not (Test-Path -LiteralPath $npmCache)) { New-Item -ItemType Directory -Path $npmCache -Force | Out-Null }
+            $psi.EnvironmentVariables['npm_config_cache'] = $npmCache
+            $psi.EnvironmentVariables['npm_config_audit'] = 'false'
+            $psi.EnvironmentVariables['npm_config_fund'] = 'false'
+            $psi.EnvironmentVariables['npm_config_update_notifier'] = 'false'
             if ($script:FrontendNodeDir) {
                 try {
                     $currentPath = $psi.EnvironmentVariables['PATH']
@@ -1073,6 +1088,12 @@ $ctl.BtnPrimary.Add_Click({
 
             if (-not (Test-Path -LiteralPath $toolsDir)) { New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null }
             L '==> Baixando Node.js 22 LTS portátil porque o Node do sistema está ausente ou fora da faixa suportada (18-22)'
+
+            try {
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
+            } catch {
+                [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            }
 
             $release = $null
             try {
@@ -1569,7 +1590,7 @@ $ctl.BtnPrimary.Add_Click({
             $script:Window.Dispatcher.Invoke([Action]{
                 $script:Ctl.LblStep.Text = 'Falha durante a atualização.'
                 $script:Ctl.BtnPrimary.Content   = 'Fechar'
-                $script:Ctl.BtnPrimary.Tag       = 'close'
+                $script:Ctl.BtnPrimary.Tag       = 'error'
                 $script:Ctl.BtnPrimary.IsEnabled = $true
                 $script:Ctl.BtnPrimary.Visibility = 'Visible'
                 [System.Windows.MessageBox]::Show(
@@ -1608,3 +1629,4 @@ $ctl.BtnPrimary.Add_Click({
 # Mostra a janela
 # =============================================================================
 [void]$window.ShowDialog()
+exit $script:ExitCode
