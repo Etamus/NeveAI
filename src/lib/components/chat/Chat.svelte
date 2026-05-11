@@ -2041,6 +2041,76 @@
 	// Chat functions
 	//////////////////////////
 
+	type LocalModelLoadPlan = {
+		modelFilename: string;
+		gpuLayers: number;
+		contextSize: number;
+		mmprojFilename: string;
+		cacheType: string;
+	};
+
+	const normalizeLocalCacheType = (cacheType?: string | null) => {
+		return cacheType && cacheType !== 'default' ? cacheType : 'q8_0';
+	};
+
+	const resolveLocalModelLoadPlan = async (
+		model: any,
+		modelId: string,
+		loadedModel: LocalModel | null
+	): Promise<LocalModelLoadPlan | null> => {
+		const llamacppInfo = model.llamacpp ?? {};
+		const modelFilename = llamacppInfo.filename ?? modelId;
+		const loadPreferences = getLocalModelLoadPreferences();
+
+		let contextSize: number;
+		if (loadPreferences.context === 'ask') {
+			if (loadedModel?.n_ctx) {
+				contextSize = loadedModel.n_ctx;
+			} else {
+				const modalSize = await openContextModal(model.name ?? modelId);
+				if (modalSize === null) {
+					return null;
+				}
+				contextSize = modalSize;
+			}
+		} else {
+			contextSize = loadPreferences.context;
+		}
+
+		const mmProjFiles = await getMmProjFiles(localStorage.token);
+		const matchingMmproj = findMatchingMmproj(modelFilename, mmProjFiles);
+		let mmprojFilename = '';
+
+		if (matchingMmproj) {
+			if (loadPreferences.vision === 'ask') {
+				if (loadedModel) {
+					mmprojFilename = loadedModel.mmproj_filename ?? '';
+				} else {
+					const useVision = await openVisionModal(model.name ?? modelId);
+					mmprojFilename = useVision ? matchingMmproj : '';
+				}
+			} else {
+				mmprojFilename = loadPreferences.vision === 'yes' ? matchingMmproj : '';
+			}
+		}
+
+		return {
+			modelFilename,
+			gpuLayers: llamacppInfo.n_gpu_layers ?? -1,
+			contextSize,
+			mmprojFilename,
+			cacheType: normalizeLocalCacheType(loadPreferences.cache)
+		};
+	};
+
+	const loadedLocalModelMatchesPlan = (loadedModel: LocalModel, loadPlan: LocalModelLoadPlan) => {
+		return (
+			(loadedModel.n_ctx ?? loadPlan.contextSize) === loadPlan.contextSize &&
+			(loadedModel.mmproj_filename ?? '') === loadPlan.mmprojFilename &&
+			normalizeLocalCacheType(loadedModel.cache_type) === loadPlan.cacheType
+		);
+	};
+
 	const submitPrompt = async (userPrompt, { _raw = false } = {}) => {
 		console.log('submitPrompt', userPrompt, $chatId);
 
@@ -2068,80 +2138,50 @@
 				try {
 					const loadedModels = await getLoadedLocalModels(localStorage.token);
 					const loadedModel = loadedModels.find((lm) => lm.id === modelId) ?? null;
-					const isLoaded = loadedModel !== null;
 
 					if (stableDiffusionEnabled) {
 						stableDiffusionStandbyModel = loadedModel ?? loadedModels[0] ?? stableDiffusionStandbyModel;
 						continue;
 					}
 
-					if (!isLoaded) {
-						// Check if another model is already loaded
-						const currentlyLoaded = loadedModels.length > 0 ? loadedModels[0] : null;
+					const loadPlan = await resolveLocalModelLoadPlan(model, modelId, loadedModel);
+					if (loadPlan === null) {
+						return;
+					}
 
-						const loadPreferences = getLocalModelLoadPreferences();
-						let chosenSize: number;
-						if (loadPreferences.context === 'ask') {
-							const modalSize = await openContextModal(model.name ?? modelId);
-							if (modalSize === null) {
-								return; // User cancelled
-							}
-							chosenSize = modalSize;
-						} else {
-							chosenSize = loadPreferences.context;
-						}
+					const needsLoad =
+						loadedModel === null || !loadedLocalModelMatchesPlan(loadedModel, loadPlan);
+					if (needsLoad) {
+						const currentlyLoaded = loadedModels.length > 0 ? loadedModels[0] : null;
 
 						modelLoading = true;
 						try {
-							// Unload current model if any, then load the selected one
 							toast.info($i18n.t('Loading model... Please wait.'));
 							if (currentlyLoaded) {
 								try {
 									await unloadLocalModel(localStorage.token, currentlyLoaded.id);
 								} catch (unloadErr) {
-									// Model may have already been cleaned up by _cleanup_stale (process died).
-									// The backend auto-unloads other models during load_model anyway, so proceed.
 									console.warn('Could not explicitly unload previous model (may already be inactive):', unloadErr);
 								}
 							}
-							const llamacppInfo = (model as any).llamacpp ?? {};
-							const modelFilename = llamacppInfo.filename ?? modelId;
 
-							const resolvedCacheType =
-								loadPreferences.cache === 'default' ? undefined : loadPreferences.cache;
-
-							const mmProjFiles = await getMmProjFiles(localStorage.token);
-							const matchingMmproj = findMatchingMmproj(modelFilename, mmProjFiles);
-							let selectedMmproj = '';
-							if (matchingMmproj) {
-								if (loadPreferences.vision === 'ask') {
-									const useVision = await openVisionModal(model.name ?? modelId);
-									selectedMmproj = useVision ? matchingMmproj : '';
-								} else {
-									selectedMmproj = loadPreferences.vision === 'yes' ? matchingMmproj : '';
-								}
-							}
-
-							const doLoad = () => loadLocalModel(
-								localStorage.token,
-								modelFilename,
-								llamacppInfo.n_gpu_layers ?? -1,
-								chosenSize,
-								selectedMmproj,
-								resolvedCacheType
-							);
+							const doLoad = () =>
+								loadLocalModel(
+									localStorage.token,
+									loadPlan.modelFilename,
+									loadPlan.gpuLayers,
+									loadPlan.contextSize,
+									loadPlan.mmprojFilename,
+									loadPlan.cacheType
+								);
 							try {
 								await doLoad();
 							} catch (firstErr) {
-								// First attempt failed (port/resources from previous model may not
-								// be fully released yet). Wait a moment and retry automatically so
-								// the user doesn't have to press Send again.
 								console.warn('First load attempt failed, retrying in 3s...', firstErr);
-								await new Promise((r) => setTimeout(r, 3000));
-								await doLoad(); // re-throws if still failing → outer catch handles it
+								await new Promise((resolve) => setTimeout(resolve, 3000));
+								await doLoad();
 							}
 							toast.success($i18n.t('Model loaded successfully!'));
-							// Refresh models store so n_ctx is up to date
 							models.set(await getModels(localStorage.token, null, false, true));
 						} finally {
 							modelLoading = false;
@@ -2461,6 +2501,18 @@
 		return features;
 	};
 
+	const canCurrentModelsToggleReasoning = () => {
+		const currentModels = atSelectedModel?.id ? [atSelectedModel.id] : selectedModels;
+		return (
+			currentModels.length > 0 &&
+			currentModels.every(
+				(modelId) =>
+					$models.find((model) => model.id === modelId)?.info?.meta?.capabilities
+						?.toggle_reasoning ?? false
+			)
+		);
+	};
+
 	const getStopTokens = () => {
 		const stop = params?.stop ?? $settings?.params?.stop;
 		if (!stop) return undefined;
@@ -2634,7 +2686,7 @@
 					...$settings?.params,
 					...params,
 					stop: getStopTokens(),
-					...(!thinkingEnabled ? { no_think: true } : {})
+					...(!thinkingEnabled && canCurrentModelsToggleReasoning() ? { no_think: true } : {})
 				},
 
 				files: (files?.length ?? 0) > 0 ? files : undefined,
@@ -2675,8 +2727,7 @@
 							messages.at(1)?.role === 'user')) &&
 					(selectedModels[0] === model.id || atSelectedModel !== undefined)
 						? {
-								title_generation: false,
-								tags_generation: $settings?.autoTags ?? true
+								title_generation: false
 							}
 						: {}),
 					follow_up_generation: false

@@ -877,7 +877,51 @@ export const cleanText = (content: string) => {
 	return removeFormattings(removeEmojis(content.trim()));
 };
 
+export const removeReasoningArtifacts = (content: string) => {
+	if (!content) return content;
+
+	const reasoningTags = 'think|thinking|thought|reason|reasoning|analysis';
+	const channelStart = /<\|?\s*channel\s*\|?>\s*(?:analysis|thought|thinking|reasoning|reason)\s*(?:<\|?\s*(?:message|content|channel)\s*\|?>)?/i;
+	const channelFinal = /<\|?\s*channel\s*\|?>\s*(?:final|answer|response)\s*(?:<\|?\s*(?:message|content|channel)\s*\|?>)?/i;
+
+	let cleaned = content;
+	let channelMatch = channelStart.exec(cleaned);
+	while (channelMatch) {
+		const suffix = cleaned.slice(channelMatch.index + channelMatch[0].length);
+		const finalMatch = channelFinal.exec(suffix);
+		cleaned = finalMatch
+			? cleaned.slice(0, channelMatch.index) + suffix.slice(finalMatch.index + finalMatch[0].length)
+			: cleaned.slice(0, channelMatch.index) + suffix;
+		channelMatch = channelStart.exec(cleaned);
+	}
+
+	let previous: string | null = null;
+	while (previous !== cleaned) {
+		previous = cleaned;
+		cleaned = cleaned.replace(
+			new RegExp(`<\\s*(${reasoningTags})\\b[^>]*>?[\\s\\S]*?<\\s*\\/\\s*\\1\\s*>`, 'gi'),
+			''
+		);
+	}
+
+	return cleaned
+		.replace(new RegExp(`<\\s*(?:${reasoningTags})\\b[^>]*>?[\\s\\S]*$`, 'gi'), '')
+		.replace(new RegExp(`<\\s*\\/\\s*(?:${reasoningTags})\\s*>`, 'gi'), '')
+		.replace(/<\|?\s*start\s*\|?>\s*(?:assistant|model)\b\s*|<\|?\s*(?:start|end|message|content)\s*\|?>|<\|?\s*channel\s*\|?>\s*(?:final|answer|response)?/gi, '');
+};
+
+export const removeReasoningControlTokens = (content: string) => {
+	if (!content) return content;
+
+	return content
+		.replace(/<\|?\s*channel\s*\|?>\s*(?:analysis|thought|thinking|reasoning|reason)\s*(?:<\|?\s*(?:message|content|channel)\s*\|?>)?/gi, '')
+		.replace(/<\|?\s*channel\s*\|?>\s*(?:final|answer|response)\s*(?:<\|?\s*(?:message|content|channel)\s*\|?>)?/gi, '')
+		.replace(/<\|?\s*start\s*\|?>\s*(?:assistant|model)\b\s*|<\|?\s*(?:start|end|message|content)\s*\|?>|<\|?\s*channel\s*\|?>\s*(?:final|answer|response)?/gi, '');
+};
+
 export const removeDetails = (content, types) => {
+	content = removeReasoningControlTokens(content);
+
 	// Apply regex directly on the full string instead of using
 	// replaceOutsideCode. If a <details> block contains code fences
 	// (e.g. reasoning with code examples), replaceOutsideCode splits
@@ -893,6 +937,8 @@ export const removeDetails = (content, types) => {
 };
 
 export const removeAllDetails = (content) => {
+	content = removeReasoningControlTokens(content);
+
 	// Apply regex directly on the full string instead of using
 	// replaceOutsideCode — same reasoning as removeDetails above.
 	// (Extends fix #22197)

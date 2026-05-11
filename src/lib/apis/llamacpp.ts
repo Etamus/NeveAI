@@ -13,6 +13,7 @@ export interface LocalModel {
 	n_gpu_layers: number | null;
 	n_ctx: number | null;
 	mmproj_filename: string | null;
+	cache_type: string | null;
 }
 
 export const getLocalModels = async (token: string = ''): Promise<LocalModel[]> => {

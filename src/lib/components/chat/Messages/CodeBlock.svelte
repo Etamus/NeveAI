@@ -37,6 +37,7 @@
 	export let run = true;
 	export let preview = false;
 	export let collapsed = false;
+	export let hideToolbar = false;
 
 	export let token;
 	export let lang = '';
@@ -46,6 +47,8 @@
 	export let className = '';
 	export let editorClassName = '';
 	export let stickyButtonsClassName = 'top-0';
+
+	$: isReasoningCodeBlock = hideToolbar || attributes?.type === 'reasoning';
 
 	let pyodideWorker = null;
 
@@ -443,6 +446,7 @@
 				</div>
 			{/if}
 		{:else}
+			{#if !isReasoningCodeBlock}
 			<div
 				class="sticky {stickyButtonsClassName} left-0 right-0 py-1.5 px-3 gap-2 flex items-center justify-end w-full z-10 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-[#2a2a2a] rounded-t-lg border-b border-gray-200/50 dark:border-gray-700/40"
 			>
@@ -521,6 +525,7 @@
 					{/if}
 				</div>
 			</div>
+			{/if}
 
 			<div
 				class="language-{lang} {editorClassName
@@ -547,7 +552,9 @@
 					{:else}
 						<pre
 							class=" hljs p-4 px-5 overflow-x-auto"
-					style="border-top-left-radius: 0px; border-top-right-radius: 0px; {(executing ||
+					style="{!isReasoningCodeBlock
+						? 'border-top-left-radius: 0px; border-top-right-radius: 0px;'
+						: ''} {(executing ||
 						stdout ||
 						stderr ||
 						result) &&

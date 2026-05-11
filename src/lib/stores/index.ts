@@ -204,7 +204,6 @@ type Settings = {
 	userLocation?: any;
 	webSearch?: any;
 	memory?: boolean;
-	autoTags?: boolean;
 	autoFollowUps?: boolean;
 	splitLargeChunks?(body: any, splitLargeChunks: any): unknown;
 	backgroundImageUrl?: null;

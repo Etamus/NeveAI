@@ -1,1 +1,0 @@
-import"../chunks/CWj6FrbW.js";import"../chunks/CN51-NxK.js";import{o as t,p,b as i}from"../chunks/ebMK-E7k.js";import{i as a}from"../chunks/qlOWKdB4.js";import{g as m}from"../chunks/D-P7YVMj.js";function c(n,o){i(o,!1),t(()=>{m("/admin/settings")}),a(),p()}export{c as component};

@@ -1,1 +1,0 @@
-import"../chunks/CWj6FrbW.js";import"../chunks/CN51-NxK.js";import{o as i,p as m,b as p}from"../chunks/ebMK-E7k.js";import{i as s}from"../chunks/qlOWKdB4.js";import{g as r}from"../chunks/D-P7YVMj.js";import{S as a}from"../chunks/D3VyVVLY.js";function d(o,t){p(t,!1),i(()=>{r("/admin/settings/models")}),s(),a(o,{}),m()}export{d as component};

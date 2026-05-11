@@ -81,6 +81,8 @@
 		return code;
 	};
 
+	$: isReasoningContent = attributes?.type === 'reasoning';
+
 	const headerComponent = (depth: number) => {
 		return 'h' + depth;
 	};
@@ -143,6 +145,7 @@
 			<CodeBlock
 				id={`${id}-${tokenIdx}`}
 				collapsed={$settings?.collapseCodeBlocks ?? false}
+				hideToolbar={isReasoningContent}
 				{token}
 				lang={normalizeLang(token?.lang ?? '')}
 				code={normalizeCode(token?.lang ?? '', token?.text ?? '')}
@@ -262,6 +265,7 @@
 				<svelte:self
 					id={`${id}-${tokenIdx}`}
 					tokens={token.tokens}
+					{attributes}
 					{done}
 					{editCodeBlock}
 					{onTaskClick}
@@ -297,6 +301,7 @@
 							id={`${id}-${tokenIdx}-${itemIdx}`}
 							tokens={item.tokens}
 							top={token.loose}
+							{attributes}
 							{done}
 							{editCodeBlock}
 							{onTaskClick}
@@ -332,6 +337,7 @@
 									id={`${id}-${tokenIdx}-${itemIdx}`}
 									tokens={item.tokens}
 									top={token.loose}
+									{attributes}
 									{done}
 									{editCodeBlock}
 									{onTaskClick}
@@ -344,6 +350,7 @@
 								id={`${id}-${tokenIdx}-${itemIdx}`}
 								tokens={item.tokens}
 								top={token.loose}
+								{attributes}
 								{done}
 								{editCodeBlock}
 								{onTaskClick}

@@ -40,7 +40,6 @@ from neveai.routers.tasks import (
     generate_title,
     generate_follow_ups,
     generate_image_prompt,
-    generate_chat_tags,
 )
 from neveai.routers.retrieval import (
     process_web_search,
@@ -156,11 +155,79 @@ DEFAULT_REASONING_TAGS = [
 ]
 DEFAULT_SOLUTION_TAGS = [("<|begin_of_solution|>", "<|end_of_solution|>")]
 DEFAULT_CODE_INTERPRETER_TAGS = [("<code_interpreter>", "</code_interpreter>")]
+REASONING_TEXT_TAG_NAMES = "think|thinking|thought|reason|reasoning|analysis"
+REASONING_TEXT_BLOCK_RE = re.compile(
+    rf"(?is)<\s*({REASONING_TEXT_TAG_NAMES})\b[^>]*>?[\s\S]*?<\s*/\s*\1\s*>",
+)
+REASONING_TEXT_OPEN_RE = re.compile(
+    rf"(?is)<\s*(?:{REASONING_TEXT_TAG_NAMES})\b[^>]*>?[\s\S]*$",
+)
+REASONING_TEXT_CLOSE_RE = re.compile(
+    rf"(?is)<\s*/\s*(?:{REASONING_TEXT_TAG_NAMES})\s*>",
+)
+REASONING_CHANNEL_START_RE = re.compile(
+    r"(?is)<\|?\s*channel\s*\|?>\s*(?:analysis|thought|thinking|reasoning|reason)\s*(?:<\|?\s*(?:message|content|channel)\s*\|?>)?",
+)
+REASONING_CHANNEL_FINAL_RE = re.compile(
+    r"(?is)<\|?\s*channel\s*\|?>\s*(?:final|answer|response)\s*(?:<\|?\s*(?:message|content|channel)\s*\|?>)?",
+)
+CHANNEL_CONTROL_TOKEN_RE = re.compile(
+    r"(?is)<\|?\s*start\s*\|?>\s*(?:assistant|model)\b\s*|<\|?\s*(?:start|end|message|content)\s*\|?>|<\|?\s*channel\s*\|?>\s*(?:final|answer|response)?",
+)
 
 
 def output_id(prefix: str) -> str:
     """Generate OR-style ID: prefix + 24-char hex UUID."""
     return f"{prefix}_{uuid4().hex[:24]}"
+
+
+def strip_reasoning_control_tokens(text: Any) -> str:
+    if not isinstance(text, str) or not text:
+        return "" if text is None else str(text or "")
+
+    cleaned = REASONING_CHANNEL_START_RE.sub("", text)
+    cleaned = REASONING_CHANNEL_FINAL_RE.sub("", cleaned)
+    cleaned = CHANNEL_CONTROL_TOKEN_RE.sub("", cleaned)
+    return cleaned
+
+
+def strip_reasoning_text_artifacts(text: Any) -> str:
+    if not isinstance(text, str) or not text:
+        return "" if text is None else str(text or "")
+
+    cleaned = text
+
+    while True:
+        match = REASONING_CHANNEL_START_RE.search(cleaned)
+        if not match:
+            break
+
+        final_match = REASONING_CHANNEL_FINAL_RE.search(cleaned, match.end())
+        if final_match:
+            cleaned = cleaned[: match.start()] + cleaned[final_match.end() :]
+        else:
+            cleaned = cleaned[: match.start()] + cleaned[match.end() :]
+
+    previous = None
+    while previous != cleaned:
+        previous = cleaned
+        cleaned = REASONING_TEXT_BLOCK_RE.sub("", cleaned)
+
+    cleaned = REASONING_TEXT_OPEN_RE.sub("", cleaned)
+    cleaned = REASONING_TEXT_CLOSE_RE.sub("", cleaned)
+    cleaned = strip_reasoning_control_tokens(cleaned)
+
+    return cleaned
+
+
+def should_hide_reasoning_output(form_data: Optional[dict] = None, metadata: Optional[dict] = None) -> bool:
+    form_data = form_data or {}
+    metadata = metadata or {}
+    return bool(
+        form_data.get("no_think")
+        or form_data.get("params", {}).get("no_think")
+        or metadata.get("params", {}).get("no_think")
+    )
 
 
 def _split_tool_calls(
@@ -401,7 +468,7 @@ def is_opening_code_block(content):
     return len(backtick_segments) > 1 and len(backtick_segments) % 2 == 0
 
 
-def serialize_output(output: list) -> str:
+def serialize_output(output: list, hide_reasoning: bool = False) -> str:
     """
     Convert OR-aligned output items to HTML for display.
     For LLM consumption, use convert_output_to_messages() instead.
@@ -421,7 +488,12 @@ def serialize_output(output: list) -> str:
         if item_type == "message":
             for content_part in item.get("content", []):
                 if "text" in content_part:
-                    text = content_part.get("text", "").strip()
+                    text = content_part.get("text", "")
+                    if hide_reasoning:
+                        text = strip_reasoning_text_artifacts(text)
+                    else:
+                        text = strip_reasoning_control_tokens(text)
+                    text = text.strip()
                     if text:
                         content = f"{content}{text}\n"
 
@@ -457,38 +529,41 @@ def serialize_output(output: list) -> str:
             pass
 
         elif item_type == "reasoning":
-            reasoning_content = ""
-            # Check for 'summary' (new structure) or 'content' (legacy/fallback)
-            source_list = item.get("summary", []) or item.get("content", [])
-            for content_part in source_list:
-                if "text" in content_part:
-                    reasoning_content += content_part.get("text", "")
-                elif "summary" in content_part:  # Handle potential nested logic if any
-                    pass
-
-            reasoning_content = reasoning_content.strip()
-
-            duration = item.get("duration")
-            status = item.get("status", "in_progress")
-
-            # Infer completion: if this reasoning item is NOT the last item,
-            # render as done (a subsequent item means reasoning is complete)
-            is_last_item = idx == len(output) - 1
-
-            if content and not content.endswith("\n"):
-                content += "\n"
-
-            display = html.escape(
-                "\n".join(
-                    (f"> {line}" if not line.startswith(">") else line)
-                    for line in reasoning_content.splitlines()
-                )
-            )
-
-            if status == "completed" or duration is not None or not is_last_item:
-                content = f'{content}<details type="reasoning" done="true" duration="{duration or 0}">\n<summary>Pensou por {duration or 0} segundos</summary>\n{display}\n</details>\n'
+            if hide_reasoning:
+                pass
             else:
-                content = f'{content}<details type="reasoning" done="false">\n<summary>Pensandoâ€¦</summary>\n{display}\n</details>\n'
+                reasoning_content = ""
+                # Check for 'summary' (new structure) or 'content' (legacy/fallback)
+                source_list = item.get("summary", []) or item.get("content", [])
+                for content_part in source_list:
+                    if "text" in content_part:
+                        reasoning_content += content_part.get("text", "")
+                    elif "summary" in content_part:  # Handle potential nested logic if any
+                        pass
+
+                reasoning_content = reasoning_content.strip()
+
+                duration = item.get("duration")
+                status = item.get("status", "in_progress")
+
+                # Infer completion: if this reasoning item is NOT the last item,
+                # render as done (a subsequent item means reasoning is complete)
+                is_last_item = idx == len(output) - 1
+
+                if content and not content.endswith("\n"):
+                    content += "\n"
+
+                display = html.escape(
+                    "\n".join(
+                        (f"> {line}" if not line.startswith(">") else line)
+                        for line in reasoning_content.splitlines()
+                    )
+                )
+
+                if status == "completed" or duration is not None or not is_last_item:
+                    content = f'{content}<details type="reasoning" done="true" duration="{duration or 0}">\n<summary>Pensou por {duration or 0} segundos</summary>\n{display}\n</details>\n'
+                else:
+                    content = f'{content}<details type="reasoning" done="false">\n<summary>Pensandoâ€¦</summary>\n{display}\n</details>\n'
 
         elif item_type == "neveai:code_interpreter":
             content_stripped, original_whitespace = split_content_and_whitespace(
@@ -3435,48 +3510,6 @@ async def background_tasks_handler(ctx):
                             }
                         )
 
-                if TASKS.TAGS_GENERATION in tasks and tasks[TASKS.TAGS_GENERATION]:
-                    res = await generate_chat_tags(
-                        request,
-                        {
-                            "model": message["model"],
-                            "messages": messages,
-                            "chat_id": metadata["chat_id"],
-                        },
-                        user,
-                    )
-
-                    if res and isinstance(res, dict):
-                        if len(res.get("choices", [])) == 1:
-                            response_message = res.get("choices", [])[0].get(
-                                "message", {}
-                            )
-
-                            tags_string = response_message.get(
-                                "content"
-                            ) or response_message.get("reasoning_content", "")
-                        else:
-                            tags_string = ""
-
-                        tags_string = tags_string[
-                            tags_string.find("{") : tags_string.rfind("}") + 1
-                        ]
-
-                        try:
-                            tags = json.loads(tags_string).get("tags", [])
-                            Chats.update_chat_tags_by_id(
-                                metadata["chat_id"], tags, user
-                            )
-
-                            await event_emitter(
-                                {
-                                    "type": "chat:tags",
-                                    "data": tags,
-                                }
-                            )
-                        except Exception as e:
-                            pass
-
 
 async def non_streaming_chat_response_handler(response, ctx):
     request = ctx["request"]
@@ -3527,7 +3560,13 @@ async def non_streaming_chat_response_handler(response, ctx):
 
             choices = response_data.get("choices", [])
             if choices and choices[0].get("message", {}).get("content"):
+                hide_reasoning = should_hide_reasoning_output(form_data, metadata)
                 content = response_data["choices"][0]["message"]["content"]
+                if hide_reasoning:
+                    content = strip_reasoning_text_artifacts(content)
+                else:
+                    content = strip_reasoning_control_tokens(content)
+                response_data["choices"][0]["message"]["content"] = content
 
                 if content:
                     await event_emitter(
@@ -4070,7 +4109,7 @@ async def streaming_chat_response_handler(response, ctx):
 
                                     processed_data = {
                                         "output": output,
-                                        "content": serialize_output(output),
+                                        "content": serialize_output(output, hide_reasoning=should_hide_reasoning_output(form_data, metadata)),
                                     }
 
                                     # print(data)
@@ -4243,7 +4282,8 @@ async def streaming_chat_response_handler(response, ctx):
                                                     "type": "chat:completion",
                                                     "data": {
                                                         "content": serialize_output(
-                                                            pending_output
+                                                            pending_output,
+                                                            hide_reasoning=should_hide_reasoning_output(form_data, metadata),
                                                         ),
                                                     },
                                                 }
@@ -4316,7 +4356,7 @@ async def streaming_chat_response_handler(response, ctx):
                                                 }
                                             ]
 
-                                        data = {"content": serialize_output(output)}
+                                        data = {"content": serialize_output(output, hide_reasoning=should_hide_reasoning_output(form_data, metadata))}
 
                                     if value:
                                         if (
@@ -4504,13 +4544,13 @@ async def streaming_chat_response_handler(response, ctx):
                                                 metadata["chat_id"],
                                                 metadata["message_id"],
                                                 {
-                                                    "content": serialize_output(output),
+                                                    "content": serialize_output(output, hide_reasoning=should_hide_reasoning_output(form_data, metadata)),
                                                     "output": output,
                                                 },
                                             )
                                         else:
                                             data = {
-                                                "content": serialize_output(output),
+                                                "content": serialize_output(output, hide_reasoning=should_hide_reasoning_output(form_data, metadata)),
                                             }
 
                                 if delta:
@@ -4625,7 +4665,7 @@ async def streaming_chat_response_handler(response, ctx):
                         {
                             "type": "chat:completion",
                             "data": {
-                                "content": serialize_output(output),
+                                "content": serialize_output(output, hide_reasoning=should_hide_reasoning_output(form_data, metadata)),
                                 "output": output,
                             },
                         }
@@ -4904,7 +4944,7 @@ async def streaming_chat_response_handler(response, ctx):
                         {
                             "type": "chat:completion",
                             "data": {
-                                "content": serialize_output(output),
+                                "content": serialize_output(output, hide_reasoning=should_hide_reasoning_output(form_data, metadata)),
                                 "output": output,
                             },
                         }
@@ -4951,7 +4991,7 @@ async def streaming_chat_response_handler(response, ctx):
                             {
                                 "type": "chat:completion",
                                 "data": {
-                                    "content": serialize_output(output),
+                                    "content": serialize_output(output, hide_reasoning=should_hide_reasoning_output(form_data, metadata)),
                                     "output": output,
                                 },
                             }
@@ -5090,7 +5130,7 @@ async def streaming_chat_response_handler(response, ctx):
                             {
                                 "type": "chat:completion",
                                 "data": {
-                                    "content": serialize_output(output),
+                                    "content": serialize_output(output, hide_reasoning=should_hide_reasoning_output(form_data, metadata)),
                                     "output": output,
                                 },
                             }
@@ -5131,7 +5171,7 @@ async def streaming_chat_response_handler(response, ctx):
                 title = Chats.get_chat_title_by_id(metadata["chat_id"])
                 data = {
                     "done": True,
-                    "content": serialize_output(output),
+                    "content": serialize_output(output, hide_reasoning=should_hide_reasoning_output(form_data, metadata)),
                     "output": output,
                     "title": title,
                 }
@@ -5142,7 +5182,7 @@ async def streaming_chat_response_handler(response, ctx):
                         metadata["chat_id"],
                         metadata["message_id"],
                         {
-                            "content": serialize_output(output),
+                            "content": serialize_output(output, hide_reasoning=should_hide_reasoning_output(form_data, metadata)),
                             "output": output,
                             **({"usage": usage} if usage else {}),
                         },
@@ -5188,7 +5228,7 @@ async def streaming_chat_response_handler(response, ctx):
                         metadata["chat_id"],
                         metadata["message_id"],
                         {
-                            "content": serialize_output(output),
+                            "content": serialize_output(output, hide_reasoning=should_hide_reasoning_output(form_data, metadata)),
                             "output": output,
                         },
                     )

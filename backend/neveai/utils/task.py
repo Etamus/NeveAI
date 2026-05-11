@@ -332,17 +332,6 @@ def follow_up_generation_template(
     return template
 
 
-def tags_generation_template(
-    template: str, messages: list[dict], user: Optional[Any] = None
-) -> str:
-    prompt = get_last_user_message(messages)
-    template = replace_prompt_variable(template, prompt)
-    template = replace_messages_variable(template, messages)
-
-    template = prompt_template(template, user)
-    return template
-
-
 def image_prompt_generation_template(
     template: str, messages: list[dict], user: Optional[Any] = None
 ) -> str:

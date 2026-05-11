@@ -449,6 +449,21 @@
 
 	let loaded = false;
 	let showThinkingDropdown = false;
+	const THINKING_MODE_STORAGE_KEY = 'neveai.globalThinkingEnabled';
+	let appliedThinkingModeKey = '';
+
+	const getGlobalThinkingEnabled = () => {
+		if (typeof window === 'undefined' || typeof localStorage === 'undefined') return true;
+		return localStorage.getItem(THINKING_MODE_STORAGE_KEY) !== 'false';
+	};
+
+	const setThinkingMode = (enabled: boolean) => {
+		thinkingEnabled = enabled;
+		showThinkingDropdown = false;
+		if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+			localStorage.setItem(THINKING_MODE_STORAGE_KEY, String(enabled));
+		}
+	};
 
 	let isComposing = false;
 	// Safari has a bug where compositionend is not triggered correctly #16615
@@ -564,11 +579,18 @@
 		($_user.role === 'admin' || $_user?.permissions?.features?.stable_diffusion);
 
 	let showThinkingButton = false;
+	let thinkingModeModelKey = '';
 	$: showThinkingButton = selectedModels.length > 0 && selectedModels.every(
 		(model) => $models.find((m) => m.id === model)?.info?.meta?.capabilities?.toggle_reasoning ?? false
 	);
+	$: thinkingModeModelKey = showThinkingButton ? selectedModels.join('\u0000') : '';
+	$: if (showThinkingButton && thinkingModeModelKey !== appliedThinkingModeKey) {
+		thinkingEnabled = getGlobalThinkingEnabled();
+		appliedThinkingModeKey = thinkingModeModelKey;
+	}
 	$: if (!showThinkingButton) {
 		thinkingEnabled = true;
+		appliedThinkingModeKey = '';
 	}
 
 	// Disable code interpreter when terminal is active (mutually exclusive)
@@ -1754,7 +1776,7 @@
 													<button
 														type="button"
 														class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
-														on:click={() => { thinkingEnabled = false; showThinkingDropdown = false; }}
+														on:click={() => setThinkingMode(false)}
 													>
 														<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-4">
 															<path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd" />
@@ -1769,7 +1791,7 @@
 													<button
 														type="button"
 														class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
-														on:click={() => { thinkingEnabled = true; showThinkingDropdown = false; }}
+														on:click={() => setThinkingMode(true)}
 													>
 														<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-4">
 															<path d="M12 2a7 7 0 0 0-7 7c0 2.862 1.782 5.3 4.25 6.318V17.5a.75.75 0 0 0 .75.75h4a.75.75 0 0 0 .75-.75v-2.182C17.218 14.3 19 11.862 19 9a7 7 0 0 0-7-7ZM9.25 19.75a.75.75 0 0 0 0 1.5h5.5a.75.75 0 0 0 0-1.5h-5.5ZM9.75 22.75a.75.75 0 0 0 0 1.5h4.5a.75.75 0 0 0 0-1.5h-4.5Z" />
@@ -2124,7 +2146,7 @@
 														<button
 															type="button"
 															class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
-															on:click={() => { thinkingEnabled = false; showThinkingDropdown = false; }}
+															on:click={() => setThinkingMode(false)}
 														>
 															<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-4">
 																<path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd" />
@@ -2139,7 +2161,7 @@
 														<button
 															type="button"
 															class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
-															on:click={() => { thinkingEnabled = true; showThinkingDropdown = false; }}
+															on:click={() => setThinkingMode(true)}
 														>
 															<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-4">
 																<path d="M12 2a7 7 0 0 0-7 7c0 2.862 1.782 5.3 4.25 6.318V17.5a.75.75 0 0 0 .75.75h4a.75.75 0 0 0 .75-.75v-2.182C17.218 14.3 19 11.862 19 9a7 7 0 0 0-7-7ZM9.25 19.75a.75.75 0 0 0 0 1.5h5.5a.75.75 0 0 0 0-1.5h-5.5ZM9.75 22.75a.75.75 0 0 0 0 1.5h4.5a.75.75 0 0 0 0-1.5h-4.5Z" />

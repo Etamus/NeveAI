@@ -1,1 +1,0 @@
-import"../chunks/CWj6FrbW.js";import"../chunks/CN51-NxK.js";import{o as p,p as a,b as r}from"../chunks/ebMK-E7k.js";import{i as t}from"../chunks/qlOWKdB4.js";import{g as m}from"../chunks/D-P7YVMj.js";function l(s,o){r(o,!1),p(()=>{m("/workspace/local-models")}),t(),a()}export{l as component};

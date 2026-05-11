@@ -295,9 +295,9 @@ def _prepare_vision_messages(messages: list[dict]) -> list[dict]:
 
 class _LoadedModelInfo:
     """Tracks information about the currently loaded model."""
-    __slots__ = ("model_id", "filename", "loaded_at", "n_gpu_layers", "n_ctx", "file_size", "mmproj_filename")
+    __slots__ = ("model_id", "filename", "loaded_at", "n_gpu_layers", "n_ctx", "file_size", "mmproj_filename", "cache_type")
 
-    def __init__(self, model_id: str, filename: str, n_gpu_layers: int, n_ctx: int, file_size: int, mmproj_filename: Optional[str] = None):
+    def __init__(self, model_id: str, filename: str, n_gpu_layers: int, n_ctx: int, file_size: int, mmproj_filename: Optional[str] = None, cache_type: str = "q8_0"):
         self.model_id = model_id
         self.filename = filename
         self.loaded_at = int(time.time())
@@ -305,6 +305,7 @@ class _LoadedModelInfo:
         self.n_ctx = n_ctx
         self.file_size = file_size
         self.mmproj_filename = mmproj_filename
+        self.cache_type = cache_type
 
 
 class LocalModelManager:
@@ -383,6 +384,7 @@ class LocalModelManager:
                     "n_gpu_layers": info.n_gpu_layers if is_loaded else None,
                     "n_ctx": info.n_ctx if is_loaded else None,
                     "mmproj_filename": info.mmproj_filename if is_loaded else None,
+                    "cache_type": info.cache_type if is_loaded else None,
                 })
         return results
 
@@ -522,7 +524,15 @@ class LocalModelManager:
             await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type)
 
             file_size = filepath.stat().st_size
-            self._loaded[model_id] = _LoadedModelInfo(model_id, filename, n_gpu_layers, n_ctx, file_size, mmproj_filename)
+            self._loaded[model_id] = _LoadedModelInfo(
+                model_id,
+                filename,
+                n_gpu_layers,
+                n_ctx,
+                file_size,
+                mmproj_filename,
+                cache_type,
+            )
 
             log.info(f"Model loaded via llama-server: {model_id} (port={port}, gpu_layers={n_gpu_layers}, ctx={n_ctx}, mmproj={mmproj_filename})")
             return {
@@ -532,6 +542,7 @@ class LocalModelManager:
                 "n_gpu_layers": n_gpu_layers,
                 "n_ctx": n_ctx,
                 "mmproj_filename": mmproj_filename,
+                "cache_type": cache_type,
             }
 
     async def unload_model(self, model_id: str) -> dict:
