@@ -541,6 +541,7 @@ from neveai.utils.auth import (
     get_license_data,
     get_http_authorization_cred,
     decode_token,
+    get_or_create_no_auth_user,
     get_admin_user,
     get_verified_user,
     create_admin_user,
@@ -2101,12 +2102,17 @@ async def get_app_config(request: Request):
             data = decode_token(token)
         except Exception as e:
             log.debug(e)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token",
-            )
+            if WEBUI_AUTH:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token",
+                )
+            data = None
         if data is not None and "id" in data:
             user = Users.get_user_by_id(data["id"])
+
+    if user is None and not WEBUI_AUTH:
+        user = get_or_create_no_auth_user()
 
     user_count = Users.get_num_users()
     onboarding = False
