@@ -100,7 +100,7 @@
 		type LocalModel
 	} from '$lib/apis/llamacpp';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
-	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
+	import { getLocalModelLoadPreferences, LOCAL_MODEL_CONTEXT_OPTIONS } from '$lib/utils/llamacppLoadPreferences';
 	import { getFunctions } from '$lib/apis/functions';
 	import { updateFolderById } from '$lib/apis/folders';
 
@@ -3157,7 +3157,7 @@
 		<div class="bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-xl mx-4 w-80 flex flex-col gap-3">
 			<p class="text-sm font-semibold text-gray-900 dark:text-white">Tamanho do Contexto</p>
 			<div class="flex flex-col gap-1.5 max-h-72 overflow-y-auto scrollbar-none">
-				{#each [2048, 4096, 8192, 16384, 32768, 65536] as sz}
+				{#each LOCAL_MODEL_CONTEXT_OPTIONS as sz}
 					<button
 						class="flex items-center justify-between px-3 py-2 rounded-lg text-xs text-left transition {contextModalSize === sz ? 'bg-black text-white dark:bg-white dark:text-black' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
 						on:click={() => (contextModalSize = sz)}

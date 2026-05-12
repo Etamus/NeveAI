@@ -79,7 +79,7 @@
 
 	import XMark from '../icons/XMark.svelte';
 	import GlobeAlt from '../icons/GlobeAlt.svelte';
-	import GlobeSearch from '../icons/GlobeSearch.svelte';
+	import Atom02 from '../icons/Atom02.svelte';
 	import Photo from '../icons/Photo.svelte';
 	import Wrench from '../icons/Wrench.svelte';
 	import Sparkles from '../icons/Sparkles.svelte';
@@ -2004,7 +2004,7 @@
 											>
 												<div class="relative size-4 shrink-0 flex items-center justify-center">
 													<span class="group-hover:hidden flex items-center justify-center">
-														<GlobeSearch className="size-4" />
+														<Atom02 className="size-4" />
 													</span>
 													<span class="hidden group-hover:flex items-center justify-center">
 														<XMark className="size-4" strokeWidth="1.75" />

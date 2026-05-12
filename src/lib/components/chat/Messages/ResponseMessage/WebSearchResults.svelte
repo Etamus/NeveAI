@@ -4,7 +4,7 @@
 
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
-	import GlobeSearch from '$lib/components/icons/GlobeSearch.svelte';
+	import Atom02 from '$lib/components/icons/Atom02.svelte';
 
 	import { slide } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -72,7 +72,7 @@
 				class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
 			>
 				{#if isDeepSearchStatus}
-					<GlobeSearch className="size-3.5" />
+					<Atom02 className="size-3.5" />
 				{:else}
 					<GlobeAlt className="size-3.5" strokeWidth="1.6" />
 				{/if}

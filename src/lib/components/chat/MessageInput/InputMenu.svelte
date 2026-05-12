@@ -23,7 +23,7 @@
 	import Wrench from '$lib/components/icons/Wrench.svelte';
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
-	import GlobeSearch from '$lib/components/icons/GlobeSearch.svelte';
+	import Atom02 from '$lib/components/icons/Atom02.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import Terminal from '$lib/components/icons/Terminal.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
@@ -533,7 +533,7 @@
 							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(deepSearchBlocked)}" on:click={() => { if (deepSearchBlocked) return; deepSearchEnabled = !deepSearchEnabled; if (deepSearchEnabled) { webSearchEnabled = false; imageGenerationEnabled = false; codeInterpreterEnabled = false; codeExecutionEnabled = false; stableDiffusionEnabled = false; selectedToolIds = []; selectedFilterIds = []; } }}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
-										<div class="shrink-0"><GlobeSearch /></div>
+										<div class="shrink-0"><Atom02 /></div>
 										<div class=" truncate">{$i18n.t('Deep Search')}</div>
 									</div>
 								</div>

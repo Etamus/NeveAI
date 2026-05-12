@@ -226,7 +226,7 @@ if (-not (Test-Path $LOGO_PATH)) {
 
                     <StackPanel Grid.Row="0" Margin="0,0,0,12">
                         <TextBlock Text="Instalando..." FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
-                        <TextBlock x:Name="LblStep" Text="Preparando…" FontSize="13" Foreground="#71717A" Margin="0,4,0,0"/>
+                        <TextBlock x:Name="LblStep" Text="Preparando…" FontSize="13" Foreground="#71717A" Margin="0,4,0,0" Visibility="Collapsed"/>
                     </StackPanel>
 
                     <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="16,14" Margin="0,0,0,14">

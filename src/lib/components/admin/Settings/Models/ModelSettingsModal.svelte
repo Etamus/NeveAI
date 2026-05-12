@@ -243,7 +243,7 @@
 		}, 350);
 	};
 
-	$: defaultModelIds, defaultPinnedModelIds, modelIds, defaultCapabilities, defaultFeatureIds, defaultParams, builtinTools, promptSuggestions, scheduleAutoSave();
+	$: defaultModelIds, defaultPinnedModelIds, defaultCapabilities, defaultFeatureIds, defaultParams, builtinTools, promptSuggestions, scheduleAutoSave();
 
 	$: if (!show && initializedForOpen) {
 		initializedForOpen = false;

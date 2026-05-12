@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" spellcheck="false">
 	<head>
 		<meta charset="utf-8" />
 		<link rel="icon" type="image/png" href="/static/favicon.png" crossorigin="use-credentials" />
@@ -24,6 +24,23 @@
 			function resizeIframe(obj) {
 				obj.style.height = obj.contentWindow.document.documentElement.scrollHeight + 'px';
 			}
+		</script>
+
+		<script>
+			(() => {
+				const disableSpellcheck = (element) => {
+					if (!(element instanceof HTMLElement)) return;
+					if (element.matches('input, textarea, [contenteditable]')) {
+						element.setAttribute('spellcheck', 'false');
+					}
+				};
+
+				document.addEventListener('DOMContentLoaded', () => {
+					document.querySelectorAll('input, textarea, [contenteditable]').forEach(disableSpellcheck);
+				});
+				document.addEventListener('focusin', (event) => disableSpellcheck(event.target), true);
+				document.addEventListener('input', (event) => disableSpellcheck(event.target), true);
+			})();
 		</script>
 
 		<script>
@@ -76,7 +93,7 @@
 		%sveltekit.head%
 	</head>
 
-	<body data-sveltekit-preload-data="hover">
+	<body data-sveltekit-preload-data="hover" spellcheck="false">
 		<div style="display: contents">%sveltekit.body%</div>
 
 

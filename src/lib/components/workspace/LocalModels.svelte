@@ -10,7 +10,7 @@
 		type LocalModel
 	} from '$lib/apis/llamacpp';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
-	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
+	import { getLocalModelLoadPreferences, LOCAL_MODEL_CONTEXT_OPTIONS } from '$lib/utils/llamacppLoadPreferences';
 
 	let localModels: LocalModel[] = [];
 	let mmProjFiles: string[] = [];
@@ -200,7 +200,7 @@
 				</div>
 				<p class="text-xs text-gray-500 dark:text-gray-400">Selecione o tamanho do contexto em tokens para <span class="font-medium text-gray-700 dark:text-gray-300">{contextModalModel.filename.replace('.gguf', '')}</span></p>
 				<div class="flex flex-col gap-1.5 max-h-80 overflow-y-auto scrollbar-none">
-					{#each [2048, 4096, 8192, 16384, 32768, 65536] as size}
+					{#each LOCAL_MODEL_CONTEXT_OPTIONS as size}
 						<button
 							class="flex items-center justify-between px-3 py-2 rounded-xl text-xs text-left transition {contextModalSize === size ? 'bg-black text-white dark:bg-white dark:text-black font-medium' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
 							on:click={() => (contextModalSize = size)}
