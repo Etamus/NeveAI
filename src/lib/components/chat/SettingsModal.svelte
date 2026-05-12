@@ -141,10 +141,7 @@
 	const getAvailableSettings = () => {
 		return allSettings.filter((tab) => {
 			if (tab.id === 'personalization') {
-				return (
-					$config?.features?.enable_memories &&
-					($user?.role === 'admin' || ($user?.permissions?.features?.memories ?? true))
-				);
+				return true;
 			}
 
 			// Admin-only tabs

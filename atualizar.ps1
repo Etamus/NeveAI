@@ -263,7 +263,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
 
                     <StackPanel Grid.Row="0" Margin="0,0,0,12">
                         <TextBlock Text="Atualizando…" FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
-                        <TextBlock x:Name="LblStep" Text="Preparando…" FontSize="13" Foreground="#71717A" Margin="0,4,0,0"/>
+                        <TextBlock x:Name="LblStep" Text="Preparando…" FontSize="13" Foreground="#71717A" Margin="0,4,0,0" Visibility="Collapsed"/>
                     </StackPanel>
 
                     <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="16,14" Margin="0,0,0,14">
@@ -294,7 +294,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                                 <TextBlock Text="OK" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <TextBlock x:Name="LblDoneTitle" Text="Atualização concluída!" FontSize="22" FontWeight="SemiBold" Foreground="#111111" HorizontalAlignment="Center"/>
-                            <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar o Neve AI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
+                            <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar a Neve AI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
                             <Border Background="#FAFAFA" CornerRadius="8" Padding="14,12">
                                 <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="#52525B"/>
                             </Border>
@@ -1576,7 +1576,7 @@ $ctl.BtnPrimary.Add_Click({
                 $script:Ctl.UpdatePanel.Visibility = 'Collapsed'
                 $script:Ctl.DonePanel.Visibility   = 'Visible'
                 $script:Ctl.LblDoneTitle.Text = $doneTitle
-                $script:Ctl.LblDoneSub.Text   = 'Use iniciar.bat para iniciar o Neve AI.'
+                $script:Ctl.LblDoneSub.Text   = 'Use iniciar.bat para iniciar a Neve AI.'
                 $script:Ctl.LblSummary.Text   = ($summary -join "`r`n")
                 $script:Ctl.BtnPrimary.Content   = 'Concluir'
                 $script:Ctl.BtnPrimary.Tag       = 'done'

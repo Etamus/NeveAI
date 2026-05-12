@@ -16,6 +16,30 @@ export interface LocalModel {
 	cache_type: string | null;
 }
 
+export interface LocalVramGpu {
+	index: number;
+	name: string;
+	total: number;
+	used: number;
+	free: number;
+	total_human: string;
+	used_human: string;
+	free_human: string;
+}
+
+export interface LocalVramInfo {
+	available: boolean;
+	source?: string;
+	total: number;
+	used: number;
+	free: number;
+	total_human: string;
+	used_human: string;
+	free_human: string;
+	gpus: LocalVramGpu[];
+	error?: string;
+}
+
 export const getLocalModels = async (token: string = ''): Promise<LocalModel[]> => {
 	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/models`, {
 		method: 'GET',
@@ -52,6 +76,24 @@ export const getLoadedLocalModels = async (token: string = ''): Promise<LocalMod
 
 	const data = await res.json();
 	return data.models ?? [];
+};
+
+export const getLocalVramInfo = async (token: string = ''): Promise<LocalVramInfo> => {
+	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/vram`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	});
+
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ detail: 'Falha ao buscar VRAM' }));
+		throw new Error(err.detail || 'Falha ao buscar VRAM');
+	}
+
+	return res.json();
 };
 
 export const getMmProjFiles = async (token: string = ''): Promise<string[]> => {

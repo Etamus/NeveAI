@@ -2,7 +2,7 @@ export type LocalModelContextPreference = 'ask' | number;
 export type LocalModelVisionPreference = 'ask' | 'yes' | 'no';
 export type LocalModelCachePreference = 'default' | 'q8_0' | 'q4_0' | 'f16';
 
-export const LOCAL_MODEL_CONTEXT_OPTIONS = [2048, 4096, 8192, 16384, 32768, 65536];
+export const LOCAL_MODEL_CONTEXT_OPTIONS = [2048, 4096, 8192, 16384, 32768, 65536, 131072];
 
 const CONTEXT_KEY = 'llamacpp_load_context';
 const VISION_KEY = 'llamacpp_load_vision';

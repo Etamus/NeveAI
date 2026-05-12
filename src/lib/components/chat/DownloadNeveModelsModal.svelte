@@ -302,9 +302,9 @@
 						/>
 						<div class="flex-1 min-w-0 text-sm truncate">{item.name}</div>
 						{#if item.installed}
-							<span class="text-xs font-medium text-green-600 dark:text-green-500 shrink-0">Instalado</span>
+							<span class="text-xs font-medium text-black-600 dark:text-white-500 shrink-0">Instalado</span>
 						{:else if downloading && downloadingModelId === item.id}
-							<span class="text-xs font-medium text-blue-600 dark:text-blue-400 shrink-0">Baixando</span>
+							<span class="text-xs font-medium text-black-600 dark:text-white-400 shrink-0">Baixando</span>
 						{:else if item.size_label}
 							<span class="text-xs text-gray-400 dark:text-gray-500 shrink-0">{item.size_label}</span>
 						{/if}

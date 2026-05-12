@@ -43,7 +43,7 @@
 				forceFallback: true,
 				fallbackOnBody: true,
 				onEnd: () => {
-					positionChangeHandler();
+					setTimeout(positionChangeHandler, 0);
 				}
 			});
 		}

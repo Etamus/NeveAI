@@ -1038,6 +1038,80 @@ class UnloadModelRequest(BaseModel):
     model_id: str
 
 
+def _get_vram_info() -> dict:
+    """Return NVIDIA VRAM information from nvidia-smi when available."""
+    command = [
+        "nvidia-smi",
+        "--query-gpu=index,name,memory.total,memory.used,memory.free",
+        "--format=csv,noheader,nounits",
+    ]
+    run_kwargs = {
+        "capture_output": True,
+        "text": True,
+        "timeout": 3,
+    }
+    if sys.platform == "win32":
+        run_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+    try:
+        proc = subprocess.run(command, **run_kwargs)
+        if proc.returncode != 0:
+            raise RuntimeError((proc.stderr or proc.stdout or "nvidia-smi failed").strip())
+
+        gpus = []
+        total = used = free = 0
+        for line in proc.stdout.splitlines():
+            parts = [part.strip() for part in line.split(",")]
+            if len(parts) < 5:
+                continue
+
+            index_raw = parts[0]
+            name = ",".join(parts[1:-3]).strip()
+            total_mib, used_mib, free_mib = parts[-3:]
+            total_bytes = int(float(total_mib)) * 1024 * 1024
+            used_bytes = int(float(used_mib)) * 1024 * 1024
+            free_bytes = int(float(free_mib)) * 1024 * 1024
+
+            total += total_bytes
+            used += used_bytes
+            free += free_bytes
+            gpus.append({
+                "index": int(index_raw),
+                "name": name,
+                "total": total_bytes,
+                "used": used_bytes,
+                "free": free_bytes,
+                "total_human": _human_size(total_bytes),
+                "used_human": _human_size(used_bytes),
+                "free_human": _human_size(free_bytes),
+            })
+
+        return {
+            "available": len(gpus) > 0,
+            "source": "nvidia-smi",
+            "total": total,
+            "used": used,
+            "free": free,
+            "total_human": _human_size(total),
+            "used_human": _human_size(used),
+            "free_human": _human_size(free),
+            "gpus": gpus,
+        }
+    except Exception as e:
+        return {
+            "available": False,
+            "source": "nvidia-smi",
+            "total": 0,
+            "used": 0,
+            "free": 0,
+            "total_human": "0 B",
+            "used_human": "0 B",
+            "free_human": "0 B",
+            "gpus": [],
+            "error": str(e),
+        }
+
+
 # ---------------------------------------------------------------------------
 # API Routes
 # ---------------------------------------------------------------------------
@@ -1061,6 +1135,12 @@ async def list_loaded_models():
     """List only the currently loaded models."""
     models = model_manager.get_loaded_models()
     return {"models": models}
+
+
+@router.get("/vram")
+async def get_vram_info():
+    """Return current GPU VRAM usage for the local model UI."""
+    return _get_vram_info()
 
 
 @router.post("/models/load")

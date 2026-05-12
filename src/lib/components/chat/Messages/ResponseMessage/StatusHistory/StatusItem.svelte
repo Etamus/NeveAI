@@ -3,7 +3,7 @@
 	const i18n = getContext('i18n');
 	import WebSearchResults from '../WebSearchResults.svelte';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
-	import GlobeSearch from '$lib/components/icons/GlobeSearch.svelte';
+	import Atom02 from '$lib/components/icons/Atom02.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import { t } from 'i18next';
@@ -54,7 +54,7 @@
 							{#if isImageStatus}
 								<Photo className="size-3.5" strokeWidth="1.6" />
 							{:else if isDeepSearchStatus}
-								<GlobeSearch className="size-3.5" />
+								<Atom02 className="size-3.5" />
 							{:else}
 								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
 							{/if}
@@ -109,7 +109,7 @@
 							{#if isImageStatus}
 								<Photo className="size-3.5" strokeWidth="1.6" />
 							{:else if isDeepSearchStatus}
-								<GlobeSearch className="size-3.5" />
+								<Atom02 className="size-3.5" />
 							{:else}
 								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
 							{/if}
@@ -141,7 +141,7 @@
 							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
 						>
 							{#if isDeepSearchStatus}
-								<GlobeSearch className="size-3.5" />
+								<Atom02 className="size-3.5" />
 							{:else}
 								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
 							{/if}
@@ -171,7 +171,7 @@
 							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
 						>
 							{#if isDeepSearchStatus}
-								<GlobeSearch className="size-3.5" />
+								<Atom02 className="size-3.5" />
 							{:else}
 								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
 							{/if}
@@ -207,7 +207,7 @@
 							{#if isImageStatus}
 								<Photo className="size-3.5" strokeWidth="1.6" />
 							{:else if isDeepSearchStatus}
-								<GlobeSearch className="size-3.5" />
+								<Atom02 className="size-3.5" />
 							{:else}
 								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
 							{/if}
