@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
+	import { getContext, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import {
@@ -8,7 +8,9 @@
 		chatId,
 		config,
 		mobile,
+		models as globalModels,
 		settings,
+		showLocalModelsModal,
 		showSidebar,
 		temporaryChatEnabled,
 		user
@@ -37,6 +39,14 @@
 	import Knobs from '../icons/Knobs.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import UnifiedModels from '$lib/components/chat/UnifiedModels.svelte';
+	import { getLocalModels, getMmProjFiles, getLocalVramInfo, type LocalVramInfo } from '$lib/apis/llamacpp';
+	import { getBaseModels } from '$lib/apis/models';
+	import { getModels } from '$lib/apis';
+	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import {
+		buildUnifiedAdminModels,
+		type UnifiedModelsPreload
+	} from '$lib/utils/unifiedModelsData';
 
 	const i18n = getContext('i18n');
 
@@ -56,14 +66,148 @@
 
 	let showShareChatModal = false;
 	let showDownloadChatModal = false;
-	import { showLocalModelsModal } from '$lib/stores';
+	let unifiedModelsPreload: UnifiedModelsPreload | null = null;
+	let unifiedModelsPreloadPromise: Promise<void> | null = null;
+	let unifiedModelsVramInfo: LocalVramInfo | null = null;
+	let unifiedModelsVramPromise: Promise<void> | null = null;
+	const unifiedModelsVramCacheKey = 'neveai.unifiedModels.vramInfo';
+
+	const getCachedUnifiedModelsVram = () => {
+		if (typeof localStorage === 'undefined') return null;
+		try {
+			const cached = JSON.parse(localStorage.getItem(unifiedModelsVramCacheKey) ?? 'null');
+			if (!cached?.data || !cached?.timestamp) return null;
+			if (Date.now() - cached.timestamp > 5 * 60 * 1000) return null;
+			return cached.data as LocalVramInfo;
+		} catch {
+			return null;
+		}
+	};
+
+	const setCachedUnifiedModelsVram = (data: LocalVramInfo) => {
+		if (typeof localStorage === 'undefined') return;
+		try {
+			localStorage.setItem(
+				unifiedModelsVramCacheKey,
+				JSON.stringify({ timestamp: Date.now(), data })
+			);
+		} catch {}
+	};
+
+	const preloadUnifiedModelImages = (adminModels: any[]) => {
+		if (typeof Image === 'undefined') return;
+		const ids = [...new Set(adminModels.map((model) => model?.id).filter(Boolean))].slice(0, 80);
+		for (const id of ids) {
+			const image = new Image();
+			image.decoding = 'async';
+			image.src = `${WEBUI_API_BASE_URL}/models/model/profile/image?id=${encodeURIComponent(id)}`;
+		}
+	};
+
+	const refreshUnifiedModelsVram = async () => {
+		if (unifiedModelsVramPromise) return unifiedModelsVramPromise;
+
+		unifiedModelsVramPromise = getLocalVramInfo(localStorage.token)
+			.then((result) => {
+				unifiedModelsVramInfo = result;
+				setCachedUnifiedModelsVram(result);
+				if (unifiedModelsPreload?.loaded) {
+					unifiedModelsPreload = { ...unifiedModelsPreload, vramInfo: result };
+				}
+			})
+			.catch(() => {})
+			.finally(() => {
+				unifiedModelsVramPromise = null;
+			});
+
+		return unifiedModelsVramPromise;
+	};
+
+	const refreshUnifiedModelsPreload = async () => {
+		if (unifiedModelsPreloadPromise) return unifiedModelsPreloadPromise;
+		if (!unifiedModelsVramInfo) unifiedModelsVramInfo = getCachedUnifiedModelsVram();
+		refreshUnifiedModelsVram();
+
+		unifiedModelsPreloadPromise = (async () => {
+			const localModelsPromise = getLocalModels(localStorage.token).catch(() => []);
+			const mmProjFilesPromise = getMmProjFiles(localStorage.token).catch(() => []);
+			const workspaceModelsPromise = getBaseModels(localStorage.token).catch(() => []);
+			const baseModelsPromise = $globalModels?.length
+				? Promise.resolve([...$globalModels])
+				: getModels(
+						localStorage.token,
+						$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
+					).catch(() => []);
+
+			const [localModels, mmProjFiles] = await Promise.all([
+				localModelsPromise,
+				mmProjFilesPromise
+			]);
+			const currentWorkspaceModels = unifiedModelsPreload?.workspaceModels ?? [];
+			const currentBaseModels = $globalModels?.length
+				? [...$globalModels]
+				: (unifiedModelsPreload?.baseModels ?? []);
+			const currentAdminModels = buildUnifiedAdminModels(
+				localModels,
+				currentBaseModels,
+				currentWorkspaceModels
+			);
+			preloadUnifiedModelImages(currentAdminModels);
+			unifiedModelsPreload = {
+				loaded: true,
+				localModels,
+				mmProjFiles,
+				workspaceModels: currentWorkspaceModels,
+				baseModels: currentBaseModels,
+				adminModels: currentAdminModels,
+				vramInfo: unifiedModelsVramInfo
+			};
+
+			const [workspaceModelsResult, baseModels] = await Promise.all([
+				workspaceModelsPromise,
+				baseModelsPromise
+			]);
+
+			const workspaceModels = Array.isArray(workspaceModelsResult) ? workspaceModelsResult : [];
+			const resolvedBaseModels = Array.isArray(baseModels) ? baseModels : [];
+			const adminModels = buildUnifiedAdminModels(localModels, resolvedBaseModels, workspaceModels);
+			preloadUnifiedModelImages(adminModels);
+
+			unifiedModelsPreload = {
+				loaded: true,
+				localModels,
+				mmProjFiles,
+				workspaceModels,
+				baseModels: resolvedBaseModels,
+				adminModels,
+				vramInfo: unifiedModelsVramInfo
+			};
+		})().finally(() => {
+			unifiedModelsPreloadPromise = null;
+		});
+
+		return unifiedModelsPreloadPromise;
+	};
+
+	$: if ($showLocalModelsModal) {
+		refreshUnifiedModelsPreload();
+		refreshUnifiedModelsVram();
+	}
+
+	onMount(() => {
+		unifiedModelsVramInfo = getCachedUnifiedModelsVram();
+		refreshUnifiedModelsPreload();
+		refreshUnifiedModelsVram();
+	});
 </script>
 
 <ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
 
-<Modal size="md" className="bg-white dark:bg-gray-900 rounded-xl w-[36rem]!" bind:show={$showLocalModelsModal}>
-	<UnifiedModels />
-</Modal>
+{#if unifiedModelsPreload?.loaded}
+	<Modal size="md" className="bg-white dark:bg-gray-900 rounded-xl w-[36rem]!" bind:show={$showLocalModelsModal}>
+		<UnifiedModels preload={unifiedModelsPreload} show={$showLocalModelsModal} />
+	</Modal>
+{/if}
 
 <button
 	id="new-chat-button"

@@ -1038,6 +1038,11 @@ class UnloadModelRequest(BaseModel):
     model_id: str
 
 
+_VRAM_CACHE_TTL = 0.75
+_vram_cache: dict = {"data": None, "timestamp": 0.0}
+_vram_cache_lock = asyncio.Lock()
+
+
 def _get_vram_info() -> dict:
     """Return NVIDIA VRAM information from nvidia-smi when available."""
     command = [
@@ -1112,6 +1117,24 @@ def _get_vram_info() -> dict:
         }
 
 
+async def _get_vram_info_cached() -> dict:
+    now = time.monotonic()
+    cached = _vram_cache.get("data")
+    if cached is not None and now - _vram_cache.get("timestamp", 0.0) < _VRAM_CACHE_TTL:
+        return cached
+
+    async with _vram_cache_lock:
+        now = time.monotonic()
+        cached = _vram_cache.get("data")
+        if cached is not None and now - _vram_cache.get("timestamp", 0.0) < _VRAM_CACHE_TTL:
+            return cached
+
+        data = await asyncio.to_thread(_get_vram_info)
+        _vram_cache["data"] = data
+        _vram_cache["timestamp"] = time.monotonic()
+        return data
+
+
 # ---------------------------------------------------------------------------
 # API Routes
 # ---------------------------------------------------------------------------
@@ -1140,7 +1163,7 @@ async def list_loaded_models():
 @router.get("/vram")
 async def get_vram_info():
     """Return current GPU VRAM usage for the local model UI."""
-    return _get_vram_info()
+    return await _get_vram_info_cached()
 
 
 @router.post("/models/load")
