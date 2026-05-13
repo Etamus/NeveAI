@@ -246,7 +246,7 @@ Neve AI/
 ### Compilar e fazer deploy manualmente
 
 ```powershell
-cd "d:\Neve AI"
+cd "c:\Neve AI"
 npm run build
 Copy-Item -Path "build\*" -Destination "backend\neveai\frontend" -Recurse -Force
 ```
