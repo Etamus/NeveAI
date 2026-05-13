@@ -7,39 +7,42 @@ This document regulates the use, access, distribution, and any form of interacti
 
 2. OWNERSHIP AND INTELLECTUAL PROPERTY
 2.1. All source code, components, functionalities, architecture, documentation, design, structures, algorithms, and other elements of the software are protected by copyright laws and belong solely to the Author.
-2.2. This license does NOT transfer any rights of ownership, use, exploitation, commercialization, or modification, except when formally authorized in writing by the Author.
 
-3. RESTRICTIONS ON USE
-3.1. It is expressly prohibited, without prior written authorization from the Author, to:
-     a) copy, duplicate, or redistribute the software;
-     b) publish or make the software available to third parties;
-     c) modify, alter, edit, or create derivative works;
-     d) use the software for commercial, academic, or corporate purposes;
-     e) sell, rent, sublicense, or transfer access, in whole or in part;
-     f) remove, conceal, or alter copyright and identification notices;
-     g) perform reverse engineering, decompilation, disassembly, or any methods intended to discover the internal functioning of the software.
+2.2. This license does NOT transfer ownership of the software. However, the Author grants permission to use, modify, and adapt the software under the conditions established in this license.
+
+3. PERMITTED USES AND RESTRICTIONS
+3.1. The following actions are permitted:
+     a) personal, academic, corporate, and commercial use of the software;
+     b) modification, alteration, and creation of derivative works;
+     c) internal distribution of modified versions.
+
+3.2. It is expressly prohibited, without prior written authorization from the Author, to:
+     a) remove, conceal, or alter the original brand name, copyright notices, or author identification;
+     b) redistribute modified versions without clearly preserving the original attribution to the Author;
+     c) sell or sublicense the software while falsely claiming authorship of the original work;
+     d) perform illegal use of the software or violate applicable copyright laws.
+
+3.3. Any redistributed or modified version must:
+     a) retain visible attribution to the original Author;
+     b) preserve the original brand or project name when shared publicly;
+     c) include a copy of this license document.
 
 4. CONFIDENTIALITY
-4.1. If the software is provided privately, the user undertakes to maintain absolute confidentiality regarding all content received.
-4.2. Unauthorized disclosure constitutes copyright infringement and breach of contract.
+4.1. If the software is provided privately, the user undertakes to maintain confidentiality regarding any non-public material explicitly identified as confidential by the Author.
 
 5. LIABILITY AND PENALTIES
 5.1. Any violation of this license may result in:
-     a) immediate removal of the content via formal notices (DMCA or equivalents);
-     b) civil liability for the repair of material and moral damages;
-     c) criminal liability in accordance with applicable legislation;
-     d) collection of damages for misuse, misappropriation, distribution, or copying.
+     a) immediate removal requests via formal notices (DMCA or equivalents);
+     b) civil liability for damages;
+     c) criminal liability in accordance with applicable legislation.
 
 6. NO TACIT PERMISSION
-6.1. The Author's lack of response does NOT constitute authorization, granting of a license, or implied permission.
-6.2. All authorization must be formalized exclusively in writing.
+6.1. The Author's lack of response does NOT constitute authorization beyond the permissions expressly granted in this license.
 
 7. UPDATES AND AMENDMENTS
-7.1. The Author may update the terms of this license at any time.
-7.2. The most recent version published by the Author shall prevail over any previous versions.
+7.1. Updated versions of this license shall apply only to future distributions or versions released by the Author.
 
 8. ACCEPTANCE
-8.1. Use, access, reading, storage, or possession of the software implies full and unconditional acceptance of the terms established herein.
-8.2. If the user does not agree with any clause, they must immediately cease all use of the software.
+8.1. Use, access, reading, storage, or possession of the software implies acceptance of the terms established herein.
 
-This document has legal validity and governs the use of the software in all territories subject to copyright protection.
+This document governs the use of the software in all territories subject to copyright protection.
