@@ -15,18 +15,29 @@
 
 	$: modelNameById = new Map($models.map((model) => [model.id, model.name]));
 
-	const positionChangeHandler = () => {
-		if (!modelListElement) return;
+	const positionChangeHandler = async (event: any) => {
+		const oldIndex = event.oldIndex ?? -1;
+		const newIndex = event.newIndex ?? -1;
+		if (oldIndex === newIndex) return;
+		if (oldIndex < 0 || newIndex < 0) return;
+		if (oldIndex >= modelIds.length || newIndex >= modelIds.length) return;
 
-		// Read new order from DOM
-		const newOrder = Array.from(modelListElement.children).map((child) =>
-			child.getAttribute('data-model-id')
-		).filter(Boolean);
+		const newOrder = [...modelIds];
+		const movedModelId = event.item?.getAttribute('data-model-id') ?? modelIds[oldIndex];
+		const currentIndex = newOrder.indexOf(movedModelId);
+		if (currentIndex === -1) return;
 
-		if (newOrder.length !== modelIds.length) return;
-		if (newOrder.every((id, idx) => id === modelIds[idx])) return;
+		newOrder.splice(currentIndex, 1);
+		newOrder.splice(newIndex, 0, movedModelId);
+
+		// Sortable mutates DOM directly. Restore the DOM order Svelte still expects,
+		// then let Svelte render the new order from state to avoid visual drift.
+		sortable?.sort(modelIds, false);
+		await tick();
 
 		modelIds = newOrder;
+		await tick();
+		sortable?.sort(modelIds, false);
 		dispatch('reorder', modelIds);
 	};
 
@@ -39,11 +50,12 @@
 		if (modelListElement) {
 			sortable = new Sortable(modelListElement, {
 				animation: 150,
+				dataIdAttr: 'data-model-id',
 				handle: '.model-item-handle',
 				forceFallback: true,
 				fallbackOnBody: true,
-				onEnd: () => {
-					setTimeout(positionChangeHandler, 0);
+				onEnd: (event) => {
+					positionChangeHandler(event);
 				}
 			});
 		}

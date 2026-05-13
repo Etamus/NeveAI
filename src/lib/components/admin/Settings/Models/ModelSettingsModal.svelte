@@ -46,7 +46,6 @@
 	let defaultPinnedModelIds = [];
 
 	let modelIds = [];
-	let saveModelOrderTimer = null;
 
 	let sortKey = '';
 	let sortOrder = '';
@@ -65,6 +64,7 @@
 	let lastSavedSignature = '';
 	let saving = false;
 	let saveAgainAfterCurrent = false;
+	let queuedSaveOptions = null;
 
 	const getCleanDefaultParams = () =>
 		Object.fromEntries(
@@ -86,11 +86,17 @@
 		DEFAULT_MODEL_PARAMS: getCleanDefaultParams()
 	});
 
-	const getCurrentSignature = () =>
+	const getSignatureFromPayload = (modelsConfigPayload, cleanedPromptSuggestions) =>
 		JSON.stringify({
-			modelsConfig: getModelsConfigPayload(),
-			promptSuggestions: promptSuggestions.filter((p) => p.content !== '')
+			modelsConfig: modelsConfigPayload,
+			promptSuggestions: cleanedPromptSuggestions
 		});
+
+	const getCurrentSignature = () =>
+		getSignatureFromPayload(
+			getModelsConfigPayload(),
+			promptSuggestions.filter((p) => p.content !== '')
+		);
 
 	const hasUnsavedChanges = () => initializedForSave && getCurrentSignature() !== lastSavedSignature;
 
@@ -142,7 +148,30 @@
 		initializedForSave = true;
 	};
 
-	const saveSettings = async ({ close = false, silent = true, force = false } = {}) => {
+	const applyModelOrderToStore = () => {
+		const order = new Map(modelIds.map((id, idx) => [id, idx]));
+		const currentModels = [...$models];
+		const originalOrder = new Map(currentModels.map((model, idx) => [model.id, idx]));
+
+		models.set(
+			currentModels.sort((a, b) => {
+				const orderA = order.has(a.id) ? order.get(a.id) : Number.MAX_SAFE_INTEGER;
+				const orderB = order.has(b.id) ? order.get(b.id) : Number.MAX_SAFE_INTEGER;
+				if (orderA !== orderB) return orderA - orderB;
+				return (originalOrder.get(a.id) ?? 0) - (originalOrder.get(b.id) ?? 0);
+			})
+		);
+	};
+
+	const saveSettings = async ({
+		close = false,
+		silent = true,
+		force = false,
+		refreshModels = !silent || close,
+		updateLocalOrder = false,
+		savePromptSuggestions = true,
+		refreshConfig = !silent || close
+	} = {}) => {
 		if (!config || !initializedForSave) {
 			if (close) show = false;
 			return false;
@@ -160,34 +189,55 @@
 
 		if (saving) {
 			saveAgainAfterCurrent = true;
+			queuedSaveOptions = {
+				close: false,
+				silent: true,
+				force: false,
+				refreshModels: queuedSaveOptions?.refreshModels || refreshModels,
+				updateLocalOrder: queuedSaveOptions?.updateLocalOrder || updateLocalOrder,
+				savePromptSuggestions: queuedSaveOptions?.savePromptSuggestions || savePromptSuggestions,
+				refreshConfig: queuedSaveOptions?.refreshConfig || refreshConfig
+			};
 			if (close) show = false;
 			return true;
 		}
 
 		saving = true;
-		loading = true;
+		if (!silent) loading = true;
 
 		let res = null;
 		try {
 			const modelsConfigPayload = getModelsConfigPayload();
 			const cleanedPromptSuggestions = promptSuggestions.filter((p) => p.content !== '');
+			const savedSignature = getSignatureFromPayload(modelsConfigPayload, cleanedPromptSuggestions);
 			res = await setModelsConfig(localStorage.token, modelsConfigPayload);
 
 			if (res) {
-				promptSuggestions = await setDefaultPromptSuggestions(localStorage.token, cleanedPromptSuggestions);
-				await _config.set(await getBackendConfig());
-				lastSavedSignature = getCurrentSignature();
+				if (savePromptSuggestions) {
+					promptSuggestions = await setDefaultPromptSuggestions(localStorage.token, cleanedPromptSuggestions);
+				}
+				if (refreshConfig) {
+					await _config.set(await getBackendConfig());
+				} else {
+					await _config.set({ ...$_config, ...res });
+				}
+				lastSavedSignature = savedSignature;
 
 				if (!silent) {
 					toast.success($i18n.t('Models configuration saved successfully'));
 				}
-				models.set(
-					await getModels(
-						localStorage.token,
-						$_config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-					)
-				);
-				initHandler();
+				if (updateLocalOrder) {
+					applyModelOrderToStore();
+				}
+				if (refreshModels) {
+					models.set(
+						await getModels(
+							localStorage.token,
+							$_config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
+						)
+					);
+					initHandler();
+				}
 
 				if (close) {
 					show = false;
@@ -200,12 +250,14 @@
 			toast.error($i18n.t('Failed to save models configuration'));
 		} finally {
 			saving = false;
-			loading = false;
+			if (!silent) loading = false;
 		}
 
 		if (saveAgainAfterCurrent) {
+			const nextSaveOptions = queuedSaveOptions ?? { close: false, silent: true, force: false };
 			saveAgainAfterCurrent = false;
-			await saveSettings({ close: false, silent: true, force: false });
+			queuedSaveOptions = null;
+			await saveSettings(nextSaveOptions);
 		}
 
 		return Boolean(res);
@@ -225,22 +277,23 @@
 	};
 
 	const closeHandler = async () => {
-		await saveSettings({ close: true, silent: true, force: false });
+		await saveSettings({ close: true, silent: true, force: false, refreshModels: true });
 	};
 
 	const saveModelOrder = async () => {
-		await saveSettings({ close: false, silent: true, force: false });
+		await saveSettings({
+			close: false,
+			silent: true,
+			force: false,
+			refreshModels: false,
+			updateLocalOrder: true,
+			savePromptSuggestions: false,
+			refreshConfig: false
+		});
 	};
 
-	const scheduleSaveModelOrder = () => {
-		if (saveModelOrderTimer) {
-			clearTimeout(saveModelOrderTimer);
-		}
-
-		saveModelOrderTimer = setTimeout(() => {
-			saveModelOrderTimer = null;
-			scheduleAutoSave();
-		}, 350);
+	const saveModelOrderHandler = () => {
+		saveModelOrder();
 	};
 
 	$: defaultModelIds, defaultPinnedModelIds, defaultCapabilities, defaultFeatureIds, defaultParams, builtinTools, promptSuggestions, scheduleAutoSave();
@@ -255,14 +308,9 @@
 	});
 
 	onDestroy(() => {
-		if (saveModelOrderTimer) {
-			clearTimeout(saveModelOrderTimer);
-			saveSettings({ close: false, silent: true, force: false });
-		}
-
 		if (autoSaveTimer) {
 			clearTimeout(autoSaveTimer);
-			saveSettings({ close: false, silent: true, force: false });
+			saveSettings({ close: false, silent: true, force: false, refreshModels: false });
 		}
 	});
 </script>
@@ -348,7 +396,7 @@
 													{/if}
 												</button>
 												<div class="flex-1 min-h-0 overflow-y-auto pr-2">
-													<ModelList bind:modelIds on:reorder={scheduleSaveModelOrder} />
+													<ModelList bind:modelIds on:reorder={saveModelOrderHandler} />
 												</div>
 											</div>
 

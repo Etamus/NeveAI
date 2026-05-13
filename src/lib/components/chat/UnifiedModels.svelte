@@ -35,6 +35,10 @@
 	import { flyAndScale } from '$lib/utils/transitions';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
 	import { getLocalModelLoadPreferences, LOCAL_MODEL_CONTEXT_OPTIONS } from '$lib/utils/llamacppLoadPreferences';
+	import {
+		buildUnifiedAdminModels,
+		type UnifiedModelsPreload
+	} from '$lib/utils/unifiedModelsData';
 
 	import ModelSettingsModal from '$lib/components/admin/Settings/Models/ModelSettingsModal.svelte';
 	import ManageModelsModal from '$lib/components/admin/Settings/Models/ManageModelsModal.svelte';
@@ -54,6 +58,9 @@
 	import PinSlash from '$lib/components/icons/PinSlash.svelte';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import Minus from '$lib/components/icons/Minus.svelte';
+
+	export let preload: UnifiedModelsPreload | null = null;
+	export let show = false;
 
 	// ─── LOCAL MODEL STATE ───────────────────────────────────────────────────
 	let localModels: LocalModel[] = [];
@@ -177,8 +184,11 @@
 	let showManageModal = false;
 	let showDownloadModal = false;
 	let viewOption = '';
+	let preloadApplied = false;
+	let preloadVramSignature = '';
 	let highlightedLoadedModelId: string | null = null;
 	let modelsBelowLoadedCollapsed = false;
+	let previousShow = false;
 	let collapseAnimationEnabled = false;
 	let collapseAnimationTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -229,6 +239,27 @@
 			am?.id?.toLowerCase().includes(q)
 		);
 	};
+	const applyPreload = (data: UnifiedModelsPreload) => {
+		localModels = data.localModels ?? [];
+		mmProjFiles = data.mmProjFiles ?? [];
+		adminModels = data.adminModels ?? [];
+		workspaceModels = data.workspaceModels ?? [];
+		baseModels = data.baseModels ?? [];
+		vramInfo = data.vramInfo ?? null;
+		localLoading = false;
+	};
+
+	$: if (preload?.loaded) {
+		applyPreload(preload);
+		preloadApplied = true;
+	}
+	$: if (preload?.vramInfo) {
+		const nextPreloadVramSignature = JSON.stringify(preload.vramInfo);
+		if (nextPreloadVramSignature !== preloadVramSignature) {
+			vramInfo = preload.vramInfo;
+			preloadVramSignature = nextPreloadVramSignature;
+		}
+	}
 
 	// ─── COMPUTED ────────────────────────────────────────────────────────────
 	$: filteredLocalModels = localModels.filter((m) => {
@@ -299,10 +330,21 @@
 		highlightedLoadedModelId = null;
 		modelsBelowLoadedCollapsed = false;
 	}
+	$: {
+		const openingModal = show && !previousShow;
+		previousShow = show;
+		if (openingModal) {
+			disableCollapseAnimation();
+			currentPage = 1;
+			modelsBelowLoadedCollapsed = Boolean(activeHighlightedModelKey);
+		}
+	}
 	$: highlightedLoadedItem = mergedModels.find((item) => item.gguf?.is_loaded || (item.gguf && localModelActions[item.gguf.filename] === 'unload')) ?? null;
 	$: hasHighlightedLoadedModel = Boolean(highlightedLoadedItem);
 	$: scrollableMergedModels = highlightedLoadedItem ? mergedModels.filter((item) => item.key !== highlightedLoadedItem.key) : mergedModels;
-	$: filteredScrollableMergedModels = scrollableMergedModels.filter((item) => matchesModelSearch(item, searchValue));
+	$: filteredScrollableMergedModels = hasHighlightedLoadedModel
+		? scrollableMergedModels
+		: scrollableMergedModels.filter((item) => matchesModelSearch(item, searchValue));
 	$: hasCollapsibleModelsBelow = hasHighlightedLoadedModel && scrollableMergedModels.length > 0;
 	$: modelListPageSize = perPage;
 	$: modelListPaginationCount = filteredScrollableMergedModels.length;
@@ -313,37 +355,19 @@
 	$: modelListMaxHeight = `${modelListVisibleRows * (hasHighlightedLoadedModel ? HIGHLIGHTED_MODEL_ROW_HEIGHT_PX : MODEL_ROW_HEIGHT_PX)}px`;
 	$: modelListHasOverflow = modelListPaginationCount > modelListVisibleRows;
 	$: modelListViewportStyle = modelListPaginationCount === 0
-		? `height: ${modelListMaxHeight}; scrollbar-gutter: stable;`
+		? `height: ${modelListMaxHeight};`
 		: modelListHasOverflow
 			? `height: ${modelListMaxHeight}; max-height: ${modelListMaxHeight}; scrollbar-gutter: stable;`
 			: `max-height: ${modelListMaxHeight}; scrollbar-gutter: stable;`;
+	$: if (hasHighlightedLoadedModel && searchValue) {
+		searchValue = '';
+	}
 
 	$: if (searchValue || viewOption !== undefined) {
 		currentPage = 1;
 	}
 
 	// ─── LOCAL MODEL FUNCTIONS ───────────────────────────────────────────────
-	async function refreshLocalModels(initial = true) {
-		if (initial) localLoading = true;
-		localError = '';
-		try {
-			const [newLocalModels, newMmProjFiles] = await Promise.all([
-				getLocalModels(localStorage.token),
-				getMmProjFiles(localStorage.token)
-			]);
-			if (JSON.stringify(newLocalModels) !== JSON.stringify(localModels)) localModels = newLocalModels;
-			if (JSON.stringify(newMmProjFiles) !== JSON.stringify(mmProjFiles)) mmProjFiles = newMmProjFiles;
-		} catch (e: any) {
-			localError =
-				e.message === 'Failed to fetch'
-					? 'Falha ao buscar'
-					: e.message || 'Erro ao buscar modelos locais';
-		} finally {
-			await refreshLocalVram();
-			if (initial) localLoading = false;
-		}
-	}
-
 	async function refreshLocalVram() {
 		try {
 			vramInfo = await getLocalVramInfo(localStorage.token);
@@ -371,9 +395,8 @@
 		try {
 			await loadLocalModel(localStorage.token, model.filename, gpuLayers, contextSize, '', getCacheTypeForLoad());
 			localSuccess = `${model.filename} carregado com sucesso!`;
-			await refreshLocalModels();
 			_models.set(await getModels(localStorage.token));
-			await initAdmin();
+			await refreshUnifiedModelData(false);
 		} catch (e: any) {
 			localError = e.message || 'Erro ao carregar modelo';
 		} finally {
@@ -465,9 +488,8 @@
 				getCacheTypeForLoad()
 			);
 			localSuccess = `${model.filename} carregado! (visão: ${mmprojFile})`;
-			await refreshLocalModels();
 			_models.set(await getModels(localStorage.token));
-			await initAdmin();
+			await refreshUnifiedModelData(false);
 		} catch (e: any) {
 			localError = e.message || 'Erro ao carregar modelo';
 		} finally {
@@ -485,9 +507,8 @@
 		try {
 			await unloadLocalModel(localStorage.token, model.id);
 			localSuccess = `${model.filename} descarregado.`;
-			await refreshLocalModels();
 			_models.set(await getModels(localStorage.token));
-			await initAdmin();
+			await refreshUnifiedModelData(false);
 		} catch (e: any) {
 			localError = e.message || 'Erro ao descarregar modelo';
 		} finally {
@@ -497,7 +518,7 @@
 	}
 
 	// ─── ADMIN MODEL FUNCTIONS ───────────────────────────────────────────────
-	const initAdmin = async () => {
+	const initAdmin = async (localModelSource: LocalModel[] = localModels) => {
 		try {
 			baseModels = [...$_models];
 			try {
@@ -506,50 +527,34 @@
 			} catch (e) {
 				workspaceModels = [];
 			}
-			const baseIds = new Set(baseModels.map((m: any) => m.id));
-			// Local GGUF IDs that currently exist on disk
-			const localIds = new Set(localModels.map((gm) => gm.id).filter(Boolean));
-			// Only include workspace models whose backing resource still exists:
-			// either currently active in $_models, or a local GGUF file still on disk.
-			const validIds = new Set([
-				...baseIds,
-				...workspaceModels
-					.filter((wm: any) => baseIds.has(wm.id) || localIds.has(wm.id))
-					.map((wm: any) => wm.id)
-			]);
-			let newAdminModels = [...validIds]
-				.map((id: string) => {
-					const base = baseModels.find((m: any) => m.id === id);
-					const wm = workspaceModels.find((m: any) => m.id === id);
-					if (base && wm) return { ...base, ...wm };
-					if (wm) return { ...wm };
-					if (base) return { ...base, is_active: true };
-					return null;
-				})
-				.filter((m): m is any => m !== null);
-
-			// Synthetic entries for GGUF files on disk not yet registered in the DB.
-			// Without this, brand-new files show only the "Carregar" button and
-			// never get the edit pencil, "..." menu, or toggle controls.
-			const registeredIds = new Set(newAdminModels.map((m: any) => m.id));
-			newAdminModels = [
-				...newAdminModels,
-				...localModels
-					.filter((gm) => gm.id && !registeredIds.has(gm.id))
-					.map((gm) => ({
-						id: gm.id,
-						name: gm.filename.replace(/\.gguf$/i, ''),
-						meta: {},
-						params: {},
-						is_active: true,
-					}))
-			];
-			adminModels = newAdminModels;
+			adminModels = buildUnifiedAdminModels(localModelSource, baseModels, workspaceModels ?? []);
 		} catch (e) {
 			console.error('[UnifiedModels] initAdmin error:', e);
 			if (adminModels.length === 0) adminModels = baseModels ?? [];
 		}
 	};
+
+	async function refreshUnifiedModelData(initial = true) {
+		if (initial) localLoading = true;
+		localError = '';
+		try {
+			const [newLocalModels, newMmProjFiles] = await Promise.all([
+				getLocalModels(localStorage.token),
+				getMmProjFiles(localStorage.token)
+			]);
+			await initAdmin(newLocalModels);
+			if (JSON.stringify(newLocalModels) !== JSON.stringify(localModels)) localModels = newLocalModels;
+			if (JSON.stringify(newMmProjFiles) !== JSON.stringify(mmProjFiles)) mmProjFiles = newMmProjFiles;
+		} catch (e: any) {
+			localError =
+				e.message === 'Failed to fetch'
+					? 'Falha ao buscar'
+					: e.message || 'Erro ao buscar modelos locais';
+		} finally {
+			await refreshLocalVram();
+			if (initial) localLoading = false;
+		}
+	}
 
 	const upsertModelHandler = async (model: any, showToast = true) => {
 		if ((workspaceModels ?? []).find((m) => m.id === model.id)) {
@@ -642,14 +647,16 @@
 	};
 
 	onMount(async () => {
-		// refreshLocalModels must complete first so localModels is ready for initAdmin
-		await refreshLocalModels();
-		await initAdmin();
+		if (!preloadApplied) {
+			await refreshUnifiedModelData();
+		} else if (vramInfo === null) {
+			refreshLocalVram();
+		}
 
 		// Auto-refresh: poll for new GGUF files every 3 seconds
 		const pollInterval = setInterval(async () => {
 			const prevIds = new Set(localModels.map((m) => m.id).filter(Boolean));
-			await refreshLocalModels(false);
+			await refreshUnifiedModelData(false);
 			const currIds = new Set(localModels.map((m) => m.id).filter(Boolean));
 			// If models changed (added/removed), also refresh the global models store
 			const changed = prevIds.size !== currIds.size ||
@@ -657,8 +664,8 @@
 				[...currIds].some((id) => !prevIds.has(id));
 			if (changed) {
 				_models.set(await getModels(localStorage.token));
+				await initAdmin(localModels);
 			}
-			await initAdmin();
 		}, 3000);
 
 		const id = $page.url.searchParams.get('id') || $showSettingsModelId;
@@ -832,6 +839,8 @@
 						<img
 							src={`${WEBUI_API_BASE_URL}/models/model/profile/image?id=${am.id}`}
 							alt="model"
+							loading="eager"
+							decoding="async"
 							class="w-full h-full object-cover group-hover/avatar:opacity-0 transition-opacity"
 						/>
 					</div>
@@ -869,11 +878,13 @@
 						{#if gm}
 							{#if gm.is_loaded}
 								{#if gm.n_ctx !== null}
-									<span class="inline-flex h-5 items-center rounded-md border border-gray-200 bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Contexto: {gm.n_ctx}</span>
+									<span class="inline-flex h-5 items-center rounded-md border border-gray-200 bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">CTX: {gm.n_ctx}</span>
 								{/if}
-								<span class="inline-flex h-5 items-center rounded-md border border-gray-200 bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Cache: {getCacheChipLabel(gm.cache_type)}</span>
+								<span class="inline-flex h-5 items-center rounded-md border border-gray-200 bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Cache KV: {getCacheChipLabel(gm.cache_type)}</span>
 								{#if gm?.mmproj_filename}
 									<span class="inline-flex h-5 items-center rounded-md border border-gray-200 bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Visão: Sim</span>
+								{:else}
+									<span class="inline-flex h-5 items-center rounded-md border border-gray-200 bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Visão: Não</span>
 								{/if}
 							{:else}
 								<span>{gm.file_size_human}</span>
@@ -1002,7 +1013,7 @@
 						</div>
 
 						{#if hasCollapsibleModelsBelow}
-							<div class="flex shrink-0 justify-center px-3 pt-2 pb-0">
+							<div class="flex shrink-0 justify-center px-3 pt-4 pb-1">
 								<Tooltip content={modelsBelowLoadedCollapsed ? 'Mostrar modelos' : 'Ocultar modelos'}>
 									<button
 										type="button"
@@ -1023,14 +1034,8 @@
 
 					{#if !hasHighlightedLoadedModel || !modelsBelowLoadedCollapsed}
 						<div class="min-h-0 overflow-hidden" transition:slide={{ duration: collapseAnimationEnabled ? 180 : 0 }}>
-							{#if hasHighlightedLoadedModel}
-								<div class="-mt-1 shrink-0">
-									{@render searchBar()}
-								</div>
-							{/if}
-
 							<div
-								class="mr-1 min-h-0 snap-y snap-mandatory overscroll-contain pr-1 pb-0.5 {modelListPaginationCount === 0 ? 'overflow-hidden' : 'overflow-y-auto'}"
+								class="min-h-0 snap-y snap-mandatory overscroll-contain pb-0 {modelListPaginationCount === 0 ? 'mr-0 overflow-hidden pr-0' : 'mr-1 overflow-y-auto pr-1'}"
 								style={modelListViewportStyle}
 							>
 								{#if localLoading && localModels.length === 0 && (adminModels?.length ?? 0) === 0}
@@ -1043,7 +1048,7 @@
 										<div class="max-w-md text-center">
 											<div class="text-lg font-medium mb-1">{$i18n.t('No models found')}</div>
 											<div class="text-gray-500 text-center text-xs">
-												{$i18n.t('Try adjusting your search or filter to find what you are looking for.')}
+												{$i18n.t('Tente ajustar sua pesquisa para encontrar o modelo que está procurando.')}
 											</div>
 										</div>
 									</div>
