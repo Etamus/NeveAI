@@ -33,7 +33,7 @@
 ### Pré-requisitos
 
 - **Python 3.11 ou 3.12** instalado e no PATH
-- **Node.js 18+** e **npm 9+** instalados e no PATH
+- **Node.js 18+** instalado e no PATH
 - Conexão com a internet (apenas durante a instalação)
 
 ### Executar o instalador
@@ -182,24 +182,21 @@ Neve AI/
 
 ### Chat & Modelos
 - Streaming de respostas em tempo real via WebSocket
-- Múltiplos modelos simultâneos (comparação lado a lado)
 - **Modo Rápido / Raciocínio** — alternável com descrição no dropdown
-- **Contador de tokens** circular com alerta visual por faixa de uso
+- **Contador de tokens** com alerta visual por faixa de uso
 - Auto-carga de modelo ao enviar mensagem (modal de seleção de contexto)
 - Auto-detecção de mmproj compatível (sem configuração manual)
-- Histórico de conversas com pastas, favoritos, tags e arquivamento
+- Histórico de conversas com pastas e arquivamento
 - Edição e regeneração de mensagens individuais
 
 ### Interface
-- Sidebar retrátil com busca, pastas e histórico
+- Sidebar retrátil com busca, projetos e histórico
 - Campo de digitação compacto (pill) ou expandido
 - **Painel de artefatos** (código, gráficos, HTML renderizado)
-- Tela de boas-vindas com posicionamento alto e limpo
 - Tema claro/escuro
 
 ### Entrada
 - Upload de arquivos: PDF, DOCX, PPTX, imagens, vídeo, código, planilhas
-- Integração Google Drive e OneDrive
 
 ### RAG (Retrieval-Augmented Generation)
 - Base de conhecimento vetorial com ChromaDB
@@ -210,9 +207,8 @@ Neve AI/
 ### Outras Funcionalidades
 - **Busca na web** via DuckDuckGo (sem chave de API)
 - **Execução de código Python** via Pyodide (WebAssembly, no browser)
-- **Geração de imagens** via Stable Diffusion local
+- **Geração de imagens** via Z-Image-Turbo local
 - **MCP (Model Context Protocol)** v1.26 para ferramentas externas
-- Painel administrativo completo (usuários, modelos, permissões, analytics)
 
 ---
 
@@ -259,12 +255,12 @@ Copy-Item -Path "build\*" -Destination "backend\neveai\frontend" -Recurse -Force
 
 ```powershell
 # Terminal 1 — Backend
-cd "d:\Neve AI\backend"
+cd "c:\Neve AI\backend"
 ..\backend\neveai\venv\Scripts\python -m uvicorn neveai.main:app --host 0.0.0.0 --port 8080 --reload
 
 # Terminal 2 — Frontend
-cd "d:\Neve AI"
+cd "c:\Neve AI"
 npm run dev
-```
 
 Frontend de dev disponível em `http://localhost:5173` (proxy para o backend em 8080).
+```
