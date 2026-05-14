@@ -15,7 +15,6 @@
 
 	const defaultParams = {
 		// Advanced - llama.cpp compatible params only
-		stream_response: null, // Set stream responses for this model individually
 		seed: -1,
 		stop: null,
 		temperature: null,
@@ -124,7 +123,7 @@
 	{#if janStyle}
 		<div class="flex w-full items-center justify-between py-1.5">
 			<Tooltip
-				content={tooltipsEnabled ? $i18n.t('This option sets the maximum number of tokens the model can generate in its response.') : ""}
+				content={tooltipsEnabled ? $i18n.t('Esta opção define o número máximo de tokens que o modelo pode gerar em sua resposta.') : ""}
 				placement="top-start"
 				className="inline-tooltip"
 			>
@@ -198,71 +197,6 @@
 				</div>
 			</div>
 		{/if}
-	</div>
-	{/if}
-	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5">
-			<Tooltip
-				content={tooltipsEnabled ? $i18n.t('When enabled, the model will respond to each chat message in real-time, generating a response as soon as the user sends a message. This mode is useful for live chat applications, but may impact performance on slower hardware.') : ""}
-				placement="top-start"
-				className="inline-tooltip"
-			>
-				{#if (params?.stream_response ?? null) === null}
-					<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('Stream de resposta')}</div>
-				{:else}
-					<button type="button" class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.stream_response = null; }}>{$i18n.t('Stream de resposta')}</button>
-				{/if}
-			</Tooltip>
-			<button
-				type="button"
-				class="text-xs px-2.5 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition shrink-0"
-				on:click={() => {
-					params.stream_response =
-						(params?.stream_response ?? null) === null
-							? true
-							: params.stream_response
-								? false
-								: null;
-				}}
-			>
-				{#if params.stream_response === true}{$i18n.t('On')}{:else if params.stream_response === false}{$i18n.t('Off')}{:else}{$i18n.t('Default')}{/if}
-			</button>
-		</div>
-	{:else}
-		<div>
-		<Tooltip
-			content={tooltipsEnabled ? $i18n.t(
-				'When enabled, the model will respond to each chat message in real-time, generating a response as soon as the user sends a message. This mode is useful for live chat applications, but may impact performance on slower hardware.'
-			) : ""}
-			placement="top-start"
-			className="inline-tooltip"
-		>
-			<div class=" py-0.5 flex w-full justify-between">
-				<div class=" self-center text-xs">
-					{$i18n.t('Stream de resposta')}
-				</div>
-				<button
-					class="p-1 px-3 text-xs flex rounded-sm transition"
-					on:click={() => {
-						params.stream_response =
-							(params?.stream_response ?? null) === null
-								? true
-								: params.stream_response
-									? false
-									: null;
-					}}
-					type="button"
-				>
-					{#if params.stream_response === true}
-						<span class="ml-2 self-center">{$i18n.t('On')}</span>
-					{:else if params.stream_response === false}
-						<span class="ml-2 self-center">{$i18n.t('Off')}</span>
-					{:else}
-						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
-					{/if}
-				</button>
-			</div>
-		</Tooltip>
 	</div>
 	{/if}
 	{#if janStyle}

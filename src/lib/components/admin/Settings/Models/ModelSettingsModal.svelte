@@ -70,7 +70,10 @@
 		Object.fromEntries(
 			Object.entries(defaultParams).filter(
 				([key, value]) =>
-					key !== 'cache_type' && value !== null && value !== '' && value !== undefined
+					!['cache_type', 'stream_response'].includes(key) &&
+					value !== null &&
+					value !== '' &&
+					value !== undefined
 			)
 		);
 

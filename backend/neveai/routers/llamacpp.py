@@ -295,9 +295,19 @@ def _prepare_vision_messages(messages: list[dict]) -> list[dict]:
 
 class _LoadedModelInfo:
     """Tracks information about the currently loaded model."""
-    __slots__ = ("model_id", "filename", "loaded_at", "n_gpu_layers", "n_ctx", "file_size", "mmproj_filename", "cache_type")
+    __slots__ = (
+        "model_id",
+        "filename",
+        "loaded_at",
+        "n_gpu_layers",
+        "n_ctx",
+        "file_size",
+        "mmproj_filename",
+        "cache_type",
+        "speculative_decoding",
+    )
 
-    def __init__(self, model_id: str, filename: str, n_gpu_layers: int, n_ctx: int, file_size: int, mmproj_filename: Optional[str] = None, cache_type: str = "q8_0"):
+    def __init__(self, model_id: str, filename: str, n_gpu_layers: int, n_ctx: int, file_size: int, mmproj_filename: Optional[str] = None, cache_type: str = "f16", speculative_decoding: str = "high"):
         self.model_id = model_id
         self.filename = filename
         self.loaded_at = int(time.time())
@@ -306,6 +316,35 @@ class _LoadedModelInfo:
         self.file_size = file_size
         self.mmproj_filename = mmproj_filename
         self.cache_type = cache_type
+        self.speculative_decoding = _normalize_speculative_decoding(speculative_decoding)
+
+
+def _normalize_speculative_decoding(value: Optional[str]) -> str:
+    value = str(value or "default").strip().lower()
+    if value == "default":
+        return "high"
+    if value in {"low", "high", "off"}:
+        return value
+    return "high"
+
+
+def _speculative_decoding_args(mode: str) -> list[str]:
+    mode = _normalize_speculative_decoding(mode)
+    if mode == "low":
+        return [
+            "--spec-type", "ngram-mod",
+            "--spec-ngram-mod-n-match", "16",
+            "--spec-ngram-mod-n-min", "16",
+            "--spec-ngram-mod-n-max", "32",
+        ]
+    if mode == "high":
+        return [
+            "--spec-type", "ngram-mod",
+            "--spec-ngram-mod-n-match", "24",
+            "--spec-ngram-mod-n-min", "48",
+            "--spec-ngram-mod-n-max", "64",
+        ]
+    return []
 
 
 class LocalModelManager:
@@ -385,6 +424,7 @@ class LocalModelManager:
                     "n_ctx": info.n_ctx if is_loaded else None,
                     "mmproj_filename": info.mmproj_filename if is_loaded else None,
                     "cache_type": info.cache_type if is_loaded else None,
+                    "speculative_decoding": info.speculative_decoding if is_loaded else None,
                 })
         return results
 
@@ -474,7 +514,8 @@ class LocalModelManager:
         n_gpu_layers: int = -1,
         n_ctx: int = 4096,
         mmproj_filename: Optional[str] = None,
-        cache_type: str = "q8_0",
+        cache_type: str = "f16",
+        speculative_decoding: str = "default",
     ) -> dict:
         """Load a .gguf model by starting a new llama-server subprocess."""
         # Clean up stale entries before loading to prevent phantom models
@@ -502,6 +543,7 @@ class LocalModelManager:
                     raise FileNotFoundError(f"mmproj file not found: {mmproj_filename}")
 
         model_id = f"local/{filepath.stem}"
+        speculative_decoding = _normalize_speculative_decoding(speculative_decoding)
 
         async with self._lock:
             # Unload ALL currently loaded models before loading a new one
@@ -521,7 +563,7 @@ class LocalModelManager:
             self._ports[model_id] = port
 
             # Start new llama-server with the model on this port
-            await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type)
+            await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type, speculative_decoding)
 
             file_size = filepath.stat().st_size
             self._loaded[model_id] = _LoadedModelInfo(
@@ -532,6 +574,7 @@ class LocalModelManager:
                 file_size,
                 mmproj_filename,
                 cache_type,
+                speculative_decoding,
             )
 
             log.info(f"Model loaded via llama-server: {model_id} (port={port}, gpu_layers={n_gpu_layers}, ctx={n_ctx}, mmproj={mmproj_filename})")
@@ -543,6 +586,7 @@ class LocalModelManager:
                 "n_ctx": n_ctx,
                 "mmproj_filename": mmproj_filename,
                 "cache_type": cache_type,
+                "speculative_decoding": speculative_decoding,
             }
 
     async def unload_model(self, model_id: str) -> dict:
@@ -599,6 +643,8 @@ class LocalModelManager:
                 "n_gpu_layers": info.n_gpu_layers,
                 "n_ctx": info.n_ctx,
                 "mmproj_filename": info.mmproj_filename,
+                "cache_type": info.cache_type,
+                "speculative_decoding": info.speculative_decoding,
             })
 
         # Unload all models
@@ -620,21 +666,20 @@ class LocalModelManager:
         log.info(f"LLM resume: reloading {len(models)} model(s)")
         for m in models:
             try:
-                # Read cache_type from localStorage default
-                cache_type = "q8_0"
                 await self.load_model(
                     filename=m["filename"],
                     n_gpu_layers=m["n_gpu_layers"],
                     n_ctx=m["n_ctx"],
                     mmproj_filename=m.get("mmproj_filename"),
-                    cache_type=cache_type,
+                    cache_type=m.get("cache_type", "f16"),
+                    speculative_decoding=m.get("speculative_decoding", "high"),
                 )
             except Exception as e:
                 log.error(f"resume: failed to reload {m['filename']}: {e}")
 
     # -- subprocess management ------------------------------------------
 
-    async def _start_server(self, model_path: Path, n_gpu_layers: int, n_ctx: int, mmproj_path: Optional[Path], port: int, model_id: str, cache_type: str = "q8_0"):
+    async def _start_server(self, model_path: Path, n_gpu_layers: int, n_ctx: int, mmproj_path: Optional[Path], port: int, model_id: str, cache_type: str = "f16", speculative_decoding: str = "default"):
         """Start llama-server.exe with the given model on the given port."""
         if not LLAMACPP_SERVER_BIN.exists():
             raise FileNotFoundError(
@@ -658,12 +703,7 @@ class LocalModelManager:
         # Speculative decoding (n-gram, zero VRAM cost) — disabled for vision models
         # because multimodal prefill breaks the n-gram locality assumption.
         if mmproj_path is None:
-            cmd += [
-                "--spec-type", "ngram-mod",
-                "--spec-ngram-mod-n-match", "24",
-                "--spec-ngram-mod-n-min", "48",
-                "--spec-ngram-mod-n-max", "64",
-            ]
+            cmd += _speculative_decoding_args(speculative_decoding)
 
         if mmproj_path is not None:
             cmd += ["--mmproj", str(mmproj_path)]
@@ -1032,7 +1072,8 @@ class LoadModelRequest(BaseModel):
     n_gpu_layers: int = -1  # -1 = all layers on GPU
     n_ctx: int = 4096
     mmproj_filename: Optional[str] = None
-    cache_type: str = "q8_0"  # q4_0 | q8_0 | f16
+    cache_type: str = "f16"  # f16 | q8_0 | q4_0
+    speculative_decoding: str = "default"  # default/high | low | off
 
 class UnloadModelRequest(BaseModel):
     model_id: str
@@ -1176,6 +1217,7 @@ async def load_model(req: LoadModelRequest, request: Request):
             n_ctx=req.n_ctx,
             mmproj_filename=req.mmproj_filename,
             cache_type=req.cache_type,
+            speculative_decoding=req.speculative_decoding,
         )
         # Invalidate cached base models so /api/models returns fresh n_ctx
         request.app.state.BASE_MODELS = None
@@ -1351,7 +1393,7 @@ async def generate_chat_completion(
         messages = form_data.get("messages", messages)
 
     # --- Thinking/Reasoning toggle ---
-    no_think = form_data.pop("no_think", False)
+    no_think = bool(form_data.get("no_think", False))
 
     stream = form_data.get("stream", False)
     temperature = form_data.get("temperature", 0.7)
@@ -1412,25 +1454,15 @@ async def generate_chat_completion(
                         n_gpu_layers=loaded_info.n_gpu_layers,
                         n_ctx=loaded_info.n_ctx,
                         mmproj_filename=mmproj,
+                        cache_type=loaded_info.cache_type,
+                        speculative_decoding=loaded_info.speculative_decoding,
                     )
                 except Exception as e:
                     log.error(
                         f"Failed to reload model {model_id} with mmproj={mmproj}: {e}"
                     )
 
-    # When thinking is disabled, inject /no_think into last user message
     if no_think:
-        for i in range(len(messages) - 1, -1, -1):
-            if messages[i].get("role") == "user":
-                content = messages[i].get("content", "")
-                if isinstance(content, str) and not content.startswith("/no_think"):
-                    messages[i]["content"] = "/no_think " + content
-                elif isinstance(content, list):
-                    for part in content:
-                        if part.get("type") == "text" and not part["text"].startswith("/no_think"):
-                            part["text"] = "/no_think " + part["text"]
-                            break
-                break
         log.info(f"generate_chat_completion: thinking disabled for model {model_id}")
 
     if stream:
@@ -1566,7 +1598,7 @@ NEVE_CATALOG = [
         "repo": "NeveAI/Neve-Prism-X2-9B-GGUF",
         "size_label": "12.1 GB",
         "description": "Modelo de visão e raciocínio para cenários visuais complexos.",
-        "params": {"temperature": 0.7, "min_p": 0.1},
+        "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
         "default_feature_ids": ["code_execution", "toggle_reasoning"],
     },
     {

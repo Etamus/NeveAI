@@ -146,7 +146,7 @@
 							<div class="pt-1">
 								<textarea
 									bind:value={params.system}
-									class="w-full text-xs outline-none resize-vertical bg-transparent py-1.5"
+									class="w-full text-xs border border-gray-200/40 dark:border-gray-700/30 rounded-lg px-3 py-2 outline-hidden resize-none overflow-y-auto focus:border-gray-300 dark:focus:border-gray-600 transition min-h-[5rem] outline-none resize-vertical bg-transparent py-1.5"
 									rows="4"
 									placeholder={$i18n.t('Enter system prompt')}
 								/>

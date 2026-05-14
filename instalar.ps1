@@ -206,7 +206,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                             <Border Grid.Row="4" Grid.ColumnSpan="2" Background="#FAFAFA" CornerRadius="8" Padding="14,12" Margin="0,8,0,0">
                                 <StackPanel>
                                     <TextBlock Text="O que será instalado:" FontWeight="SemiBold" FontSize="13" Foreground="#111111" Margin="0,0,0,4"/>
-                                    <TextBlock Text="• llama.cpp (binários mais recentes do GitHub)" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="• llama.cpp e stable-diffusion.cpp (binários mais recentes do GitHub)" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="• Python venv com PyTorch + diffusers + dependências do backend" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="• Pacotes npm e build do frontend" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="• Estrutura de pastas (logs, models, mmproj, data) e .env padrão" FontSize="12" Foreground="#52525B"/>
@@ -1437,6 +1437,58 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 $rc = Run $VENV_PY @('-I','-c',$code,$cudaRequired) 'validar PyTorch existente'
                 return ($rc -eq 0)
             }
+            function Test-StableDiffusionCppReady {
+                $sdDir = Join-Path $BACKEND 'bin\stable-diffusion-cpp'
+                $sdCli = Join-Path $sdDir 'sd-cli.exe'
+                $sdDll = Join-Path $sdDir 'stable-diffusion.dll'
+                return ((Test-Path -LiteralPath $sdCli) -and (Test-Path -LiteralPath $sdDll))
+            }
+
+            function Install-StableDiffusionCpp {
+                if (Test-StableDiffusionCppReady) {
+                    Log '[OK] stable-diffusion.cpp já disponível; pulando download'
+                    return $true
+                }
+
+                $sdDir = Join-Path $BACKEND 'bin\stable-diffusion-cpp'
+                if (-not (Test-Path -LiteralPath $sdDir)) { New-Item -ItemType Directory -Path $sdDir -Force | Out-Null }
+
+                $stageDir = Join-Path $env:TEMP "neve_sdcpp_stage_$([guid]::NewGuid().ToString('N'))"
+                $tmpFiles = @()
+                try {
+                    New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+                    $rel = Invoke-RestMethod 'https://api.github.com/repos/leejet/stable-diffusion.cpp/releases/latest' -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 60
+                    $sdObj = $rel.assets | Where-Object { $_.name -like 'sd-*-bin-win-cuda12-x64.zip' } | Select-Object -First 1
+                    $dllObj = $rel.assets | Where-Object { $_.name -eq 'cudart-sd-bin-win-cu12-x64.zip' } | Select-Object -First 1
+                    if (-not $sdObj -or -not $dllObj) { throw 'Release do stable-diffusion.cpp sem binários Windows CUDA 12 esperados.' }
+
+                    foreach ($asset in @($sdObj, $dllObj)) {
+                        $zipPath = Join-Path $env:TEMP ("neve_sdcpp_{0}_{1}.zip" -f ([guid]::NewGuid().ToString('N')), $asset.name)
+                        $tmpFiles += $zipPath
+                        $sizeMB = [math]::Round($asset.size / 1MB, 0)
+                        Log "==> Baixando $($asset.name) ($sizeMB MB)"
+                        Invoke-WebRequest $asset.browser_download_url -OutFile $zipPath -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 600
+                        Expand-Archive $zipPath -DestinationPath $stageDir -Force
+                    }
+
+                    $stagedCli = Get-ChildItem -LiteralPath $stageDir -Recurse -File -Filter 'sd-cli.exe' | Select-Object -First 1
+                    if (-not $stagedCli) { throw 'O pacote stable-diffusion.cpp não contém sd-cli.exe.' }
+
+                    Get-ChildItem -LiteralPath $sdDir -Force -EA SilentlyContinue | Remove-Item -Recurse -Force -EA SilentlyContinue
+                    Get-ChildItem -LiteralPath $stageDir -File -EA SilentlyContinue | ForEach-Object { Copy-Item $_.FullName $sdDir -Force }
+
+                    if (-not (Test-StableDiffusionCppReady)) { throw 'sd-cli.exe foi copiado, mas não passou na validação.' }
+                    Set-Content -Path (Join-Path $sdDir 'version.txt') -Value @($rel.tag_name, 'cuda12') -Encoding UTF8
+                    Log "[OK] stable-diffusion.cpp $($rel.tag_name) instalado para UltraReal/Anima"
+                    return $true
+                } catch {
+                    Log "[!] stable-diffusion.cpp não pôde ser preparado agora: $_" 'warn'
+                    return $false
+                } finally {
+                    foreach ($tmp in $tmpFiles) { try { Remove-Item $tmp -Force -EA SilentlyContinue } catch {} }
+                    try { if (Test-Path -LiteralPath $stageDir) { Remove-Item $stageDir -Recurse -Force -EA SilentlyContinue } } catch {}
+                }
+            }
 
             P 31 'Preparando pip do venv'
             Set-InstallState 'ensurepip_upgrade'
@@ -1518,16 +1570,10 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 }
             }
 
-            # ---- 7. diffusers
-            P 55 'Instalando diffusers'
-            Set-InstallState 'installing_diffusers'
-            if (Test-PythonPackageInstalled 'diffusers') {
-                Log "[OK] diffusers já instalado; pulando"
-            } else {
-                Log "==> diffusers será instalado separadamente para facilitar diagnóstico"
-                $rc = Invoke-PipInstall -InstallArgs @('diffusers') -Desc 'diffusers'
-                if ($rc -eq 0) { Mark-PythonPackageInstalled 'diffusers' } else { Log "[!] diffusers falhou (exit $rc); continuando e tentando novamente no próximo instalador." 'warn' }
-            }
+            # ---- 7. stable-diffusion.cpp (UltraReal/Anima)
+            P 55 'Preparando geração de imagem local'
+            Set-InstallState 'installing_stable_diffusion_cpp'
+            [void](Install-StableDiffusionCpp)
 
             # ---- 8. requirements do backend
             P 60 'Instalando dependências do backend (~5-15 min)'
@@ -1673,6 +1719,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 if ($tOut) { $summary += "PyTorch:     $tOut" }
             } catch {}
             $summary += "llama.cpp:   $($cfg.llamaAsset)"
+            $summary += "sd.cpp:      UltraReal/Anima CUDA 12"
             if ($vramGb -gt 0) { $summary += "VRAM:        ${vramGb} GB ($($detected.Name))" }
             if ($pythonDependencyFailures.Count -gt 0) {
                 $summary += "Pendências:  $($pythonDependencyFailures.Count) dependência(s) Python; rode instalar.bat novamente para tentar só o que faltou."

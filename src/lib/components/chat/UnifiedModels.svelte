@@ -88,7 +88,12 @@
 
 	const getCacheTypeForLoad = () => {
 		const { cache } = getLocalModelLoadPreferences();
-		return cache === 'default' ? undefined : cache;
+		return cache === 'default' ? 'f16' : cache;
+	};
+
+	const getSpeculativeDecodingForLoad = () => {
+		const { speculative } = getLocalModelLoadPreferences();
+		return speculative === 'default' ? 'high' : speculative;
 	};
 
 	const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
@@ -226,7 +231,12 @@
 			collapseAnimationTimer = null;
 		}, 240);
 	};
-	const getCacheChipLabel = (cacheType?: string | null) => (cacheType || 'q8_0').toUpperCase();
+	const getCacheChipLabel = (cacheType?: string | null) => (cacheType || 'f16').toUpperCase();
+	const getSpeculativeChipLabel = (speculativeDecoding?: string | null) => {
+		if (speculativeDecoding === 'low') return 'Moderado';
+		if (speculativeDecoding === 'off') return 'Desligado';
+		return 'Rápido';
+	};
 	const matchesModelSearch = (item: any, query: string) => {
 		const q = query.trim().toLowerCase();
 		if (!q) return true;
@@ -393,7 +403,15 @@
 		localError = '';
 		localSuccess = '';
 		try {
-			await loadLocalModel(localStorage.token, model.filename, gpuLayers, contextSize, '', getCacheTypeForLoad());
+			await loadLocalModel(
+				localStorage.token,
+				model.filename,
+				gpuLayers,
+				contextSize,
+				'',
+				getCacheTypeForLoad(),
+				getSpeculativeDecodingForLoad()
+			);
 			localSuccess = `${model.filename} carregado com sucesso!`;
 			_models.set(await getModels(localStorage.token));
 			await refreshUnifiedModelData(false);
@@ -485,7 +503,8 @@
 				gpuLayers,
 				contextSize,
 				mmprojFile,
-				getCacheTypeForLoad()
+				getCacheTypeForLoad(),
+				getSpeculativeDecodingForLoad()
 			);
 			localSuccess = `${model.filename} carregado! (visão: ${mmprojFile})`;
 			_models.set(await getModels(localStorage.token));
@@ -878,13 +897,14 @@
 						{#if gm}
 							{#if gm.is_loaded}
 								{#if gm.n_ctx !== null}
-									<span class="inline-flex h-5 items-center rounded-md border border-gray-200 bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">CTX: {gm.n_ctx}</span>
+									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">CTX: {gm.n_ctx}</span>
 								{/if}
-								<span class="inline-flex h-5 items-center rounded-md border border-gray-200 bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Cache KV: {getCacheChipLabel(gm.cache_type)}</span>
+								<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">KV: {getCacheChipLabel(gm.cache_type)}</span>
+								<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">DE: {getSpeculativeChipLabel(gm.speculative_decoding)}</span>
 								{#if gm?.mmproj_filename}
-									<span class="inline-flex h-5 items-center rounded-md border border-gray-200 bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Visão: Sim</span>
+									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Visão: Sim</span>
 								{:else}
-									<span class="inline-flex h-5 items-center rounded-md border border-gray-200 bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Visão: Não</span>
+									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Visão: Não</span>
 								{/if}
 							{:else}
 								<span>{gm.file_size_human}</span>
@@ -1008,28 +1028,9 @@
 					{@render vramMeter()}
 
 					{#if highlightedLoadedItem}
-						<div class="shrink-0">
+						<div class="shrink-0 mb-2">
 							{@render modelRow(highlightedLoadedItem)}
 						</div>
-
-						{#if hasCollapsibleModelsBelow}
-							<div class="flex shrink-0 justify-center px-3 pt-4 pb-1">
-								<Tooltip content={modelsBelowLoadedCollapsed ? 'Mostrar modelos' : 'Ocultar modelos'}>
-									<button
-										type="button"
-										class="flex size-7 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition hover:bg-gray-50 hover:text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-850 dark:hover:text-gray-100"
-										on:click={toggleModelsBelowLoaded}
-										aria-label={modelsBelowLoadedCollapsed ? 'Mostrar modelos' : 'Ocultar modelos'}
-									>
-										{#if modelsBelowLoadedCollapsed}
-											<ChevronUp className="size-4" />
-										{:else}
-											<ChevronDown className="size-4" />
-										{/if}
-									</button>
-								</Tooltip>
-							</div>
-						{/if}
 					{/if}
 
 					{#if !hasHighlightedLoadedModel || !modelsBelowLoadedCollapsed}
@@ -1064,13 +1065,32 @@
 							</div>
 						</div>
 						{/if}
+
+					{#if hasCollapsibleModelsBelow}
+						<div class="flex shrink-0 justify-center px-3 pt-2 pb-1">
+							<Tooltip content={modelsBelowLoadedCollapsed ? 'Mostrar modelos' : 'Ocultar modelos'}>
+								<button
+									type="button"
+									class="flex size-7 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-sm transition hover:bg-gray-50 hover:text-gray-800 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-850 dark:hover:text-gray-100"
+									on:click={toggleModelsBelowLoaded}
+									aria-label={modelsBelowLoadedCollapsed ? 'Mostrar modelos' : 'Ocultar modelos'}
+								>
+									{#if modelsBelowLoadedCollapsed}
+										<ChevronUp className="size-4" />
+									{:else}
+										<ChevronDown className="size-4" />
+									{/if}
+								</button>
+							</Tooltip>
+						</div>
+					{/if}
 				</div>
 			</div>
 		</div>
 
 	{:else}
 		<!-- ─── Model Editor ──────────────────────────────────────────────── -->
-		<div style="height: 62.6vh; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
+		<div style="height: 589px; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
 			<ModelEditor
 				edit
 				model={adminModels?.find((m) => m.id === selectedModelId)}

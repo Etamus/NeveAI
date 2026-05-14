@@ -251,6 +251,7 @@
 				)
 			: null;
 		delete info.params.cache_type;
+		delete info.params.stream_response;
 		Object.keys(info.params).forEach((key) => {
 			if (info.params[key] === '' || info.params[key] === null) {
 				delete info.params[key];

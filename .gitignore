@@ -27,6 +27,7 @@ backend/neveai/static/
 /models/
 /mmproj/
 /llamacpp-server/
+/backend/bin/stable-diffusion-cpp/
 *.gguf
 
 # ──────────────────────────────────────────────────────────────────────────────

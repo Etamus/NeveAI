@@ -45,7 +45,6 @@
 
 	let params = {
 		// Advanced
-		stream_response: null,
 		stream_delta_chunk_size: null,
 		function_calling: null,
 		seed: null,
@@ -75,7 +74,6 @@
 		saveSettings({
 			system: system !== '' ? system : undefined,
 			params: {
-				stream_response: params.stream_response !== null ? params.stream_response : undefined,
 				stream_delta_chunk_size:
 					params.stream_delta_chunk_size !== null ? params.stream_delta_chunk_size : undefined,
 				function_calling: params.function_calling !== null ? params.function_calling : undefined,
@@ -126,7 +124,9 @@
 
 		system = $settings.system ?? '';
 
-		params = { ...params, ...$settings.params };
+		const settingsParams = { ...($settings.params ?? {}) };
+		delete settingsParams.stream_response;
+		params = { ...params, ...settingsParams };
 		params.stop = $settings?.params?.stop ? ($settings?.params?.stop ?? []).join(',') : null;
 	});
 
