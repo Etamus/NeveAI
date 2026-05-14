@@ -32,7 +32,12 @@
 
 	const getCacheTypeForLoad = () => {
 		const { cache } = getLocalModelLoadPreferences();
-		return cache === 'default' ? undefined : cache;
+		return cache === 'default' ? 'f16' : cache;
+	};
+
+	const getSpeculativeDecodingForLoad = () => {
+		const { speculative } = getLocalModelLoadPreferences();
+		return speculative === 'default' ? 'high' : speculative;
 	};
 
 	async function refreshModels() {
@@ -55,7 +60,15 @@
 		errorMessage = '';
 		successMessage = '';
 		try {
-			await loadLocalModel(localStorage.token, model.filename, gpuLayers, contextSize, '', getCacheTypeForLoad());
+			await loadLocalModel(
+				localStorage.token,
+				model.filename,
+				gpuLayers,
+				contextSize,
+				'',
+				getCacheTypeForLoad(),
+				getSpeculativeDecodingForLoad()
+			);
 			successMessage = `${model.filename} carregado com sucesso!`;
 			await refreshModels();
 			// Refresh global models list so it appears in chat
@@ -125,7 +138,15 @@
 		errorMessage = '';
 		successMessage = '';
 		try {
-			await loadLocalModel(localStorage.token, model.filename, gpuLayers, contextSize, mmprojFile, getCacheTypeForLoad());
+			await loadLocalModel(
+				localStorage.token,
+				model.filename,
+				gpuLayers,
+				contextSize,
+				mmprojFile,
+				getCacheTypeForLoad(),
+				getSpeculativeDecodingForLoad()
+			);
 			successMessage = `${model.filename} carregado com sucesso! (visão: ${mmprojFile})`;
 			await refreshModels();
 			models.set(await getModels(localStorage.token));

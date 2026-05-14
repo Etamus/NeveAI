@@ -72,7 +72,7 @@
 									class="w-60 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 									type="text"
 									bind:value={config.STABLE_DIFFUSION_MODEL}
-									placeholder="stabilityai/sdxl-turbo"
+									placeholder="Danrisi/UltraReal_FineTune_Anima"
 								/>
 							</div>
 						</div>
@@ -86,7 +86,7 @@
 									class="w-20 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 									type="number"
 									min="256"
-									max="2048"
+									max="1024"
 									step="64"
 									bind:value={config.STABLE_DIFFUSION_WIDTH}
 								/>
@@ -102,7 +102,7 @@
 									class="w-20 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 									type="number"
 									min="256"
-									max="2048"
+									max="1024"
 									step="64"
 									bind:value={config.STABLE_DIFFUSION_HEIGHT}
 								/>
@@ -118,7 +118,7 @@
 									class="w-20 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 									type="number"
 									min="1"
-									max="50"
+									max="14"
 									bind:value={config.STABLE_DIFFUSION_STEPS}
 								/>
 							</div>
@@ -132,15 +132,15 @@
 								<input
 									class="w-20 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 									type="number"
-									min="0"
-									max="20"
+									min="1"
+									max="12"
 									step="0.5"
 									bind:value={config.STABLE_DIFFUSION_GUIDANCE_SCALE}
 								/>
 							</div>
 						</div>
 						<div class="text-gray-500 text-xs mt-1">
-							{$i18n.t('Use 0 para SDXL Turbo (modelo destilado). Valores maiores para modelos padrão.')}
+							{$i18n.t('Use 4 a 5 para o UltraReal/Anima. Valores maiores aumentam contraste e podem consumir mais memória.')}
 						</div>
 					</div>
 				</div>

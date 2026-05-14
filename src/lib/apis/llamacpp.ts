@@ -14,6 +14,7 @@ export interface LocalModel {
 	n_ctx: number | null;
 	mmproj_filename: string | null;
 	cache_type: string | null;
+	speculative_decoding: string | null;
 }
 
 export interface LocalVramGpu {
@@ -121,7 +122,8 @@ export const loadLocalModel = async (
 	n_gpu_layers: number = -1,
 	n_ctx: number = 4096,
 	mmproj_filename?: string | null,
-	cache_type: string = 'q8_0'
+	cache_type: string = 'f16',
+	speculative_decoding: string = 'default'
 ): Promise<any> => {
 	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/models/load`, {
 		method: 'POST',
@@ -130,7 +132,14 @@ export const loadLocalModel = async (
 			'Content-Type': 'application/json',
 			...(token && { authorization: `Bearer ${token}` })
 		},
-		body: JSON.stringify({ filename, n_gpu_layers, n_ctx, mmproj_filename: mmproj_filename ?? null, cache_type })
+		body: JSON.stringify({
+			filename,
+			n_gpu_layers,
+			n_ctx,
+			mmproj_filename: mmproj_filename ?? null,
+			cache_type,
+			speculative_decoding
+		})
 	});
 
 	if (!res.ok) {

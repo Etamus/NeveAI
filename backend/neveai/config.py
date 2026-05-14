@@ -3947,32 +3947,52 @@ ENABLE_STABLE_DIFFUSION = PersistentConfig(
 STABLE_DIFFUSION_MODEL = PersistentConfig(
     "STABLE_DIFFUSION_MODEL",
     "stable_diffusion.model",
-    os.environ.get("STABLE_DIFFUSION_MODEL", "unsloth/Z-Image-Turbo-GGUF"),
+    os.environ.get("STABLE_DIFFUSION_MODEL", "Danrisi/UltraReal_FineTune_Anima"),
 )
+
+if str(STABLE_DIFFUSION_MODEL.value) != "Danrisi/UltraReal_FineTune_Anima":
+    STABLE_DIFFUSION_MODEL.value = "Danrisi/UltraReal_FineTune_Anima"
+    if ENABLE_PERSISTENT_CONFIG:
+        STABLE_DIFFUSION_MODEL.save()
 
 STABLE_DIFFUSION_WIDTH = PersistentConfig(
     "STABLE_DIFFUSION_WIDTH",
     "stable_diffusion.width",
-    int(os.environ.get("STABLE_DIFFUSION_WIDTH", "768")),
+    int(os.environ.get("STABLE_DIFFUSION_WIDTH", "1024")),
 )
 
 STABLE_DIFFUSION_HEIGHT = PersistentConfig(
     "STABLE_DIFFUSION_HEIGHT",
     "stable_diffusion.height",
-    int(os.environ.get("STABLE_DIFFUSION_HEIGHT", "768")),
+    int(os.environ.get("STABLE_DIFFUSION_HEIGHT", "1024")),
 )
 
 STABLE_DIFFUSION_STEPS = PersistentConfig(
     "STABLE_DIFFUSION_STEPS",
     "stable_diffusion.steps",
-    int(os.environ.get("STABLE_DIFFUSION_STEPS", "8")),
+    int(os.environ.get("STABLE_DIFFUSION_STEPS", "14")),
 )
+
+for _sd_config, _sd_target_value in (
+    (STABLE_DIFFUSION_WIDTH, 1024),
+    (STABLE_DIFFUSION_HEIGHT, 1024),
+    (STABLE_DIFFUSION_STEPS, 14),
+):
+    if int(_sd_config.value) != _sd_target_value:
+        _sd_config.value = _sd_target_value
+        if ENABLE_PERSISTENT_CONFIG:
+            _sd_config.save()
 
 STABLE_DIFFUSION_GUIDANCE_SCALE = PersistentConfig(
     "STABLE_DIFFUSION_GUIDANCE_SCALE",
     "stable_diffusion.guidance_scale",
-    float(os.environ.get("STABLE_DIFFUSION_GUIDANCE_SCALE", "0.0")),
+    float(os.environ.get("STABLE_DIFFUSION_GUIDANCE_SCALE", "4.0")),
 )
+
+if float(STABLE_DIFFUSION_GUIDANCE_SCALE.value) != 4.0:
+    STABLE_DIFFUSION_GUIDANCE_SCALE.value = 4.0
+    if ENABLE_PERSISTENT_CONFIG:
+        STABLE_DIFFUSION_GUIDANCE_SCALE.save()
 
 STABLE_DIFFUSION_HF_TOKEN = PersistentConfig(
     "STABLE_DIFFUSION_HF_TOKEN",

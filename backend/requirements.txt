@@ -48,6 +48,7 @@ langchain-classic==1.0.1
 langchain-text-splitters==1.1.1
 
 fake-useragent==2.2.0
+deep-translator==1.11.4
 chromadb==1.5.2
 weaviate-client==4.20.3
 opensearch-py==3.1.0

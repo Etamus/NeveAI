@@ -304,7 +304,11 @@
 
 			const standbyLoadPreferences = getLocalModelLoadPreferences();
 			const standbyCacheType =
-				standbyLoadPreferences.cache === 'default' ? undefined : standbyLoadPreferences.cache;
+				standbyLoadPreferences.cache === 'default' ? 'f16' : standbyLoadPreferences.cache;
+			const standbySpeculativePreference =
+				standbyModel.speculative_decoding ?? standbyLoadPreferences.speculative;
+			const standbySpeculativeDecoding =
+				standbySpeculativePreference === 'default' ? 'high' : standbySpeculativePreference;
 
 			await loadLocalModel(
 				localStorage.token,
@@ -312,7 +316,8 @@
 				standbyModel.n_gpu_layers ?? -1,
 				standbyModel.n_ctx ?? 8192,
 				standbyModel.mmproj_filename ?? null,
-				standbyCacheType
+				standbyCacheType,
+				standbySpeculativeDecoding
 			);
 
 			stableDiffusionStandbyModel = null;
@@ -617,7 +622,7 @@
 						'repeat_penalty', 'frequency_penalty', 'presence_penalty',
 						'mirostat', 'mirostat_eta', 'mirostat_tau', 'seed', 'stop',
 						'xtc_threshold', 'xtc_probability', 'dry_multiplier',
-						'dry_allowed_length', 'dry_base', 'stream_response',
+						'dry_allowed_length', 'dry_base',
 						'reasoning_tags', 'num_ctx'
 					];
 					const populated: Record<string, any> = {};
@@ -2047,10 +2052,15 @@
 		contextSize: number;
 		mmprojFilename: string;
 		cacheType: string;
+		speculativeDecoding: string;
 	};
 
 	const normalizeLocalCacheType = (cacheType?: string | null) => {
-		return cacheType && cacheType !== 'default' ? cacheType : 'q8_0';
+		return cacheType && cacheType !== 'default' ? cacheType : 'f16';
+	};
+
+	const normalizeLocalSpeculativeDecoding = (speculativeDecoding?: string | null) => {
+		return speculativeDecoding && speculativeDecoding !== 'default' ? speculativeDecoding : 'high';
 	};
 
 	const resolveLocalModelLoadPlan = async (
@@ -2099,7 +2109,8 @@
 			gpuLayers: llamacppInfo.n_gpu_layers ?? -1,
 			contextSize,
 			mmprojFilename,
-			cacheType: normalizeLocalCacheType(loadPreferences.cache)
+			cacheType: normalizeLocalCacheType(loadPreferences.cache),
+			speculativeDecoding: normalizeLocalSpeculativeDecoding(loadPreferences.speculative)
 		};
 	};
 
@@ -2107,7 +2118,9 @@
 		return (
 			(loadedModel.n_ctx ?? loadPlan.contextSize) === loadPlan.contextSize &&
 			(loadedModel.mmproj_filename ?? '') === loadPlan.mmprojFilename &&
-			normalizeLocalCacheType(loadedModel.cache_type) === loadPlan.cacheType
+			normalizeLocalCacheType(loadedModel.cache_type) === loadPlan.cacheType &&
+			normalizeLocalSpeculativeDecoding(loadedModel.speculative_decoding) ===
+				loadPlan.speculativeDecoding
 		);
 	};
 
@@ -2172,7 +2185,8 @@
 									loadPlan.gpuLayers,
 									loadPlan.contextSize,
 									loadPlan.mmprojFilename,
-									loadPlan.cacheType
+									loadPlan.cacheType,
+									loadPlan.speculativeDecoding
 								);
 							try {
 								await doLoad();
@@ -2570,11 +2584,8 @@
 			});
 		}
 
-		const stream =
-			model?.info?.params?.stream_response ??
-			$settings?.params?.stream_response ??
-			params?.stream_response ??
-			true;
+		const streamPreference = getLocalModelLoadPreferences().stream;
+		const stream = streamPreference === 'off' ? false : true;
 
 		let messages = [
 			params?.system || $settings.system
@@ -2915,6 +2926,57 @@
 				scrollToBottom();
 			}
 
+			if (!suggestionPrompt) {
+				const model = $models.find((model) => model.id === message.model);
+
+				if (!model) {
+					toast.error($i18n.t(`Model {{modelId}} not found`, { modelId: message.model }));
+					return;
+				}
+
+				stopContentFlush(message.id);
+
+				const responseMessage = {
+					...history.messages[message.id],
+					content: '',
+					done: false,
+					error: undefined,
+					files: undefined,
+					sources: undefined,
+					citations: undefined,
+					usage: undefined,
+					output: undefined,
+					originalContent: undefined,
+					lastSentence: undefined,
+					statusHistory: undefined,
+					timestamp: Math.floor(Date.now() / 1000)
+				};
+
+				history.messages[message.id] = responseMessage;
+				history.currentId = message.id;
+				history = history;
+
+				await tick();
+				await saveChatHandler($chatId, history);
+
+				const chatEventEmitter = await getChatEventEmitter(model.id, $chatId);
+				const _history = structuredClone(history);
+
+				await sendMessageSocket(
+					model,
+					createMessagesList(_history, message.id),
+					_history,
+					message.id,
+					$chatId
+				);
+
+				if (chatEventEmitter) clearInterval(chatEventEmitter);
+
+				currentChatPage.set(1);
+				chats.set(await getChatList(localStorage.token, $currentChatPage));
+				return;
+			}
+
 			await sendMessage(history, userMessage.id, {
 				...(suggestionPrompt
 					? {
@@ -3017,15 +3079,41 @@
 		}
 	};
 
+	const getMessageTextForTitle = (content) => {
+		if (typeof content === 'string') return content;
+		if (Array.isArray(content)) {
+			return content
+				.filter((part) => part?.type === 'text' && typeof part?.text === 'string')
+				.map((part) => part.text)
+				.join(' ');
+		}
+		return '';
+	};
+
+	const getInitialImageChatTitle = (history) => {
+		const firstUserMessage = createMessagesList(history, history.currentId).find(
+			(message) => message?.role === 'user'
+		);
+		const title = getMessageTextForTitle(firstUserMessage?.content)
+			.replace(/<\$[^>]+>/g, '')
+			.replace(/\s+/g, ' ')
+			.trim();
+		return title.length > 100 ? `${title.slice(0, 100)}...` : title;
+	};
+
 	const initChatHandler = async (history) => {
 		let _chatId = $chatId;
 
 		if (!$temporaryChatEnabled) {
+			const initialTitle = stableDiffusionEnabled
+				? getInitialImageChatTitle(history) || $i18n.t('New Chat')
+				: $i18n.t('New Chat');
+
 			chat = await createNewChat(
 				localStorage.token,
 				{
 					id: _chatId,
-					title: $i18n.t('New Chat'),
+					title: initialTitle,
 					models: selectedModels,
 					system: $settings.system ?? undefined,
 					params: params,

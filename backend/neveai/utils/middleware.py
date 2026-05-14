@@ -1645,60 +1645,35 @@ async def chat_memory_handler(
     return form_data
 
 
-def _enhance_zimage_prompt(user_prompt: str) -> str:
-    """Build a fast deterministic image prompt for local Z-Image generation."""
-    prompt = re.sub(r"\s+", " ", str(user_prompt or "")).strip()
-    if not prompt:
-        return prompt
+def _normalize_chat_image_prompt_text(text: Any) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip()
 
-    lower_prompt = prompt.lower()
-    keyword_map = {
-        "tubarÃ£o": "shark",
-        "tubarao": "shark",
-        "asas": "wings",
-        "aza": "wing",
-        "azas": "wings",
-        "voando": "flying",
-        "voar": "flying",
-        "cÃ©u": "sky",
-        "ceu": "sky",
-        "nuvens": "clouds",
-        "mar": "sea",
-        "oceano": "ocean",
-        "Ã¡gua": "water",
-        "agua": "water",
-        "floresta": "forest",
-        "cidade": "city",
-        "praia": "beach",
-        "montanha": "mountain",
-        "realista": "realistic",
-        "cinematogrÃ¡fico": "cinematic",
-        "cinematografico": "cinematic",
-    }
-    english_hints = [value for key, value in keyword_map.items() if key in lower_prompt]
 
-    constraints = [
-        "render the user's request literally",
-        "keep every requested subject, action, object, and location visible",
-        "do not replace unusual or fantasy concepts with a generic scene",
-        "single coherent composition",
-        "high detail, sharp focus, cinematic lighting",
-    ]
+def _get_all_text_from_message(message: Optional[dict]) -> str:
+    if not isinstance(message, dict):
+        return ""
 
-    if any(term in lower_prompt for term in ("voando", "voar", "flying", "asas", "aza", "azas", "wing", "wings")):
-        constraints.append("the subject is airborne with visible wings")
-    if any(term in lower_prompt for term in ("cÃ©u", "ceu", "sky", "nuvens", "clouds")):
-        constraints.append("sky background, not underwater, no ocean, no sea")
+    content = message.get("content")
+    if isinstance(content, list):
+        return _normalize_chat_image_prompt_text(
+            " ".join(
+                str(item.get("text") or "")
+                for item in content
+                if isinstance(item, dict) and item.get("type") == "text"
+            )
+        )
+    return _normalize_chat_image_prompt_text(content)
 
-    enhanced_prompt = (
-        "Image generation prompt: "
-        f"{prompt}. "
-        f"English visual keywords: {', '.join(dict.fromkeys(english_hints))}. "
-        f"Requirements: {', '.join(constraints)}. "
-        "Avoid: wrong subject, missing requested elements, generic default scene, blurry, low quality."
-    )
 
-    return enhanced_prompt[:1200]
+def _collect_stable_diffusion_prompt(
+    messages: list[dict], parent_message: Optional[dict] = None
+) -> str:
+    current_prompt = _get_all_text_from_message(parent_message)
+    if current_prompt:
+        return current_prompt
+
+    last_user_message = get_last_user_message_item(messages or [])
+    return _get_all_text_from_message(last_user_message)
 
 
 async def chat_stable_diffusion_handler(
@@ -1724,18 +1699,20 @@ async def chat_stable_diffusion_handler(
     )
 
     messages = form_data.get("messages", [])
-    user_message = get_last_user_message(messages)
-    image_prompt = _enhance_zimage_prompt(user_message)
+    image_prompt = _collect_stable_diffusion_prompt(
+        messages,
+        metadata.get("parent_message"),
+    )
 
     try:
-        from neveai.routers.stable_diffusion import _sd_pipeline
+        from neveai.routers.stable_diffusion import _sd_pipeline, normalize_sd_model_id
         from neveai.routers.llamacpp import model_manager
 
-        model_id       = request.app.state.config.STABLE_DIFFUSION_MODEL
+        model_id       = normalize_sd_model_id(request.app.state.config.STABLE_DIFFUSION_MODEL)
         hf_token       = str(request.app.state.config.STABLE_DIFFUSION_HF_TOKEN) or None
         width          = request.app.state.config.STABLE_DIFFUSION_WIDTH
         height         = request.app.state.config.STABLE_DIFFUSION_HEIGHT
-        steps          = max(int(request.app.state.config.STABLE_DIFFUSION_STEPS or 8), 8)
+        steps          = request.app.state.config.STABLE_DIFFUSION_STEPS
         guidance_scale = request.app.state.config.STABLE_DIFFUSION_GUIDANCE_SCALE
 
         # Put LLM in standby
@@ -2023,7 +2000,7 @@ async def chat_web_search_handler(
                     "data": {
                         "action": "web_search",
                         "deep_search": deep_search_enabled,
-                        "description": "Web search completed with no results",
+                        "description": "A pesquisa na web foi concluída sem resultados.",
                         "done": True,
                         "error": True,
                     },
@@ -2810,7 +2787,11 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                     request, form_data, extra_params, user
                 )
 
-        if "image_generation" in features and features["image_generation"]:
+        if (
+            "image_generation" in features
+            and features["image_generation"]
+            and not features.get("stable_diffusion")
+        ):
             # Skip forced image generation when native FC is enabled - model can use generate_image tool
             if metadata.get("params", {}).get("function_calling") != "native":
                 form_data = await chat_image_generation_handler(
@@ -3514,6 +3495,8 @@ async def background_tasks_handler(ctx):
 async def non_streaming_chat_response_handler(response, ctx):
     request = ctx["request"]
 
+    form_data = ctx["form_data"]
+
     user = ctx["user"]
     metadata = ctx["metadata"]
     events = ctx["events"]
@@ -3559,82 +3542,82 @@ async def non_streaming_chat_response_handler(response, ctx):
                 )
 
             choices = response_data.get("choices", [])
-            if choices and choices[0].get("message", {}).get("content"):
+            if choices and choices[0].get("message", {}).get("content") is not None:
                 hide_reasoning = should_hide_reasoning_output(form_data, metadata)
                 content = response_data["choices"][0]["message"]["content"]
                 if hide_reasoning:
                     content = strip_reasoning_text_artifacts(content)
                 else:
                     content = strip_reasoning_control_tokens(content)
+                content = content.strip()
                 response_data["choices"][0]["message"]["content"] = content
 
-                if content:
-                    await event_emitter(
+                await event_emitter(
+                    {
+                        "type": "chat:completion",
+                        "data": response_data,
+                    }
+                )
+
+                title = Chats.get_chat_title_by_id(metadata["chat_id"])
+
+                # Use output from backend if provided (OR-compliant backends),
+                # otherwise generate from response content
+                response_output = response_data.get("output")
+                if not response_output:
+                    response_output = [
                         {
-                            "type": "chat:completion",
-                            "data": response_data,
-                        }
-                    )
-
-                    title = Chats.get_chat_title_by_id(metadata["chat_id"])
-
-                    # Use output from backend if provided (OR-compliant backends),
-                    # otherwise generate from response content
-                    response_output = response_data.get("output")
-                    if not response_output:
-                        response_output = [
-                            {
-                                "type": "message",
-                                "id": output_id("msg"),
-                                "status": "completed",
-                                "role": "assistant",
-                                "content": [{"type": "output_text", "text": content}],
-                            }
-                        ]
-
-                    await event_emitter(
-                        {
-                            "type": "chat:completion",
-                            "data": {
-                                "done": True,
-                                "content": content,
-                                "output": response_output,
-                                "title": title,
-                            },
-                        }
-                    )
-
-                    # Save message in the database
-                    usage = normalize_usage(response_data.get("usage", {}) or {})
-
-                    Chats.upsert_message_to_chat_by_id_and_message_id(
-                        metadata["chat_id"],
-                        metadata["message_id"],
-                        {
+                            "type": "message",
+                            "id": output_id("msg"),
+                            "status": "completed",
                             "role": "assistant",
+                            "content": [{"type": "output_text", "text": content}],
+                        }
+                    ]
+
+                await event_emitter(
+                    {
+                        "type": "chat:completion",
+                        "data": {
+                            "done": True,
                             "content": content,
                             "output": response_output,
-                            **({"usage": usage} if usage else {}),
+                            "title": title,
                         },
-                    )
+                    }
+                )
 
-                    # Send a webhook notification if the user is not active
-                    if not Users.is_user_active(user.id):
-                        webhook_url = Users.get_user_webhook_url_by_id(user.id)
-                        if webhook_url:
-                            await post_webhook(
-                                request.app.state.WEBUI_NAME,
-                                webhook_url,
-                                f"{title} - {request.app.state.config.WEBUI_URL}/c/{metadata['chat_id']}\n\n{content}",
-                                {
-                                    "action": "chat",
-                                    "message": content,
-                                    "title": title,
-                                    "url": f"{request.app.state.config.WEBUI_URL}/c/{metadata['chat_id']}",
-                                },
-                            )
+                # Save message in the database
+                usage = normalize_usage(response_data.get("usage", {}) or {})
 
-                    await background_tasks_handler(ctx)
+                Chats.upsert_message_to_chat_by_id_and_message_id(
+                    metadata["chat_id"],
+                    metadata["message_id"],
+                    {
+                        "role": "assistant",
+                        "content": content,
+                        "output": response_output,
+                        **({"usage": usage} if usage else {}),
+                    },
+                )
+
+                # Send a webhook notification if the user is not active
+                if content and not Users.is_user_active(user.id):
+                    webhook_url = Users.get_user_webhook_url_by_id(user.id)
+                    if webhook_url:
+                        await post_webhook(
+                            request.app.state.WEBUI_NAME,
+                            webhook_url,
+                            f"{title} - {request.app.state.config.WEBUI_URL}/c/{metadata['chat_id']}\n\n{content}",
+                            {
+                                "action": "chat",
+                                "message": content,
+                                "title": title,
+                                "url": f"{request.app.state.config.WEBUI_URL}/c/{metadata['chat_id']}",
+                            },
+                        )
+
+                await background_tasks_handler(ctx)
 
             response = build_response_object(
                 response, merge_events_into_response(response_data, events)

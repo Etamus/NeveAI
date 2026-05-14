@@ -56,7 +56,6 @@
 	let keepFollowUpPrompts = false;
 	let insertFollowUpPrompt = false;
 
-	let regenerateMenu = true;
 	let enableMessageQueue = true;
 
 	let landingPageMode = '';
@@ -210,7 +209,6 @@
 		keepFollowUpPrompts = $settings?.keepFollowUpPrompts ?? false;
 		insertFollowUpPrompt = $settings?.insertFollowUpPrompt ?? false;
 
-		regenerateMenu = $settings?.regenerateMenu ?? true;
 		enableMessageQueue = $settings?.enableMessageQueue ?? true;
 
 		largeTextAsFile = $settings?.largeTextAsFile ?? false;

@@ -10,12 +10,18 @@
 		getCachePreferenceLabel,
 		getContextPreferenceLabel,
 		getLocalModelLoadPreferences,
+		getSpeculativePreferenceLabel,
+		getStreamPreferenceLabel,
 		getVisionPreferenceLabel,
 		setLocalModelCachePreference,
 		setLocalModelContextPreference,
+		setLocalModelSpeculativePreference,
+		setLocalModelStreamPreference,
 		setLocalModelVisionPreference,
 		type LocalModelCachePreference,
 		type LocalModelContextPreference,
+		type LocalModelSpeculativePreference,
+		type LocalModelStreamPreference,
 		type LocalModelVisionPreference
 	} from '$lib/utils/llamacppLoadPreferences';
 
@@ -23,10 +29,14 @@
 	let contextPreference: LocalModelContextPreference = 'ask';
 	let visionPreference: LocalModelVisionPreference = 'ask';
 	let cachePreference: LocalModelCachePreference = 'default';
+	let streamPreference: LocalModelStreamPreference = 'default';
+	let speculativePreference: LocalModelSpeculativePreference = 'default';
 
 	const contextOptions: LocalModelContextPreference[] = ['ask', ...LOCAL_MODEL_CONTEXT_OPTIONS];
 	const visionOptions: LocalModelVisionPreference[] = ['ask', 'yes', 'no'];
-	const cacheOptions: LocalModelCachePreference[] = ['default', 'q8_0', 'q4_0', 'f16'];
+	const cacheOptions: LocalModelCachePreference[] = ['default', 'f16', 'q8_0', 'q4_0'];
+	const streamOptions: LocalModelStreamPreference[] = ['default', 'on', 'off'];
+	const speculativeOptions: LocalModelSpeculativePreference[] = ['default', 'high', 'low', 'off'];
 
 	$: contextOptionIndex =
 		typeof contextPreference === 'number'
@@ -62,6 +72,18 @@
 		setLocalModelCachePreference(cachePreference);
 	};
 
+	const cycleStreamPreference = () => {
+		const idx = streamOptions.indexOf(streamPreference);
+		streamPreference = streamOptions[(idx + 1) % streamOptions.length];
+		setLocalModelStreamPreference(streamPreference);
+	};
+
+	const cycleSpeculativePreference = () => {
+		const idx = speculativeOptions.indexOf(speculativePreference);
+		speculativePreference = speculativeOptions[(idx + 1) % speculativeOptions.length];
+		setLocalModelSpeculativePreference(speculativePreference);
+	};
+
 	const resetContextPreference = () => {
 		contextPreference = 'ask';
 		setLocalModelContextPreference(contextPreference);
@@ -77,6 +99,16 @@
 		setLocalModelCachePreference(cachePreference);
 	};
 
+	const resetStreamPreference = () => {
+		streamPreference = 'default';
+		setLocalModelStreamPreference(streamPreference);
+	};
+
+	const resetSpeculativePreference = () => {
+		speculativePreference = 'default';
+		setLocalModelSpeculativePreference(speculativePreference);
+	};
+
 	const stopEventPropagation = (event: Event) => {
 		event.stopPropagation();
 	};
@@ -86,6 +118,8 @@
 		contextPreference = preferences.context;
 		visionPreference = preferences.vision;
 		cachePreference = preferences.cache;
+		streamPreference = preferences.stream;
+		speculativePreference = preferences.speculative;
 	});
 </script>
 
@@ -190,14 +224,14 @@
 
 			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
 				{#if cachePreference === 'default'}
-					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Cache KV Quantizado</div>
+					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Cache KV quantizado</div>
 				{:else}
 					<button
 						type="button"
 						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
 						on:click|stopPropagation={resetCachePreference}
 					>
-						Cache KV Quantizado
+						Cache KV quantizado
 					</button>
 				{/if}
 				<button
@@ -206,6 +240,48 @@
 					on:click|stopPropagation={cycleCachePreference}
 				>
 					{getCachePreferenceLabel(cachePreference)}
+				</button>
+			</div>
+
+			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
+				{#if streamPreference === 'default'}
+					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Stream de resposta</div>
+				{:else}
+					<button
+						type="button"
+						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
+						on:click|stopPropagation={resetStreamPreference}
+					>
+						Stream de resposta
+					</button>
+				{/if}
+				<button
+					type="button"
+					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
+					on:click|stopPropagation={cycleStreamPreference}
+				>
+					{getStreamPreferenceLabel(streamPreference)}
+				</button>
+			</div>
+
+			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
+				{#if speculativePreference === 'default'}
+					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Decodificação Especulativa</div>
+				{:else}
+					<button
+						type="button"
+						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
+						on:click|stopPropagation={resetSpeculativePreference}
+					>
+						Decodificação Especulativa
+					</button>
+				{/if}
+				<button
+					type="button"
+					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
+					on:click|stopPropagation={cycleSpeculativePreference}
+				>
+					{getSpeculativePreferenceLabel(speculativePreference)}
 				</button>
 			</div>
 		</div>
