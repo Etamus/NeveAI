@@ -1,24 +1,25 @@
 """
-UltraReal FineTune Anima Local -- geracao de imagem via stable-diffusion.cpp.
+Z-Image-Turbo local -- geracao de imagem via stable-diffusion.cpp.
 
-O checkpoint UltraReal_anima_Q8_0.gguf e um diffusion model Anima/Comfy, nao um
-transformer Qwen Image diffusers. Por isso o runtime aqui usa sd-cli com os
-componentes separados do Anima base: text encoder Qwen 0.6B e VAE Qwen Image.
+O runtime usa o diffusion model GGUF do Z-Image-Turbo, Qwen3-4B como text
+encoder e o VAE do FLUX.1-schnell, conforme suporte oficial do sd-cli.
 
-Resolucao: 1024 x 1024
-Steps    : 14
-Modelo   : Danrisi/UltraReal_FineTune_Anima / UltraReal_anima_Q8_0.gguf
+Resolucao: 768 x 768
+Steps    : 8
+Modelo   : leejet/Z-Image-Turbo-GGUF / z_image_turbo-Q4_0.gguf
 """
 
 import asyncio
 import base64
 import fnmatch
+import io
 import json
 import logging
 import os
 import random
 import re
 import time
+import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
@@ -46,25 +47,31 @@ SD_CPP_WIN_CUDART_ASSET = "cudart-sd-bin-win-cu12-x64.zip"
 SD_CLI_TIMEOUT_SECONDS = 60 * 60
 
 IMAGE_OUTPUT_DIR = CACHE_DIR / "image" / "generations"
+IMAGE_INPUT_DIR = CACHE_DIR / "image" / "inputs"
 IMAGE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+IMAGE_INPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 SD_CACHE_DIR = CACHE_DIR / "stable_diffusion"
 GGUF_CACHE_DIR = SD_CACHE_DIR / "gguf"
-ANIMA_CACHE_DIR = SD_CACHE_DIR / "anima"
+QWEN3_CACHE_DIR = SD_CACHE_DIR / "qwen3"
+VAE_CACHE_DIR = SD_CACHE_DIR / "vae"
 GGUF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-ANIMA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+QWEN3_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+VAE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-ULTRAREAL_REPO = "Danrisi/UltraReal_FineTune_Anima"
-ULTRAREAL_GGUF_FILE = "UltraReal_anima_Q8_0.gguf"
-ANIMA_BASE_REPO = "circlestone-labs/Anima"
-ANIMA_LLM_FILE = "split_files/text_encoders/qwen_3_06b_base.safetensors"
-ANIMA_VAE_FILE = "split_files/vae/qwen_image_vae.safetensors"
+ZIMAGE_REPO = "leejet/Z-Image-Turbo-GGUF"
+ZIMAGE_GGUF_FILE = "z_image_turbo-Q4_0.gguf"
+QWEN3_LLM_REPO = "unsloth/Qwen3-4B-Instruct-2507-GGUF"
+QWEN3_LLM_FILE = "Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+ZIMAGE_VAE_REPO = "black-forest-labs/FLUX.1-schnell"
+ZIMAGE_VAE_FILE = "ae.safetensors"
 
-MAX_IMAGE_WIDTH = 1024
-MAX_IMAGE_HEIGHT = 1024
-MAX_IMAGE_STEPS = 14
-DEFAULT_CFG_SCALE = 4.0
-DEFAULT_NEGATIVE_PROMPT = "worst quality, low quality, score_1, score_2, score_3, artist name"
+MAX_IMAGE_WIDTH = 768
+MAX_IMAGE_HEIGHT = 768
+MAX_IMAGE_STEPS = 8
+DEFAULT_CFG_SCALE = 1.0
+DEFAULT_IMG2IMG_STRENGTH = 0.55
+MAX_INIT_IMAGE_BYTES = 30 * 1024 * 1024
 IMAGE_PROMPT_TRANSLATION_TIMEOUT_SECONDS = 20.0
 IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS = 4500
 
@@ -101,15 +108,124 @@ def _align_image_dim(value: Optional[int], default: int, maximum: int) -> int:
 
 
 def _cfg_scale(value: Optional[float]) -> float:
-    try:
-        value = float(value) if value is not None else DEFAULT_CFG_SCALE
-    except (TypeError, ValueError):
-        value = DEFAULT_CFG_SCALE
-    return max(1.0, min(12.0, value))
+    return DEFAULT_CFG_SCALE
 
 
 def normalize_sd_model_id(model_id: Optional[str]) -> str:
-    return ULTRAREAL_REPO
+    return ZIMAGE_REPO
+
+
+@dataclass(frozen=True)
+class _InitImage:
+    path: Path
+    width: int
+    height: int
+
+
+def _file_id_from_image_reference(reference: str) -> Optional[str]:
+    reference = str(reference or "").strip()
+    if not reference or reference.startswith("data:image/"):
+        return None
+
+    match = re.search(r"/files/([^/?#]+)(?:/content)?", reference)
+    if match:
+        return urllib.parse.unquote(match.group(1))
+
+    if reference.startswith("http://") or reference.startswith("https://"):
+        return None
+
+    return reference
+
+
+def _read_image_reference_bytes(reference: str, user_id: Optional[str] = None) -> bytes:
+    reference = str(reference or "").strip()
+    if not reference:
+        raise RuntimeError("Referencia de imagem vazia")
+
+    if reference.startswith("data:image/"):
+        try:
+            header, payload = reference.split(",", 1)
+        except ValueError as e:
+            raise RuntimeError("Data URI de imagem invalido") from e
+
+        if ";base64" in header:
+            raw = base64.b64decode(payload, validate=True)
+        else:
+            raw = urllib.parse.unquote_to_bytes(payload)
+    else:
+        file_id = _file_id_from_image_reference(reference)
+        if file_id:
+            from neveai.models.files import Files
+            from neveai.storage.provider import Storage
+
+            file = Files.get_file_by_id_and_user_id(file_id, user_id) if user_id else Files.get_file_by_id(file_id)
+            if not file:
+                raise RuntimeError("Imagem anexada nao encontrada ou sem permissao")
+
+            content_type = str((file.meta or {}).get("content_type") or "")
+            if content_type and not content_type.startswith("image/"):
+                raise RuntimeError("Arquivo anexado nao e uma imagem")
+
+            file_path = Path(Storage.get_file(file.path))
+            if not file_path.is_file():
+                raise RuntimeError("Arquivo de imagem anexado nao existe no armazenamento")
+            raw = file_path.read_bytes()
+        elif reference.startswith("http://") or reference.startswith("https://"):
+            request = urllib.request.Request(reference, headers={"User-Agent": "NeveAI/1.0"})
+            with urllib.request.urlopen(request, timeout=60) as response:
+                content_type = response.headers.get("Content-Type", "")
+                if content_type and not content_type.startswith("image/"):
+                    raise RuntimeError("URL anexada nao retornou uma imagem")
+                raw = response.read(MAX_INIT_IMAGE_BYTES + 1)
+        else:
+            raise RuntimeError("Referencia de imagem anexada nao suportada")
+
+    if len(raw) > MAX_INIT_IMAGE_BYTES:
+        raise RuntimeError("Imagem anexada excede o limite de 30 MB para img2img")
+    if not raw:
+        raise RuntimeError("Imagem anexada esta vazia")
+    return raw
+
+
+def _prepare_init_image_sync(reference: str, user_id: Optional[str] = None) -> _InitImage:
+    from PIL import Image, ImageOps
+
+    raw = _read_image_reference_bytes(reference, user_id=user_id)
+    try:
+        image = Image.open(io.BytesIO(raw))
+        image = ImageOps.exif_transpose(image)
+        image.seek(0)
+        image = image.convert("RGB")
+    except Exception as e:
+        raise RuntimeError(f"Nao foi possivel ler a imagem anexada: {e}") from e
+
+    output_path = IMAGE_INPUT_DIR / f"init_{int(time.time())}_{random.randint(0, 2**31 - 1)}.png"
+    image.save(output_path, "PNG", optimize=True)
+    return _InitImage(path=output_path, width=image.width, height=image.height)
+
+
+async def _prepare_init_image(reference: Optional[str], user_id: Optional[str] = None) -> Optional[_InitImage]:
+    reference = str(reference or "").strip()
+    if not reference:
+        return None
+
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _prepare_init_image_sync, reference, user_id)
+
+
+def _fit_init_image_dimensions(init_image: _InitImage, max_width: int, max_height: int) -> tuple[int, int]:
+    max_width = _align_image_dim(max_width, MAX_IMAGE_WIDTH, MAX_IMAGE_WIDTH)
+    max_height = _align_image_dim(max_height, MAX_IMAGE_HEIGHT, MAX_IMAGE_HEIGHT)
+
+    if init_image.width <= 0 or init_image.height <= 0:
+        return max_width, max_height
+
+    scale = min(max_width / init_image.width, max_height / init_image.height)
+    width = int(init_image.width * scale)
+    height = int(init_image.height * scale)
+    width = max(256, min(max_width, (width // 16) * 16))
+    height = max(256, min(max_height, (height // 16) * 16))
+    return width, height
 
 
 def _looks_portuguese(text: str) -> bool:
@@ -386,7 +502,7 @@ async def _prepare_image_prompt(prompt: str) -> str:
 
 
 @dataclass(frozen=True)
-class _UltraRealResources:
+class _ZImageResources:
     sd_cli: Path
     diffusion_model: Path
     llm: Path
@@ -453,11 +569,11 @@ def _ensure_sd_cli_binary() -> Path:
     return SD_CLI_PATH
 
 
-class _UltraRealImagePipeline:
-    """Gerencia os recursos UltraReal e executa sd-cli de forma serializada."""
+class _ZImageTurboPipeline:
+    """Gerencia os recursos Z-Image-Turbo e executa sd-cli de forma serializada."""
 
     def __init__(self):
-        self._resources: Optional[_UltraRealResources] = None
+        self._resources: Optional[_ZImageResources] = None
         self._model_id: Optional[str] = None
         self._load_lock = asyncio.Lock()
         self._generation_lock = asyncio.Lock()
@@ -474,47 +590,47 @@ class _UltraRealImagePipeline:
 
             loop = asyncio.get_event_loop()
 
-            def _prepare_sync() -> _UltraRealResources:
+            def _prepare_sync() -> _ZImageResources:
                 from huggingface_hub import hf_hub_download
 
                 sd_cli = _ensure_sd_cli_binary()
                 token = hf_token or None
 
-                log.info("Baixando/carregando UltraReal Q8_0 GGUF...")
+                log.info("Baixando/carregando Z-Image-Turbo Q4_0 GGUF...")
                 diffusion_model = Path(
                     hf_hub_download(
                         repo_id=model_id,
-                        filename=ULTRAREAL_GGUF_FILE,
+                        filename=ZIMAGE_GGUF_FILE,
                         cache_dir=str(GGUF_CACHE_DIR),
                         token=token,
                     )
                 )
 
-                log.info("Baixando/carregando text encoder Anima base...")
+                log.info("Baixando/carregando text encoder Qwen3-4B Q4_K_M...")
                 llm = Path(
                     hf_hub_download(
-                        repo_id=ANIMA_BASE_REPO,
-                        filename=ANIMA_LLM_FILE,
-                        cache_dir=str(ANIMA_CACHE_DIR),
+                        repo_id=QWEN3_LLM_REPO,
+                        filename=QWEN3_LLM_FILE,
+                        cache_dir=str(QWEN3_CACHE_DIR),
                         token=token,
                     )
                 )
 
-                log.info("Baixando/carregando VAE Anima base...")
+                log.info("Baixando/carregando VAE FLUX.1-schnell...")
                 vae = Path(
                     hf_hub_download(
-                        repo_id=ANIMA_BASE_REPO,
-                        filename=ANIMA_VAE_FILE,
-                        cache_dir=str(ANIMA_CACHE_DIR),
+                        repo_id=ZIMAGE_VAE_REPO,
+                        filename=ZIMAGE_VAE_FILE,
+                        cache_dir=str(VAE_CACHE_DIR),
                         token=token,
                     )
                 )
 
-                return _UltraRealResources(sd_cli=sd_cli, diffusion_model=diffusion_model, llm=llm, vae=vae)
+                return _ZImageResources(sd_cli=sd_cli, diffusion_model=diffusion_model, llm=llm, vae=vae)
 
             self._resources = await loop.run_in_executor(None, _prepare_sync)
             self._model_id = model_id
-            log.info("UltraReal FineTune Anima pronto via stable-diffusion.cpp")
+            log.info("Z-Image-Turbo pronto via stable-diffusion.cpp")
 
     async def unload(self):
         async with self._load_lock:
@@ -528,16 +644,22 @@ class _UltraRealImagePipeline:
         height: int = MAX_IMAGE_HEIGHT,
         steps: int = MAX_IMAGE_STEPS,
         guidance_scale: float = DEFAULT_CFG_SCALE,
+        init_image_reference: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> str:
         if not self.is_loaded or self._resources is None:
-            raise RuntimeError("UltraReal image runtime nao carregado")
+            raise RuntimeError("Z-Image image runtime nao carregado")
 
         prompt = await _prepare_image_prompt(prompt)
         if not prompt:
             raise RuntimeError("Prompt vazio para geracao de imagem")
 
+        init_image = await _prepare_init_image(init_image_reference, user_id=user_id)
+
         width = _align_image_dim(width, MAX_IMAGE_WIDTH, MAX_IMAGE_WIDTH)
         height = _align_image_dim(height, MAX_IMAGE_HEIGHT, MAX_IMAGE_HEIGHT)
+        if init_image is not None:
+            width, height = _fit_init_image_dimensions(init_image, width, height)
         steps = _clamp_int(steps, MAX_IMAGE_STEPS, 1, MAX_IMAGE_STEPS)
         cfg = _cfg_scale(guidance_scale)
         seed = random.randint(0, 2**31 - 1)
@@ -559,8 +681,6 @@ class _UltraRealImagePipeline:
             str(self._resources.vae),
             "-p",
             prompt,
-            "-n",
-            DEFAULT_NEGATIVE_PROMPT,
             "-W",
             str(width),
             "-H",
@@ -569,37 +689,52 @@ class _UltraRealImagePipeline:
             str(steps),
             "--cfg-scale",
             f"{cfg:g}",
-            "--sampling-method",
-            "er_sde",
-            "--scheduler",
-            "smoothstep",
-            "--vae-tiling",
-            "--fa",
+            "--diffusion-fa",
             "--offload-to-cpu",
             "-s",
             str(seed),
             "-o",
             str(output_path),
         ]
+        if init_image is not None:
+            cmd.extend(
+                [
+                    "--init-img",
+                    str(init_image.path),
+                    "--strength",
+                    f"{DEFAULT_IMG2IMG_STRENGTH:g}",
+                ]
+            )
 
         env = os.environ.copy()
         env["PATH"] = f"{SD_CPP_DIR}{os.pathsep}{env.get('PATH', '')}"
 
-        async with self._generation_lock:
-            log.info("Gerando imagem UltraReal %sx%s, steps=%s, cfg=%s", width, height, steps, cfg)
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(SD_CPP_DIR),
-                env=env,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=SD_CLI_TIMEOUT_SECONDS)
-            except asyncio.TimeoutError:
-                process.kill()
-                await process.wait()
-                raise RuntimeError("Geracao de imagem excedeu o tempo limite do stable-diffusion.cpp")
+        try:
+            async with self._generation_lock:
+                mode = "img2img" if init_image is not None else "txt2img"
+                log.info("Gerando imagem Z-Image-Turbo %s %sx%s, steps=%s, cfg=%s", mode, width, height, steps, cfg)
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    cwd=str(SD_CPP_DIR),
+                    env=env,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                try:
+                    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=SD_CLI_TIMEOUT_SECONDS)
+                except asyncio.TimeoutError:
+                    process.kill()
+                    await process.wait()
+                    raise RuntimeError("Geracao de imagem excedeu o tempo limite do stable-diffusion.cpp")
+        finally:
+            if init_image is not None:
+                try:
+                    init_image.path.unlink(missing_ok=True)
+                except TypeError:
+                    if init_image.path.exists():
+                        init_image.path.unlink()
+                except Exception as e:
+                    log.debug("Nao foi possivel remover imagem temporaria de img2img: %s", e)
 
         output = (stdout or b"") + b"\n" + (stderr or b"")
         output_text = output.decode("utf-8", errors="replace")
@@ -614,7 +749,7 @@ class _UltraRealImagePipeline:
         return f"data:image/png;base64,{b64}"
 
 
-_sd_pipeline = _UltraRealImagePipeline()
+_sd_pipeline = _ZImageTurboPipeline()
 
 
 class GenerateForm(BaseModel):
@@ -623,6 +758,7 @@ class GenerateForm(BaseModel):
     height: Optional[int] = None
     steps: Optional[int] = None
     guidance_scale: Optional[float] = None
+    init_image: Optional[str] = None
 
 
 class ConfigForm(BaseModel):
@@ -726,6 +862,8 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
             height=height,
             steps=steps,
             guidance_scale=guidance_scale,
+            init_image_reference=form_data.init_image,
+            user_id=getattr(user, "id", None),
         )
         return {"url": data_uri}
     finally:

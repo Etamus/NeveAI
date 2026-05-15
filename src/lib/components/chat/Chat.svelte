@@ -2403,8 +2403,7 @@
 				const model = $models.filter((m) => m.id === modelId).at(0);
 
 				if (model) {
-					// If there are image files, check if model is vision capable
-					// Skip this check if image generation is enabled, as images may be for editing or are generated outputs in the history
+					// If there are image files, check if model is vision capable unless an image tool owns the request.
 					const hasImages = createMessagesList(_history, parentId).some((message) =>
 						message.files?.some(
 							(file) => file.type === 'image' || (file?.content_type ?? '').startsWith('image/')
@@ -2414,7 +2413,8 @@
 					if (
 						hasImages &&
 						!(model.info?.meta?.capabilities?.vision ?? true) &&
-						!imageGenerationEnabled
+						!imageGenerationEnabled &&
+						!stableDiffusionEnabled
 					) {
 						toast.error(
 							$i18n.t('Model {{modelName}} is not vision capable', {

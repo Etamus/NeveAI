@@ -1479,7 +1479,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
 
                     if (-not (Test-StableDiffusionCppReady)) { throw 'sd-cli.exe foi copiado, mas não passou na validação.' }
                     Set-Content -Path (Join-Path $sdDir 'version.txt') -Value @($rel.tag_name, 'cuda12') -Encoding UTF8
-                    Log "[OK] stable-diffusion.cpp $($rel.tag_name) instalado para UltraReal/Anima"
+                    Log "[OK] stable-diffusion.cpp $($rel.tag_name) instalado para Z-Image-Turbo"
                     return $true
                 } catch {
                     Log "[!] stable-diffusion.cpp não pôde ser preparado agora: $_" 'warn'
@@ -1570,7 +1570,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 }
             }
 
-            # ---- 7. stable-diffusion.cpp (UltraReal/Anima)
+            # ---- 7. stable-diffusion.cpp (Z-Image-Turbo)
             P 55 'Preparando geração de imagem local'
             Set-InstallState 'installing_stable_diffusion_cpp'
             [void](Install-StableDiffusionCpp)
@@ -1719,7 +1719,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 if ($tOut) { $summary += "PyTorch:     $tOut" }
             } catch {}
             $summary += "llama.cpp:   $($cfg.llamaAsset)"
-            $summary += "sd.cpp:      UltraReal/Anima CUDA 12"
+            $summary += "sd.cpp:      Z-Image-Turbo CUDA 12"
             if ($vramGb -gt 0) { $summary += "VRAM:        ${vramGb} GB ($($detected.Name))" }
             if ($pythonDependencyFailures.Count -gt 0) {
                 $summary += "Pendências:  $($pythonDependencyFailures.Count) dependência(s) Python; rode instalar.bat novamente para tentar só o que faltou."

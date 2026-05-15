@@ -207,7 +207,7 @@ Neve AI/
 ### Outras Funcionalidades
 - **Busca na web** via DuckDuckGo (sem chave de API)
 - **Execução de código Python** via Pyodide (WebAssembly, no browser)
-- **Geração de imagens** via UltraReal FineTune Anima local em Q8_0 com stable-diffusion.cpp e 14 steps
+- **Geração de imagens** via Z-Image-Turbo local em Q4_0 com Encoder, stable-diffusion.cpp e 8 steps
 - **MCP (Model Context Protocol)** v1.26 para ferramentas externas
 
 ---

@@ -650,7 +650,8 @@
 			return null;
 		}
 
-		if (fileUploadCapableModels.length !== selectedModels.length) {
+		const isImageFile = file?.type?.startsWith('image/') ?? false;
+		if ((!isImageFile || !stableDiffusionEnabled) && fileUploadCapableModels.length !== selectedModels.length) {
 			toast.error($i18n.t('Model(s) do not support file upload'));
 			return null;
 		}
@@ -792,7 +793,7 @@
 			}
 
 			if (file['type'].startsWith('image/')) {
-				if (visionCapableModels.length === 0) {
+				if (visionCapableModels.length === 0 && !stableDiffusionEnabled) {
 					toast.error($i18n.t('Selected model(s) do not support image inputs'));
 					return;
 				}
@@ -1378,7 +1379,7 @@
 														alt=""
 														imageClassName=" size-8 rounded-lg object-cover"
 													/>
-													{#if atSelectedModel ? visionCapableModels.length === 0 : selectedModels.length !== visionCapableModels.length}
+													{#if !stableDiffusionEnabled && (atSelectedModel ? visionCapableModels.length === 0 : selectedModels.length !== visionCapableModels.length)}
 														<Tooltip
 															className=" absolute top-1 left-1"
 															content={$i18n.t('{{ models }}', {

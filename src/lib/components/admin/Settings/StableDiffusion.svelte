@@ -72,7 +72,7 @@
 									class="w-60 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 									type="text"
 									bind:value={config.STABLE_DIFFUSION_MODEL}
-									placeholder="Danrisi/UltraReal_FineTune_Anima"
+									placeholder="leejet/Z-Image-Turbo-GGUF"
 								/>
 							</div>
 						</div>
@@ -86,7 +86,7 @@
 									class="w-20 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 									type="number"
 									min="256"
-									max="1024"
+									max="768"
 									step="64"
 									bind:value={config.STABLE_DIFFUSION_WIDTH}
 								/>
@@ -102,7 +102,7 @@
 									class="w-20 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 									type="number"
 									min="256"
-									max="1024"
+									max="768"
 									step="64"
 									bind:value={config.STABLE_DIFFUSION_HEIGHT}
 								/>
@@ -118,7 +118,7 @@
 									class="w-20 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 									type="number"
 									min="1"
-									max="14"
+									max="8"
 									bind:value={config.STABLE_DIFFUSION_STEPS}
 								/>
 							</div>
@@ -133,14 +133,14 @@
 									class="w-20 rounded-sm px-2 p-1 text-xs bg-transparent outline-hidden text-right"
 									type="number"
 									min="1"
-									max="12"
-									step="0.5"
+									max="1"
+									step="0.1"
 									bind:value={config.STABLE_DIFFUSION_GUIDANCE_SCALE}
 								/>
 							</div>
 						</div>
 						<div class="text-gray-500 text-xs mt-1">
-							{$i18n.t('Use 4 a 5 para o UltraReal/Anima. Valores maiores aumentam contraste e podem consumir mais memória.')}
+							{$i18n.t('Z-Image-Turbo usa CFG 1.0 no stable-diffusion.cpp para melhor velocidade e consistência.')}
 						</div>
 					</div>
 				</div>

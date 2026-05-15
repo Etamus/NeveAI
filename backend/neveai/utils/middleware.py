@@ -1676,6 +1676,46 @@ def _collect_stable_diffusion_prompt(
     return _get_all_text_from_message(last_user_message)
 
 
+def _is_chat_image_file(file_item: Any) -> bool:
+    if not isinstance(file_item, dict):
+        return False
+    return file_item.get("type") == "image" or str(file_item.get("content_type") or "").startswith("image/")
+
+
+def _get_image_reference_from_message(message: Optional[dict]) -> Optional[str]:
+    if not isinstance(message, dict):
+        return None
+
+    for file_item in message.get("files") or []:
+        if not _is_chat_image_file(file_item):
+            continue
+        reference = file_item.get("url") or file_item.get("id")
+        if reference:
+            return str(reference)
+
+    content = message.get("content")
+    if isinstance(content, list):
+        for part in content:
+            if not isinstance(part, dict) or part.get("type") != "image_url":
+                continue
+            reference = (part.get("image_url") or {}).get("url")
+            if reference:
+                return str(reference)
+
+    return None
+
+
+def _collect_stable_diffusion_init_image_reference(
+    messages: list[dict], parent_message: Optional[dict] = None
+) -> Optional[str]:
+    current_reference = _get_image_reference_from_message(parent_message)
+    if current_reference:
+        return current_reference
+
+    last_user_message = get_last_user_message_item(messages or [])
+    return _get_image_reference_from_message(last_user_message)
+
+
 async def chat_stable_diffusion_handler(
     request: Request, form_data: dict, extra_params: dict, user
 ):
@@ -1687,21 +1727,25 @@ async def chat_stable_diffusion_handler(
     if not __event_emitter__:
         return form_data
 
+    messages = form_data.get("messages", [])
+    image_prompt = _collect_stable_diffusion_prompt(
+        messages,
+        metadata.get("parent_message"),
+    )
+    init_image_reference = _collect_stable_diffusion_init_image_reference(
+        messages,
+        metadata.get("parent_message"),
+    )
+
     await __event_emitter__(
         {
             "type": "status",
             "data": {
                 "action": "stable_diffusion",
-                "description": "Gerando imagem...",
+                "description": "Editando imagem..." if init_image_reference else "Gerando imagem...",
                 "done": False,
             },
         }
-    )
-
-    messages = form_data.get("messages", [])
-    image_prompt = _collect_stable_diffusion_prompt(
-        messages,
-        metadata.get("parent_message"),
     )
 
     try:
@@ -1726,13 +1770,15 @@ async def chat_stable_diffusion_handler(
             # Load SD pipeline
             await _sd_pipeline.load(model_id, hf_token=hf_token)
 
-            # Generate (txt2img)
+            # Generate image directly and skip the LLM response path.
             data_uri = await _sd_pipeline.generate(
                 prompt=image_prompt,
                 width=width,
                 height=height,
                 steps=steps,
                 guidance_scale=guidance_scale,
+                init_image_reference=init_image_reference,
+                user_id=getattr(user, "id", None),
             )
 
             await __event_emitter__(
@@ -1740,7 +1786,7 @@ async def chat_stable_diffusion_handler(
                     "type": "status",
                     "data": {
                         "action": "stable_diffusion",
-                        "description": "Imagem gerada",
+                        "description": "Imagem editada" if init_image_reference else "Imagem gerada",
                         "done": True,
                     },
                 }
@@ -1785,6 +1831,7 @@ async def chat_stable_diffusion_handler(
 
     except Exception as e:
         log.exception(e)
+        metadata["skip_llm"] = True
         await __event_emitter__(
             {
                 "type": "status",
@@ -1792,6 +1839,15 @@ async def chat_stable_diffusion_handler(
                     "description": f"Failed to generate image: {str(e)}",
                     "done": True,
                     "error": True,
+                },
+            }
+        )
+        await __event_emitter__(
+            {
+                "type": "chat:completion",
+                "data": {
+                    "done": True,
+                    "content": "",
                 },
             }
         )
