@@ -829,7 +829,7 @@
 			<div class="rounded-xl border border-dashed border-gray-200/80 dark:border-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
 				<div class="flex items-center justify-between gap-3">
 					<span class="font-medium text-gray-700 dark:text-gray-200">VRAM</span>
-					<span>indisponível</span>
+					<span>Indisponível</span>
 				</div>
 			</div>
 		{/if}
