@@ -18,7 +18,6 @@
 
 | Atributo | Detalhe |
 |---|---|
-| Versão | 0.8.10 |
 | Frontend | SvelteKit 2 + Svelte 5 + Tailwind CSS 4.2.1 |
 | Backend | FastAPI + Uvicorn + Python 3.11/3.12 |
 | Banco de dados | SQLite via SQLAlchemy + Alembic |
