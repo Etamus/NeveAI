@@ -28,6 +28,16 @@
 
 	export let onClick: () => void = () => {};
 
+	const getModelImageVersion = (model: any) =>
+		model?.updated_at ?? model?.info?.updated_at ?? model?.meta?.updated_at ?? '';
+	const getModelProfileImageUrl = (model: any, lang = '') => {
+		const params = new URLSearchParams({ id: model?.id ?? '' });
+		if (lang) params.set('lang', lang);
+		const version = getModelImageVersion(model);
+		if (version) params.set('v', `${version}`);
+		return `${WEBUI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
+	};
+
 	const copyLinkHandler = async (model) => {
 		const baseUrl = window.location.origin;
 		const res = await copyToClipboard(`${baseUrl}/?model=${encodeURIComponent(model.id)}`);
@@ -74,7 +84,7 @@
 		<div class="flex items-center gap-2">
 			<div class="flex items-center min-w-fit relative group/pin">
 				<img
-					src={`${WEBUI_API_BASE_URL}/models/model/profile/image?id=${item.model.id}&lang=${$i18n.language}`}
+					src={getModelProfileImageUrl(item.model, $i18n.language)}
 					alt={$i18n.t('{{modelName}} profile image', { modelName: item.label })}
 					class="rounded-full size-5 flex items-center group-hover/pin:opacity-0 transition-opacity"
 					loading="lazy"

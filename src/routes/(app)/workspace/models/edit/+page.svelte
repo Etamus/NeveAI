@@ -37,6 +37,12 @@
 
 	const onSubmit = async (modelInfo) => {
 		await updateModelById(localStorage.token, modelInfo.id, modelInfo);
+		await models.set(
+			await getModels(
+				localStorage.token,
+				$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
+			)
+		);
 		toast.success($i18n.t('Model updated successfully'));
 		showSettingsTab.set('admin-models');
 		showSettings.set(true);

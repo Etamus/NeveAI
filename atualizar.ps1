@@ -517,7 +517,7 @@ $ctl.BtnLlama.Add_Click({
                 }
 
                 if ($name -match 'RTX\s*5\d{3}|50\d{2}|Blackwell' -or ($computeCap -ne $null -and $computeCap -ge 12.0)) {
-                    return New-LlamaTarget 'NVIDIA' $name 'NVIDIA CUDA 13.1' @('cuda-13.1','cuda-cu13.1') "GPU NVIDIA Blackwell detectada: $name."
+                    return New-LlamaTarget 'NVIDIA' $name 'NVIDIA CUDA 13.3' @('cuda-13.3','cuda-cu13.3') "GPU NVIDIA Blackwell detectada: $name."
                 }
 
                 if ($computeCap -ne $null -and $computeCap -ge 5.0) {
@@ -1345,7 +1345,7 @@ $ctl.BtnPrimary.Add_Click({
                     return New-LlamaTarget 'CPU' $name 'CPU (GPU NVIDIA sem suporte CUDA moderno)' @('cpu') "GPU NVIDIA detectada ($name), mas compute capability $computeCap não é suportada pelos binários CUDA atuais."
                 }
                 if ($name -match 'RTX\s*5\d{3}|50\d{2}|Blackwell' -or ($computeCap -ne $null -and $computeCap -ge 12.0)) {
-                    return New-LlamaTarget 'NVIDIA' $name 'NVIDIA CUDA 13.1' @('cuda-13.1','cuda-cu13.1') "GPU NVIDIA Blackwell detectada: $name."
+                    return New-LlamaTarget 'NVIDIA' $name 'NVIDIA CUDA 13.3' @('cuda-13.3','cuda-cu13.3') "GPU NVIDIA Blackwell detectada: $name."
                 }
                 if ($computeCap -ne $null -and $computeCap -ge 5.0) {
                     return New-LlamaTarget 'NVIDIA' $name 'NVIDIA CUDA 12.4' @('cuda-12.4','cuda-cu12.4') "GPU NVIDIA compatível com CUDA 12 detectada: $name."

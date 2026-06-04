@@ -698,7 +698,7 @@ $ctl.BtnPrimary.Add_Click({
     # Mapeia indice -> torchIndex / llamaAsset / cudaVer / useOnnxGpu
     $cfg = switch ($backendIdx) {
         0 { @{ torchIndex='https://download.pytorch.org/whl/cpu'; llamaAsset='cpu';        cudaVer='CPU';                 useOnnxGpu=$false; vendor='CPU'    } }
-        1 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-13.1'; cudaVer='CUDA 13.1 (Blackwell)'; useOnnxGpu=$true;  vendor='NVIDIA' } }
+        1 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-13.3'; cudaVer='CUDA 13.3 (Blackwell)'; useOnnxGpu=$true;  vendor='NVIDIA' } }
         2 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.8 (Ada)';        useOnnxGpu=$true;  vendor='NVIDIA' } }
         3 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.8 (Ampere)';     useOnnxGpu=$true;  vendor='NVIDIA' } }
         4 { @{ torchIndex='https://download.pytorch.org/whl/cu126'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.6 (Turing)';     useOnnxGpu=$true;  vendor='NVIDIA' } }

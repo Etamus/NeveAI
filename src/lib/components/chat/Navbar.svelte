@@ -94,13 +94,25 @@
 		} catch {}
 	};
 
+	const getModelImageVersion = (model: any) =>
+		model?.updated_at ?? model?.info?.updated_at ?? model?.meta?.updated_at ?? '';
+	const getModelProfileImageUrl = (model: any) => {
+		const params = new URLSearchParams({ id: model?.id ?? '' });
+		const version = getModelImageVersion(model);
+		if (version) params.set('v', `${version}`);
+		return `${WEBUI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
+	};
+
 	const preloadUnifiedModelImages = (adminModels: any[]) => {
 		if (typeof Image === 'undefined') return;
-		const ids = [...new Set(adminModels.map((model) => model?.id).filter(Boolean))].slice(0, 80);
-		for (const id of ids) {
+		const urls = [...new Set(adminModels.filter((model) => model?.id).map(getModelProfileImageUrl))].slice(
+			0,
+			80
+		);
+		for (const url of urls) {
 			const image = new Image();
 			image.decoding = 'async';
-			image.src = `${WEBUI_API_BASE_URL}/models/model/profile/image?id=${encodeURIComponent(id)}`;
+			image.src = url;
 		}
 	};
 

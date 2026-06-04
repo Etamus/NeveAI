@@ -60,6 +60,11 @@
 		autoSaveTimer = setTimeout(submitHandler, 300);
 	}
 
+	function updateProfileImageUrl(url: string) {
+		info.meta.profile_image_url = url;
+		debouncedSave();
+	}
+
 	onDestroy(() => {
 		if (autoSaveTimer) {
 			clearTimeout(autoSaveTimer);
@@ -438,7 +443,7 @@
 					// For animated formats (gif, webp), skip resizing to preserve animation
 					const fileType = (inputFiles[0] as any)?.['type'];
 					if (fileType === 'image/gif' || fileType === 'image/webp') {
-						info.meta.profile_image_url = originalImageUrl;
+						updateProfileImageUrl(originalImageUrl);
 						inputFiles = null;
 						filesInputElement.value = '';
 						return;
@@ -479,7 +484,7 @@
 						const compressedSrc = canvas.toDataURL('image/webp', 0.8);
 
 						// Display the compressed image
-						info.meta.profile_image_url = compressedSrc;
+						updateProfileImageUrl(compressedSrc);
 
 						inputFiles = null;
 						filesInputElement.value = '';
@@ -547,7 +552,7 @@
 									<button
 										class="px-2 py-0.5 text-gray-500 rounded-lg text-xs hover:text-gray-700 dark:hover:text-gray-300 transition"
 										on:click={() => {
-											info.meta.profile_image_url = `${WEBUI_BASE_URL}/static/favicon.png`;
+											updateProfileImageUrl(`${WEBUI_BASE_URL}/static/favicon.png`);
 										}}
 										type="button"
 									>

@@ -429,6 +429,7 @@ class ModelsTable:
             with get_db_context(db) as db:
                 # update only the fields that are present in the model
                 data = model.model_dump(exclude={"id", "access_grants"})
+                data["updated_at"] = int(time.time())
                 result = db.query(Model).filter_by(id=id).update(data)
 
                 db.commit()

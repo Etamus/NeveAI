@@ -237,6 +237,14 @@
 		if (speculativeDecoding === 'off') return 'Desligado';
 		return 'Rápido';
 	};
+	const getModelImageVersion = (model: any) =>
+		model?.updated_at ?? model?.info?.updated_at ?? model?.meta?.updated_at ?? '';
+	const getModelProfileImageUrl = (model: any) => {
+		const params = new URLSearchParams({ id: model?.id ?? '' });
+		const version = getModelImageVersion(model);
+		if (version) params.set('v', `${version}`);
+		return `${WEBUI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
+	};
 	const matchesModelSearch = (item: any, query: string) => {
 		const q = query.trim().toLowerCase();
 		if (!q) return true;
@@ -856,7 +864,7 @@
 				{#if am}
 					<div class="w-9 h-9 rounded-full overflow-hidden {(am?.is_active ?? true) ? '' : 'opacity-50'}">
 						<img
-							src={`${WEBUI_API_BASE_URL}/models/model/profile/image?id=${am.id}`}
+							src={getModelProfileImageUrl(am)}
 							alt="model"
 							loading="eager"
 							decoding="async"
