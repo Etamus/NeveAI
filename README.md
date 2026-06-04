@@ -6,11 +6,11 @@
 
 ---
 
-<img width="1920" height="1008" alt="{D91EE8A9-8973-449B-8650-B7B97762FB71}" src="https://github.com/user-attachments/assets/6ba6fada-b430-4b53-8835-a1fcdb8a54da" />
+<img width="1920" height="1004" alt="{1C8404F5-D74F-4375-BFC1-4D6C4AF07D40}" src="https://github.com/user-attachments/assets/853490cf-7a98-4071-81ba-e434c8047217" />
 
 ---
 
-<img width="1656" height="379" alt="{F197E691-096C-4BC1-9EC3-27D56D5A7B06}" src="https://github.com/user-attachments/assets/611c6dec-7f2c-4a97-bc32-12b9c0556fbf" />
+<img width="1658" height="453" alt="{1F8EA029-8252-4F48-B3E4-0E1955010890}" src="https://github.com/user-attachments/assets/e35617fe-a1b8-4037-b007-5b5c1e4b7e44" />
 
 ---
 
@@ -43,7 +43,7 @@ instalar.bat
 ```
 
 <h1 align="center">
-<img width="768" alt="{9A74D3AB-74C0-4D9E-8F74-D4134AB1723B}" src="https://github.com/user-attachments/assets/922a2d71-5dca-4fca-9a63-269694712587" />
+<img width="769" alt="{EFAE8C51-E419-42A6-8BBD-F454EA575BF1}" src="https://github.com/user-attachments/assets/7b26d126-f0d0-4643-9027-39be84300e3f" />
 </h1>
 
 O instalador (`instalar.bat` → `instalar.ps1`) realiza automaticamente:
@@ -65,7 +65,7 @@ atualizar.bat
 ```
 
 <h1 align="center">
-<img width="771" alt="{C0BDAE44-0FE2-43D1-B261-458B0802404C}" src="https://github.com/user-attachments/assets/568ebfbf-7e6a-4c25-a585-37cad58a515e" />
+<img width="769" alt="{2E6101FE-4205-4270-A1B9-F95D954D883A}" src="https://github.com/user-attachments/assets/55839a87-8ed5-4c36-8eed-7d30877a83de" />
 </h1>
 
 O atualizador (`atualizar.bat` → `atualizar.ps1`) abre uma janela gráfica que:
