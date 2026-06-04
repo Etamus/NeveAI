@@ -104,7 +104,7 @@ Acesse manualmente se preferir: **http://localhost:8080**
 
 ## Modelos
 
-<img width="1400" height="247" alt="Stratabanner" src="https://github.com/user-attachments/assets/951ab901-bed0-4272-b0e0-b1d16e93f56e" />
+<img width="1128" height="191" alt="Banner2" src="https://github.com/user-attachments/assets/3b60f00c-6d61-485a-a6e3-fac443515996" />
 
 ---
 
