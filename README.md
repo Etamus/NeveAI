@@ -1,4 +1,4 @@
-<img width="1400" height="350" alt="5" src="https://github.com/user-attachments/assets/6eadffff-f44c-496c-8cbb-459812a41905" />
+<img width="1400" height="350" alt="Banner" src="https://github.com/user-attachments/assets/b5740495-448e-4f7f-ba37-ba5d055fcc19" />
 
 ---
 
@@ -103,7 +103,7 @@ Acesse manualmente se preferir: **http://localhost:8080**
 
 ## Modelos
 
-<img width="1128" height="191" alt="Banner2" src="https://github.com/user-attachments/assets/3b60f00c-6d61-485a-a6e3-fac443515996" />
+<img width="1128" height="191" alt="BannerOrg" src="https://github.com/user-attachments/assets/c6c530c8-4a72-4145-944e-868610b15418" />
 
 ---
 

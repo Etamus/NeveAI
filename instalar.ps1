@@ -177,7 +177,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Tipo de aceleração:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
                             <ComboBox  Grid.Row="1" Grid.Column="1" x:Name="CmbBackend" Margin="0,0,0,12">
                                 <ComboBoxItem Content="CPU (sem GPU)"/>
-                                <ComboBoxItem Content="NVIDIA - RTX 50xx (Blackwell, CUDA 13)"/>
+                                <ComboBoxItem Content="NVIDIA - RTX 50xx (Blackwell, CUDA 13.3)"/>
                                 <ComboBoxItem Content="NVIDIA - RTX 40xx (Ada, CUDA 12.8)"/>
                                 <ComboBoxItem Content="NVIDIA - RTX 30xx (Ampere, CUDA 12.8)"/>
                                 <ComboBoxItem Content="NVIDIA - RTX 20xx (Turing, CUDA 12.6)"/>
