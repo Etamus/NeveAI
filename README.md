@@ -1,4 +1,4 @@
-<img width="1400" height="350" alt="Banner" src="https://github.com/user-attachments/assets/b5740495-448e-4f7f-ba37-ba5d055fcc19" />
+<img width="1400" height="350" alt="Banner" src="https://github.com/user-attachments/assets/8d8de5c3-2c9d-4777-92da-efcb70ea1ac3" />
 
 ---
 
@@ -6,11 +6,11 @@
 
 ---
 
-<img width="1920" height="1004" alt="{1C8404F5-D74F-4375-BFC1-4D6C4AF07D40}" src="https://github.com/user-attachments/assets/853490cf-7a98-4071-81ba-e434c8047217" />
+<img width="1920" height="1002" alt="{8B7ABBAC-C524-4E6C-AF36-9A7FD611A598}" src="https://github.com/user-attachments/assets/e5dac643-b77b-44ea-a9dd-e75b0926fff3" />
 
 ---
 
-<img width="1658" height="453" alt="{1F8EA029-8252-4F48-B3E4-0E1955010890}" src="https://github.com/user-attachments/assets/e35617fe-a1b8-4037-b007-5b5c1e4b7e44" />
+<img width="1657" height="436" alt="{C562AF59-3601-434B-81E6-6B9044ACB645}" src="https://github.com/user-attachments/assets/9e9cbced-e7f6-44d8-87a6-04ff568f92d1" />
 
 ---
 
@@ -42,7 +42,7 @@ instalar.bat
 ```
 
 <h1 align="center">
-<img width="769" alt="{EFAE8C51-E419-42A6-8BBD-F454EA575BF1}" src="https://github.com/user-attachments/assets/7b26d126-f0d0-4643-9027-39be84300e3f" />
+<img width="769" alt="{244AE169-0FE6-4189-9A10-760D1DDAC5CF}" src="https://github.com/user-attachments/assets/2553d58e-3bfa-4396-9d29-6d520866b9bf" />
 </h1>
 
 O instalador (`instalar.bat` → `instalar.ps1`) realiza automaticamente:
@@ -64,7 +64,7 @@ atualizar.bat
 ```
 
 <h1 align="center">
-<img width="769" alt="{2E6101FE-4205-4270-A1B9-F95D954D883A}" src="https://github.com/user-attachments/assets/55839a87-8ed5-4c36-8eed-7d30877a83de" />
+<img width="769" alt="{DE528651-7129-429C-BA83-8415E6B14DCD}" src="https://github.com/user-attachments/assets/b8f99c51-c057-42e0-b201-038453b998bf" />
 </h1>
 
 O atualizador (`atualizar.bat` → `atualizar.ps1`) abre uma janela gráfica que:
@@ -103,7 +103,7 @@ Acesse manualmente se preferir: **http://localhost:8080**
 
 ## Modelos
 
-<img width="1128" height="191" alt="BannerOrg" src="https://github.com/user-attachments/assets/c6c530c8-4a72-4145-944e-868610b15418" />
+<img width="1128" height="191" alt="BannerOrg" src="https://github.com/user-attachments/assets/a88636c2-6aef-49ab-97b7-bbb378b6dbaf" />
 
 ---
 
