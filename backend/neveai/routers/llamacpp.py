@@ -1568,8 +1568,8 @@ NEVE_CATALOG = [
     {
         "id": "neve-echo-s",
         "name": "Neve Echo S",
-        "repo": "NeveAI/Neve-Echo-S2-2B-GGUF",
-        "size_label": "4.9 GB",
+        "repo": "NeveAI/Neve-Echo-S3-4B-QAT-GGUF",
+        "size_label": "3.9 GB",
         "description": "Modelo de uso geral e raciocínio para tarefas rápidas.",
         "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
         "default_feature_ids": ["web_search", "toggle_reasoning"],
@@ -1577,11 +1577,11 @@ NEVE_CATALOG = [
     {
         "id": "neve-echo",
         "name": "Neve Echo",
-        "repo": "NeveAI/Neve-Echo-5-12B-GGUF",
-        "size_label": "10.0 GB",
+        "repo": "NeveAI/Neve-Echo-6-12B-QAT-GGUF",
+        "size_label": "6.3 GB",
         "description": "Modelo de uso geral e raciocínio para tarefas variadas.",
         "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
-        "default_feature_ids": ["web_search", "toggle_reasoning"],
+        "default_feature_ids": ["toggle_reasoning"],
     },
     {
         "id": "neve-prism",
