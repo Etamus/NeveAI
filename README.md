@@ -103,7 +103,7 @@ Acesse manualmente se preferir: **http://localhost:8080**
 
 ## Modelos
 
-<img width="1128" height="191" alt="BannerOrg" src="https://github.com/user-attachments/assets/a88636c2-6aef-49ab-97b7-bbb378b6dbaf" />
+<img width="1055" height="1491" alt="Guia de Hardware para Execução Local" src="https://github.com/user-attachments/assets/1e2de362-167e-47ee-b98d-2513d9fcb525" />
 
 ---
 
