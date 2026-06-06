@@ -10,7 +10,7 @@
 	dayjs.extend(calendar);
 
 	import { deleteChatById } from '$lib/apis/chats';
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 	import Modal from '$lib/components/common/Modal.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -255,7 +255,7 @@
 									{#if showUserInfo && chat.user_id}
 										<div class="w-32 shrink-0 flex items-center gap-2">
 											<img
-												src="{WEBUI_API_BASE_URL}/users/{chat.user_id}/profile/image"
+												src="{NEVEAI_API_BASE_URL}/users/{chat.user_id}/profile/image"
 												alt={chat.user_name || 'User'}
 												class="size-5 rounded-full object-cover shrink-0"
 											/>

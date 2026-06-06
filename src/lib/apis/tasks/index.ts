@@ -1,7 +1,7 @@
-import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 export const checkActiveChats = async (token: string, chatIds: string[]) => {
-	const res = await fetch(`${WEBUI_API_BASE_URL}/tasks/active/chats`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/tasks/active/chats`, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',

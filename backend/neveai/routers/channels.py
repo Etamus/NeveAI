@@ -945,7 +945,7 @@ async def get_pinned_channel_messages(
 
 
 async def send_notification(
-    name, webui_url, channel, message, active_user_ids, db=None
+    name, neveai_url, channel, message, active_user_ids, db=None
 ):
     users = get_channel_users_with_access(channel, "read", db=db)
 
@@ -961,12 +961,12 @@ async def send_notification(
                     await post_webhook(
                         name,
                         webhook_url,
-                        f"#{channel.name} - {webui_url}/channels/{channel.id}\n\n{message.content}",
+                        f"#{channel.name} - {neveai_url}/channels/{channel.id}\n\n{message.content}",
                         {
                             "action": "channel",
                             "message": message.content,
                             "title": channel.name,
-                            "url": f"{webui_url}/channels/{channel.id}",
+                            "url": f"{neveai_url}/channels/{channel.id}",
                         },
                     )
 
@@ -1273,8 +1273,8 @@ async def post_new_message(
         async def background_handler():
             await model_response_handler(request, channel, message, user)
             await send_notification(
-                request.app.state.WEBUI_NAME,
-                request.app.state.config.WEBUI_URL,
+                request.app.state.NEVEAI_NAME,
+                request.app.state.config.NEVEAI_URL,
                 channel,
                 message,
                 active_user_ids,

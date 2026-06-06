@@ -4,7 +4,7 @@
 	import { getToolById, getTools, updateToolById } from '$lib/apis/tools';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import ToolkitEditor from '$lib/components/workspace/Tools/ToolkitEditor.svelte';
-	import { WEBUI_VERSION } from '$lib/constants';
+	import { NEVEAI_VERSION } from '$lib/constants';
 	import { tools } from '$lib/stores';
 	import { compareVersion, extractFrontmatter } from '$lib/utils';
 	import { onMount, getContext } from 'svelte';
@@ -18,13 +18,13 @@
 		console.log(data);
 
 		const manifest = extractFrontmatter(data.content);
-		if (compareVersion(manifest?.required_neveai_version ?? '0.0.0', WEBUI_VERSION)) {
+		if (compareVersion(manifest?.required_neveai_version ?? '0.0.0', NEVEAI_VERSION)) {
 			console.log('Version is lower than required');
 			toast.error(
 				$i18n.t(
 					'Neve version (v{{NEVEAI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})',
 					{
-						NEVEAI_VERSION: WEBUI_VERSION,
+						NEVEAI_VERSION,
 						REQUIRED_VERSION: manifest?.required_neveai_version ?? '0.0.0'
 					}
 				)

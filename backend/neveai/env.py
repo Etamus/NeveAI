@@ -25,11 +25,11 @@ from neveai.constants import ERROR_MESSAGES
 # Use .resolve() to get the canonical path, removing any '..' or '.' components
 ENV_FILE_PATH = Path(__file__).resolve()
 
-# OPEN_WEBUI_DIR should be the directory where env.py resides (neveai/)
-OPEN_WEBUI_DIR = ENV_FILE_PATH.parent
+# NEVEAI_DIR should be the directory where env.py resides (neveai/)
+NEVEAI_DIR = ENV_FILE_PATH.parent
 
-# BACKEND_DIR is the parent of OPEN_WEBUI_DIR (backend/)
-BACKEND_DIR = OPEN_WEBUI_DIR.parent
+# BACKEND_DIR is the parent of NEVEAI_DIR (backend/)
+BACKEND_DIR = NEVEAI_DIR.parent
 
 # BASE_DIR is the parent of BACKEND_DIR (Neve AI/)
 BASE_DIR = BACKEND_DIR.parent
@@ -133,10 +133,10 @@ if "cuda_error" in locals():
 
 SRC_LOG_LEVELS = {}  # Legacy variable, do not remove
 
-WEBUI_NAME = os.environ.get("NEVE_NAME", "Neve AI")
+NEVEAI_NAME = os.environ.get("NEVE_NAME", "Neve AI")
 # Custom name - no suffix appended
 
-WEBUI_FAVICON_URL = "/static/favicon.png"
+NEVEAI_FAVICON_URL = "/static/favicon.png"
 
 TRUSTED_SIGNATURE_KEY = os.environ.get("TRUSTED_SIGNATURE_KEY", "")
 
@@ -274,10 +274,10 @@ ENABLE_STAR_SESSIONS_MIDDLEWARE = (
 ENABLE_EASTER_EGGS = os.environ.get("ENABLE_EASTER_EGGS", "True").lower() == "true"
 
 ####################################
-# WEBUI_BUILD_HASH
+# NEVEAI_BUILD_HASH
 ####################################
 
-WEBUI_BUILD_HASH = os.environ.get("NEVE_BUILD_HASH", "dev-build")
+NEVEAI_BUILD_HASH = os.environ.get("NEVE_BUILD_HASH", "dev-build")
 
 ####################################
 # DATA/FRONTEND BUILD DIR
@@ -286,7 +286,7 @@ WEBUI_BUILD_HASH = os.environ.get("NEVE_BUILD_HASH", "dev-build")
 DATA_DIR = Path(os.getenv("DATA_DIR", BACKEND_DIR / "data")).resolve()
 
 if FROM_INIT_PY:
-    NEW_DATA_DIR = Path(os.getenv("DATA_DIR", OPEN_WEBUI_DIR / "data")).resolve()
+    NEW_DATA_DIR = Path(os.getenv("DATA_DIR", NEVEAI_DIR / "data")).resolve()
     NEW_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     # Check if the data directory exists in the package directory
@@ -305,17 +305,17 @@ if FROM_INIT_PY:
         # Remove the old data directory
         shutil.rmtree(DATA_DIR)
 
-    DATA_DIR = Path(os.getenv("DATA_DIR", OPEN_WEBUI_DIR / "data"))
+    DATA_DIR = Path(os.getenv("DATA_DIR", NEVEAI_DIR / "data"))
 
-STATIC_DIR = Path(os.getenv("STATIC_DIR", OPEN_WEBUI_DIR / "static"))
+STATIC_DIR = Path(os.getenv("STATIC_DIR", NEVEAI_DIR / "static"))
 
-FONTS_DIR = Path(os.getenv("FONTS_DIR", OPEN_WEBUI_DIR / "static" / "fonts"))
+FONTS_DIR = Path(os.getenv("FONTS_DIR", NEVEAI_DIR / "static" / "fonts"))
 
 FRONTEND_BUILD_DIR = Path(os.getenv("FRONTEND_BUILD_DIR", BASE_DIR / "build")).resolve()
 
 if FROM_INIT_PY:
     FRONTEND_BUILD_DIR = Path(
-        os.getenv("FRONTEND_BUILD_DIR", OPEN_WEBUI_DIR / "frontend")
+        os.getenv("FRONTEND_BUILD_DIR", NEVEAI_DIR / "frontend")
     ).resolve()
 
 ####################################
@@ -325,7 +325,7 @@ if FROM_INIT_PY:
 # Check if the file exists (legacy migrations: ollama.db -> webui.db -> neve.db)
 if os.path.exists(f"{DATA_DIR}/ollama.db") and not os.path.exists(f"{DATA_DIR}/neve.db"):
     os.rename(f"{DATA_DIR}/ollama.db", f"{DATA_DIR}/neve.db")
-    log.info("Database migrated from Ollama-WebUI successfully.")
+    log.info("Database migrated from Ollama successfully.")
 elif os.path.exists(f"{DATA_DIR}/webui.db") and not os.path.exists(f"{DATA_DIR}/neve.db"):
     os.rename(f"{DATA_DIR}/webui.db", f"{DATA_DIR}/neve.db")
     log.info("Database migrated to neve.db successfully.")
@@ -493,10 +493,10 @@ except ValueError:
     log.info(f"Invalid UVICORN_WORKERS value, defaulting to {UVICORN_WORKERS}")
 
 ####################################
-# WEBUI_AUTH (Required for security)
+# NEVEAI_AUTH (Required for security)
 ####################################
 
-WEBUI_AUTH = os.environ.get("NEVE_AUTH", "False").lower() == "true"
+NEVEAI_AUTH = os.environ.get("NEVE_AUTH", "False").lower() == "true"
 
 ENABLE_INITIAL_ADMIN_SIGNUP = (
     os.environ.get("ENABLE_INITIAL_ADMIN_SIGNUP", "False").lower() == "true"
@@ -511,17 +511,17 @@ ENABLE_SIGNUP_PASSWORD_CONFIRMATION = (
 
 # Optional env vars for creating an admin account on startup
 # Useful for headless/automated deployments
-WEBUI_ADMIN_EMAIL = os.environ.get("NEVE_ADMIN_EMAIL", "")
-WEBUI_ADMIN_PASSWORD = os.environ.get("NEVE_ADMIN_PASSWORD", "")
-WEBUI_ADMIN_NAME = os.environ.get("NEVE_ADMIN_NAME", "Admin")
+NEVEAI_ADMIN_EMAIL = os.environ.get("NEVE_ADMIN_EMAIL", "")
+NEVEAI_ADMIN_PASSWORD = os.environ.get("NEVE_ADMIN_PASSWORD", "")
+NEVEAI_ADMIN_NAME = os.environ.get("NEVE_ADMIN_NAME", "Admin")
 
-WEBUI_AUTH_TRUSTED_EMAIL_HEADER = os.environ.get(
+NEVEAI_AUTH_TRUSTED_EMAIL_HEADER = os.environ.get(
     "NEVE_AUTH_TRUSTED_EMAIL_HEADER", None
 )
-WEBUI_AUTH_TRUSTED_NAME_HEADER = os.environ.get(
+NEVEAI_AUTH_TRUSTED_NAME_HEADER = os.environ.get(
     "NEVE_AUTH_TRUSTED_NAME_HEADER", None
 )
-WEBUI_AUTH_TRUSTED_GROUPS_HEADER = os.environ.get(
+NEVEAI_AUTH_TRUSTED_GROUPS_HEADER = os.environ.get(
     "NEVE_AUTH_TRUSTED_GROUPS_HEADER", None
 )
 
@@ -551,25 +551,25 @@ BYPASS_MODEL_ACCESS_CONTROL = (
     os.environ.get("BYPASS_MODEL_ACCESS_CONTROL", "False").lower() == "true"
 )
 
-WEBUI_AUTH_SIGNOUT_REDIRECT_URL = os.environ.get(
+NEVEAI_AUTH_SIGNOUT_REDIRECT_URL = os.environ.get(
     "NEVE_AUTH_SIGNOUT_REDIRECT_URL", None
 )
 
 ####################################
-# WEBUI_SECRET_KEY
+# NEVEAI_SECRET_KEY
 ####################################
 
-WEBUI_SECRET_KEY = os.environ.get("NEVE_SECRET_KEY", "t0p-s3cr3t")
+NEVEAI_SECRET_KEY = os.environ.get("NEVE_SECRET_KEY", "t0p-s3cr3t")
 
-WEBUI_SESSION_COOKIE_SAME_SITE = os.environ.get("NEVE_SESSION_COOKIE_SAME_SITE", "lax")
+NEVEAI_SESSION_COOKIE_SAME_SITE = os.environ.get("NEVE_SESSION_COOKIE_SAME_SITE", "lax")
 
-WEBUI_SESSION_COOKIE_SECURE = os.environ.get("NEVE_SESSION_COOKIE_SECURE", "false").lower() == "true"
+NEVEAI_SESSION_COOKIE_SECURE = os.environ.get("NEVE_SESSION_COOKIE_SECURE", "false").lower() == "true"
 
-WEBUI_AUTH_COOKIE_SAME_SITE = os.environ.get("NEVE_AUTH_COOKIE_SAME_SITE", WEBUI_SESSION_COOKIE_SAME_SITE)
+NEVEAI_AUTH_COOKIE_SAME_SITE = os.environ.get("NEVE_AUTH_COOKIE_SAME_SITE", NEVEAI_SESSION_COOKIE_SAME_SITE)
 
-WEBUI_AUTH_COOKIE_SECURE = os.environ.get("NEVE_AUTH_COOKIE_SECURE", "false").lower() == "true"
+NEVEAI_AUTH_COOKIE_SECURE = os.environ.get("NEVE_AUTH_COOKIE_SECURE", "false").lower() == "true"
 
-if WEBUI_AUTH and WEBUI_SECRET_KEY == "":
+if NEVEAI_AUTH and NEVEAI_SECRET_KEY == "":
     raise ValueError(ERROR_MESSAGES.ENV_VAR_NOT_FOUND)
 
 ENABLE_COMPRESSION_MIDDLEWARE = (
@@ -588,11 +588,11 @@ ENABLE_OAUTH_ID_TOKEN_COOKIE = (
 )
 
 OAUTH_CLIENT_INFO_ENCRYPTION_KEY = os.environ.get(
-    "OAUTH_CLIENT_INFO_ENCRYPTION_KEY", WEBUI_SECRET_KEY
+    "OAUTH_CLIENT_INFO_ENCRYPTION_KEY", NEVEAI_SECRET_KEY
 )
 
 OAUTH_SESSION_TOKEN_ENCRYPTION_KEY = os.environ.get(
-    "OAUTH_SESSION_TOKEN_ENCRYPTION_KEY", WEBUI_SECRET_KEY
+    "OAUTH_SESSION_TOKEN_ENCRYPTION_KEY", NEVEAI_SECRET_KEY
 )
 
 # Maximum number of concurrent OAuth sessions per user per provider

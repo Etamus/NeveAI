@@ -2,7 +2,7 @@
 
 This module initialises a MeterProvider that sends metrics to an OTLP
 collector. The collector is responsible for exposing a Prometheus
-`/metrics` endpoint – WebUI does **not** expose it directly.
+`/metrics` endpoint – NeveAI does **not** expose it directly.
 
 Metrics collected:
 
@@ -93,13 +93,13 @@ def _build_meter_provider(resource: Resource) -> MeterProvider:
             attribute_keys=["http.method", "http.route", "http.status_code"],
         ),
         View(
-            instrument_name="webui.users.total",
+            instrument_name="neveai.users.total",
         ),
         View(
-            instrument_name="webui.users.active",
+            instrument_name="neveai.users.active",
         ),
         View(
-            instrument_name="webui.users.active.today",
+            instrument_name="neveai.users.active.today",
         ),
     ]
 
@@ -151,14 +151,14 @@ def setup_metrics(app: FastAPI, resource: Resource) -> None:
         ]
 
     meter.create_observable_gauge(
-        name="webui.users.total",
+        name="neveai.users.total",
         description="Total number of registered users",
         unit="users",
         callbacks=[observe_total_registered_users],
     )
 
     meter.create_observable_gauge(
-        name="webui.users.active",
+        name="neveai.users.active",
         description="Number of currently active users",
         unit="users",
         callbacks=[observe_active_users],
@@ -170,7 +170,7 @@ def setup_metrics(app: FastAPI, resource: Resource) -> None:
         return [metrics.Observation(value=Users.get_num_users_active_today())]
 
     meter.create_observable_gauge(
-        name="webui.users.active.today",
+        name="neveai.users.active.today",
         description="Number of users active since midnight today",
         unit="users",
         callbacks=[observe_users_active_today],

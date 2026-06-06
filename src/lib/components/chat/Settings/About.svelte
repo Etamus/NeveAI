@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { getVersionUpdates } from '$lib/apis';
 	import { getOllamaVersion } from '$lib/apis/ollama';
-	import { WEBUI_BUILD_HASH, WEBUI_VERSION } from '$lib/constants';
-	import { WEBUI_NAME, config, showChangelog } from '$lib/stores';
+	import { NEVEAI_BUILD_HASH, NEVEAI_VERSION } from '$lib/constants';
+	import { NEVEAI_NAME, config, showChangelog } from '$lib/stores';
 	import { compareVersion } from '$lib/utils';
 	import { onMount, getContext } from 'svelte';
 
@@ -22,8 +22,8 @@
 		updateAvailable = null;
 		version = await getVersionUpdates(localStorage.token).catch((error) => {
 			return {
-				current: WEBUI_VERSION,
-				latest: WEBUI_VERSION
+				current: NEVEAI_VERSION,
+				latest: NEVEAI_VERSION
 			};
 		});
 
@@ -49,15 +49,15 @@
 		<div>
 			<div class=" mb-2.5 text-sm font-medium flex space-x-2 items-center">
 				<div>
-					{$WEBUI_NAME}
+					{$NEVEAI_NAME}
 					{$i18n.t('Version')}
 				</div>
 			</div>
 			<div class="flex w-full justify-between items-center">
 				<div class="flex flex-col text-xs text-gray-700 dark:text-gray-200">
 					<div class="flex gap-1">
-						<Tooltip content={WEBUI_BUILD_HASH}>
-							v{WEBUI_VERSION}
+						<Tooltip content={NEVEAI_BUILD_HASH}>
+							v{NEVEAI_VERSION}
 						</Tooltip>
 
 						{#if $config?.features?.enable_version_update_check}
@@ -110,8 +110,8 @@
 
 		{#if $config?.license_metadata}
 			<div class="mb-2 text-xs">
-				{#if !$WEBUI_NAME.includes('Neve')}
-					<span class=" text-gray-500 dark:text-gray-300 font-medium">{$WEBUI_NAME}</span> -
+				{#if !$NEVEAI_NAME.includes('Neve')}
+					<span class=" text-gray-500 dark:text-gray-300 font-medium">{$NEVEAI_NAME}</span> -
 				{/if}
 
 				<span class=" capitalize">{$config?.license_metadata?.type}</span> license purchased by
@@ -165,7 +165,7 @@
 			<a
 				class=" text-gray-500 dark:text-gray-300 font-medium"
 				href="https://github.com/Etamus"
-				target="_blank">Timothy J. Baek</a
+				target="_blank">Mateus Lopes</a
 			>
 		</div>
 	</div>

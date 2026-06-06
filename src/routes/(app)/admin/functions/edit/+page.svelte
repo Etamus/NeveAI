@@ -11,7 +11,7 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { getModels } from '$lib/apis';
 	import { compareVersion, extractFrontmatter } from '$lib/utils';
-	import { WEBUI_VERSION } from '$lib/constants';
+	import { NEVEAI_VERSION } from '$lib/constants';
 
 	const i18n = getContext('i18n');
 
@@ -21,13 +21,13 @@
 		console.log(data);
 
 		const manifest = extractFrontmatter(data.content);
-		if (compareVersion(manifest?.required_neveai_version ?? '0.0.0', WEBUI_VERSION)) {
+		if (compareVersion(manifest?.required_neveai_version ?? '0.0.0', NEVEAI_VERSION)) {
 			console.log('Version is lower than required');
 			toast.error(
 				$i18n.t(
 					'Neve version (v{{NEVEAI_VERSION}}) is lower than required version (v{{REQUIRED_VERSION}})',
 					{
-						NEVEAI_VERSION: WEBUI_VERSION,
+						NEVEAI_VERSION: NEVEAI_VERSION,
 						REQUIRED_VERSION: manifest?.required_neveai_version ?? '0.0.0'
 					}
 				)

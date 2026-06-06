@@ -5,7 +5,7 @@
 	import GarbageBin from '$lib/components/icons/GarbageBin.svelte';
 	import EditPencil from '$lib/components/icons/EditPencil.svelte';
 	import ArrowForward from '$lib/components/icons/ArrowForward.svelte';
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 	const i18n = getContext('i18n');
 
@@ -32,7 +32,7 @@
 						{@const fileUrl =
 							file.url?.startsWith('data') || file.url?.startsWith('http')
 								? file.url
-								: `${WEBUI_API_BASE_URL}/files/${file.url}${file?.content_type ? '/content' : ''}`}
+								: `${NEVEAI_API_BASE_URL}/files/${file.url}${file?.content_type ? '/content' : ''}`}
 						<Image src={fileUrl} alt="" imageClassName="size-6 rounded-md object-cover" />
 					{:else}
 						<div

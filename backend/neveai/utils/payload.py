@@ -1,4 +1,4 @@
-﻿from neveai.utils.task import prompt_template, prompt_variables_template
+from neveai.utils.task import prompt_template, prompt_variables_template
 from neveai.utils.misc import (
     deep_update,
     add_or_update_system_message,
@@ -21,7 +21,7 @@ def apply_system_prompt_to_body(
     if not system:
         return form_data
 
-    # Metadata (WebUI Usage)
+    # Metadata (NeveAI Usage)
     if metadata:
         variables = metadata.get("variables", {})
         if variables:

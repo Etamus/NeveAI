@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, getContext } from 'svelte';
-	import { WEBUI_NAME, showSidebar, functions, mobile, config, user } from '$lib/stores';
+	import { NEVEAI_NAME, showSidebar, functions, mobile, config, user } from '$lib/stores';
 	import { page } from '$app/stores';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Sidebar from '$lib/components/icons/Sidebar.svelte';
@@ -12,7 +12,7 @@
 
 <svelte:head>
 	<title>
-		{$i18n.t('Home')} • {$WEBUI_NAME}
+		{$i18n.t('Home')} • {$NEVEAI_NAME}
 	</title>
 </svelte:head>
 

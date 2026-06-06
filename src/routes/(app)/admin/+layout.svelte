@@ -2,7 +2,7 @@
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 
-	import { WEBUI_NAME, config, mobile, showSidebar, user } from '$lib/stores';
+	import { NEVEAI_NAME, config, mobile, showSidebar, user } from '$lib/stores';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
 	import Sidebar from '$lib/components/icons/Sidebar.svelte';
@@ -21,7 +21,7 @@
 
 <svelte:head>
 	<title>
-		{$i18n.t('Admin Panel')} • {$WEBUI_NAME}
+		{$i18n.t('Admin Panel')} • {$NEVEAI_NAME}
 	</title>
 </svelte:head>
 

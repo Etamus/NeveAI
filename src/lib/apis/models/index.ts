@@ -1,4 +1,4 @@
-import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 export const getModelItems = async (
 	token: string = '',
@@ -31,7 +31,7 @@ export const getModelItems = async (
 		searchParams.append('page', page.toString());
 	}
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/models/list?${searchParams.toString()}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/models/list?${searchParams.toString()}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -62,7 +62,7 @@ export const getModelItems = async (
 export const getModelTags = async (token: string = '') => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/models/tags`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/models/tags`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -93,7 +93,7 @@ export const getModelTags = async (token: string = '') => {
 export const importModels = async (token: string, models: object[]) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/models/import`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/models/import`, {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
@@ -121,7 +121,7 @@ export const importModels = async (token: string, models: object[]) => {
 export const getBaseModels = async (token: string = '') => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/models/base`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/models/base`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -152,7 +152,7 @@ export const getBaseModels = async (token: string = '') => {
 export const createNewModel = async (token: string, model: object) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/models/create`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/models/create`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -187,7 +187,7 @@ export const getModelById = async (token: string, id: string, options: { raw?: b
 		searchParams.append('raw', 'true');
 	}
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/models/model?${searchParams.toString()}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/models/model?${searchParams.toString()}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -222,7 +222,7 @@ export const toggleModelById = async (token: string, id: string) => {
 	const searchParams = new URLSearchParams();
 	searchParams.append('id', id);
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/models/model/toggle?${searchParams.toString()}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/models/model/toggle?${searchParams.toString()}`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -254,7 +254,7 @@ export const toggleModelById = async (token: string, id: string) => {
 export const updateModelById = async (token: string, id: string, model: object) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/models/model/update`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/models/model/update`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -292,7 +292,7 @@ export const updateModelAccessGrants = async (
 ) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/models/model/access/update`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/models/model/access/update`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -321,7 +321,7 @@ export const updateModelAccessGrants = async (
 export const deleteModelById = async (token: string, id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/models/model/delete`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/models/model/delete`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -354,7 +354,7 @@ export const deleteModelById = async (token: string, id: string) => {
 export const deleteAllModels = async (token: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/models/delete/all`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/models/delete/all`, {
 		method: 'DELETE',
 		headers: {
 			Accept: 'application/json',

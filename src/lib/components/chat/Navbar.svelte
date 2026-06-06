@@ -3,7 +3,7 @@
 	import { toast } from 'svelte-sonner';
 
 	import {
-		WEBUI_NAME,
+		NEVEAI_NAME,
 		banners,
 		chatId,
 		config,
@@ -42,7 +42,7 @@
 	import { getLocalModels, getMmProjFiles, getLocalVramInfo, type LocalVramInfo } from '$lib/apis/llamacpp';
 	import { getBaseModels } from '$lib/apis/models';
 	import { getModels } from '$lib/apis';
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import {
 		buildUnifiedAdminModels,
 		type UnifiedModelsPreload
@@ -100,7 +100,7 @@
 		const params = new URLSearchParams({ id: model?.id ?? '' });
 		const version = getModelImageVersion(model);
 		if (version) params.set('v', `${version}`);
-		return `${WEBUI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
+		return `${NEVEAI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
 	};
 
 	const preloadUnifiedModelImages = (adminModels: any[]) => {

@@ -1,9 +1,9 @@
-import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 export const createNewGroup = async (token: string, group: object) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/groups/create`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/groups/create`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -39,7 +39,7 @@ export const getGroups = async (token: string = '', share?: boolean) => {
 		searchParams.append('share', String(share));
 	}
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/groups/?${searchParams.toString()}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/groups/?${searchParams.toString()}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -70,7 +70,7 @@ export const getGroups = async (token: string = '', share?: boolean) => {
 export const getGroupById = async (token: string, id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/groups/id/${id}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/groups/id/${id}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -102,7 +102,7 @@ export const getGroupById = async (token: string, id: string) => {
 export const getGroupInfoById = async (token: string, id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/groups/id/${id}/info`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/groups/id/${id}/info`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -134,7 +134,7 @@ export const getGroupInfoById = async (token: string, id: string) => {
 export const updateGroupById = async (token: string, id: string, group: object) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/groups/id/${id}/update`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/groups/id/${id}/update`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -169,7 +169,7 @@ export const updateGroupById = async (token: string, id: string, group: object) 
 export const deleteGroupById = async (token: string, id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/groups/id/${id}/delete`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/groups/id/${id}/delete`, {
 		method: 'DELETE',
 		headers: {
 			Accept: 'application/json',
@@ -201,7 +201,7 @@ export const deleteGroupById = async (token: string, id: string) => {
 export const addUserToGroup = async (token: string, id: string, userIds: string[]) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/groups/id/${id}/users/add`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/groups/id/${id}/users/add`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -236,7 +236,7 @@ export const addUserToGroup = async (token: string, id: string, userIds: string[
 export const removeUserFromGroup = async (token: string, id: string, userIds: string[]) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/groups/id/${id}/users/remove`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/groups/id/${id}/users/remove`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',

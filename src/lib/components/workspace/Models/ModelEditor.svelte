@@ -4,7 +4,7 @@
 
 	import { onMount, onDestroy, getContext, tick } from 'svelte';
 	import { models, tools, functions, user } from '$lib/stores';
-	import { WEBUI_BASE_URL, DEFAULT_CAPABILITIES } from '$lib/constants';
+	import { NEVEAI_BASE_URL, DEFAULT_CAPABILITIES } from '$lib/constants';
 
 	import { getTools } from '$lib/apis/tools';
 	import { getFunctions } from '$lib/apis/functions';
@@ -104,7 +104,7 @@
 		base_model_id: null,
 		name: '',
 		meta: {
-			profile_image_url: `${WEBUI_BASE_URL}/static/favicon.png`,
+			profile_image_url: `${NEVEAI_BASE_URL}/static/favicon.png`,
 			description: '',
 			suggestion_prompts: null,
 			tags: []
@@ -520,7 +520,7 @@
 							<div class="self-center">
 								<button
 									class="rounded-xl flex shrink-0 items-center {info.meta.profile_image_url !==
-									`${WEBUI_BASE_URL}/static/favicon.png`
+									`${NEVEAI_BASE_URL}/static/favicon.png`
 										? 'bg-transparent'
 										: 'bg-white'} shadow-xl group relative"
 									type="button"
@@ -537,7 +537,7 @@
 										/>
 									{:else}
 										<img
-											src="{WEBUI_BASE_URL}/static/favicon.png"
+											src="{NEVEAI_BASE_URL}/static/favicon.png"
 											alt="model profile"
 											class="rounded-lg size-20 md:size-36 object-cover shrink-0"
 										/>
@@ -552,7 +552,7 @@
 									<button
 										class="px-2 py-0.5 text-gray-500 rounded-lg text-xs hover:text-gray-700 dark:hover:text-gray-300 transition"
 										on:click={() => {
-											updateProfileImageUrl(`${WEBUI_BASE_URL}/static/favicon.png`);
+											updateProfileImageUrl(`${NEVEAI_BASE_URL}/static/favicon.png`);
 										}}
 										type="button"
 									>

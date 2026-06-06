@@ -1,4 +1,4 @@
-import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { NEVEAI_API_BASE_URL } from '$lib/constants';
 import { getTimeRange } from '$lib/utils';
 
 type NoteItem = {
@@ -11,7 +11,7 @@ type NoteItem = {
 export const createNewNote = async (token: string, note: NoteItem) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/notes/create`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/notes/create`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -42,7 +42,7 @@ export const createNewNote = async (token: string, note: NoteItem) => {
 export const getNotes = async (token: string = '', raw: boolean = false) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/notes/`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/notes/`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -122,7 +122,7 @@ export const searchNotes = async (
 		searchParams.append('page', `${page}`);
 	}
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/notes/search?${searchParams.toString()}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/notes/search?${searchParams.toString()}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -158,7 +158,7 @@ export const getNoteList = async (token: string = '', page: number | null = null
 		searchParams.append('page', `${page}`);
 	}
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/notes/?${searchParams.toString()}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/notes/?${searchParams.toString()}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -189,7 +189,7 @@ export const getNoteList = async (token: string = '', page: number | null = null
 export const getNoteById = async (token: string, id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/notes/${id}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/notes/${id}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -221,7 +221,7 @@ export const getNoteById = async (token: string, id: string) => {
 export const updateNoteById = async (token: string, id: string, note: NoteItem) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/notes/${id}/update`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/notes/${id}/update`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -256,7 +256,7 @@ export const updateNoteById = async (token: string, id: string, note: NoteItem) 
 export const updateNoteAccessGrants = async (token: string, id: string, accessGrants: any[]) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/notes/${id}/access/update`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/notes/${id}/access/update`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -285,7 +285,7 @@ export const updateNoteAccessGrants = async (token: string, id: string, accessGr
 export const deleteNoteById = async (token: string, id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/notes/${id}/delete`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/notes/${id}/delete`, {
 		method: 'DELETE',
 		headers: {
 			Accept: 'application/json',

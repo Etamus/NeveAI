@@ -5,7 +5,7 @@
 	import dayjs from '$lib/dayjs';
 
 	import { mobile, settings, user } from '$lib/stores';
-	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { copyToClipboard, sanitizeResponseContent } from '$lib/utils';
@@ -35,7 +35,7 @@
 		if (lang) params.set('lang', lang);
 		const version = getModelImageVersion(model);
 		if (version) params.set('v', `${version}`);
-		return `${WEBUI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
+		return `${NEVEAI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
 	};
 
 	const copyLinkHandler = async (model) => {

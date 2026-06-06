@@ -6,7 +6,7 @@
 	import { onMount, getContext, tick } from 'svelte';
 	const i18n = getContext('i18n');
 
-	import { WEBUI_NAME, config, mobile, models as _models, settings, user, showSettingsModelId } from '$lib/stores';
+	import { NEVEAI_NAME, config, mobile, models as _models, settings, user, showSettingsModelId } from '$lib/stores';
 	import {
 		createNewModel,
 		deleteAllModels,
@@ -41,7 +41,7 @@
 	import Eye from '$lib/components/icons/Eye.svelte';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import Minus from '$lib/components/icons/Minus.svelte';
-	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
 	import { goto } from '$app/navigation';
 	import { DropdownMenu } from 'bits-ui';
 	import { fade } from 'svelte/transition';
@@ -575,7 +575,7 @@
 											: 'opacity-50 dark:opacity-50'} "
 									>
 										<img
-											src={`${WEBUI_API_BASE_URL}/models/model/profile/image?id=${model.id}`}
+											src={`${NEVEAI_API_BASE_URL}/models/model/profile/image?id=${model.id}`}
 											alt="modelfile profile"
 											class=" rounded-full w-full h-auto object-cover"
 										/>

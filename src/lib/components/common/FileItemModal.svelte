@@ -5,7 +5,7 @@
 	import { getContext, onMount, tick } from 'svelte';
 
 	import { formatFileSize, getLineCount } from '$lib/utils';
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import { settings } from '$lib/stores';
 	import { getKnowledgeById } from '$lib/apis/knowledge';
 	import { getFileById, getFileContentById } from '$lib/apis/files';
@@ -288,7 +288,7 @@
 										item.type === 'file'
 											? item?.url?.startsWith('http')
 												? item.url
-												: `${WEBUI_API_BASE_URL}/files/${item.url}/content`
+												: `${NEVEAI_API_BASE_URL}/files/${item.url}/content`
 											: item.url,
 										'_blank'
 									);
@@ -447,7 +447,7 @@
 						</div>
 						<div use:initImagePanzoom>
 							<img
-								src={`${WEBUI_API_BASE_URL}/files/${item.id}/content`}
+								src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
 								alt={item?.name ?? 'Image'}
 								class="w-full object-contain rounded-lg"
 								loading="lazy"
@@ -524,14 +524,14 @@
 				{:else if selectedTab === 'preview'}
 					{#if isAudio}
 						<audio
-							src={`${WEBUI_API_BASE_URL}/files/${item.id}/content`}
+							src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
 							class="w-full border-0 rounded-lg mb-2"
 							controls
 							playsinline
 						/>
 					{:else if isPDF}
 						<PDFViewer
-							url={`${WEBUI_API_BASE_URL}/files/${item.id}/content`}
+							url={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
 							className="w-full h-[70vh] border-0 rounded-lg"
 						/>
 					{:else if isExcel}

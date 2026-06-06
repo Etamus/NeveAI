@@ -16,7 +16,7 @@
 	import SensitiveInput from '$lib/components/common/SensitiveInput.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import { WEBUI_BUILD_HASH, WEBUI_VERSION } from '$lib/constants';
+	import { NEVEAI_BUILD_HASH, NEVEAI_VERSION } from '$lib/constants';
 	import { banners as _banners, config, showChangelog } from '$lib/stores';
 	import type { Banner } from '$lib/types';
 	import { compareVersion } from '$lib/utils';
@@ -62,8 +62,8 @@
 		updateAvailable = null;
 		version = await getVersionUpdates(localStorage.token).catch((error) => {
 			return {
-				current: WEBUI_VERSION,
-				latest: WEBUI_VERSION
+				current: NEVEAI_VERSION,
+				latest: NEVEAI_VERSION
 			};
 		});
 
@@ -156,8 +156,8 @@
 						<div class="flex w-full justify-between items-center">
 							<div class="flex flex-col text-xs text-gray-700 dark:text-gray-200">
 								<div class="flex gap-1">
-									<Tooltip content={WEBUI_BUILD_HASH}>
-										v{WEBUI_VERSION}
+									<Tooltip content={NEVEAI_BUILD_HASH}>
+										v{NEVEAI_VERSION}
 									</Tooltip>
 
 									{#if $config?.features?.enable_version_update_check}
@@ -792,7 +792,7 @@
 
 					<div class="mb-2.5 w-full justify-between">
 						<div class="flex w-full justify-between">
-							<div class=" self-center text-xs font-medium">{$i18n.t('WebUI URL')}</div>
+							<div class=" self-center text-xs font-medium">{$i18n.t('NeveAI URL')}</div>
 						</div>
 
 						<div class="flex mt-2 space-x-2">
@@ -800,13 +800,13 @@
 								class="w-full rounded-lg py-2 px-4 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden"
 								type="text"
 								placeholder={`e.g.) "http://localhost:3000"`}
-								bind:value={adminConfig.WEBUI_URL}
+								bind:value={adminConfig.NEVEAI_URL}
 							/>
 						</div>
 
 						<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
 							{$i18n.t(
-								'Enter the public URL of your WebUI. This URL will be used to generate links in the notifications.'
+								'Enter the public URL of your NeveAI. This URL will be used to generate links in the notifications.'
 							)}
 						</div>
 					</div>

@@ -3,7 +3,7 @@
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
 
-	import { WEBUI_NAME, config, functions as _functions, models, settings, user } from '$lib/stores';
+	import { NEVEAI_NAME, config, functions as _functions, models, settings, user } from '$lib/stores';
 	import { onMount, getContext, tick, onDestroy } from 'svelte';
 
 	import { goto } from '$app/navigation';
@@ -250,7 +250,7 @@
 
 <svelte:head>
 	<title>
-		{$i18n.t('Functions')} • {$WEBUI_NAME}
+		{$i18n.t('Functions')} • {$NEVEAI_NAME}
 	</title>
 </svelte:head>
 

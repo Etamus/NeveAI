@@ -5,7 +5,7 @@
 	import { getContext } from 'svelte';
 
 	import { flyAndScale } from '$lib/utils/transitions';
-	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_BASE_URL } from '$lib/constants';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
@@ -159,7 +159,7 @@
 												on:click={() => selectEmoji(emojiItem)}
 											>
 												<img
-													src="{WEBUI_BASE_URL}/assets/emojis/{emojiItem.name.toLowerCase()}.svg"
+													src="{NEVEAI_BASE_URL}/assets/emojis/{emojiItem.name.toLowerCase()}.svg"
 													alt={emojiItem.name}
 													class="size-5"
 													loading="lazy"

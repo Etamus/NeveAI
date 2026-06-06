@@ -1,7 +1,7 @@
 /**
  * API client for local GGUF models via llama-cpp-python.
  */
-import { WEBUI_BASE_URL } from '$lib/constants';
+import { NEVEAI_BASE_URL } from '$lib/constants';
 
 export interface LocalModel {
 	id: string;
@@ -42,7 +42,7 @@ export interface LocalVramInfo {
 }
 
 export const getLocalModels = async (token: string = ''): Promise<LocalModel[]> => {
-	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/models`, {
+	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -61,7 +61,7 @@ export const getLocalModels = async (token: string = ''): Promise<LocalModel[]> 
 };
 
 export const getLoadedLocalModels = async (token: string = ''): Promise<LocalModel[]> => {
-	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/models/loaded`, {
+	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/loaded`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -80,7 +80,7 @@ export const getLoadedLocalModels = async (token: string = ''): Promise<LocalMod
 };
 
 export const getLocalVramInfo = async (token: string = ''): Promise<LocalVramInfo> => {
-	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/vram`, {
+	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/vram`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -98,7 +98,7 @@ export const getLocalVramInfo = async (token: string = ''): Promise<LocalVramInf
 };
 
 export const getMmProjFiles = async (token: string = ''): Promise<string[]> => {
-	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/models/mmproj`, {
+	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/mmproj`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -125,7 +125,7 @@ export const loadLocalModel = async (
 	cache_type: string = 'f16',
 	speculative_decoding: string = 'default'
 ): Promise<any> => {
-	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/models/load`, {
+	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/load`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -151,7 +151,7 @@ export const loadLocalModel = async (
 };
 
 export const unloadLocalModel = async (token: string = '', model_id: string): Promise<any> => {
-	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/models/unload`, {
+	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/unload`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -197,7 +197,7 @@ export interface NeveDownloadState {
 }
 
 export const getNeveCatalog = async (token: string = ''): Promise<NeveCatalogModel[]> => {
-	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/catalog`, {
+	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/catalog`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -213,7 +213,7 @@ export const getNeveCatalog = async (token: string = ''): Promise<NeveCatalogMod
 };
 
 export const startNeveDownload = async (token: string = '', model_id: string): Promise<string> => {
-	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/download`, {
+	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/download`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -231,7 +231,7 @@ export const startNeveDownload = async (token: string = '', model_id: string): P
 };
 
 export const getActiveNeveDownload = async (token: string = ''): Promise<NeveDownloadState | null> => {
-	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/download/active`, {
+	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/download/active`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -250,7 +250,7 @@ export const cancelNeveDownload = async (
 	token: string = '',
 	task_id: string
 ): Promise<NeveDownloadState> => {
-	const res = await fetch(`${WEBUI_BASE_URL}/llamacpp/download/cancel/${task_id}`, {
+	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/download/cancel/${task_id}`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -272,7 +272,7 @@ export const streamNeveDownload = (
 	onError: (err: any) => void,
 	onCancel?: (state: NeveDownloadState) => void
 ): EventSource => {
-	const url = `${WEBUI_BASE_URL}/llamacpp/download/status/${task_id}`;
+	const url = `${NEVEAI_BASE_URL}/llamacpp/download/status/${task_id}`;
 	const es = new EventSource(url);
 	es.onmessage = (e) => {
 		try {

@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import inspect
 import json
 import logging
@@ -373,10 +373,10 @@ from neveai.config import (
     YANDEX_WEB_SEARCH_API_KEY,
     YANDEX_WEB_SEARCH_CONFIG,
     YOUCOM_API_KEY,
-    # WebUI
-    WEBUI_AUTH,
-    WEBUI_NAME,
-    WEBUI_BANNERS,
+    # NeveAI
+    NEVEAI_AUTH,
+    NEVEAI_NAME,
+    NEVEAI_BANNERS,
     WEBHOOK_URL,
     ADMIN_EMAIL,
     SHOW_ADMIN_DETAILS,
@@ -409,7 +409,7 @@ from neveai.config import (
     DEFAULT_MODEL_METADATA,
     DEFAULT_MODEL_PARAMS,
     EVALUATION_ARENA_MODELS,
-    # WebUI (OAuth)
+    # NeveAI (OAuth)
     ENABLE_OAUTH_ROLE_MANAGEMENT,
     OAUTH_ROLES_CLAIM,
     OAUTH_EMAIL_CLAIM,
@@ -417,7 +417,7 @@ from neveai.config import (
     OAUTH_USERNAME_CLAIM,
     OAUTH_ALLOWED_ROLES,
     OAUTH_ADMIN_ROLES,
-    # WebUI (LDAP)
+    # NeveAI (LDAP)
     ENABLE_LDAP,
     LDAP_SERVER_LABEL,
     LDAP_SERVER_HOST,
@@ -444,7 +444,7 @@ from neveai.config import (
     CORS_ALLOW_ORIGIN,
     DEFAULT_LOCALE,
     OAUTH_PROVIDERS,
-    WEBUI_URL,
+    NEVEAI_URL,
     RESPONSE_WATERMARK,
     # Admin
     ENABLE_ADMIN_CHAT_ACCESS,
@@ -487,14 +487,14 @@ from neveai.env import (
     VERSION,
     DEPLOYMENT_ID,
     INSTANCE_ID,
-    WEBUI_BUILD_HASH,
-    WEBUI_SECRET_KEY,
-    WEBUI_SESSION_COOKIE_SAME_SITE,
-    WEBUI_SESSION_COOKIE_SECURE,
+    NEVEAI_BUILD_HASH,
+    NEVEAI_SECRET_KEY,
+    NEVEAI_SESSION_COOKIE_SAME_SITE,
+    NEVEAI_SESSION_COOKIE_SECURE,
     ENABLE_SIGNUP_PASSWORD_CONFIRMATION,
-    WEBUI_AUTH_TRUSTED_EMAIL_HEADER,
-    WEBUI_AUTH_TRUSTED_NAME_HEADER,
-    WEBUI_AUTH_SIGNOUT_REDIRECT_URL,
+    NEVEAI_AUTH_TRUSTED_EMAIL_HEADER,
+    NEVEAI_AUTH_TRUSTED_NAME_HEADER,
+    NEVEAI_AUTH_SIGNOUT_REDIRECT_URL,
     # SCIM
     ENABLE_SCIM,
     SCIM_TOKEN,
@@ -509,9 +509,9 @@ from neveai.env import (
     ENABLE_STAR_SESSIONS_MIDDLEWARE,
     ENABLE_PUBLIC_ACTIVE_USERS_COUNT,
     # Admin Account Runtime Creation
-    WEBUI_ADMIN_EMAIL,
-    WEBUI_ADMIN_PASSWORD,
-    WEBUI_ADMIN_NAME,
+    NEVEAI_ADMIN_EMAIL,
+    NEVEAI_ADMIN_PASSWORD,
+    NEVEAI_ADMIN_NAME,
     ENABLE_EASTER_EGGS,
     LOG_FORMAT,
 )
@@ -630,8 +630,8 @@ async def lifespan(app: FastAPI):
         get_license_data(app, LICENSE_KEY)
 
     # Create admin account from env vars if specified and no users exist
-    if WEBUI_ADMIN_EMAIL and WEBUI_ADMIN_PASSWORD:
-        if create_admin_user(WEBUI_ADMIN_EMAIL, WEBUI_ADMIN_PASSWORD, WEBUI_ADMIN_NAME):
+    if NEVEAI_ADMIN_EMAIL and NEVEAI_ADMIN_PASSWORD:
+        if create_admin_user(NEVEAI_ADMIN_EMAIL, NEVEAI_ADMIN_PASSWORD, NEVEAI_ADMIN_NAME):
             # Disable signup since we now have an admin
             app.state.config.ENABLE_SIGNUP = False
 
@@ -751,7 +751,7 @@ app.state.config = AppConfig(
 )
 app.state.redis = None
 
-app.state.WEBUI_NAME = WEBUI_NAME
+app.state.NEVEAI_NAME = NEVEAI_NAME
 app.state.LICENSE_METADATA = None
 
 
@@ -844,11 +844,11 @@ app.state.BASE_MODELS = []
 
 ########################################
 #
-# WEBUI
+# NEVEAI
 #
 ########################################
 
-app.state.config.WEBUI_URL = WEBUI_URL
+app.state.config.NEVEAI_URL = NEVEAI_URL
 app.state.config.ENABLE_SIGNUP = ENABLE_SIGNUP
 app.state.config.ENABLE_LOGIN_FORM = ENABLE_LOGIN_FORM
 
@@ -882,7 +882,7 @@ app.state.config.RESPONSE_WATERMARK = RESPONSE_WATERMARK
 
 app.state.config.USER_PERMISSIONS = USER_PERMISSIONS
 app.state.config.WEBHOOK_URL = WEBHOOK_URL
-app.state.config.BANNERS = WEBUI_BANNERS
+app.state.config.BANNERS = NEVEAI_BANNERS
 
 
 app.state.config.ENABLE_FOLDERS = ENABLE_FOLDERS
@@ -942,9 +942,9 @@ app.state.config.ENABLE_LDAP_GROUP_CREATION = ENABLE_LDAP_GROUP_CREATION
 app.state.config.LDAP_ATTRIBUTE_FOR_GROUPS = LDAP_ATTRIBUTE_FOR_GROUPS
 
 
-app.state.AUTH_TRUSTED_EMAIL_HEADER = WEBUI_AUTH_TRUSTED_EMAIL_HEADER
-app.state.AUTH_TRUSTED_NAME_HEADER = WEBUI_AUTH_TRUSTED_NAME_HEADER
-app.state.WEBUI_AUTH_SIGNOUT_REDIRECT_URL = WEBUI_AUTH_SIGNOUT_REDIRECT_URL
+app.state.AUTH_TRUSTED_EMAIL_HEADER = NEVEAI_AUTH_TRUSTED_EMAIL_HEADER
+app.state.AUTH_TRUSTED_NAME_HEADER = NEVEAI_AUTH_TRUSTED_NAME_HEADER
+app.state.NEVEAI_AUTH_SIGNOUT_REDIRECT_URL = NEVEAI_AUTH_SIGNOUT_REDIRECT_URL
 app.state.EXTERNAL_PWA_MANIFEST_URL = EXTERNAL_PWA_MANIFEST_URL
 
 app.state.USER_COUNT = None
@@ -1400,7 +1400,7 @@ app.state.config.VOICE_MODE_PROMPT_TEMPLATE = VOICE_MODE_PROMPT_TEMPLATE
 
 ########################################
 #
-# WEBUI
+# NEVEAI
 #
 ########################################
 
@@ -2102,7 +2102,7 @@ async def get_app_config(request: Request):
             data = decode_token(token)
         except Exception as e:
             log.debug(e)
-            if WEBUI_AUTH:
+            if NEVEAI_AUTH:
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid token",
@@ -2111,7 +2111,7 @@ async def get_app_config(request: Request):
         if data is not None and "id" in data:
             user = Users.get_user_by_id(data["id"])
 
-    if user is None and not WEBUI_AUTH:
+    if user is None and not NEVEAI_AUTH:
         user = get_or_create_no_auth_user()
 
     user_count = Users.get_num_users()
@@ -2123,7 +2123,7 @@ async def get_app_config(request: Request):
     return {
         **({"onboarding": True} if onboarding else {}),
         "status": True,
-        "name": app.state.WEBUI_NAME,
+        "name": app.state.NEVEAI_NAME,
         "version": VERSION,
         "default_locale": str(DEFAULT_LOCALE),
         "oauth": {
@@ -2133,13 +2133,13 @@ async def get_app_config(request: Request):
             }
         },
         "features": {
-            "auth": WEBUI_AUTH,
+            "auth": NEVEAI_AUTH,
             "auth_trusted_header": bool(app.state.AUTH_TRUSTED_EMAIL_HEADER),
             "enable_signup_password_confirmation": ENABLE_SIGNUP_PASSWORD_CONFIRMATION,
             "enable_ldap": app.state.config.ENABLE_LDAP,
             "enable_api_keys": app.state.config.ENABLE_API_KEYS,
-            "enable_signup": False if not WEBUI_AUTH else app.state.config.ENABLE_SIGNUP,
-            "enable_login_form": False if not WEBUI_AUTH else app.state.config.ENABLE_LOGIN_FORM,
+            "enable_signup": False if not NEVEAI_AUTH else app.state.config.ENABLE_SIGNUP,
+            "enable_login_form": False if not NEVEAI_AUTH else app.state.config.ENABLE_LOGIN_FORM,
             "enable_websocket": ENABLE_WEBSOCKET_SUPPORT,
             "enable_version_update_check": ENABLE_VERSION_UPDATE_CHECK,
             "enable_public_active_users_count": ENABLE_PUBLIC_ACTIVE_USERS_COUNT,
@@ -2421,8 +2421,8 @@ try:
             StarSessionsMiddleware,
             store=redis_session_store,
             cookie_name="owui-session",
-            cookie_same_site=WEBUI_SESSION_COOKIE_SAME_SITE,
-            cookie_https_only=WEBUI_SESSION_COOKIE_SECURE,
+            cookie_same_site=NEVEAI_SESSION_COOKIE_SAME_SITE,
+            cookie_https_only=NEVEAI_SESSION_COOKIE_SECURE,
         )
         log.info("Using Redis for session")
     else:
@@ -2430,10 +2430,10 @@ try:
 except Exception as e:
     app.add_middleware(
         SessionMiddleware,
-        secret_key=WEBUI_SECRET_KEY,
+        secret_key=NEVEAI_SECRET_KEY,
         session_cookie="owui-session",
-        same_site=WEBUI_SESSION_COOKIE_SAME_SITE,
-        https_only=WEBUI_SESSION_COOKIE_SECURE,
+        same_site=NEVEAI_SESSION_COOKIE_SAME_SITE,
+        https_only=NEVEAI_SESSION_COOKIE_SECURE,
     )
 
 
@@ -2583,9 +2583,9 @@ async def get_manifest_json():
         return requests.get(app.state.EXTERNAL_PWA_MANIFEST_URL).json()
     else:
         return {
-            "name": app.state.WEBUI_NAME,
-            "short_name": app.state.WEBUI_NAME,
-            "description": f"{app.state.WEBUI_NAME} is a private, local-first AI workspace.",
+            "name": app.state.NEVEAI_NAME,
+            "short_name": app.state.NEVEAI_NAME,
+            "description": f"{app.state.NEVEAI_NAME} is a private, local-first AI workspace.",
             "start_url": "/",
             "display": "standalone",
             "background_color": "#343541",
@@ -2615,12 +2615,12 @@ async def get_manifest_json():
 async def get_opensearch_xml():
     xml_content = rf"""
     <OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/" xmlns:moz="http://www.mozilla.org/2006/browser/search/">
-    <ShortName>{app.state.WEBUI_NAME}</ShortName>
-    <Description>Search {app.state.WEBUI_NAME}</Description>
+    <ShortName>{app.state.NEVEAI_NAME}</ShortName>
+    <Description>Search {app.state.NEVEAI_NAME}</Description>
     <InputEncoding>UTF-8</InputEncoding>
-    <Image width="16" height="16" type="image/x-icon">{app.state.config.WEBUI_URL}/static/favicon.png</Image>
-    <Url type="text/html" method="get" template="{app.state.config.WEBUI_URL}/?q={"{searchTerms}"}"/>
-    <moz:SearchForm>{app.state.config.WEBUI_URL}</moz:SearchForm>
+    <Image width="16" height="16" type="image/x-icon">{app.state.config.NEVEAI_URL}/static/favicon.png</Image>
+    <Url type="text/html" method="get" template="{app.state.config.NEVEAI_URL}/?q={"{searchTerms}"}"/>
+    <moz:SearchForm>{app.state.config.NEVEAI_URL}</moz:SearchForm>
     </OpenSearchDescription>
     """
     return Response(content=xml_content, media_type="application/xml")

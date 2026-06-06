@@ -36,12 +36,12 @@ from neveai.env import (
     PASSWORD_VALIDATION_HINT,
     PASSWORD_VALIDATION_REGEX_PATTERN,
     REDIS_KEY_PREFIX,
-    WEBUI_AUTH,
+    NEVEAI_AUTH,
     pk,
-    WEBUI_SECRET_KEY,
+    NEVEAI_SECRET_KEY,
     TRUSTED_SIGNATURE_KEY,
     STATIC_DIR,
-    WEBUI_AUTH_TRUSTED_EMAIL_HEADER,
+    NEVEAI_AUTH_TRUSTED_EMAIL_HEADER,
 )
 
 from fastapi import BackgroundTasks, Depends, HTTPException, Request, Response, status
@@ -49,7 +49,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 log = logging.getLogger(__name__)
 
-SESSION_SECRET = WEBUI_SECRET_KEY
+SESSION_SECRET = NEVEAI_SECRET_KEY
 ALGORITHM = "HS256"
 
 ##############
@@ -95,7 +95,7 @@ def get_license_data(app, key):
             elif k == "count":
                 setattr(app.state, "USER_COUNT", v)
             elif k == "name":
-                setattr(app.state, "WEBUI_NAME", v)
+                setattr(app.state, "NEVEAI_NAME", v)
             elif k == "metadata":
                 setattr(app.state, "LICENSE_METADATA", v)
 
@@ -317,7 +317,7 @@ async def get_current_user(
         token = request.state.token.credentials
 
     if token is None:
-        if not WEBUI_AUTH:
+        if not NEVEAI_AUTH:
             user = get_or_create_no_auth_user()
             current_span = trace.get_current_span()
             if current_span:
@@ -369,9 +369,9 @@ async def get_current_user(
                     detail=ERROR_MESSAGES.INVALID_TOKEN,
                 )
             else:
-                if WEBUI_AUTH_TRUSTED_EMAIL_HEADER:
+                if NEVEAI_AUTH_TRUSTED_EMAIL_HEADER:
                     trusted_email = request.headers.get(
-                        WEBUI_AUTH_TRUSTED_EMAIL_HEADER, ""
+                        NEVEAI_AUTH_TRUSTED_EMAIL_HEADER, ""
                     ).lower()
                     if trusted_email and user.email != trusted_email:
                         raise HTTPException(
@@ -409,7 +409,7 @@ async def get_current_user(
         if request.cookies.get("oauth_session_id"):
             response.delete_cookie("oauth_session_id")
 
-        if not WEBUI_AUTH:
+        if not NEVEAI_AUTH:
             return get_or_create_no_auth_user()
 
         raise e

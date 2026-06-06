@@ -1,4 +1,4 @@
-import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { NEVEAI_API_BASE_URL } from '$lib/constants';
 import { splitStream } from '$lib/utils';
 
 export const uploadFile = async (
@@ -20,7 +20,7 @@ export const uploadFile = async (
 
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/files/?${searchParams.toString()}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/files/?${searchParams.toString()}`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -99,7 +99,7 @@ export const getFileProcessStatus = async (token: string, id: string) => {
 	queryParams.append('stream', 'true');
 
 	let error = null;
-	const res = await fetch(`${WEBUI_API_BASE_URL}/files/${id}/process/status?${queryParams}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/files/${id}/process/status?${queryParams}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -121,7 +121,7 @@ export const getFileProcessStatus = async (token: string, id: string) => {
 export const uploadDir = async (token: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/files/upload/dir`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/files/upload/dir`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -147,7 +147,7 @@ export const uploadDir = async (token: string) => {
 export const getFiles = async (token: string = '') => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/files/`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/files/`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -188,7 +188,7 @@ export const searchFiles = async (
 	searchParams.append('skip', String(skip));
 	searchParams.append('limit', String(limit));
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/files/search?${searchParams.toString()}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/files/search?${searchParams.toString()}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -216,7 +216,7 @@ export const searchFiles = async (
 export const getFileById = async (token: string, id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/files/${id}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/files/${id}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -247,7 +247,7 @@ export const getFileById = async (token: string, id: string) => {
 export const updateFileDataContentById = async (token: string, id: string, content: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/files/${id}/data/content/update`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/files/${id}/data/content/update`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -281,7 +281,7 @@ export const updateFileDataContentById = async (token: string, id: string, conte
 export const getFileContentById = async (id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/files/${id}/content`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/files/${id}/content`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json'
@@ -309,7 +309,7 @@ export const getFileContentById = async (id: string) => {
 export const deleteFileById = async (token: string, id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/files/${id}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/files/${id}`, {
 		method: 'DELETE',
 		headers: {
 			Accept: 'application/json',
@@ -340,7 +340,7 @@ export const deleteFileById = async (token: string, id: string) => {
 export const deleteAllFiles = async (token: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/files/all`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/files/all`, {
 		method: 'DELETE',
 		headers: {
 			Accept: 'application/json',

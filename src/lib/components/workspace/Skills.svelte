@@ -6,7 +6,7 @@
 	import { onMount, getContext, tick, onDestroy } from 'svelte';
 	const i18n = getContext('i18n');
 
-	import { WEBUI_NAME, user, skills as _skills } from '$lib/stores';
+	import { NEVEAI_NAME, user, skills as _skills } from '$lib/stores';
 	import { goto } from '$app/navigation';
 	import {
 		getSkills,
@@ -177,7 +177,7 @@
 
 <svelte:head>
 	<title>
-		{$i18n.t('Skills')} • {$WEBUI_NAME}
+		{$i18n.t('Skills')} • {$NEVEAI_NAME}
 	</title>
 </svelte:head>
 

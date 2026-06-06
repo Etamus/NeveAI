@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount, getContext } from 'svelte';
 	import {
-		WEBUI_NAME,
+		NEVEAI_NAME,
 		showSidebar,
 		user,
 		mobile
@@ -36,7 +36,7 @@
 
 <svelte:head>
 	<title>
-		{$i18n.t('Workspace')} • {$WEBUI_NAME}
+		{$i18n.t('Workspace')} • {$NEVEAI_NAME}
 	</title>
 </svelte:head>
 

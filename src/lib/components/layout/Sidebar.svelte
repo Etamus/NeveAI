@@ -24,7 +24,7 @@
 		isApp,
 		models,
 		selectedFolder,
-		WEBUI_NAME,
+		NEVEAI_NAME,
 		sidebarWidth,
 		activeChatIds
 	} from '$lib/stores';
@@ -43,7 +43,7 @@
 	} from '$lib/apis/chats';
 	import { createNewFolder, getFolders, updateFolderParentIdById } from '$lib/apis/folders';
 	import { checkActiveChats } from '$lib/apis/tasks';
-	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
 	import { generateInitialsImage } from '$lib/utils';
 
 	import UserMenu from './Sidebar/UserMenu.svelte';
@@ -828,7 +828,7 @@
 									<img
 										src={($user?.profile_image_url ?? '').startsWith('data:')
 											? $user?.profile_image_url
-											: `${WEBUI_API_BASE_URL}/users/${$user?.id}/profile/image`}
+											: `${NEVEAI_API_BASE_URL}/users/${$user?.id}/profile/image`}
 										class=" size-7 object-cover rounded-full"
 										alt={$i18n.t('Open User Profile Menu')}
 										aria-label={$i18n.t('Open User Profile Menu')}
@@ -880,10 +880,10 @@
 			>
 				<a href="/" class="flex flex-1 px-1.5" on:click={newChatHandler}>
 					<div
-						id="sidebar-webui-name"
+						id="sidebar-neveai-name"
 						class=" self-center text-lg font-bold text-gray-850 dark:text-white font-primary"
 					>
-						{$WEBUI_NAME}
+						{$NEVEAI_NAME}
 					</div>
 				</a>
 				<Tooltip
@@ -1313,7 +1313,7 @@
 									<img
 										src={($user?.profile_image_url ?? '').startsWith('data:')
 											? $user?.profile_image_url
-											: `${WEBUI_API_BASE_URL}/users/${$user?.id}/profile/image`}
+											: `${NEVEAI_API_BASE_URL}/users/${$user?.id}/profile/image`}
 										class=" size-7 object-cover rounded-full"
 										alt={$i18n.t('Open User Profile Menu')}
 										aria-label={$i18n.t('Open User Profile Menu')}

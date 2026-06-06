@@ -2,7 +2,7 @@
 	import { getContext } from 'svelte';
 	import dayjs from 'dayjs';
 	import calendar from 'dayjs/plugin/calendar';
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Loader from '$lib/components/common/Loader.svelte';
 
@@ -70,7 +70,7 @@
 					{#if showUserInfo && chat.user_id}
 						<div class="w-32 shrink-0 flex items-center gap-2">
 							<img
-								src="{WEBUI_API_BASE_URL}/users/{chat.user_id}/profile/image"
+								src="{NEVEAI_API_BASE_URL}/users/{chat.user_id}/profile/image"
 								alt={chat.user_name || 'User'}
 								class="size-5 rounded-full object-cover shrink-0"
 							/>

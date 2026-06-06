@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
-	import { WEBUI_NAME, config, user, showSidebar } from '$lib/stores';
+	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_NAME, config, user, showSidebar } from '$lib/stores';
 	import { goto } from '$app/navigation';
 	import { onMount, getContext, onDestroy } from 'svelte';
 
@@ -375,7 +375,7 @@
 								<ProfilePreview {user} side="right" align="center" sideOffset={6}>
 									<img
 										class="rounded-full w-6 min-w-6 h-6 object-cover mr-0.5 flex-shrink-0"
-										src={`${WEBUI_API_BASE_URL}/users/${user.id}/profile/image`}
+										src={`${NEVEAI_API_BASE_URL}/users/${user.id}/profile/image`}
 										alt="user"
 									/>
 								</ProfilePreview>

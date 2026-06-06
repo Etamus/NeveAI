@@ -1,4 +1,4 @@
-import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 type ChannelForm = {
 	type?: string;
@@ -14,7 +14,7 @@ type ChannelForm = {
 export const createNewChannel = async (token: string = '', channel: ChannelForm) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/channels/create`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/channels/create`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -46,7 +46,7 @@ export const createNewChannel = async (token: string = '', channel: ChannelForm)
 export const getChannels = async (token: string = '') => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/channels/`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/channels/`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -77,7 +77,7 @@ export const getChannels = async (token: string = '') => {
 export const getChannelById = async (token: string = '', channel_id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/channels/${channel_id}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/channels/${channel_id}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -108,7 +108,7 @@ export const getChannelById = async (token: string = '', channel_id: string) => 
 export const getDMChannelByUserId = async (token: string = '', user_id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/channels/users/${user_id}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/channels/users/${user_id}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -164,7 +164,7 @@ export const getChannelMembersById = async (
 	}
 
 	res = await fetch(
-		`${WEBUI_API_BASE_URL}/channels/${channel_id}/members?${searchParams.toString()}`,
+		`${NEVEAI_API_BASE_URL}/channels/${channel_id}/members?${searchParams.toString()}`,
 		{
 			method: 'GET',
 			headers: {
@@ -197,7 +197,7 @@ export const updateChannelMemberActiveStatusById = async (
 ) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/channels/${channel_id}/members/active`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/channels/${channel_id}/members/active`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -238,7 +238,7 @@ export const addMembersById = async (
 ) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/channels/${channel_id}/update/members/add`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/channels/${channel_id}/update/members/add`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -279,7 +279,7 @@ export const removeMembersById = async (
 ) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/channels/${channel_id}/update/members/remove`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/channels/${channel_id}/update/members/remove`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -315,7 +315,7 @@ export const updateChannelById = async (
 ) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/channels/${channel_id}/update`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/channels/${channel_id}/update`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -347,7 +347,7 @@ export const updateChannelById = async (
 export const deleteChannelById = async (token: string = '', channel_id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/channels/${channel_id}/delete`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/channels/${channel_id}/delete`, {
 		method: 'DELETE',
 		headers: {
 			Accept: 'application/json',
@@ -384,7 +384,7 @@ export const getChannelMessages = async (
 	let error = null;
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/channels/${channel_id}/messages?skip=${skip}&limit=${limit}`,
+		`${NEVEAI_API_BASE_URL}/channels/${channel_id}/messages?skip=${skip}&limit=${limit}`,
 		{
 			method: 'GET',
 			headers: {
@@ -422,7 +422,7 @@ export const getChannelPinnedMessages = async (
 	let error = null;
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/channels/${channel_id}/messages/pinned?page=${page}`,
+		`${NEVEAI_API_BASE_URL}/channels/${channel_id}/messages/pinned?page=${page}`,
 		{
 			method: 'GET',
 			headers: {
@@ -462,7 +462,7 @@ export const getChannelThreadMessages = async (
 	let error = null;
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/thread?skip=${skip}&limit=${limit}`,
+		`${NEVEAI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/thread?skip=${skip}&limit=${limit}`,
 		{
 			method: 'GET',
 			headers: {
@@ -500,7 +500,7 @@ export const getMessageData = async (
 	let error = null;
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/data`,
+		`${NEVEAI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/data`,
 		{
 			method: 'GET',
 			headers: {
@@ -542,7 +542,7 @@ type MessageForm = {
 export const sendMessage = async (token: string = '', channel_id: string, message: MessageForm) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/channels/${channel_id}/messages/post`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/channels/${channel_id}/messages/post`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -580,7 +580,7 @@ export const pinMessage = async (
 	let error = null;
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/pin`,
+		`${NEVEAI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/pin`,
 		{
 			method: 'POST',
 			headers: {
@@ -620,7 +620,7 @@ export const updateMessage = async (
 	let error = null;
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/update`,
+		`${NEVEAI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/update`,
 		{
 			method: 'POST',
 			headers: {
@@ -660,7 +660,7 @@ export const addReaction = async (
 	let error = null;
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/reactions/add`,
+		`${NEVEAI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/reactions/add`,
 		{
 			method: 'POST',
 			headers: {
@@ -700,7 +700,7 @@ export const removeReaction = async (
 	let error = null;
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/reactions/remove`,
+		`${NEVEAI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/reactions/remove`,
 		{
 			method: 'POST',
 			headers: {
@@ -735,7 +735,7 @@ export const deleteMessage = async (token: string = '', channel_id: string, mess
 	let error = null;
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/delete`,
+		`${NEVEAI_API_BASE_URL}/channels/${channel_id}/messages/${message_id}/delete`,
 		{
 			method: 'DELETE',
 			headers: {
@@ -775,7 +775,7 @@ type WebhookForm = {
 export const getChannelWebhooks = async (token: string = '', channel_id: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/channels/${channel_id}/webhooks`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/channels/${channel_id}/webhooks`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -810,7 +810,7 @@ export const createChannelWebhook = async (
 ) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/channels/${channel_id}/webhooks/create`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/channels/${channel_id}/webhooks/create`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -848,7 +848,7 @@ export const updateChannelWebhook = async (
 	let error = null;
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/channels/${channel_id}/webhooks/${webhook_id}/update`,
+		`${NEVEAI_API_BASE_URL}/channels/${channel_id}/webhooks/${webhook_id}/update`,
 		{
 			method: 'POST',
 			headers: {
@@ -887,7 +887,7 @@ export const deleteChannelWebhook = async (
 	let error = null;
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/channels/${channel_id}/webhooks/${webhook_id}/delete`,
+		`${NEVEAI_API_BASE_URL}/channels/${channel_id}/webhooks/${webhook_id}/delete`,
 		{
 			method: 'DELETE',
 			headers: {

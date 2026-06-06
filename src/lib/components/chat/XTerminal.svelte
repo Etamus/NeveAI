@@ -6,7 +6,7 @@
 	import '@xterm/xterm/css/xterm.css';
 
 	import { terminalServers, settings, selectedTerminalId, user } from '$lib/stores';
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
 	const i18n = getContext('i18n');
@@ -29,7 +29,7 @@
 		const systemMatch = systemTerminals.find((t: any) => t.id === $selectedTerminalId);
 		if (systemMatch) {
 			// For system terminals, WS goes through the Neve backend proxy
-			return { serverId: systemMatch.id, baseUrl: WEBUI_API_BASE_URL };
+			return { serverId: systemMatch.id, baseUrl: NEVEAI_API_BASE_URL };
 		}
 
 		// Direct terminal (user-configured, matched by URL)

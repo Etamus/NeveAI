@@ -13,7 +13,7 @@
 	import AccessControl from '$lib/components/workspace/common/AccessControl.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
-	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_BASE_URL } from '$lib/constants';
 
 	export let show = false;
 	export let edit = false;
@@ -37,7 +37,7 @@
 		}
 	};
 
-	let profileImageUrl = `${WEBUI_BASE_URL}/favicon.png`;
+	let profileImageUrl = `${NEVEAI_BASE_URL}/favicon.png`;
 	let description = '';
 
 	let selectedModelId = '';
@@ -93,7 +93,7 @@
 
 		name = '';
 		id = '';
-		profileImageUrl = `${WEBUI_BASE_URL}/favicon.png`;
+		profileImageUrl = `${NEVEAI_BASE_URL}/favicon.png`;
 		description = '';
 		modelIds = [];
 		selectedModelId = '';

@@ -31,13 +31,13 @@ from neveai.models.oauth_sessions import OAuthSessions
 
 from neveai.constants import ERROR_MESSAGES, WEBHOOK_MESSAGES
 from neveai.env import (
-    WEBUI_AUTH,
-    WEBUI_AUTH_TRUSTED_EMAIL_HEADER,
-    WEBUI_AUTH_TRUSTED_NAME_HEADER,
-    WEBUI_AUTH_TRUSTED_GROUPS_HEADER,
-    WEBUI_AUTH_COOKIE_SAME_SITE,
-    WEBUI_AUTH_COOKIE_SECURE,
-    WEBUI_AUTH_SIGNOUT_REDIRECT_URL,
+    NEVEAI_AUTH,
+    NEVEAI_AUTH_TRUSTED_EMAIL_HEADER,
+    NEVEAI_AUTH_TRUSTED_NAME_HEADER,
+    NEVEAI_AUTH_TRUSTED_GROUPS_HEADER,
+    NEVEAI_AUTH_COOKIE_SAME_SITE,
+    NEVEAI_AUTH_COOKIE_SECURE,
+    NEVEAI_AUTH_SIGNOUT_REDIRECT_URL,
     ENABLE_INITIAL_ADMIN_SIGNUP,
     ENABLE_OAUTH_TOKEN_EXCHANGE,
     AIOHTTP_CLIENT_SESSION_SSL,
@@ -128,8 +128,8 @@ def create_session_response(
             value=token,
             expires=datetime_expires_at,
             httponly=True,
-            samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
-            secure=WEBUI_AUTH_COOKIE_SECURE,
+            samesite=NEVEAI_AUTH_COOKIE_SAME_SITE,
+            secure=NEVEAI_AUTH_COOKIE_SECURE,
         )
 
     user_permissions = get_permissions(
@@ -177,12 +177,12 @@ async def get_session_user(
     auth_token = get_http_authorization_cred(auth_header)
     token = auth_token.credentials if auth_token else request.cookies.get("token")
 
-    if token is None and WEBUI_AUTH == False:
+    if token is None and NEVEAI_AUTH == False:
         return create_session_response(request, user, db, response, set_cookie=True)
 
     data = decode_token(token)
 
-    if data is None and WEBUI_AUTH == False:
+    if data is None and NEVEAI_AUTH == False:
         return create_session_response(request, user, db, response, set_cookie=True)
 
     expires_at = None
@@ -191,7 +191,7 @@ async def get_session_user(
         expires_at = data.get("exp")
 
         if (expires_at is not None) and int(time.time()) > expires_at:
-            if WEBUI_AUTH == False:
+            if NEVEAI_AUTH == False:
                 return create_session_response(
                     request, user, db, response, set_cookie=True
                 )
@@ -211,8 +211,8 @@ async def get_session_user(
                 else None
             ),
             httponly=True,  # Ensures the cookie is not accessible via JavaScript
-            samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
-            secure=WEBUI_AUTH_COOKIE_SECURE,
+            samesite=NEVEAI_AUTH_COOKIE_SAME_SITE,
+            secure=NEVEAI_AUTH_COOKIE_SECURE,
         )
 
     user_permissions = get_permissions(
@@ -300,7 +300,7 @@ async def update_password(
     session_user=Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
-    if WEBUI_AUTH_TRUSTED_EMAIL_HEADER:
+    if NEVEAI_AUTH_TRUSTED_EMAIL_HEADER:
         raise HTTPException(400, detail=ERROR_MESSAGES.ACTION_PROHIBITED)
     if session_user:
         user = Auths.authenticate_user(
@@ -604,7 +604,7 @@ async def noauth(
     response: Response,
     db: Session = Depends(get_session),
 ):
-    if WEBUI_AUTH:
+    if NEVEAI_AUTH:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No-auth session is disabled",
@@ -621,22 +621,22 @@ async def signin(
     form_data: SigninForm,
     db: Session = Depends(get_session),
 ):
-    if WEBUI_AUTH == False:
+    if NEVEAI_AUTH == False:
         user = get_or_create_no_auth_user(db=db)
     elif not ENABLE_PASSWORD_AUTH:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=ERROR_MESSAGES.ACTION_PROHIBITED,
         )
-    elif WEBUI_AUTH_TRUSTED_EMAIL_HEADER:
-        if WEBUI_AUTH_TRUSTED_EMAIL_HEADER not in request.headers:
+    elif NEVEAI_AUTH_TRUSTED_EMAIL_HEADER:
+        if NEVEAI_AUTH_TRUSTED_EMAIL_HEADER not in request.headers:
             raise HTTPException(400, detail=ERROR_MESSAGES.INVALID_TRUSTED_HEADER)
 
-        email = request.headers[WEBUI_AUTH_TRUSTED_EMAIL_HEADER].lower()
+        email = request.headers[NEVEAI_AUTH_TRUSTED_EMAIL_HEADER].lower()
         name = email
 
-        if WEBUI_AUTH_TRUSTED_NAME_HEADER:
-            name = request.headers.get(WEBUI_AUTH_TRUSTED_NAME_HEADER, email)
+        if NEVEAI_AUTH_TRUSTED_NAME_HEADER:
+            name = request.headers.get(NEVEAI_AUTH_TRUSTED_NAME_HEADER, email)
             try:
                 name = urllib.parse.unquote(name, encoding="utf-8")
             except Exception as e:
@@ -652,9 +652,9 @@ async def signin(
             )
 
         user = Auths.authenticate_user_by_email(email, db=db)
-        if WEBUI_AUTH_TRUSTED_GROUPS_HEADER and user and user.role != "admin":
+        if NEVEAI_AUTH_TRUSTED_GROUPS_HEADER and user and user.role != "admin":
             group_names = request.headers.get(
-                WEBUI_AUTH_TRUSTED_GROUPS_HEADER, ""
+                NEVEAI_AUTH_TRUSTED_GROUPS_HEADER, ""
             ).split(",")
             group_names = [name.strip() for name in group_names if name.strip()]
 
@@ -735,7 +735,7 @@ async def signup_handler(
 
     if request.app.state.config.WEBHOOK_URL:
         await post_webhook(
-            request.app.state.WEBUI_NAME,
+            request.app.state.NEVEAI_NAME,
             request.app.state.config.WEBHOOK_URL,
             WEBHOOK_MESSAGES.USER_SIGNUP(user.name),
             {
@@ -763,7 +763,7 @@ async def signup(
 ):
     has_users = Users.has_users(db=db)
 
-    if WEBUI_AUTH:
+    if NEVEAI_AUTH:
         if (
             not request.app.state.config.ENABLE_SIGNUP
             or not request.app.state.config.ENABLE_LOGIN_FORM
@@ -869,8 +869,8 @@ async def signout(
                                         "status": True,
                                         "redirect_url": f"{logout_url}?id_token_hint={oauth_id_token}"
                                         + (
-                                            f"&post_logout_redirect_uri={WEBUI_AUTH_SIGNOUT_REDIRECT_URL}"
-                                            if WEBUI_AUTH_SIGNOUT_REDIRECT_URL
+                                            f"&post_logout_redirect_uri={NEVEAI_AUTH_SIGNOUT_REDIRECT_URL}"
+                                            if NEVEAI_AUTH_SIGNOUT_REDIRECT_URL
                                             else ""
                                         ),
                                     },
@@ -887,12 +887,12 @@ async def signout(
                     headers=response.headers,
                 )
 
-    if WEBUI_AUTH_SIGNOUT_REDIRECT_URL:
+    if NEVEAI_AUTH_SIGNOUT_REDIRECT_URL:
         return JSONResponse(
             status_code=200,
             content={
                 "status": True,
-                "redirect_url": WEBUI_AUTH_SIGNOUT_REDIRECT_URL,
+                "redirect_url": NEVEAI_AUTH_SIGNOUT_REDIRECT_URL,
             },
             headers=response.headers,
         )
@@ -1009,7 +1009,7 @@ async def get_admin_config(request: Request, user=Depends(get_admin_user)):
     return {
         "SHOW_ADMIN_DETAILS": request.app.state.config.SHOW_ADMIN_DETAILS,
         "ADMIN_EMAIL": request.app.state.config.ADMIN_EMAIL,
-        "WEBUI_URL": request.app.state.config.WEBUI_URL,
+        "NEVEAI_URL": request.app.state.config.NEVEAI_URL,
         "ENABLE_SIGNUP": request.app.state.config.ENABLE_SIGNUP,
         "ENABLE_API_KEYS": request.app.state.config.ENABLE_API_KEYS,
         "ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS": request.app.state.config.ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS,
@@ -1035,7 +1035,7 @@ async def get_admin_config(request: Request, user=Depends(get_admin_user)):
 class AdminConfig(BaseModel):
     SHOW_ADMIN_DETAILS: bool
     ADMIN_EMAIL: Optional[str] = None
-    WEBUI_URL: str
+    NEVEAI_URL: str
     ENABLE_SIGNUP: bool
     ENABLE_API_KEYS: bool
     ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS: bool
@@ -1063,7 +1063,7 @@ async def update_admin_config(
 ):
     request.app.state.config.SHOW_ADMIN_DETAILS = form_data.SHOW_ADMIN_DETAILS
     request.app.state.config.ADMIN_EMAIL = form_data.ADMIN_EMAIL
-    request.app.state.config.WEBUI_URL = form_data.WEBUI_URL
+    request.app.state.config.NEVEAI_URL = form_data.NEVEAI_URL
     request.app.state.config.ENABLE_SIGNUP = form_data.ENABLE_SIGNUP
 
     request.app.state.config.ENABLE_API_KEYS = form_data.ENABLE_API_KEYS
@@ -1113,7 +1113,7 @@ async def update_admin_config(
     return {
         "SHOW_ADMIN_DETAILS": request.app.state.config.SHOW_ADMIN_DETAILS,
         "ADMIN_EMAIL": request.app.state.config.ADMIN_EMAIL,
-        "WEBUI_URL": request.app.state.config.WEBUI_URL,
+        "NEVEAI_URL": request.app.state.config.NEVEAI_URL,
         "ENABLE_SIGNUP": request.app.state.config.ENABLE_SIGNUP,
         "ENABLE_API_KEYS": request.app.state.config.ENABLE_API_KEYS,
         "ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS": request.app.state.config.ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS,

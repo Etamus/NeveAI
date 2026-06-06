@@ -15,7 +15,7 @@
 	import { getTerminalServers } from '$lib/apis/terminal';
 	import { getUserSettings } from '$lib/apis/users';
 
-	import { WEBUI_VERSION, WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_VERSION, NEVEAI_API_BASE_URL } from '$lib/constants';
 	import { compareVersion } from '$lib/utils';
 
 	import {
@@ -171,7 +171,7 @@
 			// Store with proxy URL and session key for FileNav file browsing
 			const terminalEntries = systemTerminals.map((t) => ({
 				id: t.id,
-				url: `${WEBUI_API_BASE_URL}/terminals/${t.id}`,
+				url: `${NEVEAI_API_BASE_URL}/terminals/${t.id}`,
 				name: t.name,
 				key: localStorage.token
 			}));
@@ -354,8 +354,8 @@
 	const checkForVersionUpdates = async () => {
 		version = await getVersionUpdates(localStorage.token).catch((error) => {
 			return {
-				current: WEBUI_VERSION,
-				latest: WEBUI_VERSION
+				current: NEVEAI_VERSION,
+				latest: NEVEAI_VERSION
 			};
 		});
 	};

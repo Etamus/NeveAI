@@ -6,7 +6,7 @@
 
 	import { slide } from 'svelte/transition';
 
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
@@ -97,7 +97,7 @@
 								<div class="flex mr-1.5 relative">
 									{#each channelMembers.slice(0, 2) as u, index}
 										<img
-											src={`${WEBUI_API_BASE_URL}/users/${u.id}/profile/image`}
+											src={`${NEVEAI_API_BASE_URL}/users/${u.id}/profile/image`}
 											alt={u.name}
 											class=" size-6.5 rounded-full border-2 border-white dark:border-gray-900 {index ===
 											1

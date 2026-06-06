@@ -7,7 +7,7 @@
 	import { getGravatarUrl } from '$lib/apis/utils';
 	import { canvasPixelTest, generateInitialsImage } from '$lib/utils';
 
-	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_BASE_URL } from '$lib/constants';
 
 	export let profileImageUrl;
 	export let user = null;
@@ -115,7 +115,7 @@
 			class=" text-xs text-center text-gray-500 rounded-lg py-0.5 opacity-0 group-hover:opacity-100 transition-all"
 			type="button"
 			on:click={async () => {
-				profileImageUrl = `${WEBUI_BASE_URL}/user.png`;
+				profileImageUrl = `${NEVEAI_BASE_URL}/user.png`;
 			}}>{$i18n.t('Remove')}</button
 		>
 

@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
 	import { onMount, onDestroy, getContext } from 'svelte';
 	import { fade, slide } from 'svelte/transition';
 	import { marked } from 'marked';
@@ -7,7 +7,7 @@
 	const i18n = getContext('i18n');
 
 	import { config, models as _models, settings, user, showSettingsModelId } from '$lib/stores';
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 
@@ -243,7 +243,7 @@
 		const params = new URLSearchParams({ id: model?.id ?? '' });
 		const version = getModelImageVersion(model);
 		if (version) params.set('v', `${version}`);
-		return `${WEBUI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
+		return `${NEVEAI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
 	};
 	const matchesModelSearch = (item: any, query: string) => {
 		const q = query.trim().toLowerCase();

@@ -16,9 +16,9 @@
 		user,
 		settings,
 		theme,
-		WEBUI_NAME,
-		WEBUI_VERSION,
-		WEBUI_DEPLOYMENT_ID,
+		NEVEAI_NAME,
+		NEVEAI_VERSION,
+		NEVEAI_DEPLOYMENT_ID,
 		mobile,
 		socket,
 		chatId,
@@ -55,7 +55,7 @@
 	import { getNoAuthSession, getSessionUser, userSignOut } from '$lib/apis/auths';
 	import { getAllTags, getChatList } from '$lib/apis/chats';
 
-	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL, WEBUI_HOSTNAME } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL, NEVEAI_HOSTNAME } from '$lib/constants';
 	import { displayFileHandler } from '$lib/utils';
 	import { setTextScale } from '$lib/utils/text-scale';
 
@@ -106,7 +106,7 @@
 
 	const setupSocket = async (enableWebsocket) => {
 		const { io } = await import('socket.io-client');
-		const _socket = io(`${WEBUI_BASE_URL}` || undefined, {
+		const _socket = io(`${NEVEAI_BASE_URL}` || undefined, {
 			reconnection: true,
 			reconnectionDelay: 1000,
 			reconnectionDelayMax: 5000,
@@ -131,8 +131,8 @@
 			/* Version-mismatch reload desabilitado para Neve AI (evita loop com HMR)
 			if (version !== null || deploymentId !== null) {
 				if (
-					($WEBUI_VERSION !== null && version !== $WEBUI_VERSION) ||
-					($WEBUI_DEPLOYMENT_ID !== null && deploymentId !== $WEBUI_DEPLOYMENT_ID)
+					($NEVEAI_VERSION !== null && version !== $NEVEAI_VERSION) ||
+					($NEVEAI_DEPLOYMENT_ID !== null && deploymentId !== $NEVEAI_DEPLOYMENT_ID)
 				) {
 					await unregisterServiceWorkers();
 					location.href = location.href;
@@ -150,11 +150,11 @@
 			}, 30000);
 
 			if (deploymentId !== null) {
-				WEBUI_DEPLOYMENT_ID.set(deploymentId);
+				NEVEAI_DEPLOYMENT_ID.set(deploymentId);
 			}
 
 			if (version !== null) {
-				WEBUI_VERSION.set(version);
+				NEVEAI_VERSION.set(version);
 			}
 
 			console.log('version', version);
@@ -585,12 +585,10 @@
 		}
 	};
 
+	const NEVEAI_TRUSTED_STATS_ORIGINS = ['http://localhost:9999'];
+
 	const windowMessageEventHandler = async (event) => {
-		if (
-			!['https://openwebui.com', 'https://www.openwebui.com', 'http://localhost:9999'].includes(
-				event.origin
-			)
-		) {
+		if (!NEVEAI_TRUSTED_STATS_ORIGINS.includes(event.origin)) {
 			return;
 		}
 
@@ -741,7 +739,7 @@
 		if (backendConfig) {
 			// Save Backend Status to Store
 			await config.set(backendConfig);
-			await WEBUI_NAME.set(backendConfig.name);
+			await NEVEAI_NAME.set(backendConfig.name);
 
 			if ($config) {
 				const enableWebsocket = $config.features?.enable_websocket ?? true;
@@ -833,15 +831,15 @@
 </script>
 
 <svelte:head>
-	<title>{$WEBUI_NAME}</title>
-	<link crossorigin="anonymous" rel="icon" href="{WEBUI_BASE_URL}/static/favicon.png" />
+	<title>{$NEVEAI_NAME}</title>
+	<link crossorigin="anonymous" rel="icon" href="{NEVEAI_BASE_URL}/static/favicon.png" />
 
-	<meta name="apple-mobile-web-app-title" content={$WEBUI_NAME} />
-	<meta name="description" content={$WEBUI_NAME} />
+	<meta name="apple-mobile-web-app-title" content={$NEVEAI_NAME} />
+	<meta name="description" content={$NEVEAI_NAME} />
 	<link
 		rel="search"
 		type="application/opensearchdescription+xml"
-		title={$WEBUI_NAME}
+		title={$NEVEAI_NAME}
 		href="/opensearch.xml"
 		crossorigin="use-credentials"
 	/>

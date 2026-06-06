@@ -5,7 +5,7 @@
 	import Modal from '$lib/components/common/Modal.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
-	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_BASE_URL } from '$lib/constants';
 
 	import {
 		cancelNeveDownload,
@@ -296,7 +296,7 @@
 							disabled={downloading || item.installed}
 						/>
 						<img
-							src="{WEBUI_BASE_URL}/static/favicon.png"
+							src="{NEVEAI_BASE_URL}/static/favicon.png"
 							alt=""
 							class="size-5 rounded-full object-cover shrink-0"
 						/>

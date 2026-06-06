@@ -7,7 +7,7 @@
 	import { channels, mobile, showSidebar, user } from '$lib/stores';
 	import { getUserActiveStatusById } from '$lib/apis/users';
 	import { updateChannelById, updateChannelMemberActiveStatusById } from '$lib/apis/channels';
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 	import Cog6 from '$lib/components/icons/Cog6.svelte';
 	import ChannelModal from './ChannelModal.svelte';
@@ -112,7 +112,7 @@
 						<div class="flex ml-[1px] mr-0.5 relative">
 							{#each channelMembers.slice(0, 2) as u, index}
 								<img
-									src={`${WEBUI_API_BASE_URL}/users/${u.id}/profile/image`}
+									src={`${NEVEAI_API_BASE_URL}/users/${u.id}/profile/image`}
 									alt={u.name}
 									class=" size-5.5 rounded-full border-2 border-white dark:border-gray-900 {index ===
 									1

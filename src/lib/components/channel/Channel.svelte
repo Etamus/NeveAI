@@ -13,7 +13,7 @@
 		showSidebar,
 		socket,
 		user,
-		WEBUI_NAME
+		NEVEAI_NAME
 	} from '$lib/stores';
 	import { getChannelById, getChannelMessages, sendMessage } from '$lib/apis/channels';
 
@@ -285,10 +285,10 @@
 					} else {
 						return e.name;
 					}
-				}, '')} • {$WEBUI_NAME}</title
+				}, '')} • {$NEVEAI_NAME}</title
 		>
 	{:else}
-		<title>#{channel?.name ?? 'Channel'} • {$WEBUI_NAME}</title>
+		<title>#{channel?.name ?? 'Channel'} • {$NEVEAI_NAME}</title>
 	{/if}
 </svelte:head>
 

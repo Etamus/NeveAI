@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount, getContext } from 'svelte';
-	import { WEBUI_NAME, showSidebar, functions, config, user } from '$lib/stores';
+	import { NEVEAI_NAME, showSidebar, functions, config, user } from '$lib/stores';
 	import { goto } from '$app/navigation';
 
 	const i18n = getContext('i18n');
@@ -24,7 +24,7 @@
 
 <svelte:head>
 	<title>
-		{$i18n.t('Notes')} • {$WEBUI_NAME}
+		{$i18n.t('Notes')} • {$NEVEAI_NAME}
 	</title>
 </svelte:head>
 

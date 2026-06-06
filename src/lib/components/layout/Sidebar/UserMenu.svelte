@@ -11,7 +11,7 @@
 
 	import { showSettings, showLocalModelsModal, mobile, showSidebar, user, config } from '$lib/stores';
 
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import QuestionMarkCircle from '$lib/components/icons/QuestionMarkCircle.svelte';
@@ -105,7 +105,7 @@
 				<div class=" flex gap-3.5 w-full p-1.5 items-center">
 					<div class=" items-center flex shrink-0">
 						<img
-							src={`${WEBUI_API_BASE_URL}/users/${$user?.id}/profile/image`}
+							src={`${NEVEAI_API_BASE_URL}/users/${$user?.id}/profile/image`}
 						class=" size-8 object-cover rounded-full"
 							alt="profile"
 						/>

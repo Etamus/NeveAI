@@ -2,7 +2,7 @@ import json
 import logging
 import aiohttp
 
-from neveai.config import WEBUI_FAVICON_URL
+from neveai.config import NEVEAI_FAVICON_URL
 from neveai.env import AIOHTTP_CLIENT_TIMEOUT, VERSION
 
 log = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ async def post_webhook(name: str, url: str, message: str, event_data: dict) -> b
                     {
                         "activityTitle": message,
                         "activitySubtitle": f"{name} ({VERSION}) - {action}",
-                        "activityImage": WEBUI_FAVICON_URL,
+                        "activityImage": NEVEAI_FAVICON_URL,
                         "facts": facts,
                         "markdown": True,
                     }

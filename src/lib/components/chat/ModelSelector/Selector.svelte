@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
 	import { DropdownMenu } from 'bits-ui';
 	import { marked } from 'marked';
 	import Fuse from 'fuse.js';
@@ -13,7 +13,7 @@
 	import { goto } from '$app/navigation';
 
 	import { deleteModel, getOllamaVersion, pullModel, unloadModel } from '$lib/apis/ollama';
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 	import {
 		user,
@@ -77,7 +77,7 @@
 		if (lang) params.set('lang', lang);
 		const version = getModelImageVersion(model);
 		if (version) params.set('v', `${version}`);
-		return `${WEBUI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
+		return `${NEVEAI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
 	};
 
 	let searchValue = '';

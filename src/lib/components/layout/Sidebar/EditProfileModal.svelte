@@ -5,7 +5,7 @@
 	import { user } from '$lib/stores';
 	import { updateUserProfile, getSessionUser } from '$lib/apis/auths';
 	import { generateInitialsImage } from '$lib/utils';
-	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_BASE_URL } from '$lib/constants';
 
 	import Modal from '$lib/components/common/Modal.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
@@ -162,7 +162,7 @@
 						aria-label={$i18n.t('Change profile picture')}
 					>
 						<img
-							src={profileImageUrl !== '' ? profileImageUrl : `${WEBUI_BASE_URL}/user.png`}
+							src={profileImageUrl !== '' ? profileImageUrl : `${NEVEAI_BASE_URL}/user.png`}
 							alt="profile"
 							class="size-24 rounded-full object-cover"
 						/>

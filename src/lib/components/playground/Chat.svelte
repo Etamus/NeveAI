@@ -10,10 +10,10 @@
 
 	import {
 		OLLAMA_API_BASE_URL,
-		WEBUI_API_BASE_URL,
-		WEBUI_BASE_URL
+		NEVEAI_API_BASE_URL,
+		NEVEAI_BASE_URL
 	} from '$lib/constants';
-	import { WEBUI_NAME, config, user, models, settings } from '$lib/stores';
+	import { NEVEAI_NAME, config, user, models, settings } from '$lib/stores';
 	import { flyAndScale } from '$lib/utils/transitions';
 
 	import { chatCompletion } from '$lib/apis/openai';
@@ -105,7 +105,7 @@
 					...messages
 				].filter((message) => message)
 			},
-			`${WEBUI_BASE_URL}/api`
+			`${NEVEAI_BASE_URL}/api`
 		);
 
 		let responseMessage;

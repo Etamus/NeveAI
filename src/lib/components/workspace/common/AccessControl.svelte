@@ -5,7 +5,7 @@
 
 	import { getGroups, getGroupById, getGroupInfoById } from '$lib/apis/groups';
 	import { getUserInfoById } from '$lib/apis/users';
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Badge from '$lib/components/common/Badge.svelte';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
@@ -571,7 +571,7 @@
 						<div class="flex items-center gap-2 w-full flex-1">
 							<img
 								class="rounded-full size-5 object-cover"
-								src={`${WEBUI_API_BASE_URL}/users/${user.id}/profile/image`}
+								src={`${NEVEAI_API_BASE_URL}/users/${user.id}/profile/image`}
 								alt={user.name ?? user.id}
 							/>
 							<div class="w-full">

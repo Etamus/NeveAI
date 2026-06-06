@@ -29,10 +29,10 @@ from neveai.env import (
     REDIS_SENTINEL_PORT,
     FRONTEND_BUILD_DIR,
     OFFLINE_MODE,
-    OPEN_WEBUI_DIR,
-    WEBUI_AUTH,
-    WEBUI_FAVICON_URL,
-    WEBUI_NAME,
+    NEVEAI_DIR,
+    NEVEAI_AUTH,
+    NEVEAI_FAVICON_URL,
+    NEVEAI_NAME,
     log,
 )
 from neveai.internal.db import Base, get_db
@@ -59,10 +59,10 @@ def run_migrations():
         from alembic import command
         from alembic.config import Config
 
-        alembic_cfg = Config(OPEN_WEBUI_DIR / "alembic.ini")
+        alembic_cfg = Config(NEVEAI_DIR / "alembic.ini")
 
         # Set the script location dynamically
-        migrations_path = OPEN_WEBUI_DIR / "migrations"
+        migrations_path = NEVEAI_DIR / "migrations"
         alembic_cfg.set_main_option("script_location", str(migrations_path))
 
         command.upgrade(alembic_cfg, "head")
@@ -288,7 +288,7 @@ class AppConfig:
 
 
 ####################################
-# WEBUI_AUTH (Required for security)
+# NEVEAI_AUTH (Required for security)
 ####################################
 
 ENABLE_API_KEYS = PersistentConfig(
@@ -871,7 +871,7 @@ load_oauth_providers()
 # Static DIR
 ####################################
 
-STATIC_DIR = Path(os.getenv("STATIC_DIR", OPEN_WEBUI_DIR / "static")).resolve()
+STATIC_DIR = Path(os.getenv("STATIC_DIR", NEVEAI_DIR / "static")).resolve()
 
 try:
     if STATIC_DIR.exists():
@@ -1149,11 +1149,11 @@ TERMINAL_SERVER_CONNECTIONS = PersistentConfig(
 )
 
 ####################################
-# WEBUI
+# NEVEAI
 ####################################
 
 
-WEBUI_URL = PersistentConfig("WEBUI_URL", "webui.url", os.environ.get("NEVE_URL", ""))
+NEVEAI_URL = PersistentConfig("NEVEAI_URL", "webui.url", os.environ.get("NEVE_URL", ""))
 
 
 ENABLE_SIGNUP = PersistentConfig(
@@ -1161,7 +1161,7 @@ ENABLE_SIGNUP = PersistentConfig(
     "ui.enable_signup",
     (
         False
-        if not WEBUI_AUTH
+        if not NEVEAI_AUTH
         else os.environ.get("ENABLE_SIGNUP", "True").lower() == "true"
     ),
 )
@@ -1171,7 +1171,7 @@ ENABLE_LOGIN_FORM = PersistentConfig(
     "ui.ENABLE_LOGIN_FORM",
     (
         False
-        if not WEBUI_AUTH
+        if not NEVEAI_AUTH
         else os.environ.get("ENABLE_LOGIN_FORM", "True").lower() == "true"
     ),
 )
@@ -1789,7 +1789,7 @@ except Exception as e:
     log.exception(f"Error loading NEVE_BANNERS: {e}")
     banners = []
 
-WEBUI_BANNERS = PersistentConfig("WEBUI_BANNERS", "ui.banners", banners)
+NEVEAI_BANNERS = PersistentConfig("NEVEAI_BANNERS", "ui.banners", banners)
 
 
 SHOW_ADMIN_DETAILS = PersistentConfig(

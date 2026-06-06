@@ -2,7 +2,7 @@
 	import { getContext } from 'svelte';
 	const i18n = getContext('i18n');
 
-	import { WEBUI_API_BASE_URL, WEBUI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
 
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import Clipboard from '$lib/components/icons/Clipboard.svelte';
@@ -67,7 +67,7 @@
 
 	const copyUrl = () => {
 		navigator.clipboard.writeText(
-			`${WEBUI_API_BASE_URL}/channels/webhooks/${webhook.id}/${webhook.token}`
+			`${NEVEAI_API_BASE_URL}/channels/webhooks/${webhook.id}/${webhook.token}`
 		);
 		toast.success($i18n.t('Copied'));
 	};
@@ -90,7 +90,7 @@
 		on:click={onClick}
 	>
 		<img
-			src={image || `${WEBUI_BASE_URL}/static/favicon.png`}
+			src={image || `${NEVEAI_BASE_URL}/static/favicon.png`}
 			class="rounded-full size-8 object-cover flex-shrink-0"
 			alt=""
 		/>
@@ -124,7 +124,7 @@
 					on:click={() => filesInputElement.click()}
 				>
 					<img
-						src={image || `${WEBUI_BASE_URL}/static/favicon.png`}
+						src={image || `${NEVEAI_BASE_URL}/static/favicon.png`}
 						class="size-8 object-cover"
 						alt=""
 					/>

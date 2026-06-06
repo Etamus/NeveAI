@@ -9,7 +9,7 @@
 
 	import { models, settings, user, terminalServers } from '$lib/stores';
 	import { getTerminalServers } from '$lib/apis/terminal';
-	import { WEBUI_API_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
@@ -78,7 +78,7 @@
 			const systemTerminals = await getTerminalServers(localStorage.token);
 			const systemEntries = systemTerminals.map((t) => ({
 				id: t.id,
-				url: `${WEBUI_API_BASE_URL}/terminals/${t.id}`,
+				url: `${NEVEAI_API_BASE_URL}/terminals/${t.id}`,
 				name: t.name,
 				key: localStorage.token
 			}));

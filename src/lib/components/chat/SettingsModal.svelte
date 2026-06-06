@@ -67,8 +67,8 @@
 				'system settings',
 				'theme',
 				'translate',
-				'webuisettings',
-				'webui settings'
+				'neveaisettings',
+				'neveai settings'
 			]
 		},
 		{

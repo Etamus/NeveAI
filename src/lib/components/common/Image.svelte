@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { WEBUI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_BASE_URL } from '$lib/constants';
 
 	import { settings } from '$lib/stores';
 	import ImagePreview from './ImagePreview.svelte';
@@ -19,7 +19,7 @@
 	const i18n = getContext('i18n');
 
 	let _src = '';
-	$: _src = src.startsWith('/') ? `${WEBUI_BASE_URL}${src}` : src;
+	$: _src = src.startsWith('/') ? `${NEVEAI_BASE_URL}${src}` : src;
 
 	let showImagePreview = false;
 </script>

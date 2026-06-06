@@ -6,18 +6,18 @@ declare const APP_BUILD_HASH: string;
 
 export const APP_NAME = 'Neve';
 
-export const WEBUI_HOSTNAME = browser ? (dev ? `` : ``) : '';
-export const WEBUI_BASE_URL = browser ? (dev ? `` : ``) : ``;
-export const WEBUI_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1`;
+export const NEVEAI_HOSTNAME = browser ? (dev ? `` : ``) : '';
+export const NEVEAI_BASE_URL = browser ? (dev ? `` : ``) : ``;
+export const NEVEAI_API_BASE_URL = `${NEVEAI_BASE_URL}/api/v1`;
 
-export const OLLAMA_API_BASE_URL = `${WEBUI_BASE_URL}/ollama`;
-export const AUDIO_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/audio`;
-export const IMAGES_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/images`;
-export const RETRIEVAL_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/retrieval`;
-export const STABLE_DIFFUSION_API_BASE_URL = `${WEBUI_BASE_URL}/api/v1/stable-diffusion`;
+export const OLLAMA_API_BASE_URL = `${NEVEAI_BASE_URL}/ollama`;
+export const AUDIO_API_BASE_URL = `${NEVEAI_BASE_URL}/api/v1/audio`;
+export const IMAGES_API_BASE_URL = `${NEVEAI_BASE_URL}/api/v1/images`;
+export const RETRIEVAL_API_BASE_URL = `${NEVEAI_BASE_URL}/api/v1/retrieval`;
+export const STABLE_DIFFUSION_API_BASE_URL = `${NEVEAI_BASE_URL}/api/v1/stable-diffusion`;
 
-export const WEBUI_VERSION = APP_VERSION;
-export const WEBUI_BUILD_HASH = APP_BUILD_HASH;
+export const NEVEAI_VERSION = APP_VERSION;
+export const NEVEAI_BUILD_HASH = APP_BUILD_HASH;
 export const REQUIRED_OLLAMA_VERSION = '0.1.16';
 
 export const SUPPORTED_FILE_TYPE = [

@@ -1,9 +1,9 @@
-import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 export const getConfig = async (token: string = '') => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/evaluations/config`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/evaluations/config`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -34,7 +34,7 @@ export const getConfig = async (token: string = '') => {
 export const updateConfig = async (token: string, config: object) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/evaluations/config`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/evaluations/config`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -65,7 +65,7 @@ export const updateConfig = async (token: string, config: object) => {
 export const getAllFeedbacks = async (token: string = '') => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/evaluations/feedbacks/all`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/evaluations/feedbacks/all`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -100,7 +100,7 @@ export const getLeaderboard = async (token: string = '', query: string = '') => 
 	if (query) searchParams.append('query', query);
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/evaluations/leaderboard?${searchParams.toString()}`,
+		`${NEVEAI_API_BASE_URL}/evaluations/leaderboard?${searchParams.toString()}`,
 		{
 			method: 'GET',
 			headers: {
@@ -134,7 +134,7 @@ export const getModelHistory = async (token: string = '', modelId: string, days:
 	searchParams.append('days', days.toString());
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/evaluations/leaderboard/${encodeURIComponent(modelId)}/history?${searchParams.toString()}`,
+		`${NEVEAI_API_BASE_URL}/evaluations/leaderboard/${encodeURIComponent(modelId)}/history?${searchParams.toString()}`,
 		{
 			method: 'GET',
 			headers: {
@@ -170,7 +170,7 @@ export const getFeedbackItems = async (token: string = '', orderBy, direction, p
 	if (page) searchParams.append('page', page.toString());
 
 	const res = await fetch(
-		`${WEBUI_API_BASE_URL}/evaluations/feedbacks/list?${searchParams.toString()}`,
+		`${NEVEAI_API_BASE_URL}/evaluations/feedbacks/list?${searchParams.toString()}`,
 		{
 			method: 'GET',
 			headers: {
@@ -203,7 +203,7 @@ export const getFeedbackItems = async (token: string = '', orderBy, direction, p
 export const exportAllFeedbacks = async (token: string = '') => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/evaluations/feedbacks/all/export`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/evaluations/feedbacks/all/export`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -234,7 +234,7 @@ export const exportAllFeedbacks = async (token: string = '') => {
 export const createNewFeedback = async (token: string, feedback: object) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/evaluations/feedback`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/evaluations/feedback`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -265,7 +265,7 @@ export const createNewFeedback = async (token: string, feedback: object) => {
 export const getFeedbackById = async (token: string, feedbackId: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/evaluations/feedback/${feedbackId}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/evaluations/feedback/${feedbackId}`, {
 		method: 'GET',
 		headers: {
 			Accept: 'application/json',
@@ -296,7 +296,7 @@ export const getFeedbackById = async (token: string, feedbackId: string) => {
 export const updateFeedbackById = async (token: string, feedbackId: string, feedback: object) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/evaluations/feedback/${feedbackId}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/evaluations/feedback/${feedbackId}`, {
 		method: 'POST',
 		headers: {
 			Accept: 'application/json',
@@ -327,7 +327,7 @@ export const updateFeedbackById = async (token: string, feedbackId: string, feed
 export const deleteFeedbackById = async (token: string, feedbackId: string) => {
 	let error = null;
 
-	const res = await fetch(`${WEBUI_API_BASE_URL}/evaluations/feedback/${feedbackId}`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/evaluations/feedback/${feedbackId}`, {
 		method: 'DELETE',
 		headers: {
 			Accept: 'application/json',

@@ -1,4 +1,4 @@
-﻿import base64
+import base64
 import copy
 import hashlib
 import logging
@@ -67,9 +67,9 @@ from neveai.config import (
 from neveai.constants import ERROR_MESSAGES, WEBHOOK_MESSAGES
 from neveai.env import (
     AIOHTTP_CLIENT_SESSION_SSL,
-    WEBUI_NAME,
-    WEBUI_AUTH_COOKIE_SAME_SITE,
-    WEBUI_AUTH_COOKIE_SECURE,
+    NEVEAI_NAME,
+    NEVEAI_AUTH_COOKIE_SAME_SITE,
+    NEVEAI_AUTH_COOKIE_SECURE,
     ENABLE_OAUTH_ID_TOKEN_COOKIE,
     ENABLE_OAUTH_EMAIL_FALLBACK,
     OAUTH_CLIENT_INFO_ENCRYPTION_KEY,
@@ -359,7 +359,7 @@ async def get_oauth_client_info_with_dynamic_client_registration(
         oauth_server_metadata_url = None
 
         redirect_base_url = (
-            str(request.app.state.config.WEBUI_URL or request.base_url)
+            str(request.app.state.config.NEVEAI_URL or request.base_url)
         ).rstrip("/")
 
         oauth_client_metadata = OAuthClientMetadata(
@@ -929,7 +929,7 @@ class OAuthClientManager:
             )
 
         redirect_url = (
-            str(request.app.state.config.WEBUI_URL or request.base_url)
+            str(request.app.state.config.NEVEAI_URL or request.base_url)
         ).rstrip("/")
 
         if error_message:
@@ -1657,7 +1657,7 @@ class OAuthManager:
 
                     if auth_manager_config.WEBHOOK_URL:
                         await post_webhook(
-                            WEBUI_NAME,
+                            NEVEAI_NAME,
                             auth_manager_config.WEBHOOK_URL,
                             WEBHOOK_MESSAGES.USER_SIGNUP(user.name),
                             {
@@ -1701,7 +1701,7 @@ class OAuthManager:
             )
 
         redirect_base_url = (
-            str(request.app.state.config.WEBUI_URL or request.base_url)
+            str(request.app.state.config.NEVEAI_URL or request.base_url)
         ).rstrip("/")
         redirect_url = f"{redirect_base_url}/auth"
 
@@ -1719,8 +1719,8 @@ class OAuthManager:
             key="token",
             value=jwt_token,
             httponly=False,  # Required for frontend access
-            samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
-            secure=WEBUI_AUTH_COOKIE_SECURE,
+            samesite=NEVEAI_AUTH_COOKIE_SAME_SITE,
+            secure=NEVEAI_AUTH_COOKIE_SECURE,
         )
 
         # Legacy cookies for compatibility with older frontend versions
@@ -1729,8 +1729,8 @@ class OAuthManager:
                 key="oauth_id_token",
                 value=token.get("id_token"),
                 httponly=True,
-                samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
-                secure=WEBUI_AUTH_COOKIE_SECURE,
+                samesite=NEVEAI_AUTH_COOKIE_SAME_SITE,
+                secure=NEVEAI_AUTH_COOKIE_SECURE,
             )
 
         try:
@@ -1766,8 +1766,8 @@ class OAuthManager:
                     key="oauth_session_id",
                     value=session.id,
                     httponly=True,
-                    samesite=WEBUI_AUTH_COOKIE_SAME_SITE,
-                    secure=WEBUI_AUTH_COOKIE_SECURE,
+                    samesite=NEVEAI_AUTH_COOKIE_SAME_SITE,
+                    secure=NEVEAI_AUTH_COOKIE_SECURE,
                 )
 
                 log.info(

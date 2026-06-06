@@ -15,7 +15,7 @@ export type TerminalFeatures = {
 	terminal?: boolean;
 };
 
-import { WEBUI_API_BASE_URL } from '$lib/constants';
+import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 export type TerminalServer = {
 	id: string;
@@ -24,7 +24,7 @@ export type TerminalServer = {
 };
 
 export const getTerminalServers = async (token: string): Promise<TerminalServer[]> => {
-	const res = await fetch(`${WEBUI_API_BASE_URL}/terminals/`, {
+	const res = await fetch(`${NEVEAI_API_BASE_URL}/terminals/`, {
 		headers: {
 			Authorization: `Bearer ${token}`
 		}
