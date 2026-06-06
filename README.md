@@ -32,7 +32,7 @@
 ### Pré-requisitos
 
 - **Python 3.11 ou 3.12** instalado e no PATH
-- **Node.js 18+** instalado e no PATH
+- **Node.js 18+** instalado e no PATH (Opcional)
 - Conexão com a internet (apenas durante a instalação)
 
 ### Executar o instalador
@@ -195,7 +195,7 @@ Neve AI/
 - Tema claro/escuro
 
 ### Entrada
-- Upload de arquivos: PDF, DOCX, PPTX, imagens, vídeo, código, planilhas
+- Upload de arquivos: PDF, DOCX, PPTX, imagens, áudios, vídeos, códigos, planilhas
 
 ### RAG (Retrieval-Augmented Generation)
 - Base de conhecimento vetorial com ChromaDB
@@ -224,7 +224,7 @@ Neve AI/
 | Tailwind CSS | 4.2.1 |
 | TipTap (editor) | 3.0.7+ |
 | CodeMirror | 6.x |
-| Pyodide | embutido |
+| Pyodide | Embutido |
 
 ### Backend
 
@@ -250,6 +250,15 @@ npm run build
 Copy-Item -Path "build\*" -Destination "backend\neveai\frontend" -Recurse -Force
 ```
 
+Ou de forma automática via
+```bat
+Buldar.bat
+```
+
+<h1 align="center">
+<img width="771" alt="{B449DCF9-28DA-4E2E-BE72-03E60F299801}" src="https://github.com/user-attachments/assets/a4caa557-a8b3-4d9b-8b88-d7fc6db3376f" />
+</h1>
+
 ### Dev mode (hot reload)
 
 ```powershell
@@ -263,6 +272,8 @@ npm run dev
 
 Frontend de dev disponível em `http://localhost:5173` (proxy para o backend em 8080).
 ```
+
+---
 
 ## Autoria e Propriedade
 
