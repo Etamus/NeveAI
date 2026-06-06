@@ -921,14 +921,10 @@ if frontend_loader.exists():
 
 
 ####################################
-# CUSTOM_NAME (Legacy — disabled, depended on api.openwebui.com)
+# CUSTOM_NAME
 ####################################
 
 CUSTOM_NAME = os.environ.get("CUSTOM_NAME", "")
-# Bloco antigo removido: chamava https://api.openwebui.com/api/v1/custom/{CUSTOM_NAME}
-# Esse serviço não pertence ao Neve AI. Para customizar nome/logo use NEVE_NAME e
-# substitua /static/favicon.png diretamente.
-
 
 ####################################
 # STORAGE PROVIDER

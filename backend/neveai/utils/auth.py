@@ -116,7 +116,6 @@ def get_license_data(app, key):
             )
 
     if key:
-        # License validation endpoints removed (depended on api.openwebui.com).
         us = []
         try:
             for u in us:

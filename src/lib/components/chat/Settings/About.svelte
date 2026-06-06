@@ -144,7 +144,7 @@
 
 		<div class="mt-2 text-xs text-gray-400 dark:text-gray-500">
 			Emoji graphics provided by
-			<a href="https://github.com/jdecked/twemoji" target="_blank">Twemoji</a>, licensed under
+			<a href="https://github.com/Etamus" target="_blank">Twemoji</a>, licensed under
 			<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC-BY 4.0</a>.
 		</div>
 
@@ -164,7 +164,7 @@
 			{$i18n.t('Created by')}
 			<a
 				class=" text-gray-500 dark:text-gray-300 font-medium"
-				href="https://github.com/tjbck"
+				href="https://github.com/Etamus"
 				target="_blank">Timothy J. Baek</a
 			>
 		</div>
