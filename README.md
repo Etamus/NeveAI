@@ -2,7 +2,7 @@
 
 ---
 
-**Neve AI** é um ecossistema de orquestração de IA privacy-first, desenvolvido para oferecer uma experiência de inferência local de alta performance com soberania total de dados. A plataforma integra um backend assíncrono em FastAPI a uma interface reativa em SvelteKit 5, utilizando o motor llama.cpp para viabilizar o suporte a modelos GGUF com aceleração de hardware (CUDA/Vulkan). O projeto consolida funcionalidades avançadas de nível empresarial em um ambiente 100% offline, incluindo um pipeline de RAG híbrido (ChromaDB/BM25), execução de código em sandbox via Pyodide, automação de busca web e ferramentas de produtividade, eliminando qualquer dependência de APIs externas ou serviços de terceiros.
+**Neve AI** é um ecossistema local de orquestração de IA privacy-first, desenvolvido para oferecer uma experiência de alta performance na execução de LLMs de forma acessível, privada e independente. O projeto busca reduzir a dependência de grandes plataformas, assinaturas caras e APIs externas, oferecendo ao usuário uma alternativa própria para conversar com modelos, trabalhar com documentos, automatizar tarefas e explorar o potencial da inteligência artificial diretamente no computador. O projeto consolida funcionalidades avançadas de nível empresarial em um ambiente completamente offline, integrando um backend assíncrono em FastAPI a uma interface reativa em SvelteKit 5 e utilizando o motor llama.cpp para viabilizar o suporte a modelos GGUF com aceleração de hardware via CUDA/Vulkan.
 
 ---
 
@@ -277,7 +277,7 @@ Frontend de dev disponível em `http://localhost:5173` (proxy para o backend em 
 
 ---
 
-## Autoria e Propriedade
+## Autoria
 
 Neve AI é um projeto original de propriedade de Mateus Lopes, publicado oficialmente em:
 https://github.com/Etamus/NeveAI
