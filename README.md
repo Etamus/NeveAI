@@ -263,3 +263,12 @@ npm run dev
 
 Frontend de dev disponível em `http://localhost:5173` (proxy para o backend em 8080).
 ```
+
+## Autoria e Propriedade
+
+Neve AI é um projeto original de propriedade de Mateus Lopes, publicado oficialmente em:
+https://github.com/Etamus/NeveAI
+
+Copyright (c) 2026 Mateus Lopes. Todos os direitos reservados.
+
+"Neve AI" e sua identidade visual são marcas/propriedade de Mateus Lopes. Este repositório é a fonte oficial do projeto. Qualquer cópia, redistribuição ou modificação deve preservar a atribuição ao autor original conforme LICENSE.txt.
