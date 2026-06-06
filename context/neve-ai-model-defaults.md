@@ -1,3 +1,0 @@
-- Model defaults rule: `ModelSettingsModal` defaults are effective only for models with no meaningful saved params and no saved `capabilities`/`defaultFeatureIds`/`builtinTools`.
-- Editor/detail flows should request raw model data (`raw=true`); chat controls and runtime calls use effective defaults so clean local models show inherited params in controls.
-- `cache_type` is ignored as a model param; it belongs to local load preferences.

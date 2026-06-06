@@ -1,3 +1,0 @@
-- No-login mode uses `NEVE_AUTH=False`/`WEBUI_AUTH=False` and should preserve a technical local admin session (`admin@localhost`) so FastAPI dependencies expecting `user` keep working.
-- Backend endpoint `POST /api/v1/auths/noauth` creates/reuses the local admin and returns JWT/cookie; frontend root layout should call it when `/api/config.features.auth === false`.
-- Validation that worked: `python -m py_compile backend\\neveai\\utils\\auth.py backend\\neveai\\routers\\auths.py backend\\neveai\\env.py backend\\neveai\\config.py backend\\neveai\\main.py`, `npm run build`, and venv `TestClient` checks for `/api/config` and `/api/v1/auths/noauth`.

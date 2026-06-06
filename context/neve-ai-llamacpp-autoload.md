@@ -1,4 +1,0 @@
-- Local GGUF models are served through `backend/neveai/routers/llamacpp.py`; `/api/models` should expose only installed `local/...` models merged with DB overrides.
-- If chat breaks after a llama-server crash or stale model selection, validate `/llamacpp/models`, `/api/models`, and auto-load path in `generate_chat_completion()`.
-- Frontend auto-load in `src/lib/components/chat/Chat.svelte` must resolve `info.base_model_id` before calling `/llamacpp/models/load`; load endpoint expects filename, not model ID.
-- Validation used here: `backend\neveai\venv\Scripts\python.exe -m py_compile backend\neveai\routers\llamacpp.py`, `npm run build`, `/health`, `/api/models`.
