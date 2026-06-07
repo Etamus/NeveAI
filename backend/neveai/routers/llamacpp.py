@@ -1596,7 +1596,7 @@ NEVE_CATALOG = [
         "id": "neve-prism-x",
         "name": "Neve Prism X",
         "repo": "NeveAI/Neve-Prism-X2-9B-GGUF",
-        "size_label": "12.1 GB",
+        "size_label": "8.2 GB",
         "description": "Modelo de visão e raciocínio para cenários visuais complexos.",
         "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
         "default_feature_ids": ["code_execution", "toggle_reasoning"],

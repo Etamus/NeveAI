@@ -1,80 +1,80 @@
-# Contributing to NeveAI
+# Contribuindo para a NeveAI
 
-Thank you for your interest in contributing to NeveAI!
+Obrigado pelo seu interesse em contribuir para a NeveAI!
 
-NeveAI is a local-first, privacy-focused AI platform built around FastAPI, SvelteKit, llama.cpp, GGUF models, hybrid RAG, Pyodide-based code execution, and offline-first workflows. Contributions of all kinds are welcome, whether you are fixing bugs, improving documentation, testing hardware setups, refining the interface, or proposing new features.
+A NeveAI é uma plataforma de IA local-first, focada em privacidade, construída em torno de FastAPI, SvelteKit, llama.cpp, modelos GGUF, RAG híbrido, execução de código baseada em Pyodide e fluxos de trabalho offline-first. Contribuições de todos os tipos são bem-vindas, seja corrigindo bugs, melhorando a documentação, testando configurações de hardware, refinando a interface ou propondo novos recursos.
 
-## Ways to Contribute
+## Formas de Contribuir
 
-You can help NeveAI in many ways:
+Você pode ajudar a NeveAI de várias formas:
 
-* **Report Bugs**: Open an issue when something is not working as expected.
-* **Suggest Features**: Share ideas that improve local AI workflows, privacy, usability, performance, or model support.
-* **Improve Documentation**: Help make setup, usage, troubleshooting, and development instructions clearer.
-* **Fix Issues**: Submit pull requests that resolve bugs, improve stability, or simplify the codebase.
-* **Improve the Frontend**: Work on the SvelteKit interface, components, layout, accessibility, or user experience.
-* **Improve the Backend**: Work on FastAPI routes, WebSocket behavior, RAG, model loading, database logic, or local tooling.
-* **Test Hardware Support**: Help test NVIDIA, AMD, Vulkan, ROCm, or CPU-only setups.
-* **Share Feedback**: Tell us how NeveAI behaves on your machine and what could be improved.
+* **Reportar Bugs**: Abra uma issue quando algo não estiver funcionando como esperado.
+* **Sugerir Recursos**: Compartilhe ideias que melhorem fluxos de trabalho de IA local, privacidade, usabilidade, desempenho ou suporte a modelos.
+* **Melhorar a Documentação**: Ajude a tornar as instruções de instalação, uso, solução de problemas e desenvolvimento mais claras.
+* **Corrigir Problemas**: Envie pull requests que resolvam bugs, melhorem a estabilidade ou simplifiquem a base de código.
+* **Melhorar o Frontend**: Trabalhe na interface SvelteKit, componentes, layout, acessibilidade ou experiência do usuário.
+* **Melhorar o Backend**: Trabalhe em rotas FastAPI, comportamento de WebSocket, RAG, carregamento de modelos, lógica de banco de dados ou ferramentas locais.
+* **Testar Suporte de Hardware**: Ajude a testar configurações NVIDIA, AMD, Vulkan, ROCm ou somente CPU.
+* **Compartilhar Feedback**: Conte-nos como a NeveAI se comporta na sua máquina e o que poderia ser melhorado.
 
-Even small contributions are valuable. A clear bug report, a typo fix, a screenshot, or a tested reproduction can save a lot of time.
+Mesmo pequenas contribuições são valiosas. Um relatório de bug claro, uma correção de erro de digitação, uma captura de tela ou uma reprodução testada podem economizar muito tempo.
 
-## Before You Start
+## Antes de Começar
 
-Before opening an issue or pull request:
+Antes de abrir uma issue ou pull request:
 
-1. Search existing issues and pull requests to avoid duplicates.
-2. Make sure your local copy is up to date with the `main` branch.
-3. Keep your changes focused on a single topic whenever possible.
-4. Avoid committing generated files, local data, models, logs, virtual environments, or private configuration files.
+1. Pesquise issues e pull requests existentes para evitar duplicatas.
+2. Certifique-se de que sua cópia local está atualizada com a branch `main`.
+3. Mantenha suas alterações focadas em um único assunto sempre que possível.
+4. Evite fazer commit de arquivos gerados, dados locais, modelos, logs, ambientes virtuais ou arquivos de configuração privados.
 
-## Development Requirements
+## Requisitos de Desenvolvimento
 
-NeveAI is primarily developed for Windows.
+A NeveAI é desenvolvida principalmente para Windows.
 
-Recommended requirements:
+Requisitos recomendados:
 
-* Python 3.11 or 3.12
-* Node.js 18 or newer
+* Python 3.11 ou 3.12
+* Node.js 18 ou mais recente
 * Git
 * PowerShell
-* A compatible GPU is recommended, but CPU-only testing is also useful
-* Internet access during installation only
+* Uma GPU compatível é recomendada, mas testes somente com CPU também são úteis
+* Acesso à internet apenas durante a instalação
 
-Linux and macOS may require adaptations. Contributions that improve cross-platform support are welcome, but please clearly describe the operating system and environment used for testing.
+Linux e macOS podem exigir adaptações. Contribuições que melhorem o suporte multiplataforma são bem-vindas, mas descreva claramente o sistema operacional e o ambiente usados para os testes.
 
-## Project Setup
+## Configuração do Projeto
 
-Clone the repository:
+Clone o repositório:
 
 ```bash
 git clone https://github.com/Etamus/NeveAI.git
 cd NeveAI
 ```
 
-On Windows, run the installer:
+No Windows, execute o instalador:
 
 ```bat
 instalar.bat
 ```
 
-The installer prepares the Python environment, installs Node.js dependencies, downloads required llama.cpp binaries, builds the frontend, creates runtime folders, and prepares the default configuration.
+O instalador prepara o ambiente Python, instala as dependências do Node.js, baixa os binários necessários do llama.cpp, compila o frontend, cria as pastas de execução e prepara a configuração padrão.
 
-After installation, start NeveAI with:
+Após a instalação, inicie a NeveAI com:
 
 ```bat
 iniciar.bat
 ```
 
-By default, NeveAI runs on:
+Por padrão, a NeveAI roda em:
 
 ```text
 http://localhost:8080
 ```
 
-## Development Mode
+## Modo de Desenvolvimento
 
-For development with hot reload, run the backend and frontend separately.
+Para desenvolvimento com hot reload, execute o backend e o frontend separadamente.
 
 ### Backend
 
@@ -90,39 +90,39 @@ cd "c:\Neve AI"
 npm run dev
 ```
 
-The development frontend is available at:
+O frontend de desenvolvimento estará disponível em:
 
 ```text
 http://localhost:5173
 ```
 
-The frontend development server proxies requests to the backend running on port `8080`.
+O servidor de desenvolvimento do frontend encaminha as requisições para o backend em execução na porta `8080`.
 
-## Building the Project
+## Compilando o Projeto
 
-To build the frontend manually:
+Para compilar o frontend manualmente:
 
 ```powershell
 npm run build
 ```
 
-Then copy the generated frontend build to the backend frontend directory:
+Em seguida, copie a build gerada do frontend para o diretório frontend do backend:
 
 ```powershell
 Copy-Item -Path "build\*" -Destination "backend\neveai\frontend" -Recurse -Force
 ```
 
-You can also use the provided build scripts when available:
+Você também pode usar os scripts de build fornecidos, quando disponíveis:
 
 ```bat
 buildar.bat
 ```
 
-## Code Style
+## Estilo de Código
 
-Please keep the codebase clean, readable, and consistent with the existing style.
+Mantenha a base de código limpa, legível e consistente com o estilo existente.
 
-For frontend changes:
+Para alterações no frontend:
 
 ```bash
 npm run check
@@ -130,20 +130,20 @@ npm run lint:frontend
 npm run format
 ```
 
-For backend changes:
+Para alterações no backend:
 
 ```bash
 npm run lint:backend
 npm run format:backend
 ```
 
-Before submitting a pull request, run the checks that are relevant to the files you changed.
+Antes de enviar uma pull request, execute as verificações relevantes para os arquivos que você alterou.
 
-## What Not to Commit
+## O Que Não Fazer Commit
 
-Do not commit local runtime files, generated folders, private configuration, downloaded models, or machine-specific data.
+Não faça commit de arquivos locais de execução, pastas geradas, configurações privadas, modelos baixados ou dados específicos da máquina.
 
-Avoid committing:
+Evite fazer commit de:
 
 ```text
 .env
@@ -160,56 +160,56 @@ logs/
 .svelte-kit/
 ```
 
-If your change requires modifying generated output, explain why in the pull request.
+Se sua alteração exigir modificar saída gerada, explique o motivo na pull request.
 
-## Reporting Bugs
+## Reportando Bugs
 
-When reporting a bug, please include as much useful information as possible.
+Ao reportar um bug, inclua o máximo possível de informações úteis.
 
-A good bug report should include:
+Um bom relatório de bug deve incluir:
 
-* A clear title
-* A short explanation of what happened
-* What you expected to happen
-* Steps to reproduce the issue
-* Your operating system
-* Python version
-* Node.js version
-* GPU model, if relevant
-* Whether you are using CUDA, Vulkan, ROCm, or CPU
-* The model format and type, if model-related
-* Screenshots, logs, or traceback output when available
+* Um título claro
+* Uma breve explicação do que aconteceu
+* O que você esperava que acontecesse
+* Etapas para reproduzir o problema
+* Seu sistema operacional
+* Versão do Python
+* Versão do Node.js
+* Modelo da GPU, se relevante
+* Se você está usando CUDA, Vulkan, ROCm ou CPU
+* O formato e tipo do modelo, se estiver relacionado a modelos
+* Capturas de tela, logs ou saída de traceback quando disponíveis
 
-Please remove private information from logs before posting them publicly.
+Remova informações privadas dos logs antes de publicá-los publicamente.
 
-## Suggesting Features
+## Sugerindo Recursos
 
-Feature requests are welcome.
+Solicitações de recursos são bem-vindas.
 
-When suggesting a feature, please describe:
+Ao sugerir um recurso, descreva:
 
-* The problem you are trying to solve
-* Why the feature would be useful for NeveAI users
-* How you imagine the feature working
-* Any alternatives you considered
-* Whether the feature should work fully offline
+* O problema que você está tentando resolver
+* Por que o recurso seria útil para os usuários da NeveAI
+* Como você imagina que o recurso funcionaria
+* Quais alternativas você considerou
+* Se o recurso deve funcionar totalmente offline
 
-Because NeveAI is focused on local-first and privacy-first AI, features that require external services, cloud APIs, telemetry, or third-party accounts should be clearly explained and optional.
+Como a NeveAI é focada em IA local-first e privacy-first, recursos que exigem serviços externos, APIs em nuvem, telemetria ou contas de terceiros devem ser claramente explicados e opcionais.
 
-## Pull Request Guidelines
+## Diretrizes para Pull Requests
 
-When submitting a pull request:
+Ao enviar uma pull request:
 
-1. Fork the repository.
-2. Create a new branch with a descriptive name.
-3. Keep your changes focused and easy to review.
-4. Update documentation when behavior changes.
-5. Test your changes locally.
-6. Do not include unrelated formatting changes.
-7. Do not commit generated files or local machine data.
-8. Explain what changed and why.
+1. Faça um fork do repositório.
+2. Crie uma nova branch com um nome descritivo.
+3. Mantenha suas alterações focadas e fáceis de revisar.
+4. Atualize a documentação quando o comportamento mudar.
+5. Teste suas alterações localmente.
+6. Não inclua alterações de formatação não relacionadas.
+7. Não faça commit de arquivos gerados ou dados da máquina local.
+8. Explique o que mudou e por quê.
 
-Example branch names:
+Exemplos de nomes de branches:
 
 ```text
 fix/model-loading-error
@@ -218,62 +218,62 @@ docs/improve-windows-setup
 ui/chat-message-actions
 ```
 
-## Pull Request Checklist
+## Checklist de Pull Request
 
-Before opening a pull request, please check that:
+Antes de abrir uma pull request, verifique se:
 
-* The project builds successfully.
-* Relevant frontend or backend checks were run.
-* The change was tested locally.
-* Documentation was updated if needed.
-* No private files, models, logs, or generated folders were committed.
-* The pull request description clearly explains the change.
-* Screenshots or recordings are included for UI changes when helpful.
+* O projeto compila com sucesso.
+* As verificações relevantes do frontend ou backend foram executadas.
+* A alteração foi testada localmente.
+* A documentação foi atualizada, se necessário.
+* Nenhum arquivo privado, modelo, log ou pasta gerada foi incluído no commit.
+* A descrição da pull request explica claramente a alteração.
+* Capturas de tela ou gravações foram incluídas para alterações de UI quando úteis.
 
-## Documentation Contributions
+## Contribuições para a Documentação
 
-Documentation improvements are highly appreciated.
+Melhorias na documentação são muito apreciadas.
 
-You can help by improving:
+Você pode ajudar melhorando:
 
-* Installation instructions
-* Windows setup notes
-* GPU setup notes
-* Model and `mmproj` usage
-* RAG documentation
-* Troubleshooting guides
-* Screenshots and examples
-* Developer workflow instructions
+* Instruções de instalação
+* Notas de configuração no Windows
+* Notas de configuração de GPU
+* Uso de modelos e `mmproj`
+* Documentação de RAG
+* Guias de solução de problemas
+* Capturas de tela e exemplos
+* Instruções de fluxo de trabalho para desenvolvedores
 
-Please keep documentation practical, direct, and easy to follow.
+Mantenha a documentação prática, direta e fácil de seguir.
 
-## Security and Privacy
+## Segurança e Privacidade
 
-NeveAI is designed around local execution and data sovereignty. Contributions should respect that goal.
+A NeveAI foi projetada em torno da execução local e da soberania dos dados. As contribuições devem respeitar esse objetivo.
 
-Please avoid adding features that:
+Evite adicionar recursos que:
 
-* Send user data to external services without clear consent
-* Require cloud APIs for core functionality
-* Add telemetry by default
-* Expose local files, prompts, conversations, or model data
-* Store secrets in source code
-* Log sensitive user data unnecessarily
+* Enviem dados do usuário para serviços externos sem consentimento claro
+* Exijam APIs em nuvem para funcionalidades principais
+* Adicionem telemetria por padrão
+* Exponham arquivos locais, prompts, conversas ou dados de modelos
+* Armazenem segredos no código-fonte
+* Registrem dados sensíveis do usuário desnecessariamente
 
-If you discover a security issue, please do not open a public issue with exploit details. Contact the project maintainer privately instead.
+Se você descobrir um problema de segurança, não abra uma issue pública com detalhes de exploração. Em vez disso, entre em contato com o mantenedor do projeto em particular.
 
-## Community Standards
+## Padrões da Comunidade
 
-Please be respectful and constructive in all interactions.
+Seja respeitoso e construtivo em todas as interações.
 
-By participating in this project, you agree to follow the project's Code of Conduct:
+Ao participar deste projeto, você concorda em seguir o Código de Conduta do projeto:
 
 ```text
 https://github.com/Etamus/NeveAI/blob/main/CODE_OF_CONDUCT.md
 ```
 
-## Thank You
+## Obrigado
 
-Thank you for helping improve NeveAI.
+Obrigado por ajudar a melhorar a NeveAI.
 
-Whether your contribution is code, testing, documentation, feedback, or simply sharing the project, it helps make local-first AI more accessible, private, and powerful for everyone.
+Seja sua contribuição código, testes, documentação, feedback ou simplesmente compartilhar o projeto, isso ajuda a tornar a IA local-first mais acessível, privada e poderosa para todos.

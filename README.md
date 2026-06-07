@@ -104,7 +104,7 @@ Acesse manualmente se preferir: **http://localhost:8080**
 ## Modelos
 
 <h1 align="center">
-<img width="700" alt="Guia de Hardware para Execução Local" src="https://github.com/user-attachments/assets/444caf8e-c26b-4923-a8ea-2cee7de116d3" />
+<img width="700" alt="Guia de Hardware para Execução Local" src="https://github.com/user-attachments/assets/ccd99a2e-78d6-48a0-8cd1-d0e1fe7e2c49" />
 </h1>
 
 ---
