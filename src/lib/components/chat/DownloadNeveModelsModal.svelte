@@ -3,12 +3,16 @@
 	import { toast } from 'svelte-sonner';
 
 	import Modal from '$lib/components/common/Modal.svelte';
+	import GarbageBin from '$lib/components/icons/GarbageBin.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
+	import { getModels } from '$lib/apis';
+	import { models } from '$lib/stores';
 
 	import {
 		cancelNeveDownload,
+		deleteNeveCatalogModel,
 		getActiveNeveDownload,
 		getNeveCatalog,
 		startNeveDownload,
@@ -34,6 +38,7 @@
 	let downloadingModelId: string | null = null;
 	let downloadingModelName = '';
 	let currentEs: EventSource | null = null;
+	let uninstallingModelId: string | null = null;
 
 	const activeStatuses = ['queued', 'resolving', 'downloading', 'cancelling'];
 
@@ -244,6 +249,25 @@
 		}
 	};
 
+	const handleUninstall = async (item: NeveCatalogModel) => {
+		if (!item.installed || downloading || uninstallingModelId) return;
+
+		uninstallingModelId = item.id;
+		try {
+			await deleteNeveCatalogModel(localStorage.token, item.id);
+			if (selectedId === item.id) {
+				selectedId = null;
+			}
+			await loadCatalog();
+			models.set(await getModels(localStorage.token, null, false, true));
+			toast.success(`${item.name} desinstalado`);
+		} catch (e: any) {
+			toast.error(e?.message || 'Falha ao desinstalar modelo');
+		} finally {
+			uninstallingModelId = null;
+		}
+	};
+
 	onDestroy(() => {
 		if (currentEs) {
 			currentEs.close();
@@ -252,7 +276,7 @@
 	});
 </script>
 
-<Modal bind:show size="w-[22rem]">
+<Modal bind:show size="w-[24rem]">
 	<div>
 		<div
 			class="flex justify-between dark:text-gray-300 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20"
@@ -269,19 +293,19 @@
 		</div>
 
 		<div class="flex flex-col w-full px-5 pt-4 pb-4 dark:text-gray-200">
-			<div class="flex flex-col gap-1 max-h-[22rem] overflow-y-auto pr-1">
+			<div class="flex h-[20.75rem] max-h-[20.75rem] snap-y snap-mandatory flex-col gap-1 overflow-y-auto pr-1">
 				{#if loading && catalog.length === 0}
-					<div class="flex justify-center py-8">
+					<div class="flex h-full items-center justify-center">
 						<Spinner className="size-5" />
 					</div>
 				{:else if catalog.length === 0}
-					<div class="text-center text-xs text-gray-500 dark:text-gray-400 py-8">
+					<div class="flex h-full items-center justify-center text-center text-xs text-gray-500 dark:text-gray-400">
 						{$i18n.t('Nenhum modelo disponível')}
 					</div>
 				{:else}
 					{#each catalog as item (item.id)}
 					<label
-						class="relative flex items-center gap-3 px-3 py-2 rounded-lg transition border {item.installed
+						class="relative flex h-[3.25rem] shrink-0 snap-start items-center gap-3 px-3 rounded-lg transition border {item.installed
 							? 'opacity-60 cursor-default border-transparent'
 							: selectedId === item.id
 							? `${downloading ? 'cursor-default' : 'cursor-pointer'} border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-850`
@@ -298,16 +322,107 @@
 						<img
 							src="{NEVEAI_BASE_URL}/static/favicon.png"
 							alt=""
-							class="size-5 rounded-full object-cover shrink-0"
+							class="size-7 rounded-full object-cover shrink-0"
 						/>
-						<div class="flex-1 min-w-0 text-sm truncate">{item.name}</div>
-						{#if item.installed}
-							<span class="text-xs font-medium text-black-600 dark:text-white-500 shrink-0">Instalado</span>
-						{:else if downloading && downloadingModelId === item.id}
-							<span class="text-xs font-medium text-black-600 dark:text-white-400 shrink-0">Baixando</span>
-						{:else if item.size_label}
-							<span class="text-xs text-gray-400 dark:text-gray-500 shrink-0">{item.size_label}</span>
-						{/if}
+						<div class="flex-1 min-w-0 self-center">
+							<div class="w-full text-left">
+								<div class="flex items-center gap-1.5 flex-wrap">
+									<span class="text-sm font-semibold line-clamp-1">
+										{item.name}
+									</span>
+								</div>
+								{#if item.size_label}
+									<div
+										class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
+									>
+										<span class="line-clamp-1">{item.size_label}</span>
+									</div>
+								{/if}
+							</div>
+						</div>
+						<div class="flex shrink-0 items-center gap-2">
+							{#if item.installed}
+								<button
+									type="button"
+									class="group inline-flex h-7 w-24 cursor-pointer items-center justify-center rounded-md bg-gray-850 px-2 text-center text-xs font-medium text-gray-200 shadow-xs transition hover:bg-gray-800 hover:text-white disabled:cursor-default disabled:opacity-60 dark:bg-gray-850 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white"
+									disabled={uninstallingModelId === item.id}
+									title="Desinstalar"
+									aria-label="Desinstalar {item.name}"
+									on:click|preventDefault|stopPropagation={() => handleUninstall(item)}
+								>
+									{#if uninstallingModelId === item.id}
+										<Spinner className="size-3.5" />
+									{:else}
+										<span class="group-hover:hidden">Instalado</span>
+										<span class="hidden group-hover:block">
+											<GarbageBin className="size-4" strokeWidth="1.8" />
+										</span>
+									{/if}
+								</button>
+							{:else if downloading && downloadingModelId === item.id}
+								<span
+									class="inline-flex h-7 w-24 items-center justify-center rounded-md bg-gray-850 px-2 text-center text-xs font-medium text-gray-200 shadow-xs dark:bg-gray-850 dark:text-gray-200"
+								>
+									Baixando
+								</span>
+							{/if}
+							{#if !item.installed && !(downloading && downloadingModelId === item.id) && item.hardware_label}
+								<span
+									class="inline-flex h-7 w-24 items-center justify-center gap-1.5 rounded-md bg-gray-850 px-2 text-center text-xs font-medium text-gray-200 shadow-xs dark:bg-gray-850 dark:text-gray-200"
+									title={item.hardware_kind === 'cpu' ? 'CPU' : 'VRAM'}
+								>
+									{#if item.hardware_kind === 'cpu'}
+										<svg
+											class="size-4 shrink-0"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.8"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											aria-hidden="true"
+										>
+											<rect x="7" y="7" width="10" height="10" rx="2" />
+											<path d="M9.5 3.5v3" />
+											<path d="M14.5 3.5v3" />
+											<path d="M9.5 17.5v3" />
+											<path d="M14.5 17.5v3" />
+											<path d="M3.5 9.5h3" />
+											<path d="M3.5 14.5h3" />
+											<path d="M17.5 9.5h3" />
+											<path d="M17.5 14.5h3" />
+										</svg>
+									{:else}
+										<svg
+											class="h-[1.1rem] w-6 shrink-0"
+											viewBox="0 0 32 22"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="1.8"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											aria-hidden="true"
+										>
+											<rect x="3" y="5" width="22" height="12" rx="2.5" />
+											<path d="M25 8h4v6h-4" />
+											<circle cx="10" cy="11" r="3" />
+											<circle cx="18" cy="11" r="3" />
+											<path d="M10 8v6" />
+											<path d="M7 11h6" />
+											<path d="M18 8v6" />
+											<path d="M15 11h6" />
+											<path d="M6 17v2.5" />
+											<path d="M9 17v2.5" />
+											<path d="M12 17v2.5" />
+											<path d="M15 17v2.5" />
+											<path d="M6 3h8" />
+											<path d="M17 3h5" />
+										</svg>
+									{/if}
+									<span class="whitespace-nowrap leading-none">{item.hardware_label}</span>
+								</span>
+							{/if}
+						</div>
 					</label>
 					{/each}
 				{/if}

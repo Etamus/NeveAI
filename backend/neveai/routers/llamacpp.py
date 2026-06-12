@@ -1569,6 +1569,8 @@ NEVE_CATALOG = [
         "id": "neve-echo-s",
         "name": "Neve Echo S",
         "repo": "NeveAI/Neve-Echo-S3-4B-QAT-GGUF",
+        "hardware_label": "4 GB ≥",
+        "hardware_kind": "gpu",
         "size_label": "3.9 GB",
         "description": "Modelo de uso geral e raciocínio para tarefas rápidas.",
         "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
@@ -1578,6 +1580,8 @@ NEVE_CATALOG = [
         "id": "neve-echo",
         "name": "Neve Echo",
         "repo": "NeveAI/Neve-Echo-6-12B-QAT-GGUF",
+        "hardware_label": "6 GB ≥",
+        "hardware_kind": "gpu",
         "size_label": "6.3 GB",
         "description": "Modelo de uso geral e raciocínio para tarefas variadas.",
         "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
@@ -1587,6 +1591,8 @@ NEVE_CATALOG = [
         "id": "neve-prism",
         "name": "Neve Prism",
         "repo": "NeveAI/Neve-Prism-3-12B-GGUF",
+        "hardware_label": "8 GB ≥",
+        "hardware_kind": "gpu",
         "size_label": "7.9 GB",
         "description": "Modelo de visão para análise de imagens em alta precisão.",
         "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
@@ -1596,6 +1602,8 @@ NEVE_CATALOG = [
         "id": "neve-prism-x",
         "name": "Neve Prism X",
         "repo": "NeveAI/Neve-Prism-X2-9B-GGUF",
+        "hardware_label": "8 GB ≥",
+        "hardware_kind": "gpu",
         "size_label": "8.2 GB",
         "description": "Modelo de visão e raciocínio para cenários visuais complexos.",
         "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
@@ -1605,6 +1613,8 @@ NEVE_CATALOG = [
         "id": "neve-sense",
         "name": "Neve Sense",
         "repo": "NeveAI/Neve-Sense-2-20B-GGUF",
+        "hardware_label": "12 GB ≥",
+        "hardware_kind": "gpu",
         "size_label": "11.1 GB",
         "description": "Modelo de análise e resumo para documentos complexos.",
         "params": {"temperature": 0.3, "min_p": 0.05},
@@ -1614,6 +1624,8 @@ NEVE_CATALOG = [
         "id": "neve-strata-s",
         "name": "Neve Strata S",
         "repo": "NeveAI/Neve-Strata-S2-4B-GGUF",
+        "hardware_label": "6 GB ≥",
+        "hardware_kind": "gpu",
         "size_label": "5.5 GB",
         "description": "Modelo de programação e raciocínio para execução em escala.",
         "params": {"temperature": 0.7, "min_p": 0.1},
@@ -1623,6 +1635,8 @@ NEVE_CATALOG = [
         "id": "neve-strata",
         "name": "Neve Strata",
         "repo": "NeveAI/Neve-Strata-4-30B-GGUF",
+        "hardware_label": "16 GB ≥",
+        "hardware_kind": "gpu",
         "size_label": "16.3 GB",
         "description": "Modelo de programação e raciocínio para códigos robustos.",
         "params": {"temperature": 0.7, "min_p": 0.1},
@@ -1632,10 +1646,34 @@ NEVE_CATALOG = [
         "id": "neve-strata-x",
         "name": "Neve Strata X",
         "repo": "NeveAI/Neve-Strata-X2-35B-GGUF",
+        "hardware_label": "16 GB ≥",
+        "hardware_kind": "gpu",
         "size_label": "18.2 GB",
         "description": "Modelo de programação e raciocínio para arquiteturas complexas.",
         "params": {"temperature": 0.7, "min_p": 0.1},
         "default_feature_ids": ["code_execution", "toggle_reasoning"],
+    },
+    {
+        "id": "neve-cascade-s",
+        "name": "Neve Cascade S",
+        "repo": "NeveAI/Neve-Cascade-S-90M-GGUF",
+        "hardware_label": "CPU",
+        "hardware_kind": "cpu",
+        "size_label": "0.09 GB",
+        "description": "Modelo de baixo consumo para eficiência extrema.",
+        "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
+        "default_feature_ids": [],
+    },
+    {
+        "id": "neve-cascade-x",
+        "name": "Neve Cascade X",
+        "repo": "NeveAI/Neve-Cascade-X3-1B-GGUF",
+        "hardware_label": "CPU",
+        "hardware_kind": "cpu",
+        "size_label": "0.6 GB",
+        "description": "Modelo de baixo consumo para hardware limitado.",
+        "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
+        "default_feature_ids": [],
     },
 ]
 
@@ -1779,6 +1817,92 @@ def _local_filename_for(repo_filename: str, repo_id: str) -> str:
 
 def _is_installed(repo_filename: str) -> bool:
     return (MODELS_DIR / repo_filename).exists()
+
+
+def _catalog_repo_short(entry: dict) -> str:
+    return entry["repo"].split("/")[-1].lower().replace("-gguf", "")
+
+
+def _catalog_main_paths(entry: dict) -> list[Path]:
+    repo_short = _catalog_repo_short(entry)
+    paths: list[Path] = []
+    try:
+        for path in MODELS_DIR.glob("*.gguf"):
+            if path.is_file() and repo_short in path.name.lower():
+                paths.append(path)
+    except Exception:
+        log.exception("Failed to scan installed Neve catalog files for %s", entry.get("id"))
+    return paths
+
+
+def _catalog_mmproj_paths(entry: dict, main_paths: list[Path]) -> list[Path]:
+    if not main_paths:
+        return []
+
+    repo_short = _catalog_repo_short(entry)
+    main_path_set = {path.resolve() for path in main_paths}
+    try:
+        other_model_paths = [
+            path
+            for path in MODELS_DIR.glob("*.gguf")
+            if path.is_file() and path.resolve() not in main_path_set
+        ]
+    except Exception:
+        other_model_paths = []
+
+    mmproj_paths: list[Path] = []
+    try:
+        for path in MMPROJ_DIR.iterdir():
+            if not path.is_file() or path.suffix.lower() not in (".gguf", ".mmproj"):
+                continue
+
+            matches_this_model = repo_short in path.name.lower() or any(
+                _mmproj_compatible(main_path.name, path.name) for main_path in main_paths
+            )
+            if not matches_this_model:
+                continue
+
+            used_by_other_model = any(
+                _mmproj_compatible(other_path.name, path.name) for other_path in other_model_paths
+            )
+            if not used_by_other_model:
+                mmproj_paths.append(path)
+    except Exception:
+        log.exception("Failed to scan installed Neve mmproj files for %s", entry.get("id"))
+
+    return mmproj_paths
+
+
+def _path_is_inside(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _unlink_file_inside(path: Path, root: Path) -> bool:
+    if not _path_is_inside(path, root):
+        raise ValueError(f"Refusing to remove file outside {root}: {path}")
+    if not path.is_file():
+        return False
+    path.unlink()
+    return True
+
+
+def _delete_catalog_model_record(entry: dict, local_model_id: str) -> bool:
+    model = Models.get_model_by_id(local_model_id)
+    if not model:
+        return False
+
+    meta = {}
+    if model.meta:
+        meta = model.meta.model_dump() if hasattr(model.meta, "model_dump") else dict(model.meta)
+
+    if meta.get("managed_by") != "neve_download" or meta.get("neve_catalog_id") != entry["id"]:
+        return False
+
+    return Models.delete_model_by_id(local_model_id)
 
 
 async def _hf_list_files(repo_id: str) -> list[dict]:
@@ -1945,20 +2069,59 @@ async def _run_download_task(task_id: str, model_id: str, app=None):
 
 @router.get("/catalog")
 async def get_neve_catalog():
-    """Return the curated Neve model catalog with installed status and fixed size label."""
+    """Return the curated Neve model catalog with installed status and hardware requirements."""
     items = []
     for entry in NEVE_CATALOG:
-        repo_short = entry["repo"].split("/")[-1].lower().replace("-gguf", "")
-        installed = False
-        try:
-            for p in MODELS_DIR.glob("*.gguf"):
-                if repo_short in p.name.lower():
-                    installed = True
-                    break
-        except Exception:
-            pass
+        installed = len(_catalog_main_paths(entry)) > 0
         items.append({**entry, "installed": installed})
     return {"models": items}
+
+
+class CatalogDeleteModelRequest(BaseModel):
+    model_id: str
+
+
+@router.post("/catalog/delete")
+async def delete_neve_catalog_model(req: CatalogDeleteModelRequest, request: Request):
+    """Uninstall a Neve catalog model and its private mmproj file, when present."""
+    entry = _catalog_entry(req.model_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Modelo não encontrado no catálogo")
+
+    main_paths = _catalog_main_paths(entry)
+    if not main_paths:
+        raise HTTPException(status_code=404, detail="Modelo não está instalado")
+
+    mmproj_paths = _catalog_mmproj_paths(entry, main_paths)
+    removed_models: list[str] = []
+    removed_mmproj: list[str] = []
+    removed_model_records: list[str] = []
+
+    try:
+        for path in main_paths:
+            local_model_id = f"local/{path.stem}"
+            if model_manager.is_model_loaded(local_model_id):
+                await model_manager.unload_model(local_model_id)
+
+            if _unlink_file_inside(path, MODELS_DIR):
+                removed_models.append(path.name)
+                if _delete_catalog_model_record(entry, local_model_id):
+                    removed_model_records.append(local_model_id)
+
+        for path in mmproj_paths:
+            if _unlink_file_inside(path, MMPROJ_DIR):
+                removed_mmproj.append(path.name)
+    except Exception as e:
+        log.exception("Failed to uninstall Neve catalog model %s", req.model_id)
+        raise HTTPException(status_code=500, detail=str(e))
+
+    request.app.state.BASE_MODELS = None
+    return {
+        "model_id": req.model_id,
+        "removed_models": removed_models,
+        "removed_mmproj": removed_mmproj,
+        "removed_model_records": removed_model_records,
+    }
 
 
 @router.get("/download/active")

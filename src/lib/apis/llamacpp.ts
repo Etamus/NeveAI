@@ -179,6 +179,8 @@ export interface NeveCatalogModel {
 	repo: string;
 	installed: boolean;
 	size_label?: string;
+	hardware_label?: string;
+	hardware_kind?: 'gpu' | 'cpu';
 }
 
 export interface NeveDownloadState {
@@ -228,6 +230,23 @@ export const startNeveDownload = async (token: string = '', model_id: string): P
 	}
 	const data = await res.json();
 	return data.task_id as string;
+};
+
+export const deleteNeveCatalogModel = async (token: string = '', model_id: string): Promise<any> => {
+	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/catalog/delete`, {
+		method: 'POST',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		},
+		body: JSON.stringify({ model_id })
+	});
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ detail: 'Falha ao desinstalar modelo' }));
+		throw new Error(err.detail || 'Falha ao desinstalar modelo');
+	}
+	return res.json();
 };
 
 export const getActiveNeveDownload = async (token: string = ''): Promise<NeveDownloadState | null> => {
