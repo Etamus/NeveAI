@@ -214,6 +214,59 @@
 		return String(n);
 	}
 
+	function toNumber(value: unknown): number | null {
+		if (typeof value === 'number' && Number.isFinite(value)) return value;
+		if (typeof value === 'string') {
+			const parsed = Number(value.replace(',', '.'));
+			return Number.isFinite(parsed) ? parsed : null;
+		}
+		return null;
+	}
+
+	function getTokensPerSecond(usage: Record<string, unknown> | null): number | null {
+		if (!usage) return null;
+
+		const directKeys = [
+			'tokens_per_second',
+			'output_tokens_per_second',
+			'completion_tokens_per_second',
+			'response_tokens_per_second',
+			'response_token/s',
+			'tokens/s',
+			'predicted_per_second',
+			'eval_per_second'
+		];
+
+		for (const key of directKeys) {
+			const directValue = toNumber(usage[key]);
+			if (directValue !== null) return directValue;
+		}
+
+		const outputTokens = toNumber(
+			usage.output_tokens ?? usage.completion_tokens ?? usage.eval_count ?? usage.predicted_n
+		);
+		if (!outputTokens) return null;
+
+		const evalDuration = toNumber(usage.eval_duration);
+		if (evalDuration && evalDuration > 0) {
+			return outputTokens / (evalDuration / 1_000_000_000);
+		}
+
+		const predictedMs = toNumber(usage.predicted_ms);
+		if (predictedMs && predictedMs > 0) {
+			return outputTokens / (predictedMs / 1000);
+		}
+
+		return null;
+	}
+
+	function formatTokensPerSecond(value: number | null): string {
+		if (value === null) return 'N/A';
+		if (value >= 100) return value.toFixed(0);
+		if (value >= 10) return value.toFixed(1);
+		return value.toFixed(2);
+	}
+
 	const inputVariableHandler = async (text: string): Promise<string> => {
 		inputVariables = extractInputVariables(text);
 
@@ -2188,6 +2241,7 @@
 											{@const circumference = 2 * Math.PI * ringRadius}
 											{@const strokeOffset = circumference * (1 - usageRatio)}
 											{@const ringColor = usageRatio > 0.9 ? '#ef4444' : usageRatio > 0.7 ? '#f59e0b' : '#6b7280'}
+											{@const tokensPerSecond = getTokensPerSecond(lastUsage)}
 											<!-- svelte-ignore a11y-no-static-element-interactions -->
 											<div
 												class="relative flex items-center mr-3"
@@ -2219,6 +2273,10 @@
 															<div class="h-full rounded-full transition-all duration-500" style="width: {Math.max(usageRatio * 100, 1)}%; background-color: {ringColor}" />
 														</div>
 														<div class="space-y-1.5">
+															<div class="flex justify-between items-center">
+																<span class="text-[14px] text-gray-500 dark:text-gray-400">Tokens/s</span>
+																<span class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200">{formatTokensPerSecond(tokensPerSecond)}</span>
+															</div>
 															<div class="flex justify-between items-center">
 																<span class="text-[14px] text-gray-500 dark:text-gray-400">Total</span>
 																<span class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200">{formatTokens(totalTokens)}</span>

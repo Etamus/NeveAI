@@ -42,7 +42,7 @@ export default defineConfig({
 		format: 'es'
 	},
 	esbuild: {
-		pure: process.env.ENV === 'dev' ? [] : ['console.log', 'console.debug', 'console.error']
+		pure: process.env.ENV === 'dev' ? [] : ['console.log', 'console.debug', 'console.warn', 'console.error']
 	},
 	server: {
 		// Impede que o Vite/chokidar vasculhe pastas que não são código frontend

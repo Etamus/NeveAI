@@ -41,6 +41,56 @@ export interface LocalVramInfo {
 	error?: string;
 }
 
+export interface LlamaCppStatus {
+	server_binary_exists: boolean;
+	server_binary_path: string;
+	models_dir: string;
+	mmproj_dir: string;
+	models_count: number;
+	mmproj_count: number;
+}
+
+export const normalizeLlamaCppErrorMessage = (
+	error: any,
+	fallback = 'Falha ao atualizar'
+): string => {
+	const message = typeof error === 'string' ? error : error?.message || fallback;
+	const text = `${message || fallback}`.trim();
+	const lower = text.toLowerCase();
+
+	if (
+		lower === 'failed to fetch' ||
+		lower.includes('failed to fetch') ||
+		lower.includes('load failed') ||
+		lower.includes('networkerror')
+	) {
+		return 'Falha ao atualizar';
+	}
+	if (lower.includes('getaddrinfo failed') || lower.includes('errno 11001')) {
+		return 'Falha de conexão';
+	}
+	if (lower.includes('failed to load model')) {
+		return 'Falha ao carregar modelo';
+	}
+	if (lower.includes('failed to unload model')) {
+		return 'Falha ao descarregar modelo';
+	}
+	if (lower.includes('model file not found')) {
+		return 'Arquivo do modelo não encontrado';
+	}
+	if (lower.includes('mmproj file not found')) {
+		return 'Arquivo mmproj não encontrado';
+	}
+	if (lower.includes('only .gguf files are supported')) {
+		return 'Somente arquivos .gguf são suportados';
+	}
+	if (lower.includes('model not loaded')) {
+		return 'Modelo não carregado';
+	}
+
+	return text || fallback;
+};
+
 export const getLocalModels = async (token: string = ''): Promise<LocalModel[]> => {
 	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models`, {
 		method: 'GET',
@@ -97,6 +147,24 @@ export const getLocalVramInfo = async (token: string = ''): Promise<LocalVramInf
 	return res.json();
 };
 
+export const getLlamaCppStatus = async (token: string = ''): Promise<LlamaCppStatus> => {
+	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/status`, {
+		method: 'GET',
+		headers: {
+			Accept: 'application/json',
+			'Content-Type': 'application/json',
+			...(token && { authorization: `Bearer ${token}` })
+		}
+	});
+
+	if (!res.ok) {
+		const err = await res.json().catch(() => ({ detail: 'Falha ao buscar status do llama.cpp' }));
+		throw new Error(err.detail || 'Falha ao buscar status do llama.cpp');
+	}
+
+	return res.json();
+};
+
 export const getMmProjFiles = async (token: string = ''): Promise<string[]> => {
 	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/mmproj`, {
 		method: 'GET',
@@ -143,8 +211,8 @@ export const loadLocalModel = async (
 	});
 
 	if (!res.ok) {
-		const err = await res.json().catch(() => ({ detail: 'Failed to load model' }));
-		throw new Error(err.detail || 'Failed to load model');
+		const err = await res.json().catch(() => ({ detail: 'Falha ao carregar modelo' }));
+		throw new Error(err.detail || 'Falha ao carregar modelo');
 	}
 
 	return res.json();
@@ -162,8 +230,8 @@ export const unloadLocalModel = async (token: string = '', model_id: string): Pr
 	});
 
 	if (!res.ok) {
-		const err = await res.json().catch(() => ({ detail: 'Failed to unload model' }));
-		throw new Error(err.detail || 'Failed to unload model');
+		const err = await res.json().catch(() => ({ detail: 'Falha ao descarregar modelo' }));
+		throw new Error(err.detail || 'Falha ao descarregar modelo');
 	}
 
 	return res.json();
@@ -196,6 +264,10 @@ export interface NeveDownloadState {
 	total?: number;
 	message?: string;
 	error?: string;
+	resume_available?: boolean;
+	resumed?: boolean;
+	verified?: boolean;
+	checksum?: string;
 }
 
 export const getNeveCatalog = async (token: string = ''): Promise<NeveCatalogModel[]> => {
@@ -304,7 +376,19 @@ export const streamNeveDownload = (
 				} else if (state.status === 'cancelled') {
 					onCancel?.(state);
 				} else {
-					onError(new Error(state.error || 'Falha no download'));
+					const retryMessage = 'Clique em Baixar novamente para continuar de onde parou.';
+					const rawError = state.error || '';
+					const isConnectionError = /getaddrinfo failed|errno 11001|failed to fetch|networkerror|load failed/i.test(
+						rawError
+					);
+					if (state.resume_available && isConnectionError) {
+						onError(new Error(retryMessage));
+					} else if (state.resume_available) {
+						const message = normalizeLlamaCppErrorMessage(rawError, 'Falha no download');
+						onError(new Error(`${message}. ${retryMessage}`));
+					} else {
+						onError(new Error(normalizeLlamaCppErrorMessage(rawError, 'Falha no download')));
+					}
 				}
 			}
 		} catch (err) {

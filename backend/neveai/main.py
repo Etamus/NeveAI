@@ -7,6 +7,7 @@ import os
 import shutil
 import sys
 import time
+import webbrowser
 import random
 import re
 from uuid import uuid4
@@ -484,6 +485,7 @@ from neveai.env import (
     GLOBAL_LOG_LEVEL,
     MAX_BODY_LOG_SIZE,
     SAFE_MODE,
+    BASE_DIR,
     VERSION,
     DEPLOYMENT_ID,
     INSTANCE_ID,
@@ -2268,6 +2270,20 @@ class UrlForm(BaseModel):
     url: str
 
 
+@app.post("/api/external/open")
+async def open_external_url(form_data: UrlForm, user=Depends(get_verified_user)):
+    url = (form_data.url or "").strip()
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid external URL",
+        )
+
+    opened = await anyio.to_thread.run_sync(lambda: webbrowser.open(parsed.geturl(), new=2))
+    return {"status": bool(opened)}
+
+
 @app.get("/api/webhook")
 async def get_webhook_url(user=Depends(get_admin_user)):
     return {
@@ -2284,8 +2300,18 @@ async def update_webhook_url(form_data: UrlForm, user=Depends(get_admin_user)):
 
 @app.get("/api/version")
 async def get_app_version():
+    version = VERSION
+    version_file = BASE_DIR / "version.txt"
+
+    try:
+        file_version = version_file.read_text(encoding="utf-8").strip()
+        if file_version:
+            version = file_version
+    except Exception:
+        pass
+
     return {
-        "version": VERSION,
+        "version": version,
         "deployment_id": DEPLOYMENT_ID,
     }
 

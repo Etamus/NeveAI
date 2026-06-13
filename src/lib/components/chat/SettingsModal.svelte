@@ -10,6 +10,7 @@
 	import General from './Settings/General.svelte';
 	import DataControls from './Settings/DataControls.svelte';
 	import Personalization from './Settings/Personalization.svelte';
+	import About from './Settings/About.svelte';
 	import Search from '../icons/Search.svelte';
 	import XMark from '../icons/XMark.svelte';
 	import DatabaseSettings from '../icons/DatabaseSettings.svelte';
@@ -17,6 +18,7 @@
 	import UserCircle from '../icons/UserCircle.svelte';
 	import Face from '../icons/Face.svelte';
 	import UserBadgeCheck from '../icons/UserBadgeCheck.svelte';
+	import Info from '../icons/Info.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -128,6 +130,26 @@
 				'message history',
 				'messagearchive',
 				'messagehistory'
+			]
+		},
+		{
+			id: 'about',
+			title: 'Sobre',
+			keywords: [
+				'about',
+				'sobre',
+				'version',
+				'versao',
+				'versão',
+				'creator',
+				'criador',
+				'mateus',
+				'etamus',
+				'github',
+				'hugging face',
+				'license',
+				'licenca',
+				'licença'
 			]
 		}
 	];
@@ -302,6 +324,22 @@
 								<DatabaseSettings strokeWidth="2" />
 								<span>{$i18n.t('Data Controls')}</span>
 							</button>
+						{:else if tabId === 'about'}
+							<button
+								role="tab"
+								aria-controls="tab-about"
+								aria-selected={selectedTab === 'about'}
+								class="px-3 py-2 min-w-fit rounded-lg flex items-center gap-2 transition
+								{selectedTab === 'about'
+									? 'font-semibold text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800'
+									: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50'}"
+								on:click={() => {
+									selectedTab = 'about';
+								}}
+							>
+								<Info strokeWidth="2" />
+								<span>Sobre</span>
+							</button>
 						{/if}
 					{/each}
 				{:else}
@@ -329,6 +367,8 @@
 					/>
 				{:else if selectedTab === 'data_controls'}
 					<DataControls {saveSettings} />
+				{:else if selectedTab === 'about'}
+					<About />
 				{/if}
 			</div>
 		</div>

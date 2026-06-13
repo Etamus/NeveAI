@@ -15,6 +15,7 @@
 		deleteNeveCatalogModel,
 		getActiveNeveDownload,
 		getNeveCatalog,
+		normalizeLlamaCppErrorMessage,
 		startNeveDownload,
 		streamNeveDownload,
 		type NeveCatalogModel,
@@ -27,6 +28,7 @@
 
 	let loading = false;
 	let catalog: NeveCatalogModel[] = [];
+	let catalogError = '';
 	let selectedId: string | null = null;
 	let wasShown = false;
 
@@ -56,9 +58,11 @@
 
 	const loadCatalog = async () => {
 		try {
+			catalogError = '';
 			catalog = await getNeveCatalog(localStorage.token);
 		} catch (e: any) {
-			toast.error(e?.message || 'Falha ao carregar catálogo');
+			catalogError = normalizeLlamaCppErrorMessage(e, 'Falha ao carregar catálogo');
+			toast.error(catalogError);
 			catalog = [];
 		}
 	};
@@ -88,7 +92,8 @@
 		} else if (state.status === 'downloading') {
 			const fileLabel = state.file_total && state.file_total > 1 ? ` (${state.file_index}/${state.file_total})` : '';
 			const sz = state.total ? `${fmtBytes(state.downloaded ?? 0)} / ${fmtBytes(state.total)}` : '';
-			progressLabel = `Baixando${fileLabel} ${sz}`.trim();
+			const verb = state.resumed ? 'Retomando' : 'Baixando';
+			progressLabel = `${verb}${fileLabel} ${sz}`.trim();
 		} else if (state.status === 'queued') {
 			progressLabel = 'Na fila...';
 		} else if (state.status === 'cancelling') {
@@ -152,7 +157,7 @@
 			(err: any) => {
 				const retryId = downloadingModelId;
 				clearDownloadState(retryId);
-				toast.error(err?.message || 'Falha no download');
+				toast.error(normalizeLlamaCppErrorMessage(err, 'Falha no download'));
 			},
 			async (state) => {
 				const retryId = state.model_id ?? downloadingModelId;
@@ -172,9 +177,14 @@
 		]);
 
 		if (catalogResult.status === 'fulfilled') {
+			catalogError = '';
 			catalog = catalogResult.value;
 		} else {
-			toast.error(catalogResult.reason?.message || 'Falha ao carregar catálogo');
+			catalogError = normalizeLlamaCppErrorMessage(
+				catalogResult.reason,
+				'Falha ao carregar catálogo'
+			);
+			toast.error(catalogError);
 			catalog = [];
 		}
 
@@ -226,7 +236,7 @@
 			});
 		} catch (e: any) {
 			clearDownloadState(selectedId);
-			toast.error(e?.message || 'Falha ao iniciar download');
+			toast.error(normalizeLlamaCppErrorMessage(e, 'Falha ao iniciar download'));
 		}
 	};
 
@@ -245,7 +255,7 @@
 			}
 		} catch (e: any) {
 			cancelling = false;
-			toast.error(e?.message || 'Falha ao cancelar download');
+			toast.error(normalizeLlamaCppErrorMessage(e, 'Falha ao cancelar download'));
 		}
 	};
 
@@ -262,7 +272,7 @@
 			models.set(await getModels(localStorage.token, null, false, true));
 			toast.success(`${item.name} desinstalado`);
 		} catch (e: any) {
-			toast.error(e?.message || 'Falha ao desinstalar modelo');
+			toast.error(normalizeLlamaCppErrorMessage(e, 'Falha ao desinstalar modelo'));
 		} finally {
 			uninstallingModelId = null;
 		}
@@ -299,8 +309,19 @@
 						<Spinner className="size-5" />
 					</div>
 				{:else if catalog.length === 0}
-					<div class="flex h-full items-center justify-center text-center text-xs text-gray-500 dark:text-gray-400">
-						{$i18n.t('Nenhum modelo disponível')}
+					<div class="flex h-full items-center justify-center px-4 text-center">
+						<div class="max-w-[18rem]">
+							<div class="text-sm font-medium text-gray-800 dark:text-gray-100">
+								{$i18n.t(catalogError ? 'Catálogo indisponível' : 'Nenhum modelo disponível')}
+							</div>
+							<div class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+								{#if catalogError}
+									{$i18n.t('Verifique se o backend está aberto e tente novamente.')}
+								{:else}
+									{$i18n.t('Conecte-se à internet para baixar modelos Neve ou coloque arquivos .gguf na pasta models.')}
+								{/if}
+							</div>
+						</div>
 					</div>
 				{:else}
 					{#each catalog as item (item.id)}

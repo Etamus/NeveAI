@@ -18,6 +18,7 @@
 	import { goto } from '$app/navigation';
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import PageEdit from '../icons/PageEdit.svelte';
+	import XMark from '../icons/XMark.svelte';
 	dayjs.extend(calendar);
 	dayjs.extend(localizedFormat);
 
@@ -254,48 +255,63 @@
 	});
 </script>
 
-<Modal size="xl" bind:show>
-	<div class="py-3 dark:text-gray-300 text-gray-700">
-		<div class="px-4 pb-1.5">
-			<SearchInput
-				bind:value={query}
-				on:input={searchHandler}
-				placeholder={$i18n.t('Search')}
-				showClearButton={true}
-				onFocus={() => {
-					selectedIdx = null;
-					messages = null;
-				}}
-				onKeydown={(e) => {
-					console.log('e', e);
+<Modal size="xl" bind:show containerClassName="p-2 sm:p-3">
+	<div
+		class="py-3 dark:text-gray-300 text-gray-700 flex flex-col"
+		style="height: min(42rem, calc(100dvh - 1.5rem));"
+	>
+		<div class="px-4 pb-1.5 flex items-center gap-2">
+			<div class="min-w-0 flex-1">
+				<SearchInput
+					bind:value={query}
+					on:input={searchHandler}
+					placeholder={$i18n.t('Search')}
+					showClearButton={true}
+					onFocus={() => {
+						selectedIdx = null;
+						messages = null;
+					}}
+					onKeydown={(e) => {
+						console.log('e', e);
 
-					if (e.code === 'Enter' && (chatList ?? []).length > 0) {
-						const item = document.querySelector(`[data-arrow-selected="true"]`);
-						if (item) {
-							item?.click();
+						if (e.code === 'Enter' && (chatList ?? []).length > 0) {
+							const item = document.querySelector(`[data-arrow-selected="true"]`);
+							if (item) {
+								item?.click();
+							}
+
+							show = false;
+							return;
+						} else if (e.code === 'ArrowDown') {
+							selectedIdx = Math.min(selectedIdx + 1, (chatList ?? []).length - 1 + actions.length);
+						} else if (e.code === 'ArrowUp') {
+							selectedIdx = Math.max(selectedIdx - 1, 0);
+						} else {
+							selectedIdx = 0;
 						}
 
-						show = false;
-						return;
-					} else if (e.code === 'ArrowDown') {
-						selectedIdx = Math.min(selectedIdx + 1, (chatList ?? []).length - 1 + actions.length);
-					} else if (e.code === 'ArrowUp') {
-						selectedIdx = Math.max(selectedIdx - 1, 0);
-					} else {
-						selectedIdx = 0;
-					}
-
-					const item = document.querySelector(`[data-arrow-selected="true"]`);
-					item?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+						const item = document.querySelector(`[data-arrow-selected="true"]`);
+						item?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+					}}
+				/>
+			</div>
+			<button
+				aria-label={$i18n.t('Close search modal')}
+				class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
+				on:click={() => {
+					show = false;
+					onClose();
 				}}
-			/>
+			>
+				<XMark className="w-5 h-5"></XMark>
+			</button>
 		</div>
 
 		<!-- <hr class="border-gray-50 dark:border-gray-850/30 my-1" /> -->
 
-		<div class="flex px-4 pb-1">
+		<div class="flex px-4 pb-1 min-h-0 flex-1">
 			<div
-				class="flex flex-col overflow-y-auto h-96 md:h-[40rem] max-h-full scrollbar-hidden w-full flex-1 pr-2"
+				class="flex flex-col overflow-y-auto h-full min-h-0 max-h-full scrollbar-hidden w-full flex-1 pr-2"
 			>
 				<div class="w-full text-xs text-gray-500 dark:text-gray-500 font-medium pb-2 px-2">
 					{$i18n.t('Actions')}
@@ -421,7 +437,7 @@
 			</div>
 			<div
 				id="chat-preview"
-				class="hidden md:flex md:flex-1 w-full overflow-y-auto h-96 md:h-[40rem] scrollbar-hidden"
+				class="hidden md:flex md:flex-1 w-full overflow-y-auto h-full min-h-0 scrollbar-hidden"
 			>
 				{#if messages === null}
 					<div

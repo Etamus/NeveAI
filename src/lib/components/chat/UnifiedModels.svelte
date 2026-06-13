@@ -13,10 +13,13 @@
 
 	import {
 		getLocalModels,
+		getLlamaCppStatus,
 		getMmProjFiles,
 		getLocalVramInfo,
 		loadLocalModel,
+		normalizeLlamaCppErrorMessage,
 		unloadLocalModel,
+		type LlamaCppStatus,
 		type LocalModel,
 		type LocalVramInfo
 	} from '$lib/apis/llamacpp';
@@ -67,10 +70,12 @@
 	let mmProjFiles: string[] = [];
 	let localLoading = false;
 	let loadingModels: Set<string> = new Set();
+	let settlingUnloadModels: Set<string> = new Set();
 	let localModelActions: Record<string, 'load' | 'unload'> = {};
 	let localError = '';
 	let localSuccess = '';
 	let vramInfo: LocalVramInfo | null = null;
+	let llamacppStatus: LlamaCppStatus | null = null;
 	let vramPreviewModel: LocalModel | null = null;
 
 	let loadModalMmprojFile: string = '';
@@ -149,6 +154,7 @@
 	};
 
 	$: loadedLocalModel = localModels.find((model) => model.is_loaded) ?? null;
+	$: localModelActionInProgress = loadingModels.size > 0 || settlingUnloadModels.size > 0;
 	$: vramTotalBytes = vramInfo?.total ?? 0;
 	$: vramActualUsed = vramInfo?.used ?? 0;
 	$: vramPreviewBytes = vramPreviewModel ? estimateModelVramBytes(vramPreviewModel) : 0;
@@ -204,6 +210,9 @@
 	const HIGHLIGHTED_LIST_VISIBLE_ROWS = 3;
 	let currentPage = 1;
 
+	$: hasCachedModelRows = localModels.length > 0 || (adminModels?.length ?? 0) > 0;
+	$: localAccessError = Boolean(localError && !localModelActionInProgress && !hasCachedModelRows);
+
 	// ─── SHARED SEARCH ──────────────────────────────────────────────────────
 	let searchValue = '';
 
@@ -215,6 +224,16 @@
 		delete nextActions[filename];
 		localModelActions = nextActions;
 	};
+	const clearLocalModelProcessing = (filename: string) => {
+		clearLocalModelAction(filename);
+		loadingModels = new Set([...loadingModels].filter((f) => f !== filename));
+		settlingUnloadModels = new Set([...settlingUnloadModels].filter((f) => f !== filename));
+	};
+	const clearLocalModelLoading = (filename: string) => {
+		loadingModels = new Set([...loadingModels].filter((f) => f !== filename));
+	};
+	const isLocalModelUnloading = (filename: string) =>
+		localModelActions[filename] === 'unload' || settlingUnloadModels.has(filename);
 	const disableCollapseAnimation = () => {
 		collapseAnimationEnabled = false;
 		if (collapseAnimationTimer) {
@@ -316,8 +335,8 @@
 
 		// Sort GGUFs: loaded/unloading first, then unloaded. Loading stays in place.
 		ggufItems.sort((a, b) => {
-			const aPriority = a.gguf?.is_loaded || localModelActions[a.gguf.filename] === 'unload' ? 1 : 0;
-			const bPriority = b.gguf?.is_loaded || localModelActions[b.gguf.filename] === 'unload' ? 1 : 0;
+			const aPriority = a.gguf?.is_loaded || isLocalModelUnloading(a.gguf.filename) ? 1 : 0;
+			const bPriority = b.gguf?.is_loaded || isLocalModelUnloading(b.gguf.filename) ? 1 : 0;
 			return bPriority - aPriority;
 		});
 
@@ -336,7 +355,7 @@
 		return [...ggufItems, ...adminOnlyItems];
 	})();
 
-	$: unloadingLocalModel = localModels.find((model) => localModelActions[model.filename] === 'unload') ?? null;
+	$: unloadingLocalModel = localModels.find((model) => isLocalModelUnloading(model.filename)) ?? null;
 	$: activeHighlightedModelKey = loadedLocalModel?.filename ?? unloadingLocalModel?.filename ?? null;
 	$: if (activeHighlightedModelKey && activeHighlightedModelKey !== highlightedLoadedModelId) {
 		disableCollapseAnimation();
@@ -357,10 +376,12 @@
 			modelsBelowLoadedCollapsed = Boolean(activeHighlightedModelKey);
 		}
 	}
-	$: highlightedLoadedItem = mergedModels.find((item) => item.gguf?.is_loaded || (item.gguf && localModelActions[item.gguf.filename] === 'unload')) ?? null;
+	$: highlightedLoadedItem = mergedModels.find((item) => item.gguf?.is_loaded || (item.gguf && isLocalModelUnloading(item.gguf.filename))) ?? null;
 	$: hasHighlightedLoadedModel = Boolean(highlightedLoadedItem);
 	$: scrollableMergedModels = highlightedLoadedItem ? mergedModels.filter((item) => item.key !== highlightedLoadedItem.key) : mergedModels;
-	$: filteredScrollableMergedModels = hasHighlightedLoadedModel
+	$: filteredScrollableMergedModels = localAccessError
+		? []
+		: hasHighlightedLoadedModel
 		? scrollableMergedModels
 		: scrollableMergedModels.filter((item) => matchesModelSearch(item, searchValue));
 	$: hasCollapsibleModelsBelow = hasHighlightedLoadedModel && scrollableMergedModels.length > 0;
@@ -377,6 +398,20 @@
 		: modelListHasOverflow
 			? `height: ${modelListMaxHeight}; max-height: ${modelListMaxHeight}; scrollbar-gutter: stable;`
 			: `max-height: ${modelListMaxHeight}; scrollbar-gutter: stable;`;
+	$: modelEmptyTitle = localAccessError
+		? 'Não foi possível acessar modelos locais'
+		: llamacppStatus && !llamacppStatus.server_binary_exists
+			? 'llama.cpp não encontrado'
+			: searchValue
+				? 'Nenhum modelo encontrado'
+				: 'Nenhum modelo instalado';
+	$: modelEmptyDescription = localAccessError
+		? 'Verifique se o backend está em execução e tente reabrir esta janela.'
+		: llamacppStatus && !llamacppStatus.server_binary_exists
+			? 'Execute o instalador para baixar o llama.cpp antes de carregar modelos locais.'
+			: searchValue
+				? 'Tente ajustar sua pesquisa para encontrar o modelo que está procurando.'
+				: 'Clique em "Baixar" para instalar um modelo ou coloque arquivos .gguf na pasta models.';
 	$: if (hasHighlightedLoadedModel && searchValue) {
 		searchValue = '';
 	}
@@ -400,18 +435,81 @@
 				used_human: '0 B',
 				free_human: '0 B',
 				gpus: [],
-				error: e.message || 'Falha ao buscar VRAM'
+				error: normalizeLlamaCppErrorMessage(e, 'Falha ao buscar VRAM')
 			};
 		}
 	}
+
+	async function refreshGlobalModelsStore() {
+		try {
+			_models.set(await getModels(localStorage.token));
+		} catch {
+			// Best effort: a post-action refresh should not look like the action failed.
+		}
+	}
+
+	const isSameLocalModel = (localModel: LocalModel, model: LocalModel) =>
+		localModel.id === model.id || localModel.filename === model.filename;
+
+	const markLocalModelLoaded = (model: LocalModel, result: any, mmprojFilename: string | null = null) => {
+		localModels = localModels.map((localModel) =>
+			isSameLocalModel(localModel, model)
+				? {
+						...localModel,
+						is_loaded: true,
+						loaded_at: Date.now(),
+						n_gpu_layers: result?.n_gpu_layers ?? gpuLayers,
+						n_ctx: result?.n_ctx ?? contextSize,
+						mmproj_filename: result?.mmproj_filename ?? mmprojFilename,
+						cache_type: result?.cache_type ?? getCacheTypeForLoad(),
+						speculative_decoding:
+							result?.speculative_decoding ?? getSpeculativeDecodingForLoad()
+					}
+				: {
+						...localModel,
+						is_loaded: false,
+						loaded_at: null,
+						n_gpu_layers: null,
+						n_ctx: null,
+						mmproj_filename: null,
+						cache_type: null,
+						speculative_decoding: null
+					}
+		);
+	};
+
+	const markLocalModelUnloaded = (model: LocalModel) => {
+		localModels = localModels.map((localModel) =>
+			isSameLocalModel(localModel, model)
+				? {
+						...localModel,
+						is_loaded: false,
+						loaded_at: null,
+						n_gpu_layers: null,
+						n_ctx: null,
+						mmproj_filename: null,
+						cache_type: null,
+						speculative_decoding: null
+					}
+				: localModel
+		);
+	};
+
+	const refreshAfterLocalAction = () => {
+		void (async () => {
+			await refreshGlobalModelsStore();
+			await refreshUnifiedModelData(false);
+		})();
+	};
 
 	async function handleLoad(model: LocalModel) {
 		setLocalModelAction(model.filename, 'load');
 		loadingModels = new Set([...loadingModels, model.filename]);
 		localError = '';
 		localSuccess = '';
+		let completed = false;
 		try {
-			await loadLocalModel(
+			const result = await loadLocalModel(
 				localStorage.token,
 				model.filename,
 				gpuLayers,
@@ -420,14 +518,17 @@
 				getCacheTypeForLoad(),
 				getSpeculativeDecodingForLoad()
 			);
+			markLocalModelLoaded(model, result);
 			localSuccess = `${model.filename} carregado com sucesso!`;
-			_models.set(await getModels(localStorage.token));
-			await refreshUnifiedModelData(false);
+			completed = true;
+			clearLocalModelProcessing(model.filename);
+			refreshAfterLocalAction();
 		} catch (e: any) {
-			localError = e.message || 'Erro ao carregar modelo';
+			localError = normalizeLlamaCppErrorMessage(e, 'Erro ao carregar modelo');
 		} finally {
-			clearLocalModelAction(model.filename);
-			loadingModels = new Set([...loadingModels].filter((f) => f !== model.filename));
+			if (!completed) {
+				clearLocalModelProcessing(model.filename);
+			}
 		}
 	}
 
@@ -504,8 +605,9 @@
 		loadingModels = new Set([...loadingModels, model.filename]);
 		localError = '';
 		localSuccess = '';
+		let completed = false;
 		try {
-			await loadLocalModel(
+			const result = await loadLocalModel(
 				localStorage.token,
 				model.filename,
 				gpuLayers,
@@ -514,14 +616,17 @@
 				getCacheTypeForLoad(),
 				getSpeculativeDecodingForLoad()
 			);
+			markLocalModelLoaded(model, result, mmprojFile);
 			localSuccess = `${model.filename} carregado! (visão: ${mmprojFile})`;
-			_models.set(await getModels(localStorage.token));
-			await refreshUnifiedModelData(false);
+			completed = true;
+			clearLocalModelProcessing(model.filename);
+			refreshAfterLocalAction();
 		} catch (e: any) {
-			localError = e.message || 'Erro ao carregar modelo';
+			localError = normalizeLlamaCppErrorMessage(e, 'Erro ao carregar modelo');
 		} finally {
-			clearLocalModelAction(model.filename);
-			loadingModels = new Set([...loadingModels].filter((f) => f !== model.filename));
+			if (!completed) {
+				clearLocalModelProcessing(model.filename);
+			}
 		}
 	}
 
@@ -531,16 +636,21 @@
 		loadingModels = new Set([...loadingModels, model.filename]);
 		localError = '';
 		localSuccess = '';
+		let completed = false;
 		try {
 			await unloadLocalModel(localStorage.token, model.id);
 			localSuccess = `${model.filename} descarregado.`;
-			_models.set(await getModels(localStorage.token));
 			await refreshUnifiedModelData(false);
+			markLocalModelUnloaded(model);
+			completed = true;
+			clearLocalModelProcessing(model.filename);
+			void refreshGlobalModelsStore();
 		} catch (e: any) {
-			localError = e.message || 'Erro ao descarregar modelo';
+			localError = normalizeLlamaCppErrorMessage(e, 'Erro ao descarregar modelo');
 		} finally {
-			clearLocalModelAction(model.filename);
-			loadingModels = new Set([...loadingModels].filter((f) => f !== model.filename));
+			if (!completed) {
+				clearLocalModelProcessing(model.filename);
+			}
 		}
 	}
 
@@ -563,20 +673,26 @@
 
 	async function refreshUnifiedModelData(initial = true) {
 		if (initial) localLoading = true;
-		localError = '';
 		try {
-			const [newLocalModels, newMmProjFiles] = await Promise.all([
+			const [newLocalModels, newMmProjFiles, newLlamaCppStatus] = await Promise.all([
 				getLocalModels(localStorage.token),
-				getMmProjFiles(localStorage.token)
+				getMmProjFiles(localStorage.token),
+				getLlamaCppStatus(localStorage.token).catch(() => null)
 			]);
 			await initAdmin(newLocalModels);
+			localError = '';
 			if (JSON.stringify(newLocalModels) !== JSON.stringify(localModels)) localModels = newLocalModels;
 			if (JSON.stringify(newMmProjFiles) !== JSON.stringify(mmProjFiles)) mmProjFiles = newMmProjFiles;
+			llamacppStatus = newLlamaCppStatus;
+			const settledUnloadFilenames = [...settlingUnloadModels].filter((filename) => {
+				const refreshedModel = newLocalModels.find((model) => model.filename === filename);
+				return !refreshedModel?.is_loaded;
+			});
+			settledUnloadFilenames.forEach(clearLocalModelProcessing);
 		} catch (e: any) {
-			localError =
-				e.message === 'Failed to fetch'
-					? 'Falha ao buscar'
-					: e.message || 'Erro ao buscar modelos locais';
+			if (!localModelActionInProgress) {
+				localError = normalizeLlamaCppErrorMessage(e, 'Falha ao atualizar');
+			}
 		} finally {
 			await refreshLocalVram();
 			if (initial) localLoading = false;
@@ -679,9 +795,14 @@
 		} else if (vramInfo === null) {
 			refreshLocalVram();
 		}
+		if (preloadApplied) {
+			llamacppStatus = await getLlamaCppStatus(localStorage.token).catch(() => null);
+		}
 
 		// Auto-refresh: poll for new GGUF files every 3 seconds
 		const pollInterval = setInterval(async () => {
+			if (loadingModels.size > 0) return;
+
 			const prevIds = new Set(localModels.map((m) => m.id).filter(Boolean));
 			await refreshUnifiedModelData(false);
 			const currIds = new Set(localModels.map((m) => m.id).filter(Boolean));
@@ -690,7 +811,7 @@
 				[...prevIds].some((id) => !currIds.has(id)) ||
 				[...currIds].some((id) => !prevIds.has(id));
 			if (changed) {
-				_models.set(await getModels(localStorage.token));
+				await refreshGlobalModelsStore();
 				await initAdmin(localModels);
 			}
 		}, 3000);
@@ -839,15 +960,29 @@
 					<span class="font-medium text-gray-700 dark:text-gray-200">VRAM</span>
 					<span>Indisponível</span>
 				</div>
+				<div class="mt-1">
+					Use modelos CPU ou instale drivers compatíveis.
+				</div>
 			</div>
 		{/if}
 	</div>
 {/snippet}
 
+{#snippet firstRunHints()}
+	{#if !localError && !localLoading && localModels.length > 0 && mmProjFiles.length === 0}
+		<div class="px-3.5 pb-2 shrink-0">
+			<div class="rounded-xl border border-dashed border-gray-200/80 px-3 py-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
+				<span class="font-medium text-gray-700 dark:text-gray-200">Visão</span>
+				<span class="ml-1">Para modelos multimodais, coloque o mmproj compatível na pasta mmproj.</span>
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
 {#snippet modelRow(item)}
 	{@const gm = item.gguf}
 	{@const am = item.admin}
-	{@const isProcessing = gm && loadingModels.has(gm.filename)}
+	{@const isProcessing = gm && (loadingModels.has(gm.filename) || settlingUnloadModels.has(gm.filename))}
 	<div
 		class="flex h-16 w-full snap-start px-3 py-1 {(am?.meta?.hidden || (am && !(am?.is_active ?? true))) ? 'opacity-50' : ''}"
 		id={am ? `model-item-${am.id}` : undefined}
@@ -1034,6 +1169,7 @@
 					{/if}
 
 					{@render vramMeter()}
+					{@render firstRunHints()}
 
 					{#if highlightedLoadedItem}
 						<div class="shrink-0 mb-2">
@@ -1055,9 +1191,9 @@
 										style={`height: ${modelListMaxHeight};`}
 									>
 										<div class="max-w-md text-center">
-											<div class="text-lg font-medium mb-1">{$i18n.t('No models found')}</div>
+											<div class="text-lg font-medium mb-1">{$i18n.t(modelEmptyTitle)}</div>
 											<div class="text-gray-500 text-center text-xs">
-												{$i18n.t('Tente ajustar sua pesquisa para encontrar o modelo que está procurando.')}
+												{$i18n.t(modelEmptyDescription)}
 											</div>
 										</div>
 									</div>

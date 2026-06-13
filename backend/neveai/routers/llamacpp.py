@@ -12,6 +12,7 @@ import sys
 import time
 import json
 import base64
+import hashlib
 import signal
 import logging
 import asyncio
@@ -26,7 +27,7 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from neveai.env import SRC_LOG_LEVELS, GLOBAL_LOG_LEVEL, BASE_DIR
+from neveai.env import SRC_LOG_LEVELS, GLOBAL_LOG_LEVEL, BASE_DIR, DATA_DIR
 from neveai.models.models import ModelForm, Models
 from neveai.utils.model_defaults import get_effective_model_params
 from neveai.utils.payload import apply_model_params_to_body_openai, apply_system_prompt_to_body
@@ -1207,6 +1208,19 @@ async def get_vram_info():
     return await _get_vram_info_cached()
 
 
+@router.get("/status")
+async def get_llamacpp_status():
+    """Return first-run status for the local llama.cpp setup."""
+    return {
+        "server_binary_exists": LLAMACPP_SERVER_BIN.exists(),
+        "server_binary_path": str(LLAMACPP_SERVER_BIN),
+        "models_dir": str(MODELS_DIR),
+        "mmproj_dir": str(MMPROJ_DIR),
+        "models_count": len(model_manager.scan_models()),
+        "mmproj_count": len(model_manager.scan_mmproj_files()),
+    }
+
+
 @router.post("/models/load")
 async def load_model(req: LoadModelRequest, request: Request):
     """Load a .gguf model by starting llama-server with it."""
@@ -1569,7 +1583,7 @@ NEVE_CATALOG = [
         "id": "neve-echo-s",
         "name": "Neve Echo S",
         "repo": "NeveAI/Neve-Echo-S3-4B-QAT-GGUF",
-        "hardware_label": "4 GB ≥",
+        "hardware_label": "4 GB",
         "hardware_kind": "gpu",
         "size_label": "3.9 GB",
         "description": "Modelo de uso geral e raciocínio para tarefas rápidas.",
@@ -1580,7 +1594,7 @@ NEVE_CATALOG = [
         "id": "neve-echo",
         "name": "Neve Echo",
         "repo": "NeveAI/Neve-Echo-6-12B-QAT-GGUF",
-        "hardware_label": "6 GB ≥",
+        "hardware_label": "6 GB",
         "hardware_kind": "gpu",
         "size_label": "6.3 GB",
         "description": "Modelo de uso geral e raciocínio para tarefas variadas.",
@@ -1591,7 +1605,7 @@ NEVE_CATALOG = [
         "id": "neve-prism",
         "name": "Neve Prism",
         "repo": "NeveAI/Neve-Prism-3-12B-GGUF",
-        "hardware_label": "8 GB ≥",
+        "hardware_label": "8 GB",
         "hardware_kind": "gpu",
         "size_label": "7.9 GB",
         "description": "Modelo de visão para análise de imagens em alta precisão.",
@@ -1602,7 +1616,7 @@ NEVE_CATALOG = [
         "id": "neve-prism-x",
         "name": "Neve Prism X",
         "repo": "NeveAI/Neve-Prism-X2-9B-GGUF",
-        "hardware_label": "8 GB ≥",
+        "hardware_label": "8 GB",
         "hardware_kind": "gpu",
         "size_label": "8.2 GB",
         "description": "Modelo de visão e raciocínio para cenários visuais complexos.",
@@ -1613,7 +1627,7 @@ NEVE_CATALOG = [
         "id": "neve-sense",
         "name": "Neve Sense",
         "repo": "NeveAI/Neve-Sense-2-20B-GGUF",
-        "hardware_label": "12 GB ≥",
+        "hardware_label": "12 GB",
         "hardware_kind": "gpu",
         "size_label": "11.1 GB",
         "description": "Modelo de análise e resumo para documentos complexos.",
@@ -1624,7 +1638,7 @@ NEVE_CATALOG = [
         "id": "neve-strata-s",
         "name": "Neve Strata S",
         "repo": "NeveAI/Neve-Strata-S2-4B-GGUF",
-        "hardware_label": "6 GB ≥",
+        "hardware_label": "6 GB",
         "hardware_kind": "gpu",
         "size_label": "5.5 GB",
         "description": "Modelo de programação e raciocínio para execução em escala.",
@@ -1635,7 +1649,7 @@ NEVE_CATALOG = [
         "id": "neve-strata",
         "name": "Neve Strata",
         "repo": "NeveAI/Neve-Strata-4-30B-GGUF",
-        "hardware_label": "16 GB ≥",
+        "hardware_label": "16 GB",
         "hardware_kind": "gpu",
         "size_label": "16.3 GB",
         "description": "Modelo de programação e raciocínio para códigos robustos.",
@@ -1646,7 +1660,7 @@ NEVE_CATALOG = [
         "id": "neve-strata-x",
         "name": "Neve Strata X",
         "repo": "NeveAI/Neve-Strata-X2-35B-GGUF",
-        "hardware_label": "16 GB ≥",
+        "hardware_label": "16 GB",
         "hardware_kind": "gpu",
         "size_label": "18.2 GB",
         "description": "Modelo de programação e raciocínio para arquiteturas complexas.",
@@ -1678,19 +1692,94 @@ NEVE_CATALOG = [
 ]
 
 # In-memory task registry: { task_id: { status, progress, total, downloaded, message, files: [...] } }
-_DOWNLOAD_TASKS: dict = {}
 _DOWNLOAD_TASKS_LOCK = threading.Lock()
+_DOWNLOAD_MODEL_LOCKS: dict[str, asyncio.Lock] = {}
+_DOWNLOAD_MODEL_LOCKS_LOCK = threading.Lock()
 _DOWNLOAD_ACTIVE_STATUSES = {"queued", "resolving", "downloading", "cancelling"}
+NEVE_DOWNLOAD_STATE_DIR = DATA_DIR / "downloads"
+NEVE_DOWNLOAD_STATE_PATH = NEVE_DOWNLOAD_STATE_DIR / "neve_catalog_downloads.json"
+NEVE_DOWNLOAD_STATE_TMP_PATH = NEVE_DOWNLOAD_STATE_DIR / "neve_catalog_downloads.json.tmp"
+NEVE_DOWNLOAD_PERSIST_INTERVAL = 1.0
+_DOWNLOAD_LAST_PERSIST = 0.0
 
 
 class _DownloadCancelled(Exception):
     pass
 
 
+def _load_persisted_download_tasks() -> dict:
+    try:
+        if not NEVE_DOWNLOAD_STATE_PATH.exists():
+            return {}
+        with open(NEVE_DOWNLOAD_STATE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        tasks = data.get("tasks") if isinstance(data, dict) else None
+        if not isinstance(tasks, dict):
+            return {}
+
+        recovered = {}
+        for task_id, task in tasks.items():
+            if not isinstance(task, dict):
+                continue
+            task = {**task, "task_id": task_id}
+            if task.get("status") in _DOWNLOAD_ACTIVE_STATUSES:
+                task.update(
+                    {
+                        "status": "error",
+                        "error": "Download interrompido. Clique em Baixar novamente para continuar.",
+                        "message": "Download interrompido",
+                        "cancel_requested": False,
+                    }
+                )
+            recovered[task_id] = task
+        return recovered
+    except Exception:
+        log.exception("Failed to load persisted Neve download state")
+        return {}
+
+
+def _persist_download_tasks(snapshot: Optional[dict] = None, force: bool = False):
+    global _DOWNLOAD_LAST_PERSIST
+    now = time.monotonic()
+    if not force and now - _DOWNLOAD_LAST_PERSIST < NEVE_DOWNLOAD_PERSIST_INTERVAL:
+        return
+
+    if snapshot is None:
+        with _DOWNLOAD_TASKS_LOCK:
+            snapshot = {task_id: dict(task) for task_id, task in _DOWNLOAD_TASKS.items()}
+
+    try:
+        NEVE_DOWNLOAD_STATE_DIR.mkdir(parents=True, exist_ok=True)
+        payload = {"tasks": snapshot, "updated_at": time.time()}
+        with open(NEVE_DOWNLOAD_STATE_TMP_PATH, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        NEVE_DOWNLOAD_STATE_TMP_PATH.replace(NEVE_DOWNLOAD_STATE_PATH)
+        _DOWNLOAD_LAST_PERSIST = now
+    except Exception:
+        log.exception("Failed to persist Neve download state")
+
+
+_DOWNLOAD_TASKS: dict = _load_persisted_download_tasks()
+
+
+def _get_model_download_lock(model_id: str) -> asyncio.Lock:
+    with _DOWNLOAD_MODEL_LOCKS_LOCK:
+        lock = _DOWNLOAD_MODEL_LOCKS.get(model_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _DOWNLOAD_MODEL_LOCKS[model_id] = lock
+        return lock
+
+
 def _set_task(task_id: str, **fields):
+    force_persist = bool(
+        {"status", "target_paths", "tmp_paths", "current_tmp_path", "current_dest_path"} & set(fields)
+    )
     with _DOWNLOAD_TASKS_LOCK:
         task = _DOWNLOAD_TASKS.setdefault(task_id, {"task_id": task_id})
         task.update(fields)
+        snapshot = {tid: dict(t) for tid, t in _DOWNLOAD_TASKS.items()}
+    _persist_download_tasks(snapshot, force=force_persist)
 
 
 def _get_task(task_id: str) -> dict:
@@ -1932,6 +2021,35 @@ def _pick_mmproj(files: list[dict]) -> Optional[dict]:
     return None
 
 
+def _hf_file_size(file_info: dict) -> int:
+    try:
+        return int((file_info.get("lfs") or {}).get("size") or file_info.get("size") or 0)
+    except Exception:
+        return 0
+
+
+def _hf_file_sha256(file_info: dict) -> Optional[str]:
+    for value in ((file_info.get("lfs") or {}).get("oid"), file_info.get("oid")):
+        if isinstance(value, str) and re.fullmatch(r"[a-fA-F0-9]{64}", value):
+            return value.lower()
+    return None
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _parse_content_range_total(value: Optional[str]) -> int:
+    if not value:
+        return 0
+    match = re.search(r"/(\d+)$", value)
+    return int(match.group(1)) if match else 0
+
+
 async def _stream_download_file(
     task_id: str,
     repo_id: str,
@@ -1939,6 +2057,8 @@ async def _stream_download_file(
     dest_path: Path,
     file_index: int,
     file_total: int,
+    expected_size: int = 0,
+    expected_sha256: Optional[str] = None,
 ):
     """Stream a single file from HF to disk, updating task progress."""
     url = f"https://huggingface.co/{repo_id}/resolve/main/{repo_path}"
@@ -1946,24 +2066,85 @@ async def _stream_download_file(
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     _raise_if_download_cancelled(task_id)
 
-    async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
-        async with client.stream("GET", url) as r:
-            r.raise_for_status()
-            total = int(r.headers.get("content-length", 0))
-            downloaded = 0
+    if dest_path.exists():
+        current_size = dest_path.stat().st_size
+        size_ok = expected_size <= 0 or current_size == expected_size
+        checksum_ok = not expected_sha256 or _sha256_file(dest_path) == expected_sha256
+        if size_ok and checksum_ok:
+            task = _get_task(task_id)
+            downloaded_paths = list(task.get("downloaded_paths", []) or [])
+            if str(dest_path) not in downloaded_paths:
+                downloaded_paths.append(str(dest_path))
             _set_task(
                 task_id,
                 status="downloading",
                 current_file=repo_path,
                 file_index=file_index,
                 file_total=file_total,
-                downloaded=0,
+                downloaded=current_size,
+                total=expected_size or current_size,
+                progress=1.0,
+                downloaded_paths=downloaded_paths,
+                resumed=False,
+                verified=True,
+                checksum=expected_sha256,
+            )
+            return
+        dest_path.unlink()
+
+    async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
+        resume_from = tmp_path.stat().st_size if tmp_path.exists() else 0
+        if expected_size > 0 and resume_from > expected_size:
+            tmp_path.unlink()
+            resume_from = 0
+
+        headers = {"Range": f"bytes={resume_from}-"} if resume_from > 0 else None
+        async with client.stream("GET", url, headers=headers) as r:
+            if resume_from > 0 and r.status_code == 416 and expected_size and resume_from == expected_size:
+                actual_sha256 = _sha256_file(tmp_path) if expected_sha256 else None
+                if expected_sha256 and actual_sha256 != expected_sha256:
+                    tmp_path.unlink()
+                    raise RuntimeError(f"Checksum invÃ¡lido para {repo_path}")
+                tmp_path.replace(dest_path)
+                task = _get_task(task_id)
+                downloaded_paths = list(task.get("downloaded_paths", []) or [])
+                if str(dest_path) not in downloaded_paths:
+                    downloaded_paths.append(str(dest_path))
+                _set_task(
+                    task_id,
+                    downloaded_paths=downloaded_paths,
+                    verified=True,
+                    checksum=actual_sha256 or expected_sha256,
+                    downloaded=expected_size,
+                    total=expected_size,
+                    progress=1.0,
+                )
+                return
+
+            r.raise_for_status()
+            if resume_from > 0 and r.status_code != 206:
+                resume_from = 0
+
+            content_length = int(r.headers.get("content-length", 0))
+            range_total = _parse_content_range_total(r.headers.get("content-range"))
+            total = expected_size or range_total or (resume_from + content_length)
+            downloaded = resume_from
+            file_mode = "ab" if resume_from > 0 else "wb"
+            _set_task(
+                task_id,
+                status="downloading",
+                current_file=repo_path,
+                file_index=file_index,
+                file_total=file_total,
+                downloaded=downloaded,
                 total=total,
-                progress=0.0,
+                progress=(downloaded / total) if total > 0 else 0.0,
                 current_tmp_path=str(tmp_path),
                 current_dest_path=str(dest_path),
+                resumed=resume_from > 0,
+                expected_checksum=expected_sha256,
             )
-            with open(tmp_path, "wb") as f:
+            with open(tmp_path, file_mode) as f:
                 async for chunk in r.aiter_bytes(chunk_size=1024 * 1024):
                     _raise_if_download_cancelled(task_id)
                     if not chunk:
@@ -1978,11 +2159,29 @@ async def _stream_download_file(
                         progress=progress,
                     )
     _raise_if_download_cancelled(task_id)
+    if expected_size > 0 and tmp_path.stat().st_size != expected_size:
+        raise RuntimeError(
+            f"Tamanho invÃ¡lido para {repo_path}: {tmp_path.stat().st_size} de {expected_size} bytes"
+        )
+
+    actual_sha256 = _sha256_file(tmp_path) if expected_sha256 else None
+    if expected_sha256 and actual_sha256 != expected_sha256:
+        tmp_path.unlink(missing_ok=True)
+        raise RuntimeError(f"Checksum invÃ¡lido para {repo_path}")
+
     tmp_path.replace(dest_path)
     task = _get_task(task_id)
     downloaded_paths = list(task.get("downloaded_paths", []) or [])
     downloaded_paths.append(str(dest_path))
-    _set_task(task_id, downloaded_paths=downloaded_paths)
+    _set_task(
+        task_id,
+        downloaded_paths=downloaded_paths,
+        verified=True,
+        checksum=actual_sha256 or expected_sha256,
+        downloaded=expected_size or dest_path.stat().st_size,
+        total=expected_size or dest_path.stat().st_size,
+        progress=1.0,
+    )
 
 
 async def _run_download_task(task_id: str, model_id: str, app=None):
@@ -2002,11 +2201,11 @@ async def _run_download_task(task_id: str, model_id: str, app=None):
             return
         mmproj_file = _pick_mmproj(files)
 
-        targets: list[tuple[str, Path, bool]] = []
+        targets: list[tuple[dict, Path, bool]] = []
         if not _is_installed(main_file["path"]):
-            targets.append((main_file["path"], MODELS_DIR / main_file["path"], True))
+            targets.append((main_file, MODELS_DIR / main_file["path"], True))
         if mmproj_file and not (MMPROJ_DIR / mmproj_file["path"]).exists():
-            targets.append((mmproj_file["path"], MMPROJ_DIR / mmproj_file["path"], False))
+            targets.append((mmproj_file, MMPROJ_DIR / mmproj_file["path"], False))
 
         if not targets:
             _set_task(task_id, status="completed", message="Já instalado", progress=1.0)
@@ -2016,13 +2215,30 @@ async def _run_download_task(task_id: str, model_id: str, app=None):
             task_id,
             target_paths=[str(dest_path) for _, dest_path, _ in targets],
             tmp_paths=[str(dest_path.with_suffix(dest_path.suffix + ".part")) for _, dest_path, _ in targets],
+            files=[
+                {
+                    "path": file_info.get("path"),
+                    "size": _hf_file_size(file_info),
+                    "sha256": _hf_file_sha256(file_info),
+                }
+                for file_info, _, _ in targets
+            ],
         )
 
         total_files = len(targets)
         main_model_downloaded = False
-        for i, (repo_path, dest_path, is_main_model) in enumerate(targets, start=1):
+        for i, (file_info, dest_path, is_main_model) in enumerate(targets, start=1):
             _raise_if_download_cancelled(task_id)
-            await _stream_download_file(task_id, repo_id, repo_path, dest_path, i, total_files)
+            await _stream_download_file(
+                task_id,
+                repo_id,
+                file_info["path"],
+                dest_path,
+                i,
+                total_files,
+                expected_size=_hf_file_size(file_info),
+                expected_sha256=_hf_file_sha256(file_info),
+            )
             main_model_downloaded = main_model_downloaded or is_main_model
 
         _raise_if_download_cancelled(task_id)
@@ -2047,6 +2263,8 @@ async def _run_download_task(task_id: str, model_id: str, app=None):
             progress=1.0,
             message="Download concluído",
             defaults_status=defaults_status,
+            current_tmp_path=None,
+            current_dest_path=None,
         )
     except _DownloadCancelled:
         _cleanup_download_artifacts(task_id)
@@ -2061,10 +2279,15 @@ async def _run_download_task(task_id: str, model_id: str, app=None):
             current_dest_path=None,
         )
     except httpx.HTTPStatusError as e:
-        _set_task(task_id, status="error", error=f"HTTP {e.response.status_code} ao baixar de {repo_id}")
+        _set_task(
+            task_id,
+            status="error",
+            error=f"HTTP {e.response.status_code} ao baixar de {repo_id}",
+            resume_available=True,
+        )
     except Exception as e:
         log.exception(f"Erro no download do modelo {model_id}")
-        _set_task(task_id, status="error", error=str(e))
+        _set_task(task_id, status="error", error=str(e), resume_available=True)
 
 
 @router.get("/catalog")
@@ -2141,14 +2364,20 @@ async def start_download(req: DownloadModelRequest, request: Request):
     if not _catalog_entry(req.model_id):
         raise HTTPException(status_code=404, detail="Modelo não encontrado no catálogo")
 
-    active = _find_active_download(req.model_id)
+    active = _find_active_download()
     if active:
         return {"task_id": active[0], "active": True}
 
-    task_id = uuid.uuid4().hex
-    _set_task(task_id, status="queued", model_id=req.model_id, progress=0.0)
-    asyncio.create_task(_run_download_task(task_id, req.model_id, request.app))
-    return {"task_id": task_id}
+    lock = _get_model_download_lock(req.model_id)
+    async with lock:
+        active = _find_active_download()
+        if active:
+            return {"task_id": active[0], "active": True}
+
+        task_id = uuid.uuid4().hex
+        _set_task(task_id, status="queued", model_id=req.model_id, progress=0.0)
+        asyncio.create_task(_run_download_task(task_id, req.model_id, request.app))
+        return {"task_id": task_id}
 
 
 @router.post("/download/cancel/{task_id}")

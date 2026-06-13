@@ -43,6 +43,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { beforeNavigate } from '$app/navigation';
+	import { browser, dev } from '$app/environment';
 	import { updated } from '$app/state';
 
 	import i18n, { initI18n } from '$lib/i18n';
@@ -79,6 +80,20 @@
 		}
 		return false;
 	};
+
+	const setupFrontendConsole = () => {
+		if (!browser || dev) return;
+		try {
+			if (localStorage.getItem('NEVEAI_DEBUG') === '1') return;
+		} catch {
+			// Keep logs silent when storage is unavailable in the app shell.
+		}
+		console.log = () => {};
+		console.debug = () => {};
+		console.warn = () => {};
+	};
+
+	setupFrontendConsole();
 
 	// handle frontend updates (https://svelte.dev/docs/kit/configuration#version)
 	beforeNavigate(async ({ willUnload, to }) => {
