@@ -968,17 +968,6 @@
 	</div>
 {/snippet}
 
-{#snippet firstRunHints()}
-	{#if !localError && !localLoading && localModels.length > 0 && mmProjFiles.length === 0}
-		<div class="px-3.5 pb-2 shrink-0">
-			<div class="rounded-xl border border-dashed border-gray-200/80 px-3 py-2 text-xs text-gray-500 dark:border-gray-800 dark:text-gray-400">
-				<span class="font-medium text-gray-700 dark:text-gray-200">Visão</span>
-				<span class="ml-1">Para modelos multimodais, coloque o mmproj compatível na pasta mmproj.</span>
-			</div>
-		</div>
-	{/if}
-{/snippet}
-
 {#snippet modelRow(item)}
 	{@const gm = item.gguf}
 	{@const am = item.admin}
@@ -1169,7 +1158,6 @@
 					{/if}
 
 					{@render vramMeter()}
-					{@render firstRunHints()}
 
 					{#if highlightedLoadedItem}
 						<div class="shrink-0 mb-2">

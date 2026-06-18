@@ -2538,9 +2538,117 @@
 			.map((token) => decodeURIComponent(JSON.parse(`"${token.replace(/"/g, '\\"')}"`)));
 	};
 
+	const CHAT_SOCKET_READY_TIMEOUT_MS = 20000;
+
+	const isChatSocketReady = (chatSocket: any) => {
+		return Boolean(chatSocket?.connected && chatSocket?.id);
+	};
+
+	const waitForChatSocketReady = async (): Promise<string> => {
+		const currentSocket = get(socket);
+		if (isChatSocketReady(currentSocket)) {
+			return currentSocket.id;
+		}
+
+		return await new Promise<string>((resolve, reject) => {
+			let settled = false;
+			let attachedSocket: any = null;
+			let unsubscribe: Unsubscriber | null = null;
+			let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+			const detachSocket = () => {
+				if (attachedSocket) {
+					attachedSocket.off('connect', handleConnect);
+				}
+			};
+
+			const cleanup = () => {
+				detachSocket();
+				unsubscribe?.();
+				if (timeoutId) {
+					clearTimeout(timeoutId);
+				}
+			};
+
+			const finish = (socketId?: string, error?: Error) => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				if (error) {
+					reject(error);
+				} else {
+					resolve(socketId ?? '');
+				}
+			};
+
+			const resolveIfReady = (nextSocket = attachedSocket) => {
+				if (isChatSocketReady(nextSocket)) {
+					finish(nextSocket.id);
+					return true;
+				}
+				return false;
+			};
+
+			function handleConnect() {
+				resolveIfReady(attachedSocket);
+			}
+
+			const attachSocket = (nextSocket: any) => {
+				if (settled || attachedSocket === nextSocket) {
+					resolveIfReady(nextSocket);
+					return;
+				}
+
+				detachSocket();
+				attachedSocket = nextSocket;
+
+				if (!nextSocket || resolveIfReady(nextSocket)) {
+					return;
+				}
+
+				nextSocket.on('connect', handleConnect);
+			};
+
+			timeoutId = setTimeout(() => {
+				finish(
+					undefined,
+					new Error('Não foi possível conectar ao backend. Verifique se ele está em execução e tente novamente.')
+				);
+			}, CHAT_SOCKET_READY_TIMEOUT_MS);
+
+			unsubscribe = socket.subscribe(attachSocket);
+		});
+	};
+
 	const sendMessageSocket = async (model, _messages, _history, responseMessageId, _chatId) => {
 		const responseMessage = _history.messages[responseMessageId];
 		const userMessage = _history.messages[responseMessage.parentId];
+
+		let socketId = '';
+		try {
+			socketId = await waitForChatSocketReady();
+		} catch (error) {
+			const errorMessage =
+				error instanceof Error
+					? error.message
+					: 'Não foi possível conectar ao backend. Tente novamente.';
+
+			toast.error(errorMessage);
+			responseMessage.error = { content: errorMessage };
+			responseMessage.done = true;
+			history.messages[responseMessageId] = responseMessage;
+			history.currentId = responseMessageId;
+			taskIds = null;
+
+			await tick();
+			scrollToBottom();
+			return;
+		}
+
+		if ($temporaryChatEnabled && (!_chatId || _chatId === 'local:undefined')) {
+			_chatId = `local:${socketId}`;
+			await chatId.set(_chatId);
+		}
 
 		const chatMessageFiles = _messages
 			.filter((message) => message.files)
@@ -2723,8 +2831,8 @@
 				},
 				model_item: $models.find((m) => m.id === model.id),
 
-				session_id: $socket?.id,
-				chat_id: $chatId,
+				session_id: socketId,
+				chat_id: _chatId,
 
 				id: responseMessageId,
 				parent_id: userMessage?.id ?? null,
