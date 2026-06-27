@@ -213,7 +213,7 @@
 	let collapseAnimationTimer: ReturnType<typeof setTimeout> | null = null;
 
 	const perPage = 30;
-	const MODEL_ROW_HEIGHT_PX = 62;
+	const MODEL_ROW_HEIGHT_PX = 72;
 	const HIGHLIGHTED_MODEL_ROW_HEIGHT_PX = 72;
 	const NORMAL_LIST_VISIBLE_ROWS = 6;
 	const HIGHLIGHTED_LIST_VISIBLE_ROWS = 3;
@@ -998,12 +998,14 @@
 	{@const gm = item.gguf}
 	{@const am = item.admin}
 	{@const isProcessing = gm && (loadingModels.has(gm.filename) || settlingUnloadModels.has(gm.filename))}
+	{@const rowHeight = HIGHLIGHTED_MODEL_ROW_HEIGHT_PX}
 	<div
-		class="flex h-16 w-full snap-start px-3 py-1 {(am?.meta?.hidden || (am && !(am?.is_active ?? true))) ? 'opacity-50' : ''}"
+		class="flex w-full snap-start shrink-0 overflow-hidden px-3 py-1 {(am?.meta?.hidden || (am && !(am?.is_active ?? true))) ? 'opacity-50' : ''}"
+		style={`height: ${rowHeight}px; min-height: ${rowHeight}px; max-height: ${rowHeight}px;`}
 		id={am ? `model-item-${am.id}` : undefined}
 	>
 		<div
-			class="flex gap-3 w-full px-2 py-2 rounded-2xl transition cursor-pointer {(gm?.is_loaded || isProcessing) ? 'border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30' : 'hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
+			class="flex h-full min-w-0 gap-3 w-full overflow-hidden px-2 py-2 rounded-2xl transition-colors cursor-pointer {(gm?.is_loaded || isProcessing) ? 'border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30' : 'hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
 			on:click={(e) => {
 				if (am && (am?.is_active ?? true) && !(e.target as HTMLElement).closest('button') && !(e.target as HTMLElement).closest('[data-melt-dropdown-menu]')) {
 					selectedModelId = am.id;
@@ -1084,7 +1086,7 @@
 				</div>
 			</div>
 
-			<div class="flex items-center gap-0.5 flex-shrink-0 self-center">
+			<div class="flex w-32 flex-shrink-0 items-center justify-end gap-0.5 self-center">
 				{#if gm && (am?.is_active ?? true)}
 					{#if isProcessing}
 						<div class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500">

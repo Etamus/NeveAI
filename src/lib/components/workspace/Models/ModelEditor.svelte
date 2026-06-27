@@ -99,12 +99,13 @@
 	let system = '';
 	let showSystemPromptField = false;
 	$: if (system !== '') showSystemPromptField = true;
+	const DEFAULT_MODEL_PROFILE_IMAGE_URL = `${NEVEAI_BASE_URL}/static/favicon.png`;
 	let info = {
 		id: '',
 		base_model_id: null,
 		name: '',
 		meta: {
-			profile_image_url: `${NEVEAI_BASE_URL}/static/favicon.png`,
+			profile_image_url: DEFAULT_MODEL_PROFILE_IMAGE_URL,
 			description: '',
 			suggestion_prompts: null,
 			tags: []
@@ -518,46 +519,50 @@
 					<div class="flex flex-row gap-4 md:gap-6 w-full">
 						<div class="self-start flex justify-center my-2 shrink-0">
 							<div class="self-center">
-								<button
-									class="rounded-xl flex shrink-0 items-center {info.meta.profile_image_url !==
-									`${NEVEAI_BASE_URL}/static/favicon.png`
-										? 'bg-transparent'
-										: 'bg-white'} shadow-xl group relative"
-									type="button"
-									aria-label={$i18n.t('Upload profile image')}
-									on:click={() => {
-										filesInputElement.click();
-									}}
-								>
-									{#if info.meta.profile_image_url}
-										<img
-											src={info.meta.profile_image_url}
-											alt="model profile"
-											class="rounded-lg size-20 md:size-36 object-cover shrink-0"
-										/>
-									{:else}
-										<img
-											src="{NEVEAI_BASE_URL}/static/favicon.png"
-											alt="model profile"
-											class="rounded-lg size-20 md:size-36 object-cover shrink-0"
-										/>
-									{/if}
-
-									<div
-										class="absolute top-0 bottom-0 left-0 right-0 bg-white dark:bg-black rounded-lg opacity-0 group-hover:opacity-20 transition"
-									></div>
-								</button>
-
-								<div class="flex w-full mt-1 justify-end">
+								<div class="relative inline-flex">
 									<button
-										class="px-2 py-0.5 text-gray-500 rounded-lg text-xs hover:text-gray-700 dark:hover:text-gray-300 transition"
-										on:click={() => {
-											updateProfileImageUrl(`${NEVEAI_BASE_URL}/static/favicon.png`);
-										}}
+										class="rounded-xl flex shrink-0 items-center {info.meta.profile_image_url !==
+										DEFAULT_MODEL_PROFILE_IMAGE_URL
+											? 'bg-transparent'
+											: 'bg-white'} shadow-xl group relative"
 										type="button"
+										aria-label={$i18n.t('Upload profile image')}
+										on:click={() => {
+											filesInputElement.click();
+										}}
 									>
-										{$i18n.t('Reset Image')}</button
-									>
+										{#if info.meta.profile_image_url}
+											<img
+												src={info.meta.profile_image_url}
+												alt="model profile"
+												class="rounded-lg size-20 md:size-36 object-cover shrink-0"
+											/>
+										{:else}
+											<img
+												src={DEFAULT_MODEL_PROFILE_IMAGE_URL}
+												alt="model profile"
+												class="rounded-lg size-20 md:size-36 object-cover shrink-0"
+											/>
+										{/if}
+
+										<div
+											class="absolute top-0 bottom-0 left-0 right-0 bg-white dark:bg-black rounded-lg opacity-0 group-hover:opacity-20 transition"
+										></div>
+									</button>
+
+									{#if info.meta.profile_image_url && info.meta.profile_image_url !== DEFAULT_MODEL_PROFILE_IMAGE_URL}
+										<button
+											class="absolute right-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-md transition hover:text-gray-700 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300 dark:hover:text-white"
+											type="button"
+											aria-label={$i18n.t('Reset Image')}
+											title={$i18n.t('Reset Image')}
+											on:click={() => {
+												updateProfileImageUrl(DEFAULT_MODEL_PROFILE_IMAGE_URL);
+											}}
+										>
+											<XMark className="size-3.5" />
+										</button>
+									{/if}
 								</div>
 							</div>
 						</div>
@@ -619,11 +624,11 @@
 				</div>
 
 				<!-- Params (scrollable) + Features (static) side by side -->
-				<div class="flex-1 min-h-0 overflow-hidden px-4 pb-6 border-t border-gray-200/30 dark:border-gray-700/20 mt-2 pt-3">
+				<div class="flex-1 min-h-0 overflow-hidden px-4 pb-6 border-t border-gray-200/30 dark:border-gray-700/20 mt-2 pt-9.5">
 					<div class="flex gap-0 w-full pl-8 h-full min-h-0">
 						<!-- Left: Parâmetros Avançados + System Prompt (only this scrolls) -->
 						<div class="w-[55%] min-w-0 h-full flex flex-col pr-1">
-							<div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 py-1 pl-2 pr-5 shrink-0">
+							<div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 py-0 pl-2 pr-5 shrink-0">
 								{$i18n.t('Parâmetros Avançados')}
 							</div>
 							<div class="flex-1 min-h-0 overflow-y-auto pr-5" on:scroll={() => tippyHideAll()}>

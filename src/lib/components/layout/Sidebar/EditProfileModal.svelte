@@ -11,6 +11,7 @@
 	import XMark from '$lib/components/icons/XMark.svelte';
 
 	const i18n = getContext('i18n');
+	const USER_NAME_MAX_LENGTH = 21;
 
 	export let show = false;
 	export let onSave: Function = () => {};
@@ -89,7 +90,7 @@
 		if (loading) return;
 		loading = true;
 
-		const trimmedUsername = (username ?? '').trim();
+		const trimmedUsername = (username ?? '').trim().slice(0, USER_NAME_MAX_LENGTH);
 
 		if (!trimmedUsername) {
 			toast.error($i18n.t('Username is required'));
@@ -232,6 +233,7 @@
 					<input
 						type="text"
 						bind:value={username}
+						maxlength={USER_NAME_MAX_LENGTH}
 						class="w-full text-sm bg-transparent outline-hidden placeholder:text-gray-300 dark:placeholder:text-gray-700"
 						placeholder={$i18n.t('Nome de usuário')}
 						autocomplete="off"

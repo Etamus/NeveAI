@@ -1,10 +1,13 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
-	import Checkbox from '$lib/components/common/Checkbox.svelte';
+	import type { Readable } from 'svelte/store';
+	import Switch from '$lib/components/common/Switch.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { marked } from 'marked';
 
-	const i18n = getContext('i18n');
+	type I18nStore = Readable<{ t: (key: string) => string }>;
+
+	const i18n = getContext<I18nStore>('i18n');
 
 	const featureLabels = {
 		web_search: {
@@ -34,28 +37,39 @@
 	};
 
 	export let availableFeatures = ['web_search', 'image_generation', 'code_interpreter', 'code_execution', 'stable_diffusion'];
-	export let featureIds = [];
+	export let featureIds: string[] = [];
 	export let tooltipsEnabled = true;
+
+	const getFeatureLabel = (feature: string) =>
+		featureLabels[feature as keyof typeof featureLabels] ?? {
+			label: feature,
+			description: feature
+		};
+
+	const setFeatureState = (feature: string, enabled: boolean) => {
+		if (enabled) {
+			featureIds = featureIds.includes(feature) ? featureIds : [...featureIds, feature];
+		} else {
+			featureIds = featureIds.filter((id) => id !== feature);
+		}
+	};
 </script>
 
 <div>
 	<div class="flex flex-col mt-2 gap-2">
 		{#each availableFeatures as feature}
-			<div class=" flex items-center gap-2">
-				<Checkbox
-					state={featureIds.includes(feature) ? 'checked' : 'unchecked'}
+			{@const featureLabel = getFeatureLabel(feature)}
+			<div class="flex items-center gap-2">
+				<Switch
+					state={featureIds.includes(feature)}
 					on:change={(e) => {
-						if (e.detail === 'checked') {
-							featureIds = [...featureIds, feature];
-						} else {
-							featureIds = featureIds.filter((id) => id !== feature);
-						}
+						setFeatureState(feature, Boolean(e.detail));
 					}}
 				/>
 
-				<div class=" py-0.5 text-sm">
-					<Tooltip content={tooltipsEnabled ? marked.parse(featureLabels[feature].description) : ''}>
-						{$i18n.t(featureLabels[feature].label)}
+				<div class="py-0.5 text-sm min-w-0">
+					<Tooltip content={tooltipsEnabled ? marked.parse(featureLabel.description) : ''}>
+						{$i18n.t(featureLabel.label)}
 					</Tooltip>
 				</div>
 			</div>

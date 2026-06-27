@@ -72,6 +72,8 @@
 	let shiftKey = false;
 
 	let selectedChatId = null;
+	const USER_NAME_MAX_LENGTH = 21;
+	const getLimitedUserName = (name?: string | null) => (name ?? '').slice(0, USER_NAME_MAX_LENGTH);
 	let showCreateChannel = false;
 
 	// Pagination variables
@@ -1332,7 +1334,9 @@
 										</div>
 									{/if}
 								</div>
-								<div class=" self-center font-medium">{$user?.name}</div>
+								<div class=" self-center font-medium truncate max-w-[9rem]">
+									{getLimitedUserName($user?.name)}
+								</div>
 							</div>
 						</UserMenu>
 					{/if}

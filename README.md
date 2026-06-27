@@ -42,10 +42,10 @@ instalar.bat
 ```
 
 <h1 align="center">
-<img width="769" alt="{244AE169-0FE6-4189-9A10-760D1DDAC5CF}" src="https://github.com/user-attachments/assets/2553d58e-3bfa-4396-9d29-6d520866b9bf" />
+<img width="770" alt="{90671A9E-4D1D-4F70-B79F-50BA23439830}" src="https://github.com/user-attachments/assets/ab888b7f-8d8c-4f71-af4f-4c4e3aa7f1c6" />
 </h1>
 
-O instalador (`instalar.bat` → `instalar.ps1`) realiza automaticamente:
+O instalador (`instalar.bat` → `Instalar`) realiza automaticamente:
 
 1. **Detecta a GPU** — NVIDIA (identifica a série e configura CUDA), AMD (HIP/ROCm ou Vulkan) ou CPU
 2. **Baixa o llama.cpp** mais recente do GitHub (binários compilados para o hardware detectado)
@@ -60,14 +60,14 @@ O instalador (`instalar.bat` → `instalar.ps1`) realiza automaticamente:
 ## Atualizando o Neve AI
 
 ```bat
-atualizar.bat
+instalar.bat
 ```
 
 <h1 align="center">
-<img width="769" alt="{DE528651-7129-429C-BA83-8415E6B14DCD}" src="https://github.com/user-attachments/assets/b8f99c51-c057-42e0-b201-038453b998bf" />
+<img width="769" alt="{443E706C-E71A-49BD-B960-E24B1B4A8B96}" src="https://github.com/user-attachments/assets/dbea24b7-8fb1-4c7a-aceb-387ff2298a64" />
 </h1>
 
-O atualizador (`atualizar.bat` → `atualizar.ps1`) abre uma janela gráfica que:
+O atualizador (`instalar.bat` → `Atualizar`) abre uma janela gráfica que:
 
 1. **Lê a versão local** do arquivo `version.txt` na raiz do projeto.
 2. **Consulta a última release** em [github.com/Etamus/NeveAI/releases/latest](https://github.com/Etamus/NeveAI/releases/latest) e mostra:
@@ -254,11 +254,11 @@ Copy-Item -Path "build\*" -Destination "backend\neveai\frontend" -Recurse -Force
 
 Ou de forma automática via
 ```bat
-Buldar.bat
+instalar.bat
 ```
 
 <h1 align="center">
-<img width="771" alt="{B449DCF9-28DA-4E2E-BE72-03E60F299801}" src="https://github.com/user-attachments/assets/a4caa557-a8b3-4d9b-8b88-d7fc6db3376f" />
+<img width="770" alt="{D4ACC183-9EB2-4DFD-8529-566561581969}" src="https://github.com/user-attachments/assets/e129dd06-7b5f-46e7-91b0-2dc47b7e4bd9" />
 </h1>
 
 ### Dev mode (hot reload)

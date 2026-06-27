@@ -50,10 +50,10 @@ if /i "%~1"=="debug" set "PS_WINDOW="
 set "NEVE_INSTALLER_ROOT=%ROOT%"
 set "NEVE_INSTALLER_SCRIPT=%SCRIPT%"
 
-echo [%date% %time%] Iniciando instalador com "%PS%".>>"%LAUNCHLOG%"
+echo [%date% %time%] Iniciando hub com "%PS%".>>"%LAUNCHLOG%"
 for %%F in ("%SCRIPT%") do echo [%date% %time%] SCRIPT_LAST_WRITE=%%~tF>>"%LAUNCHLOG%"
 findstr /b /c:"$INSTALLER_REVISION =" "%SCRIPT%" >>"%LAUNCHLOG%" 2>nul
-"%PS%" -NoProfile -STA -ExecutionPolicy Bypass %PS_WINDOW% -Command "$ErrorActionPreference='Stop'; try { Set-Location -LiteralPath $env:NEVE_INSTALLER_ROOT; & $env:NEVE_INSTALLER_SCRIPT; exit 0 } catch { $msg = if ($_.Exception) { $_.Exception.Message } else { [string]$_ }; $log = Join-Path $env:NEVE_INSTALLER_ROOT 'logs\install-launcher.log'; Add-Content -LiteralPath $log -Value ('[FATAL] ' + $msg) -Encoding UTF8; try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('Falha ao abrir o instalador.' + [Environment]::NewLine + [Environment]::NewLine + 'Veja logs\install-launcher.log' + [Environment]::NewLine + [Environment]::NewLine + $msg), 'Neve AI - Instalador', 'OK', 'Error') | Out-Null } catch { Write-Host $msg }; exit 1 }"
+"%PS%" -NoProfile -STA -ExecutionPolicy Bypass %PS_WINDOW% -Command "$ErrorActionPreference='Stop'; try { Set-Location -LiteralPath $env:NEVE_INSTALLER_ROOT; & $env:NEVE_INSTALLER_SCRIPT; exit 0 } catch { $msg = if ($_.Exception) { $_.Exception.Message } else { [string]$_ }; $log = Join-Path $env:NEVE_INSTALLER_ROOT 'logs\install-launcher.log'; Add-Content -LiteralPath $log -Value ('[FATAL] ' + $msg) -Encoding UTF8; try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('Falha ao abrir o hub.' + [Environment]::NewLine + [Environment]::NewLine + 'Veja logs\install-launcher.log' + [Environment]::NewLine + [Environment]::NewLine + $msg), 'Neve AI - Hub', 'OK', 'Error') | Out-Null } catch { Write-Host $msg }; exit 1 }"
 set "RC=%ERRORLEVEL%"
 
 set "STATE=missing"
@@ -69,16 +69,16 @@ goto installer_unexpected_close
 
 :installer_unexpected_close
 echo.
-echo [ERRO] O instalador fechou inesperadamente durante a etapa: %STATE%
-echo [ERRO] O instalador fechou inesperadamente durante a etapa: %STATE%>>"%LAUNCHLOG%"
-"%PS%" -NoProfile -ExecutionPolicy Bypass -Command "try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('O instalador fechou inesperadamente durante a etapa: %STATE%' + [Environment]::NewLine + [Environment]::NewLine + 'Veja logs\install.log e logs\install-launcher.log'), 'Neve AI - Instalador', 'OK', 'Error') | Out-Null } catch {}" >nul 2>nul
+echo [ERRO] O hub fechou inesperadamente durante a etapa: %STATE%
+echo [ERRO] O hub fechou inesperadamente durante a etapa: %STATE%>>"%LAUNCHLOG%"
+"%PS%" -NoProfile -ExecutionPolicy Bypass -Command "try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('O hub fechou inesperadamente durante a etapa: %STATE%' + [Environment]::NewLine + [Environment]::NewLine + 'Veja logs\install.log e logs\install-launcher.log'), 'Neve AI - Hub', 'OK', 'Error') | Out-Null } catch {}" >nul 2>nul
 pause
 exit /b 1
 
 :installer_failed
 echo.
-echo [ERRO] O instalador falhou. Veja logs\install.log e logs\install-launcher.log
-echo [ERRO] O instalador falhou com codigo %RC%; estado=%STATE%.>>"%LAUNCHLOG%"
-"%PS%" -NoProfile -ExecutionPolicy Bypass -Command "try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('O instalador falhou.' + [Environment]::NewLine + [Environment]::NewLine + 'Estado: %STATE%' + [Environment]::NewLine + 'Codigo: %RC%' + [Environment]::NewLine + [Environment]::NewLine + 'Veja logs\install.log e logs\install-launcher.log'), 'Neve AI - Instalador', 'OK', 'Error') | Out-Null } catch {}" >nul 2>nul
+echo [ERRO] O hub falhou. Veja logs\install.log e logs\install-launcher.log
+echo [ERRO] O hub falhou com codigo %RC%; estado=%STATE%.>>"%LAUNCHLOG%"
+"%PS%" -NoProfile -ExecutionPolicy Bypass -Command "try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('O hub falhou.' + [Environment]::NewLine + [Environment]::NewLine + 'Estado: %STATE%' + [Environment]::NewLine + 'Codigo: %RC%' + [Environment]::NewLine + [Environment]::NewLine + 'Veja logs\install.log e logs\install-launcher.log'), 'Neve AI - Hub', 'OK', 'Error') | Out-Null } catch {}" >nul 2>nul
 pause
 exit /b 1

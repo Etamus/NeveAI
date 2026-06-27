@@ -251,7 +251,6 @@
 					<div class="flex items-center gap-2 p-1">
 						<Switch
 							ariaLabelledbyId="widescreen-mode-label"
-							tooltip={true}
 							bind:state={widescreenMode}
 							on:change={() => {
 								saveSettings({ widescreenMode });
@@ -270,7 +269,6 @@
 					<div class="flex items-center gap-2 p-1">
 						<Switch
 							ariaLabelledbyId="always-expand-label"
-							tooltip={true}
 							bind:state={expandDetails}
 							on:change={() => {
 								saveSettings({ expandDetails });
@@ -289,7 +287,6 @@
 					<div class="flex items-center gap-2 p-1">
 						<Switch
 							ariaLabelledbyId="enable-message-queue-label"
-							tooltip={true}
 							bind:state={enableMessageQueue}
 							on:change={() => {
 								saveSettings({ enableMessageQueue });
@@ -309,7 +306,6 @@
 						<div class="flex items-center gap-2 p-1">
 							<Switch
 								ariaLabelledbyId="temp-chat-default-label"
-								tooltip={true}
 								bind:state={temporaryChatByDefault}
 								on:change={() => {
 									saveSettings({ temporaryChatByDefault });

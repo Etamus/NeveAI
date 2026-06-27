@@ -5,7 +5,16 @@ export type LocalModelStreamPreference = 'default' | 'on' | 'off';
 export type LocalModelSpeculativePreference = 'default' | 'high' | 'low' | 'off';
 export type LocalModelTokenPredictionPreference = 'on' | 'off';
 
-export const LOCAL_MODEL_CONTEXT_OPTIONS = [2048, 4096, 8192, 16384, 32768, 65536, 131072];
+export const LOCAL_MODEL_CONTEXT_OPTIONS = [
+	2048,
+	4096,
+	8192,
+	16384,
+	32768,
+	65536,
+	131072,
+	262144
+];
 
 const CONTEXT_KEY = 'llamacpp_load_context';
 const VISION_KEY = 'llamacpp_load_vision';
