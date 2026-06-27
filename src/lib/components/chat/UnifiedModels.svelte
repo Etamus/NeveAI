@@ -98,7 +98,16 @@
 
 	const getSpeculativeDecodingForLoad = () => {
 		const { speculative } = getLocalModelLoadPreferences();
-		return speculative === 'default' ? 'high' : speculative;
+		return getTokenPredictionForLoad() !== 'off'
+			? 'off'
+			: speculative === 'default'
+				? 'high'
+				: speculative;
+	};
+
+	const getTokenPredictionForLoad = () => {
+		const { tokenPrediction } = getLocalModelLoadPreferences();
+		return tokenPrediction;
 	};
 
 	const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
@@ -256,6 +265,18 @@
 		if (speculativeDecoding === 'off') return 'Desligado';
 		return 'Rápido';
 	};
+
+	const getTokenPredictionChipLabel = (tokenPrediction?: string | null) => {
+		if (
+			tokenPrediction === 'on' ||
+			tokenPrediction === 'stable' ||
+			tokenPrediction === 'aggressive'
+		)
+			return 'Ligado';
+		return 'Desligado';
+	};
+	const isTokenPredictionActive = (tokenPrediction?: string | null) =>
+		tokenPrediction === 'on' || tokenPrediction === 'stable' || tokenPrediction === 'aggressive';
 	const getModelImageVersion = (model: any) =>
 		model?.updated_at ?? model?.info?.updated_at ?? model?.meta?.updated_at ?? '';
 	const getModelProfileImageUrl = (model: any) => {
@@ -463,7 +484,8 @@
 						mmproj_filename: result?.mmproj_filename ?? mmprojFilename,
 						cache_type: result?.cache_type ?? getCacheTypeForLoad(),
 						speculative_decoding:
-							result?.speculative_decoding ?? getSpeculativeDecodingForLoad()
+							result?.speculative_decoding ?? getSpeculativeDecodingForLoad(),
+						token_prediction: result?.token_prediction ?? getTokenPredictionForLoad()
 					}
 				: {
 						...localModel,
@@ -473,7 +495,8 @@
 						n_ctx: null,
 						mmproj_filename: null,
 						cache_type: null,
-						speculative_decoding: null
+						speculative_decoding: null,
+						token_prediction: null
 					}
 		);
 	};
@@ -489,7 +512,8 @@
 						n_ctx: null,
 						mmproj_filename: null,
 						cache_type: null,
-						speculative_decoding: null
+						speculative_decoding: null,
+						token_prediction: null
 					}
 				: localModel
 		);
@@ -516,7 +540,8 @@
 				contextSize,
 				'',
 				getCacheTypeForLoad(),
-				getSpeculativeDecodingForLoad()
+				getSpeculativeDecodingForLoad(),
+				getTokenPredictionForLoad()
 			);
 			markLocalModelLoaded(model, result);
 			localSuccess = `${model.filename} carregado com sucesso!`;
@@ -614,7 +639,8 @@
 				contextSize,
 				mmprojFile,
 				getCacheTypeForLoad(),
-				getSpeculativeDecodingForLoad()
+				getSpeculativeDecodingForLoad(),
+				getTokenPredictionForLoad()
 			);
 			markLocalModelLoaded(model, result, mmprojFile);
 			localSuccess = `${model.filename} carregado! (visão: ${mmprojFile})`;
@@ -1032,7 +1058,11 @@
 									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">CTX: {gm.n_ctx}</span>
 								{/if}
 								<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">KV: {getCacheChipLabel(gm.cache_type)}</span>
-								<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">DE: {getSpeculativeChipLabel(gm.speculative_decoding)}</span>
+								{#if isTokenPredictionActive(gm.token_prediction)}
+									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">PT: {getTokenPredictionChipLabel(gm.token_prediction)}</span>
+								{:else}
+									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">DE: {getSpeculativeChipLabel(gm.speculative_decoding)}</span>
+								{/if}
 								{#if gm?.mmproj_filename}
 									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Visão: Sim</span>
 								{:else}

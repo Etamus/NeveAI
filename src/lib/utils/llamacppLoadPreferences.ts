@@ -3,6 +3,7 @@ export type LocalModelVisionPreference = 'ask' | 'yes' | 'no';
 export type LocalModelCachePreference = 'default' | 'f16' | 'q8_0' | 'q4_0';
 export type LocalModelStreamPreference = 'default' | 'on' | 'off';
 export type LocalModelSpeculativePreference = 'default' | 'high' | 'low' | 'off';
+export type LocalModelTokenPredictionPreference = 'on' | 'off';
 
 export const LOCAL_MODEL_CONTEXT_OPTIONS = [2048, 4096, 8192, 16384, 32768, 65536, 131072];
 
@@ -11,6 +12,7 @@ const VISION_KEY = 'llamacpp_load_vision';
 const CACHE_KEY = 'llamacpp_cache_type';
 const STREAM_KEY = 'llamacpp_stream_response';
 const SPECULATIVE_KEY = 'llamacpp_speculative_decoding';
+const TOKEN_PREDICTION_KEY = 'llamacpp_token_prediction';
 
 const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 
@@ -37,6 +39,12 @@ const parseSpeculativePreference = (value: string | null): LocalModelSpeculative
 	return value === 'low' || value === 'high' || value === 'off' ? value : 'default';
 };
 
+const parseTokenPredictionPreference = (
+	value: string | null
+): LocalModelTokenPredictionPreference => {
+	return value === 'on' || value === 'stable' || value === 'aggressive' ? 'on' : 'off';
+};
+
 export const getLocalModelLoadPreferences = () => {
 	if (!hasStorage()) {
 		return {
@@ -44,7 +52,8 @@ export const getLocalModelLoadPreferences = () => {
 			vision: 'ask' as LocalModelVisionPreference,
 			cache: 'default' as LocalModelCachePreference,
 			stream: 'default' as LocalModelStreamPreference,
-			speculative: 'default' as LocalModelSpeculativePreference
+			speculative: 'default' as LocalModelSpeculativePreference,
+			tokenPrediction: 'off' as LocalModelTokenPredictionPreference
 		};
 	}
 
@@ -53,7 +62,8 @@ export const getLocalModelLoadPreferences = () => {
 		vision: parseVisionPreference(localStorage.getItem(VISION_KEY)),
 		cache: parseCachePreference(localStorage.getItem(CACHE_KEY)),
 		stream: parseStreamPreference(localStorage.getItem(STREAM_KEY)),
-		speculative: parseSpeculativePreference(localStorage.getItem(SPECULATIVE_KEY))
+		speculative: parseSpeculativePreference(localStorage.getItem(SPECULATIVE_KEY)),
+		tokenPrediction: parseTokenPredictionPreference(localStorage.getItem(TOKEN_PREDICTION_KEY))
 	};
 };
 
@@ -97,6 +107,18 @@ export const setLocalModelSpeculativePreference = (preference: LocalModelSpecula
 	localStorage.setItem(SPECULATIVE_KEY, preference);
 };
 
+export const setLocalModelTokenPredictionPreference = (
+	preference: LocalModelTokenPredictionPreference
+) => {
+	if (!hasStorage()) return;
+	if (preference === 'off') {
+		localStorage.removeItem(TOKEN_PREDICTION_KEY);
+		return;
+	}
+
+	localStorage.setItem(TOKEN_PREDICTION_KEY, preference);
+};
+
 export const getContextPreferenceLabel = (preference: LocalModelContextPreference) => {
 	return preference === 'ask' ? 'Perguntar' : preference.toLocaleString('pt-BR');
 };
@@ -125,4 +147,11 @@ export const getSpeculativePreferenceLabel = (preference: LocalModelSpeculativeP
 	if (preference === 'high') return 'Rápido';
 	if (preference === 'off') return 'Desligado';
 	return 'Padrão';
+};
+
+export const getTokenPredictionPreferenceLabel = (
+	preference: LocalModelTokenPredictionPreference
+) => {
+	if (preference === 'on') return 'Ligado';
+	return 'Desligado';
 };

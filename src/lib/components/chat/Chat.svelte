@@ -96,6 +96,7 @@
 		getLoadedLocalModels,
 		getMmProjFiles,
 		loadLocalModel,
+		normalizeLlamaCppErrorMessage,
 		unloadLocalModel,
 		type LocalModel
 	} from '$lib/apis/llamacpp';
@@ -276,6 +277,16 @@
 		);
 	};
 
+	const showLocalModelLoadError = (err: any) => {
+		const error = normalizeLlamaCppErrorMessage(err, 'Falha ao carregar modelo');
+		if (error.includes('Predição de tokens')) {
+			toast.error(error);
+			return;
+		}
+
+		toast.error($i18n.t('Failed to verify/load model: {{error}}', { error }));
+	};
+
 	const restoreStableDiffusionStandbyModel = async () => {
 		if (restoringStableDiffusionStandbyModel || !stableDiffusionStandbyModel) return;
 		if (stableDiffusionEnabled || hasActiveChatResponse()) return;
@@ -305,10 +316,14 @@
 			const standbyLoadPreferences = getLocalModelLoadPreferences();
 			const standbyCacheType =
 				standbyLoadPreferences.cache === 'default' ? 'f16' : standbyLoadPreferences.cache;
+			const standbyTokenPrediction = normalizeLocalTokenPrediction(
+				standbyModel.token_prediction ?? standbyLoadPreferences.tokenPrediction
+			);
 			const standbySpeculativePreference =
 				standbyModel.speculative_decoding ?? standbyLoadPreferences.speculative;
-			const standbySpeculativeDecoding =
-				standbySpeculativePreference === 'default' ? 'high' : standbySpeculativePreference;
+			const standbySpeculativeDecoding = isLocalTokenPredictionEnabled(standbyTokenPrediction)
+				? 'off'
+				: normalizeLocalSpeculativeDecoding(standbySpeculativePreference);
 
 			await loadLocalModel(
 				localStorage.token,
@@ -317,7 +332,8 @@
 				standbyModel.n_ctx ?? 8192,
 				standbyModel.mmproj_filename ?? null,
 				standbyCacheType,
-				standbySpeculativeDecoding
+				standbySpeculativeDecoding,
+				standbyTokenPrediction
 			);
 
 			stableDiffusionStandbyModel = null;
@@ -325,7 +341,7 @@
 			toast.success($i18n.t('Model loaded successfully!'));
 		} catch (err: any) {
 			console.error('Failed to restore Stable Diffusion standby model:', err);
-			toast.error($i18n.t('Failed to verify/load model: {{error}}', { error: err.message ?? err }));
+			showLocalModelLoadError(err);
 		} finally {
 			restoringStableDiffusionStandbyModel = false;
 			modelLoading = false;
@@ -2053,6 +2069,7 @@
 		mmprojFilename: string;
 		cacheType: string;
 		speculativeDecoding: string;
+		tokenPrediction: string;
 	};
 
 	const normalizeLocalCacheType = (cacheType?: string | null) => {
@@ -2061,6 +2078,16 @@
 
 	const normalizeLocalSpeculativeDecoding = (speculativeDecoding?: string | null) => {
 		return speculativeDecoding && speculativeDecoding !== 'default' ? speculativeDecoding : 'high';
+	};
+
+	const normalizeLocalTokenPrediction = (tokenPrediction?: string | null) => {
+		return tokenPrediction === 'on' || tokenPrediction === 'stable' || tokenPrediction === 'aggressive'
+			? 'on'
+			: 'off';
+	};
+
+	const isLocalTokenPredictionEnabled = (tokenPrediction?: string | null) => {
+		return normalizeLocalTokenPrediction(tokenPrediction) !== 'off';
 	};
 
 	const resolveLocalModelLoadPlan = async (
@@ -2104,13 +2131,19 @@
 			}
 		}
 
+		const tokenPrediction = normalizeLocalTokenPrediction(loadPreferences.tokenPrediction);
+		const speculativeDecoding = isLocalTokenPredictionEnabled(tokenPrediction)
+			? 'off'
+			: normalizeLocalSpeculativeDecoding(loadPreferences.speculative);
+
 		return {
 			modelFilename,
 			gpuLayers: llamacppInfo.n_gpu_layers ?? -1,
 			contextSize,
 			mmprojFilename,
 			cacheType: normalizeLocalCacheType(loadPreferences.cache),
-			speculativeDecoding: normalizeLocalSpeculativeDecoding(loadPreferences.speculative)
+			speculativeDecoding,
+			tokenPrediction
 		};
 	};
 
@@ -2120,7 +2153,8 @@
 			(loadedModel.mmproj_filename ?? '') === loadPlan.mmprojFilename &&
 			normalizeLocalCacheType(loadedModel.cache_type) === loadPlan.cacheType &&
 			normalizeLocalSpeculativeDecoding(loadedModel.speculative_decoding) ===
-				loadPlan.speculativeDecoding
+				loadPlan.speculativeDecoding &&
+			normalizeLocalTokenPrediction(loadedModel.token_prediction) === loadPlan.tokenPrediction
 		);
 	};
 
@@ -2186,11 +2220,19 @@
 									loadPlan.contextSize,
 									loadPlan.mmprojFilename,
 									loadPlan.cacheType,
-									loadPlan.speculativeDecoding
+									loadPlan.speculativeDecoding,
+									loadPlan.tokenPrediction
 								);
 							try {
 								await doLoad();
 							} catch (firstErr) {
+								const firstErrorMessage = normalizeLlamaCppErrorMessage(
+									firstErr,
+									'Falha ao carregar modelo'
+								);
+								if (firstErrorMessage.includes('Predição de tokens')) {
+									throw firstErr;
+								}
 								console.warn('First load attempt failed, retrying in 3s...', firstErr);
 								await new Promise((resolve) => setTimeout(resolve, 3000));
 								await doLoad();
@@ -2203,7 +2245,7 @@
 					}
 				} catch (err: any) {
 					console.error('LlamaCpp model check failed:', err);
-					toast.error($i18n.t('Failed to verify/load model: {{error}}', { error: err.message ?? err }));
+					showLocalModelLoadError(err);
 					return;
 				}
 			}

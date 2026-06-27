@@ -12,16 +12,19 @@
 		getLocalModelLoadPreferences,
 		getSpeculativePreferenceLabel,
 		getStreamPreferenceLabel,
+		getTokenPredictionPreferenceLabel,
 		getVisionPreferenceLabel,
 		setLocalModelCachePreference,
 		setLocalModelContextPreference,
 		setLocalModelSpeculativePreference,
 		setLocalModelStreamPreference,
+		setLocalModelTokenPredictionPreference,
 		setLocalModelVisionPreference,
 		type LocalModelCachePreference,
 		type LocalModelContextPreference,
 		type LocalModelSpeculativePreference,
 		type LocalModelStreamPreference,
+		type LocalModelTokenPredictionPreference,
 		type LocalModelVisionPreference
 	} from '$lib/utils/llamacppLoadPreferences';
 
@@ -31,17 +34,24 @@
 	let cachePreference: LocalModelCachePreference = 'default';
 	let streamPreference: LocalModelStreamPreference = 'default';
 	let speculativePreference: LocalModelSpeculativePreference = 'default';
+	let tokenPredictionPreference: LocalModelTokenPredictionPreference = 'off';
 
 	const contextOptions: LocalModelContextPreference[] = ['ask', ...LOCAL_MODEL_CONTEXT_OPTIONS];
 	const visionOptions: LocalModelVisionPreference[] = ['ask', 'yes', 'no'];
 	const cacheOptions: LocalModelCachePreference[] = ['default', 'f16', 'q8_0', 'q4_0'];
 	const streamOptions: LocalModelStreamPreference[] = ['default', 'on', 'off'];
 	const speculativeOptions: LocalModelSpeculativePreference[] = ['default', 'high', 'low', 'off'];
+	const tokenPredictionOptions: LocalModelTokenPredictionPreference[] = [
+		'off',
+		'on'
+	];
 
 	$: contextOptionIndex =
 		typeof contextPreference === 'number'
 			? LOCAL_MODEL_CONTEXT_OPTIONS.indexOf(contextPreference)
 			: -1;
+	$: tokenPredictionActive = tokenPredictionPreference !== 'off';
+	$: effectiveSpeculativePreference = tokenPredictionActive ? 'off' : speculativePreference;
 
 	const cycleContextPreference = () => {
 		const idx = contextOptions.indexOf(contextPreference);
@@ -79,9 +89,16 @@
 	};
 
 	const cycleSpeculativePreference = () => {
+		if (tokenPredictionActive) return;
 		const idx = speculativeOptions.indexOf(speculativePreference);
 		speculativePreference = speculativeOptions[(idx + 1) % speculativeOptions.length];
 		setLocalModelSpeculativePreference(speculativePreference);
+	};
+
+	const cycleTokenPredictionPreference = () => {
+		const idx = tokenPredictionOptions.indexOf(tokenPredictionPreference);
+		tokenPredictionPreference = tokenPredictionOptions[(idx + 1) % tokenPredictionOptions.length];
+		setLocalModelTokenPredictionPreference(tokenPredictionPreference);
 	};
 
 	const resetContextPreference = () => {
@@ -105,8 +122,14 @@
 	};
 
 	const resetSpeculativePreference = () => {
+		if (tokenPredictionActive) return;
 		speculativePreference = 'default';
 		setLocalModelSpeculativePreference(speculativePreference);
+	};
+
+	const resetTokenPredictionPreference = () => {
+		tokenPredictionPreference = 'off';
+		setLocalModelTokenPredictionPreference(tokenPredictionPreference);
 	};
 
 	const stopEventPropagation = (event: Event) => {
@@ -120,6 +143,7 @@
 		cachePreference = preferences.cache;
 		streamPreference = preferences.stream;
 		speculativePreference = preferences.speculative;
+		tokenPredictionPreference = preferences.tokenPrediction;
 	});
 </script>
 
@@ -264,24 +288,57 @@
 				</button>
 			</div>
 
-			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
-				{#if speculativePreference === 'default'}
-					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Decodificação Especulativa</div>
+			<div
+				class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm"
+				class:opacity-60={tokenPredictionActive}
+			>
+				{#if tokenPredictionActive || speculativePreference === 'default'}
+					<div
+						class={`text-sm whitespace-nowrap ${
+							tokenPredictionActive
+								? 'text-gray-400 dark:text-gray-500'
+								: 'text-gray-700 dark:text-gray-200'
+						}`}
+					>
+						Decodificação especulativa
+					</div>
 				{:else}
 					<button
 						type="button"
 						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
 						on:click|stopPropagation={resetSpeculativePreference}
 					>
-						Decodificação Especulativa
+						Decodificação especulativa
+					</button>
+				{/if}
+				<button
+					type="button"
+					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap disabled:cursor-not-allowed disabled:text-gray-400 disabled:dark:text-gray-500 disabled:hover:bg-transparent disabled:dark:hover:bg-transparent"
+					on:click|stopPropagation={cycleSpeculativePreference}
+					disabled={tokenPredictionActive}
+				>
+					{getSpeculativePreferenceLabel(effectiveSpeculativePreference)}
+				</button>
+			</div>
+
+			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
+				{#if tokenPredictionPreference === 'off'}
+					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Predição de tokens</div>
+				{:else}
+					<button
+						type="button"
+						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
+						on:click|stopPropagation={resetTokenPredictionPreference}
+					>
+						Predição de tokens
 					</button>
 				{/if}
 				<button
 					type="button"
 					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
-					on:click|stopPropagation={cycleSpeculativePreference}
+					on:click|stopPropagation={cycleTokenPredictionPreference}
 				>
-					{getSpeculativePreferenceLabel(speculativePreference)}
+					{getTokenPredictionPreferenceLabel(tokenPredictionPreference)}
 				</button>
 			</div>
 		</div>

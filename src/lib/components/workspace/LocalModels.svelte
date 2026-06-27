@@ -37,7 +37,16 @@
 
 	const getSpeculativeDecodingForLoad = () => {
 		const { speculative } = getLocalModelLoadPreferences();
-		return speculative === 'default' ? 'high' : speculative;
+		return getTokenPredictionForLoad() !== 'off'
+			? 'off'
+			: speculative === 'default'
+				? 'high'
+				: speculative;
+	};
+
+	const getTokenPredictionForLoad = () => {
+		const { tokenPrediction } = getLocalModelLoadPreferences();
+		return tokenPrediction;
 	};
 
 	async function refreshModels() {
@@ -67,7 +76,8 @@
 				contextSize,
 				'',
 				getCacheTypeForLoad(),
-				getSpeculativeDecodingForLoad()
+				getSpeculativeDecodingForLoad(),
+				getTokenPredictionForLoad()
 			);
 			successMessage = `${model.filename} carregado com sucesso!`;
 			await refreshModels();
@@ -145,7 +155,8 @@
 				contextSize,
 				mmprojFile,
 				getCacheTypeForLoad(),
-				getSpeculativeDecodingForLoad()
+				getSpeculativeDecodingForLoad(),
+				getTokenPredictionForLoad()
 			);
 			successMessage = `${model.filename} carregado com sucesso! (visão: ${mmprojFile})`;
 			await refreshModels();

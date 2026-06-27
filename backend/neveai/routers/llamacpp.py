@@ -306,9 +306,10 @@ class _LoadedModelInfo:
         "mmproj_filename",
         "cache_type",
         "speculative_decoding",
+        "token_prediction",
     )
 
-    def __init__(self, model_id: str, filename: str, n_gpu_layers: int, n_ctx: int, file_size: int, mmproj_filename: Optional[str] = None, cache_type: str = "f16", speculative_decoding: str = "high"):
+    def __init__(self, model_id: str, filename: str, n_gpu_layers: int, n_ctx: int, file_size: int, mmproj_filename: Optional[str] = None, cache_type: str = "f16", speculative_decoding: str = "high", token_prediction: str = "off"):
         self.model_id = model_id
         self.filename = filename
         self.loaded_at = int(time.time())
@@ -317,6 +318,9 @@ class _LoadedModelInfo:
         self.file_size = file_size
         self.mmproj_filename = mmproj_filename
         self.cache_type = cache_type
+        self.token_prediction = _normalize_token_prediction(token_prediction)
+        if self.token_prediction != "off":
+            speculative_decoding = "off"
         self.speculative_decoding = _normalize_speculative_decoding(speculative_decoding)
 
 
@@ -346,6 +350,40 @@ def _speculative_decoding_args(mode: str) -> list[str]:
             "--spec-ngram-mod-n-max", "64",
         ]
     return []
+
+
+def _normalize_token_prediction(value: Optional[str]) -> str:
+    value = str(value or "off").strip().lower()
+    if value in {"on", "stable", "aggressive"}:
+        return "on"
+    return "off"
+
+
+def _token_prediction_args(mode: str) -> list[str]:
+    mode = _normalize_token_prediction(mode)
+    if mode == "on":
+        return [
+            "--spec-type", "draft-mtp",
+            "--spec-draft-n-max", "2",
+        ]
+    return []
+
+
+MTP_UNSUPPORTED_MESSAGE = (
+    "Este modelo não tem suporte a Predição de tokens. "
+    "Desative a Predição de tokens e tente carregar novamente."
+)
+
+
+def _is_mtp_unsupported_log(log_tail: str) -> bool:
+    lower = (log_tail or "").lower()
+    mtp_markers = (
+        "failed to measure mtp context memory",
+        "creating mtp draft context",
+        "context type mtp",
+        "draft-mtp",
+    )
+    return any(marker in lower for marker in mtp_markers)
 
 
 class LocalModelManager:
@@ -426,6 +464,7 @@ class LocalModelManager:
                     "mmproj_filename": info.mmproj_filename if is_loaded else None,
                     "cache_type": info.cache_type if is_loaded else None,
                     "speculative_decoding": info.speculative_decoding if is_loaded else None,
+                    "token_prediction": info.token_prediction if is_loaded else None,
                 })
         return results
 
@@ -517,6 +556,7 @@ class LocalModelManager:
         mmproj_filename: Optional[str] = None,
         cache_type: str = "f16",
         speculative_decoding: str = "default",
+        token_prediction: str = "off",
     ) -> dict:
         """Load a .gguf model by starting a new llama-server subprocess."""
         # Clean up stale entries before loading to prevent phantom models
@@ -544,7 +584,10 @@ class LocalModelManager:
                     raise FileNotFoundError(f"mmproj file not found: {mmproj_filename}")
 
         model_id = f"local/{filepath.stem}"
+        token_prediction = _normalize_token_prediction(token_prediction)
         speculative_decoding = _normalize_speculative_decoding(speculative_decoding)
+        if token_prediction != "off":
+            speculative_decoding = "off"
 
         async with self._lock:
             # Unload ALL currently loaded models before loading a new one
@@ -564,7 +607,7 @@ class LocalModelManager:
             self._ports[model_id] = port
 
             # Start new llama-server with the model on this port
-            await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type, speculative_decoding)
+            await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type, speculative_decoding, token_prediction)
 
             file_size = filepath.stat().st_size
             self._loaded[model_id] = _LoadedModelInfo(
@@ -576,6 +619,7 @@ class LocalModelManager:
                 mmproj_filename,
                 cache_type,
                 speculative_decoding,
+                token_prediction,
             )
 
             log.info(f"Model loaded via llama-server: {model_id} (port={port}, gpu_layers={n_gpu_layers}, ctx={n_ctx}, mmproj={mmproj_filename})")
@@ -588,6 +632,7 @@ class LocalModelManager:
                 "mmproj_filename": mmproj_filename,
                 "cache_type": cache_type,
                 "speculative_decoding": speculative_decoding,
+                "token_prediction": token_prediction,
             }
 
     async def unload_model(self, model_id: str) -> dict:
@@ -646,6 +691,7 @@ class LocalModelManager:
                 "mmproj_filename": info.mmproj_filename,
                 "cache_type": info.cache_type,
                 "speculative_decoding": info.speculative_decoding,
+                "token_prediction": info.token_prediction,
             })
 
         # Unload all models
@@ -674,13 +720,14 @@ class LocalModelManager:
                     mmproj_filename=m.get("mmproj_filename"),
                     cache_type=m.get("cache_type", "f16"),
                     speculative_decoding=m.get("speculative_decoding", "high"),
+                    token_prediction=m.get("token_prediction", "off"),
                 )
             except Exception as e:
                 log.error(f"resume: failed to reload {m['filename']}: {e}")
 
     # -- subprocess management ------------------------------------------
 
-    async def _start_server(self, model_path: Path, n_gpu_layers: int, n_ctx: int, mmproj_path: Optional[Path], port: int, model_id: str, cache_type: str = "f16", speculative_decoding: str = "default"):
+    async def _start_server(self, model_path: Path, n_gpu_layers: int, n_ctx: int, mmproj_path: Optional[Path], port: int, model_id: str, cache_type: str = "f16", speculative_decoding: str = "default", token_prediction: str = "off"):
         """Start llama-server.exe with the given model on the given port."""
         if not LLAMACPP_SERVER_BIN.exists():
             raise FileNotFoundError(
@@ -701,10 +748,14 @@ class LocalModelManager:
             "--no-webui",
         ]
 
-        # Speculative decoding (n-gram, zero VRAM cost) — disabled for vision models
-        # because multimodal prefill breaks the n-gram locality assumption.
+        # Speculative decoding modes are disabled for vision models because
+        # multimodal prefill can make speculative paths unreliable.
         if mmproj_path is None:
-            cmd += _speculative_decoding_args(speculative_decoding)
+            token_prediction = _normalize_token_prediction(token_prediction)
+            if token_prediction != "off":
+                cmd += _token_prediction_args(token_prediction)
+            else:
+                cmd += _speculative_decoding_args(speculative_decoding)
 
         if mmproj_path is not None:
             cmd += ["--mmproj", str(mmproj_path)]
@@ -759,14 +810,15 @@ class LocalModelManager:
             # Check if process died
             if proc and proc.poll() is not None:
                 log_tail = self._read_log_tail(model_id)
+                error_message = MTP_UNSUPPORTED_MESSAGE if _is_mtp_unsupported_log(log_tail) else (
+                    f"llama-server exited with code {proc.returncode}.\n"
+                    f"Log: {log_tail}"
+                )
                 # Clean up
                 self._processes.pop(model_id, None)
                 self._ports.pop(model_id, None)
                 self._log_paths.pop(model_id, None)
-                raise RuntimeError(
-                    f"llama-server exited with code {proc.returncode}.\n"
-                    f"Log: {log_tail}"
-                )
+                raise RuntimeError(error_message)
 
             try:
                 resp = await client.get("/health")
@@ -787,6 +839,8 @@ class LocalModelManager:
         # Timeout — clean up
         log_tail = self._read_log_tail(model_id)
         await self._kill_server(model_id)
+        if _is_mtp_unsupported_log(log_tail):
+            raise TimeoutError(MTP_UNSUPPORTED_MESSAGE)
         raise TimeoutError(
             f"llama-server on port {port} did not become ready within {timeout}s. "
             f"Last error: {last_error}. Log: {log_tail}"
@@ -1075,6 +1129,7 @@ class LoadModelRequest(BaseModel):
     mmproj_filename: Optional[str] = None
     cache_type: str = "f16"  # f16 | q8_0 | q4_0
     speculative_decoding: str = "default"  # default/high | low | off
+    token_prediction: str = "off"  # on | off
 
 class UnloadModelRequest(BaseModel):
     model_id: str
@@ -1232,6 +1287,7 @@ async def load_model(req: LoadModelRequest, request: Request):
             mmproj_filename=req.mmproj_filename,
             cache_type=req.cache_type,
             speculative_decoding=req.speculative_decoding,
+            token_prediction=req.token_prediction,
         )
         # Invalidate cached base models so /api/models returns fresh n_ctx
         request.app.state.BASE_MODELS = None
@@ -1470,6 +1526,7 @@ async def generate_chat_completion(
                         mmproj_filename=mmproj,
                         cache_type=loaded_info.cache_type,
                         speculative_decoding=loaded_info.speculative_decoding,
+                        token_prediction=loaded_info.token_prediction,
                     )
                 except Exception as e:
                     log.error(

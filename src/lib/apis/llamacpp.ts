@@ -15,6 +15,7 @@ export interface LocalModel {
 	mmproj_filename: string | null;
 	cache_type: string | null;
 	speculative_decoding: string | null;
+	token_prediction: string | null;
 }
 
 export interface LocalVramGpu {
@@ -58,6 +59,16 @@ export const normalizeLlamaCppErrorMessage = (
 	const text = `${message || fallback}`.trim();
 	const lower = text.toLowerCase();
 
+	if (
+		lower.includes('predição de tokens') ||
+		lower.includes('predicao de tokens') ||
+		lower.includes('failed to measure mtp context memory') ||
+		lower.includes('creating mtp draft context') ||
+		lower.includes('context type mtp') ||
+		lower.includes('draft-mtp')
+	) {
+		return 'Este modelo não tem suporte a Predição de tokens. Desative e tente carregar novamente.';
+	}
 	if (
 		lower === 'failed to fetch' ||
 		lower.includes('failed to fetch') ||
@@ -191,7 +202,8 @@ export const loadLocalModel = async (
 	n_ctx: number = 4096,
 	mmproj_filename?: string | null,
 	cache_type: string = 'f16',
-	speculative_decoding: string = 'default'
+	speculative_decoding: string = 'default',
+	token_prediction: string = 'off'
 ): Promise<any> => {
 	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/load`, {
 		method: 'POST',
@@ -206,7 +218,8 @@ export const loadLocalModel = async (
 			n_ctx,
 			mmproj_filename: mmproj_filename ?? null,
 			cache_type,
-			speculative_decoding
+			speculative_decoding,
+			token_prediction
 		})
 	});
 
