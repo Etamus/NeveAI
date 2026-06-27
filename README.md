@@ -45,7 +45,7 @@ instalar.bat
 <img width="770" alt="{90671A9E-4D1D-4F70-B79F-50BA23439830}" src="https://github.com/user-attachments/assets/ab888b7f-8d8c-4f71-af4f-4c4e3aa7f1c6" />
 </h1>
 
-O instalador (`instalar.bat` → `Instalar`) realiza automaticamente:
+O instalador (`instalar.bat` → `Instalar`) realiza automaticamente as seguintes ações:
 
 1. **Detecta a GPU** — NVIDIA (identifica a série e configura CUDA), AMD (HIP/ROCm ou Vulkan) ou CPU
 2. **Baixa o llama.cpp** mais recente do GitHub (binários compilados para o hardware detectado)
@@ -67,7 +67,7 @@ instalar.bat
 <img width="769" alt="{443E706C-E71A-49BD-B960-E24B1B4A8B96}" src="https://github.com/user-attachments/assets/dbea24b7-8fb1-4c7a-aceb-387ff2298a64" />
 </h1>
 
-O atualizador (`instalar.bat` → `Atualizar`) abre uma janela gráfica que:
+O atualizador (`instalar.bat` → `Atualizar`) realiza automaticamente as seguintes ações:
 
 1. **Lê a versão local** do arquivo `version.txt` na raiz do projeto.
 2. **Consulta a última release** em [github.com/Etamus/NeveAI/releases/latest](https://github.com/Etamus/NeveAI/releases/latest) e mostra:
@@ -254,7 +254,7 @@ Copy-Item -Path "build\*" -Destination "backend\neveai\frontend" -Recurse -Force
 
 Ou de forma automática via
 ```bat
-instalar.bat
+instalar.bat → Buildar
 ```
 
 <h1 align="center">
