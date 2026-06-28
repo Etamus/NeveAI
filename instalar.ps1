@@ -3,6 +3,11 @@
 # Toda a logica original (deteccao de GPU, llama.cpp, venv, requirements, npm)
 # roda em runspace separado para nao travar a interface.
 
+param(
+    [ValidateSet('home', 'install', 'update', 'build')]
+    [string]$StartPage = 'home'
+)
+
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $OutputEncoding           = [Console]::OutputEncoding
 try {
@@ -29,7 +34,7 @@ $LOG_DIR  = Join-Path $ROOT 'logs'
 if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
 $LOG = Join-Path $LOG_DIR 'install.log'
 $STATE_FILE = Join-Path $LOG_DIR 'install-state.txt'
-$INSTALLER_REVISION = '2026-06-27-hub-central-v1'
+$INSTALLER_REVISION = '2026-06-28-update-layout-polish-v6'
 '' | Set-Content $LOG
 Add-Content -LiteralPath $LOG -Value ("[INSTALLER] revision={0}; script={1}; root={2}" -f $INSTALLER_REVISION, $SCRIPT_PATH, $ROOT) -Encoding UTF8
 [System.IO.File]::WriteAllText($STATE_FILE, 'idle', [System.Text.UTF8Encoding]::new($false))
@@ -128,6 +133,8 @@ if (-not (Test-Path $LOGO_PATH)) {
             <Setter Property="Width" Value="34"/>
             <Setter Property="Height" Value="28"/>
             <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="FontSize" Value="20"/>
+            <Setter Property="FontWeight" Value="Normal"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -137,7 +144,8 @@ if (-not (Test-Path $LOGO_PATH)) {
                                        FontSize="{TemplateBinding FontSize}"
                                        FontWeight="{TemplateBinding FontWeight}"
                                        HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"/>
+                                       VerticalAlignment="Center"
+                                       Margin="0,-4,0,0"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -204,7 +212,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                     <TextBlock x:Name="LblHubBrand" Text="Neve AI" FontSize="15" FontWeight="SemiBold" Foreground="#111111" VerticalAlignment="Center"/>
                     <TextBlock x:Name="LblHubMode" Text="  ·  Hub" FontSize="13" Foreground="#71717A" VerticalAlignment="Center"/>
                 </StackPanel>
-                <Button x:Name="BtnClose" Grid.Column="2" Content="X" Style="{StaticResource WindowCloseBtn}" Margin="0,0,16,0"/>
+                <Button x:Name="BtnClose" Grid.Column="2" Content="×" Style="{StaticResource WindowCloseBtn}" Margin="0,0,16,0"/>
             </Grid>
 
             <Grid x:Name="HubHomePanel" Grid.Row="1" Grid.RowSpan="2" Margin="32,24,32,28">
@@ -259,7 +267,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                     </StackPanel>
 
                     <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="20">
-                        <Grid>
+                        <Grid VerticalAlignment="Center">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="220"/>
                                 <ColumnDefinition Width="*"/>
@@ -301,14 +309,14 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <ComboBoxItem Content="32 GB ou mais"/>
                             </ComboBox>
 
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Flash Attention (Opcional):" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
-                            <CheckBox  Grid.Row="3" Grid.Column="1" x:Name="ChkFlash" Content="Compilar Flash Attention (requer CUDA Toolkit + MSVC Build Tools)" FontSize="13" Margin="0,2,0,12"/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Dependências:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
+                            <CheckBox  Grid.Row="3" Grid.Column="1" x:Name="ChkInstallPython" Content="Instalar Python 3.11" FontSize="13" Margin="0,2,0,12"/>
 
                             <Border Grid.Row="4" Grid.ColumnSpan="2" Background="#FAFAFA" CornerRadius="8" Padding="14,12" Margin="0,8,0,0">
                                 <StackPanel>
                                     <TextBlock Text="O que será instalado:" FontWeight="SemiBold" FontSize="13" Foreground="#111111" Margin="0,0,0,4"/>
                                     <TextBlock Text="• llama.cpp e stable-diffusion.cpp (binários mais recentes do GitHub)" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="• Python venv com PyTorch + diffusers + dependências do backend" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="• Python 3.11 e venv com PyTorch + diffusers + dependências do backend" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="• Pacotes npm e build do frontend" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="• Estrutura de pastas (logs, models, mmproj, data) e .env padrão" FontSize="12" Foreground="#52525B"/>
                                 </StackPanel>
@@ -371,7 +379,7 @@ if (-not (Test-Path $LOGO_PATH)) {
             <!-- FOOTER -->
             <Border x:Name="InstallFooterHost" Grid.Row="2" BorderBrush="#EEEEEE" BorderThickness="0,1,0,0" Padding="32,0,32,0" Visibility="Collapsed">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Button x:Name="BtnCancel" Style="{StaticResource GhostBtn}" Content="Cancelar" Margin="0,0,10,0"/>
+                    <Button x:Name="BtnCancel" Style="{StaticResource GhostBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/>
                     <Button x:Name="BtnPrimary" Style="{StaticResource PrimaryBtn}" Content="Instalar"/>
                 </StackPanel>
             </Border>
@@ -391,7 +399,7 @@ $window.Tag = 'idle'
 
 # Atalhos para controles
 $ctl = @{}
-foreach ($name in 'LogoImg','BtnClose','LblGpu','CmbBackend','CmbVram','ChkFlash',
+foreach ($name in 'LogoImg','BtnClose','LblGpu','CmbBackend','CmbVram','ChkInstallPython',
                   'ConfigPanel','InstallPanel','DonePanel',
                   'LblStep','LblPhase','LblProgressTxt','Progress','LogBox','LogScroll',
                   'LblDoneTitle','LblDoneSub','LblSummary',
@@ -418,7 +426,8 @@ $window.Dispatcher.add_UnhandledException({
         $ctl.BtnPrimary.IsEnabled = $true
         $ctl.BtnPrimary.Content = 'Fechar'
         $ctl.BtnPrimary.Tag = 'done'
-        $ctl.BtnCancel.IsEnabled = $true
+        $ctl.BtnCancel.Visibility = 'Collapsed'
+        $ctl.BtnCancel.IsEnabled = $false
         $ctl.BtnClose.IsEnabled = $true
         $window.Tag = 'failed'
         $ctl.LogBox.AppendText("[FATAL UI] $msg`r`n")
@@ -472,6 +481,64 @@ function Stop-RegisteredInstallerProcesses {
             if ($proc -and -not $proc.HasExited) { Stop-InstallerProcessTree ([int]$proc.Id) }
         }
     } catch {}
+}
+
+$script:NeveAppCloseRequested = $false
+function Stop-NeveRunningApp([string]$Reason = 'operação') {
+    if ($script:NeveAppCloseRequested) { return }
+    $script:NeveAppCloseRequested = $true
+
+    try {
+        Add-Content -LiteralPath $LOG -Value ("[INFO] Encerrando Neve AI antes de iniciar: {0}" -f $Reason) -Encoding UTF8
+    } catch {}
+
+    $targets = @()
+    $browserProfile = ''
+    try { $browserProfile = (Join-Path $ROOT 'logs\browser-app').ToLowerInvariant() } catch {}
+    $browserProfileAlt = $browserProfile -replace '\\', '/'
+
+    try {
+        foreach ($proc in @(Get-CimInstance Win32_Process -EA SilentlyContinue)) {
+            $processId = [int]$proc.ProcessId
+            if ($processId -eq $PID) { continue }
+
+            $name = if ($proc.Name) { [string]$proc.Name } else { '' }
+            $cmd = if ($proc.CommandLine) { [string]$proc.CommandLine } else { '' }
+            $nameLower = $name.ToLowerInvariant()
+            $cmdLower = $cmd.ToLowerInvariant()
+
+            if ($cmdLower.Contains('instalar.ps1') -or $cmdLower.Contains('install-launcher.log')) {
+                continue
+            }
+
+            $isTarget = $false
+            if ($nameLower -like 'llama-server*' -or $nameLower -like 'llama_server*') {
+                $isTarget = $true
+            }
+            if ($cmdLower.Contains('neveai.main:app')) {
+                $isTarget = $true
+            }
+            if ($cmdLower.Contains('neve_window.py')) {
+                $isTarget = $true
+            }
+            if ($browserProfile -and ($cmdLower.Contains($browserProfile) -or $cmdLower.Contains($browserProfileAlt))) {
+                $isTarget = $true
+            }
+            if ($cmdLower.Contains('--app=http://localhost:8080') -or $cmdLower.Contains('--app=http://127.0.0.1:8080')) {
+                $isTarget = $true
+            }
+
+            if ($isTarget) { $targets += $processId }
+        }
+    } catch {}
+
+    foreach ($targetPid in @($targets | Sort-Object -Unique)) {
+        try { Stop-InstallerProcessTree ([int]$targetPid) } catch {}
+    }
+
+    if ($targets.Count -gt 0) {
+        Start-Sleep -Milliseconds 600
+    }
 }
 
 function Request-InstallCancel {
@@ -739,16 +806,13 @@ if ($detected.Name) {
 }
 $ctl.CmbBackend.SelectedIndex = $detected.Backend
 $ctl.CmbVram.SelectedIndex    = 0
-$ctl.ChkFlash.IsChecked       = $false
+$ctl.ChkInstallPython.IsChecked = $false
 
-# Se faltar Python, bloqueia o botao. Node.js pode ser baixado em modo portatil pelo instalador.
+# Se faltar Python, o instalador pode baixar o Python 3.11 quando a opcao estiver marcada.
+# Node.js pode ser baixado em modo portatil pelo instalador.
 if (-not $pyOk) {
-    $ctl.BtnPrimary.IsEnabled = $false
-    $ctl.BtnPrimary.Content   = 'Pré-requisitos faltando'
-    $missing = @()
-    if (-not $pyOk)   { $missing += 'Python 3.11 ou 3.12 real, com venv/ensurepip (desative aliases Python da Microsoft Store se necessário)' }
     [System.Windows.MessageBox]::Show(
-        "Faltando:`n  • " + ($missing -join "`n  • ") + "`n`nInstale e abra o instalador novamente.",
+        "Python 3.11/3.12 válido não foi encontrado.`n`nMarque a opção `"Instalar Python 3.11 automaticamente`" para o instalador baixar e configurar o Python antes da instalação.",
         'Pré-requisitos', 'OK', 'Warning') | Out-Null
 }
 
@@ -795,16 +859,25 @@ function ConvertTo-ProcessArgument([string]$arg) {
 # =============================================================================
 $ctl.BtnPrimary.Add_Click({
     if ($ctl.BtnPrimary.Tag -eq 'done') { $window.Close(); return }
+    $installPython311 = [bool]$ctl.ChkInstallPython.IsChecked
     if ([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) {
+        if ($installPython311) {
+            $pythonLaunchRetry = Resolve-PythonLaunch
+            if ($pythonLaunchRetry) {
+                $script:PYTHON_EXE = $pythonLaunchRetry.Executable
+                $PYTHON_EXE = $pythonLaunchRetry.Executable
+            }
+        }
+    }
+    if (([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) -and -not $installPython311) {
         [System.Windows.MessageBox]::Show(
-            "Python 3.11/3.12 válido não encontrado. Instale pelo python.org e desative aliases Python da Microsoft Store, se existirem.",
+            "Python 3.11/3.12 válido não encontrado.`n`nMarque `"Instalar Python 3.11 automaticamente`" ou instale o Python manualmente pelo python.org.",
             'Neve AI - Instalador', 'OK', 'Warning') | Out-Null
         return
     }
     # Coleta selecoes
     $backendIdx  = $ctl.CmbBackend.SelectedIndex
     $vramIdx     = $ctl.CmbVram.SelectedIndex
-    $flashAttn   = [bool]$ctl.ChkFlash.IsChecked
 
     $vramMap     = @(0,4,6,8,12,16,24,32)
     $vramGb      = $vramMap[$vramIdx]
@@ -832,9 +905,12 @@ $ctl.BtnPrimary.Add_Click({
     $ctl.ConfigPanel.Visibility = 'Collapsed'
     $ctl.InstallPanel.Visibility = 'Visible'
     $ctl.BtnPrimary.IsEnabled = $false
+    $ctl.BtnCancel.Visibility = 'Visible'
     $ctl.BtnCancel.IsEnabled  = $true
     $ctl.BtnCancel.Content    = 'Cancelar'
     $ctl.BtnClose.IsEnabled = $false
+
+    Stop-NeveRunningApp 'Instalar'
 
     # ---- Atalho: se TUDO ja esta instalado, marca como concluido
     $venvOk     = Test-Path $VENV_PY
@@ -849,8 +925,10 @@ $ctl.BtnPrimary.Add_Click({
     $nodeModsOk = Test-Path (Join-Path $ROOT 'node_modules')
     $frontendOk = Test-Path (Join-Path $BACKEND 'neveai\frontend\index.html')
     $envOk      = Test-Path (Join-Path $ROOT '.env')
+    $python311Target = Join-Path $env:LocalAppData 'Programs\Python\Python311\python.exe'
+    $needsPython311Install = $installPython311 -and -not (Test-PythonLaunch $python311Target)
 
-    if ($venvOk -and $torchOk -and $llamaOk -and $nodeModsOk -and $frontendOk -and $envOk) {
+    if ($venvOk -and $torchOk -and $llamaOk -and $nodeModsOk -and $frontendOk -and $envOk -and -not $needsPython311Install) {
         $ctl.LogBox.AppendText("[OK] Tudo já está instalado. Nada a fazer.`r`n")
         $ctl.Progress.Value      = 100
         $ctl.LblProgressTxt.Text = '100%'
@@ -858,8 +936,16 @@ $ctl.BtnPrimary.Add_Click({
         $ctl.LblStep.Text        = 'Concluído'
 
         $summary = @()
-        $summary += "Python:      $((& $PYTHON_EXE --version 2>&1))"
-        $summary += "Node.js:     $((& $NODE_EXE --version 2>&1))"
+        if (-not [string]::IsNullOrWhiteSpace($PYTHON_EXE) -and (Test-Path -LiteralPath $PYTHON_EXE)) {
+            $summary += "Python:      $((& $PYTHON_EXE --version 2>&1))"
+        } else {
+            $summary += "Python:      venv existente"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($NODE_EXE) -and (Test-Path -LiteralPath $NODE_EXE)) {
+            $summary += "Node.js:     $((& $NODE_EXE --version 2>&1))"
+        } else {
+            $summary += "Node.js:     não verificado"
+        }
         try {
             $tOut = & $VENV_PY -c "import torch; v=torch.__version__; cuda='(CUDA '+torch.version.cuda+')' if torch.cuda.is_available() else '(CPU)'; print('PyTorch '+v+' '+cuda)" 2>$null
             if ($tOut) { $summary += "PyTorch:     $tOut" }
@@ -882,7 +968,7 @@ $ctl.BtnPrimary.Add_Click({
 
     # Worker em runspace separado, usando as funcoes UI-* via $window
     $worker = {
-        param($cfg, $flashAttn, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG, $STATE_FILE, $PYTHON_EXE, $NODE_EXE, $NPM_EXE, $INSTALLER_REVISION, $SCRIPT_PATH, $INSTALL_CONTROL)
+        param($cfg, $installPython311, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG, $STATE_FILE, $PYTHON_EXE, $NODE_EXE, $NPM_EXE, $INSTALLER_REVISION, $SCRIPT_PATH, $INSTALL_CONTROL)
 
         # Helpers (definidas dentro do runspace)
         function Log([string]$m, [string]$k='info') {
@@ -1023,26 +1109,153 @@ $ctl.BtnPrimary.Add_Click({
         function Run([string]$exe, [string[]]$argv, [string]$desc) {
             return Run-NoPipe $exe $argv $desc
         }
-        function Test-CommandExists([string]$name) {
-            return $null -ne (Get-Command $name -EA SilentlyContinue)
+        function Test-InstallerPythonLaunch([string]$exe, [string[]]$prefixArgs = @()) {
+            try {
+                if ([string]::IsNullOrWhiteSpace($exe) -or -not (Test-Path -LiteralPath $exe)) { return $null }
+                $fullExe = (Resolve-Path -LiteralPath $exe).ProviderPath
+                if ($fullExe -match '\\Microsoft\\WindowsApps\\python(3)?\.exe$') { return $null }
+
+                $probe = 'import sys, venv, ensurepip; print(sys.executable); print(sys.version.split()[0])'
+                $output = & $fullExe @prefixArgs -c $probe 2>&1
+                if ($LASTEXITCODE -ne 0) { return $null }
+
+                $lines = @($output | ForEach-Object { "$_".Trim() } | Where-Object { $_ })
+                if ($lines.Count -lt 2) { return $null }
+
+                $realExe = $lines[0]
+                $version = $lines[-1]
+                if (-not (Test-Path -LiteralPath $realExe)) { $realExe = $fullExe }
+
+                $parts = $version -split '\.'
+                if ($parts.Count -lt 2 -or $parts[0] -ne '3' -or @('11','12') -notcontains $parts[1]) {
+                    return $null
+                }
+
+                return [pscustomobject]@{
+                    Executable = (Resolve-Path -LiteralPath $realExe).ProviderPath
+                    Version    = $version
+                }
+            } catch {
+                return $null
+            }
         }
-        function Test-MsvcBuildTools {
-            if (Test-CommandExists 'cl.exe') { return $true }
+        function Resolve-InstallerPythonLaunch([string]$PreferredExe = $null, [switch]$PreferPython311) {
+            $candidates = @()
 
-            $vswhereCandidates = @()
-            foreach ($vsBase in (@(${env:ProgramFiles(x86)}, $env:ProgramFiles) | Where-Object { $_ })) {
-                $vswherePath = Join-Path $vsBase 'Microsoft Visual Studio\Installer\vswhere.exe'
-                if (Test-Path -LiteralPath $vswherePath) { $vswhereCandidates += $vswherePath }
+            if ($PreferredExe) { $candidates += [pscustomobject]@{ Exe = $PreferredExe; Args = @() } }
+
+            $localPython311 = Join-Path $env:LocalAppData 'Programs\Python\Python311\python.exe'
+            $localPython312 = Join-Path $env:LocalAppData 'Programs\Python\Python312\python.exe'
+            if ($PreferPython311) {
+                if (Test-Path -LiteralPath $localPython311) { $candidates += [pscustomobject]@{ Exe = $localPython311; Args = @() } }
+                if (Test-Path -LiteralPath $localPython312) { $candidates += [pscustomobject]@{ Exe = $localPython312; Args = @() } }
+            } else {
+                if (Test-Path -LiteralPath $localPython312) { $candidates += [pscustomobject]@{ Exe = $localPython312; Args = @() } }
+                if (Test-Path -LiteralPath $localPython311) { $candidates += [pscustomobject]@{ Exe = $localPython311; Args = @() } }
             }
 
-            foreach ($vswhere in $vswhereCandidates) {
-                try {
-                    $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
-                    if ($installPath) { return $true }
-                } catch {}
+            foreach ($cmd in @(Get-Command py.exe -All -EA SilentlyContinue)) {
+                $versionArgs = if ($PreferPython311) { @('-3.11', '-3.12') } else { @('-3.12', '-3.11') }
+                foreach ($versionArg in $versionArgs) {
+                    $candidates += [pscustomobject]@{ Exe = $cmd.Source; Args = @($versionArg) }
+                }
             }
 
-            return $false
+            foreach ($name in @('python.exe', 'python3.exe')) {
+                foreach ($cmd in @(Get-Command $name -All -EA SilentlyContinue)) {
+                    $candidates += [pscustomobject]@{ Exe = $cmd.Source; Args = @() }
+                }
+            }
+
+            $pythonRoots = @($env:LocalAppData, $env:ProgramFiles, ${env:ProgramFiles(x86)}, 'C:\') | Where-Object { $_ }
+            $minorOrder = if ($PreferPython311) { @('311', '312') } else { @('312', '311') }
+            foreach ($root in $pythonRoots) {
+                foreach ($minor in $minorOrder) {
+                    foreach ($relative in @("Programs\Python\Python$minor\python.exe", "Python$minor\python.exe")) {
+                        $path = Join-Path $root $relative
+                        if (Test-Path -LiteralPath $path) { $candidates += [pscustomobject]@{ Exe = $path; Args = @() } }
+                    }
+                }
+            }
+
+            $seen = @{}
+            foreach ($candidate in $candidates) {
+                $key = "$($candidate.Exe)|$($candidate.Args -join ' ')"
+                if ($seen.ContainsKey($key)) { continue }
+                $seen[$key] = $true
+
+                $resolved = Test-InstallerPythonLaunch $candidate.Exe ([string[]]$candidate.Args)
+                if ($resolved) { return $resolved }
+            }
+
+            return $null
+        }
+        function Install-Python311IfNeeded([bool]$ShouldInstall) {
+            $targetDir = Join-Path $env:LocalAppData 'Programs\Python\Python311'
+            $targetPython = Join-Path $targetDir 'python.exe'
+
+            if (-not $ShouldInstall) {
+                $resolved = Resolve-InstallerPythonLaunch $PYTHON_EXE
+                if ($resolved) { return $resolved }
+                throw "Python 3.11/3.12 válido não encontrado. Marque a opção de instalar Python 3.11 automaticamente ou instale pelo python.org."
+            }
+
+            Set-InstallState 'installing_python311'
+            P 5 'Instalando Python 3.11'
+
+            $existing = Test-InstallerPythonLaunch $targetPython
+            if ($existing) {
+                $pythonDir = Split-Path -Parent $existing.Executable
+                $scriptsDir = Join-Path $pythonDir 'Scripts'
+                $env:PATH = "$pythonDir;$scriptsDir;$env:PATH"
+                Log "[OK] Python 3.11 já disponível: $($existing.Executable)"
+                return $existing
+            }
+
+            $installerUrl = 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe'
+            $installerPath = Join-Path $env:TEMP 'neve_python_3.11.9_amd64.exe'
+
+            try {
+                if (Test-Path -LiteralPath $installerPath) { Remove-Item -LiteralPath $installerPath -Force -EA SilentlyContinue }
+                Log "==> Baixando Python 3.11.9 oficial: $installerUrl"
+                Invoke-WebRequest $installerUrl -OutFile $installerPath -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 300
+                if (-not (Test-Path -LiteralPath $installerPath)) { throw 'O instalador do Python não foi baixado.' }
+
+                $targetParent = Split-Path -Parent $targetDir
+                if (-not (Test-Path -LiteralPath $targetParent)) { New-Item -ItemType Directory -Path $targetParent -Force | Out-Null }
+
+                $args = @(
+                    '/quiet',
+                    'InstallAllUsers=0',
+                    'PrependPath=1',
+                    'Include_launcher=1',
+                    'InstallLauncherAllUsers=0',
+                    'Include_pip=1',
+                    'Include_tcltk=0',
+                    'Include_test=0',
+                    'Include_doc=0',
+                    'Include_debug=0',
+                    'Shortcuts=0',
+                    'AssociateFiles=0',
+                    'SimpleInstall=1',
+                    "TargetDir=$targetDir"
+                )
+                $rc = Run-NoPipe $installerPath $args 'Instalando Python 3.11 silenciosamente'
+                if ($rc -notin @(0, 3010)) { throw "Falha ao instalar Python 3.11 (exit $rc)." }
+
+                $pythonDir = Split-Path -Parent $targetPython
+                $scriptsDir = Join-Path $pythonDir 'Scripts'
+                $env:PATH = "$pythonDir;$scriptsDir;$env:PATH"
+
+                $resolved = Resolve-InstallerPythonLaunch $targetPython -PreferPython311
+                if (-not $resolved) { $resolved = Resolve-InstallerPythonLaunch $PYTHON_EXE -PreferPython311 }
+                if (-not $resolved) { throw 'Python 3.11 foi instalado, mas não respondeu na validação com venv/ensurepip.' }
+
+                Log "[OK] Python pronto: $($resolved.Executable) ($($resolved.Version))"
+                return $resolved
+            } finally {
+                try { if (Test-Path -LiteralPath $installerPath) { Remove-Item -LiteralPath $installerPath -Force -EA SilentlyContinue } } catch {}
+            }
         }
         function Get-NodeMajorFromVersion([string]$version) {
             if ([string]::IsNullOrWhiteSpace($version)) { return -1 }
@@ -1221,8 +1434,12 @@ $ctl.BtnPrimary.Add_Click({
             Log "[OK] Script em execução: $SCRIPT_PATH"
             Log "[OK] Pasta de instalação: $ROOT"
 
-            # ---- 1. Estrutura de pastas
-            P 5 'Criando estrutura de pastas'
+            # ---- 1. Python opcional
+            $pythonLaunchWorker = Install-Python311IfNeeded ([bool]$installPython311)
+            $PYTHON_EXE = $pythonLaunchWorker.Executable
+
+            # ---- 2. Estrutura de pastas
+            P 8 'Criando estrutura de pastas'
             foreach ($d in @('logs','logs\webview2','logs\browser-app','models','mmproj',
                              'backend\data','backend\data\uploads','backend\data\vector_db',
                              'backend\data\cache','backend\data\tools',
@@ -1249,7 +1466,7 @@ $ctl.BtnPrimary.Add_Click({
             }
             Log "[OK] Arquivos essenciais do app validados"
 
-            # ---- 2. .env padrao
+            # ---- 3. .env padrao
             $envPath = Join-Path $ROOT '.env'
             if (-not (Test-Path -LiteralPath $envPath)) {
                 $envText = @"
@@ -1280,7 +1497,7 @@ USER_AGENT=Neve AI
                 Log "[…] .env preservado"
             }
 
-            # ---- 3. llama.cpp
+            # ---- 4. llama.cpp
             P 12 'Baixando llama.cpp'
             $llamaDir = Join-Path $ROOT 'llamacpp-server\bin'
             if (-not (Test-Path (Split-Path $llamaDir -Parent))) { New-Item (Split-Path $llamaDir -Parent) -ItemType Directory | Out-Null }
@@ -1376,7 +1593,7 @@ USER_AGENT=Neve AI
             }
             if (-not $llamaInstalled) { Log '[!] Usando llama.cpp existente porque o download novo não pôde ser concluído.' 'warn' }
 
-            # ---- 4. Preparar venv
+            # ---- 5. Preparar venv
             P 25 'Preparando ambiente Python'
             if ([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) {
                 throw "Python 3.11/3.12 válido não encontrado para criar o venv. Instale pelo python.org e desative aliases Python da Microsoft Store, se existirem."
@@ -1409,7 +1626,7 @@ USER_AGENT=Neve AI
             Set-InstallState 'venv_created'
             Log "[OK] venv pronto"
 
-            # ---- 5. pip + PyTorch
+            # ---- 6. pip + PyTorch
             Set-InstallState 'installing_python_packages'
             Set-InstallState 'preparing_pip_environment'
             $venvScripts = Join-Path $VENV_DIR 'Scripts'
@@ -1666,24 +1883,6 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             }
             Log "[OK] PyTorch instalado"
 
-            # ---- 6. Flash Attention (opcional)
-            if ($flashAttn -and $cfg.vendor -eq 'NVIDIA') {
-                if (-not (Test-CommandExists 'nvcc.exe')) {
-                    Log "[!] Flash Attention Python ignorado: requer CUDA Toolkit completo (nvcc.exe). O llama.cpp e o Neve AI funcionam normalmente sem esse pacote." 'warn'
-                } elseif (-not (Test-MsvcBuildTools)) {
-                    Log "[!] Flash Attention Python ignorado: requer MSVC Build Tools. O llama.cpp e o Neve AI funcionam normalmente sem esse pacote." 'warn'
-                } else {
-                    P 48 'Compilando Flash Attention Python (~10 min)'
-                    Set-InstallState 'installing_flash_attn'
-                    $rc = Invoke-PipInstall -InstallArgs @('flash-attn','--no-build-isolation') -Desc 'flash-attn'
-                    if ($rc -eq 0) {
-                        Log "[OK] Flash Attention Python instalado"
-                    } else {
-                        Log "[!] Flash Attention Python falhou (opcional). O llama.cpp e o Neve AI funcionam normalmente sem esse pacote." 'warn'
-                    }
-                }
-            }
-
             # ---- 7. stable-diffusion.cpp (Z-Image-Turbo)
             P 55 'Preparando geração de imagem local'
             Set-InstallState 'installing_stable_diffusion_cpp'
@@ -1870,7 +2069,8 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 $script:Ctl.BtnPrimary.IsEnabled = $true
                 $script:Ctl.BtnPrimary.Content   = 'Fechar'
                 $script:Ctl.BtnPrimary.Tag       = 'done'
-                $script:Ctl.BtnCancel.IsEnabled  = $true
+                $script:Ctl.BtnCancel.Visibility = 'Collapsed'
+                $script:Ctl.BtnCancel.IsEnabled  = $false
                 $script:Ctl.BtnClose.IsEnabled   = $true
                 $script:Window.Tag = 'failed'
                 [System.Windows.MessageBox]::Show("A instalação falhou. A janela ficará aberta para você ler o log.`n`nVeja logs\install.log`n`n$errMsg", 'Neve AI', 'OK', 'Error') | Out-Null
@@ -1888,7 +2088,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
 
     $ps = [PowerShell]::Create()
     $ps.Runspace = $runspace
-    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($flashAttn).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($STATE_FILE).AddArgument($PYTHON_EXE).AddArgument($NODE_EXE).AddArgument($NPM_EXE).AddArgument($INSTALLER_REVISION).AddArgument($SCRIPT_PATH).AddArgument($script:InstallControl)
+    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($installPython311).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($STATE_FILE).AddArgument($PYTHON_EXE).AddArgument($NODE_EXE).AddArgument($NPM_EXE).AddArgument($INSTALLER_REVISION).AddArgument($SCRIPT_PATH).AddArgument($script:InstallControl)
     [void]$ps.add_InvocationStateChanged({
         param($sender, $eventArgs)
         if ($eventArgs.InvocationStateInfo.State -eq 'Failed') {
@@ -1904,7 +2104,8 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                     $ctl.BtnPrimary.IsEnabled = $true
                     $ctl.BtnPrimary.Content = 'Fechar'
                     $ctl.BtnPrimary.Tag = 'done'
-                    $ctl.BtnCancel.IsEnabled = $true
+                    $ctl.BtnCancel.Visibility = 'Collapsed'
+                    $ctl.BtnCancel.IsEnabled = $false
                     $ctl.BtnClose.IsEnabled = $true
                     $window.Tag = 'failed'
                     $ctl.LogBox.AppendText("[FATAL] $msg`r`n")
@@ -1959,6 +2160,106 @@ $REPO_NAME   = 'NeveAI'
 $API_LATEST  = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest"
 $LLAMA_API_LATEST = 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest'
 $UA          = 'Neve-Updater/1.0'
+
+function Normalize-ReleaseTag([string]$tag) {
+    return ([string]$tag).Trim().TrimStart('v', 'V')
+}
+
+function Get-VersionParts([string]$tag) {
+    $matches = [regex]::Matches((Normalize-ReleaseTag $tag), '\d+')
+    $parts = @()
+    foreach ($match in $matches) { $parts += [int]$match.Value }
+    return $parts
+}
+
+function Test-ReleaseTagNewer([string]$current, [string]$latest) {
+    $currentNorm = Normalize-ReleaseTag $current
+    $latestNorm = Normalize-ReleaseTag $latest
+    if ([string]::IsNullOrWhiteSpace($currentNorm) -or [string]::IsNullOrWhiteSpace($latestNorm)) { return $false }
+    if ($currentNorm -eq $latestNorm -or $currentNorm -eq '0.0.0') { return $false }
+
+    $currentParts = @(Get-VersionParts $currentNorm)
+    $latestParts = @(Get-VersionParts $latestNorm)
+    if ($currentParts.Count -eq 0 -or $latestParts.Count -eq 0) { return $false }
+
+    $max = [Math]::Max($currentParts.Count, $latestParts.Count)
+    for ($i = 0; $i -lt $max; $i++) {
+        $currentValue = if ($i -lt $currentParts.Count) { $currentParts[$i] } else { 0 }
+        $latestValue = if ($i -lt $latestParts.Count) { $latestParts[$i] } else { 0 }
+        if ($latestValue -gt $currentValue) { return $true }
+        if ($latestValue -lt $currentValue) { return $false }
+    }
+
+    return $false
+}
+
+function Get-FriendlyGitHubError($error) {
+    $message = "$error"
+    if ($message -match 'API rate limit exceeded|rate limit') {
+        return 'Limite temporário do GitHub atingido. Aguarde alguns minutos e tente novamente, ou configure um token GitHub para aumentar o limite.'
+    }
+    return $message
+}
+
+function Get-GitHubLatestTagFromRedirect([string]$owner, [string]$repo) {
+    $url = "https://github.com/$owner/$repo/releases/latest"
+    foreach ($method in @('HEAD', 'GET')) {
+        try {
+            $request = [System.Net.HttpWebRequest]::Create($url)
+            $request.Method = $method
+            $request.AllowAutoRedirect = $false
+            $request.UserAgent = $UA
+            $request.Timeout = 20000
+            $response = $request.GetResponse()
+            try {
+                $location = [string]$response.Headers['Location']
+                if ($location -match '/releases/tag/([^/?#]+)') {
+                    return [uri]::UnescapeDataString($matches[1])
+                }
+            } finally {
+                $response.Close()
+            }
+        } catch [System.Net.WebException] {
+            $response = $_.Exception.Response
+            try {
+                if ($response) {
+                    $location = [string]$response.Headers['Location']
+                    if ($location -match '/releases/tag/([^/?#]+)') {
+                        return [uri]::UnescapeDataString($matches[1])
+                    }
+                }
+            } finally {
+                if ($response) { $response.Close() }
+            }
+        } catch {}
+    }
+
+    return $null
+}
+
+function New-GitHubReleaseFallbackObject([string]$owner, [string]$repo, [string]$tag) {
+    [pscustomobject]@{
+        tag_name = $tag
+        body = 'Notas de release indisponíveis no momento porque o GitHub limitou a consulta pela API.'
+        zipball_url = "https://github.com/$owner/$repo/archive/refs/tags/$([uri]::EscapeDataString($tag)).zip"
+        assets = @()
+        is_fallback = $true
+    }
+}
+
+function Get-GitHubLatestRelease([string]$owner, [string]$repo) {
+    $apiUrl = "https://api.github.com/repos/$owner/$repo/releases/latest"
+    try {
+        return Invoke-RestMethod $apiUrl -Headers @{ 'User-Agent' = $UA } -TimeoutSec 20
+    } catch {
+        $apiError = $_
+        $tag = Get-GitHubLatestTagFromRedirect $owner $repo
+        if ($tag) {
+            return New-GitHubReleaseFallbackObject $owner $repo $tag
+        }
+        throw (Get-FriendlyGitHubError $apiError)
+    }
+}
 
 # Logo (favicon do projeto)
 $LOGO_PATH = Join-Path $ROOT 'static\favicon.png'
@@ -2072,7 +2373,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Border x:Name="bd" Background="Transparent" CornerRadius="6">
-                                <TextBlock Text="X" FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="×" FontSize="22" FontWeight="Normal" Foreground="#71717A" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-5,0,0"/>
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
@@ -2099,15 +2400,13 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                         <TextBlock x:Name="LblCheckSub" Text="Consultando GitHub…" FontSize="13" Foreground="#71717A" Margin="0,4,0,0"/>
                     </StackPanel>
 
-                    <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="20">
-                        <Grid>
+                    <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="20,14" VerticalAlignment="Center" Margin="0,-86,0,16">
+                        <Grid VerticalAlignment="Center">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
                             </Grid.RowDefinitions>
 
-                            <Grid Grid.Row="0" Margin="0,0,0,16">
+                            <Grid Grid.Row="0" VerticalAlignment="Center">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="0.92*"/>
                                     <ColumnDefinition Width="1"/>
@@ -2170,16 +2469,6 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                                     <TextBlock Grid.Row="3" Grid.Column="1" x:Name="LblLlamaStatus" Text="Aguardando…" FontSize="13" FontWeight="SemiBold" Foreground="#71717A" TextTrimming="CharacterEllipsis"/>
                                 </Grid>
                             </Grid>
-
-                            <TextBlock Grid.Row="1" Text="Notas da release:" FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,6"/>
-
-                            <Border Grid.Row="2" Background="#FAFAFA" CornerRadius="8" Padding="12,10">
-                                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                    <TextBox x:Name="LblNotes" Text="" Background="Transparent" BorderThickness="0"
-                                             IsReadOnly="True" FontFamily="Consolas" FontSize="11" Foreground="#52525B"
-                                             TextWrapping="Wrap" AcceptsReturn="True"/>
-                                </ScrollViewer>
-                            </Border>
                         </Grid>
                     </Border>
                 </Grid>
@@ -2239,7 +2528,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
             <Border Grid.Row="2" BorderBrush="#EEEEEE" BorderThickness="0,1,0,0" Padding="32,0,32,0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                     <Button x:Name="BtnLlama" Style="{StaticResource AccentBtn}" Content="Atualizar llama.cpp" Margin="0,0,10,0" ToolTip="Atualização opcional, separada do Neve AI" Visibility="Collapsed"/>
-                    <Button x:Name="BtnCancel" Style="{StaticResource GhostBtn}" Content="Cancelar" Margin="0,0,10,0"/>
+                    <Button x:Name="BtnCancel" Style="{StaticResource GhostBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/>
                     <Button x:Name="BtnPrimary" Style="{StaticResource PrimaryBtn}" Content="Atualizar" IsEnabled="False" Visibility="Collapsed"/>
                 </StackPanel>
             </Border>
@@ -2257,7 +2546,7 @@ $window = [Windows.Markup.XamlReader]::Load($reader)
 $ctl = @{}
 foreach ($name in 'LogoImg','BtnClose',
                   'CheckPanel','UpdatePanel','DonePanel',
-                  'LblCheckTitle','LblCheckSub','LblCurrent','LblLatest','LblStatus','LblNotes',
+                  'LblCheckTitle','LblCheckSub','LblCurrent','LblLatest','LblStatus',
                   'LblLlamaCurrent','LblLlamaLatest','LblLlamaStatus',
                   'ChkUpdateNeve','ChkUpdateLlama',
                   'LblStep','LblPhase','LblProgressTxt','Progress','LogBox','LogScroll',
@@ -2373,7 +2662,10 @@ $ctl.BtnLlama.Add_Click({
     $ctl.LblStep.Text = 'Preparando atualização do llama.cpp...'
     $ctl.BtnPrimary.IsEnabled = $false
     $ctl.BtnLlama.IsEnabled   = $false
+    $ctl.BtnCancel.Visibility = 'Visible'
     $ctl.BtnCancel.IsEnabled  = $false
+
+    Stop-NeveRunningApp 'Atualizar llama.cpp'
 
     $argRoot      = $ROOT
     $argLog       = $LOG
@@ -2400,6 +2692,73 @@ $ctl.BtnLlama.Add_Click({
                 $script:Ctl.LblProgressTxt.Text = "$v%"
                 if ($phase) { $script:Ctl.LblPhase.Text = $phase; $script:Ctl.LblStep.Text = $phase }
             })
+        }
+        function Get-LatestLlamaTagFromRedirect {
+            $url = 'https://github.com/ggml-org/llama.cpp/releases/latest'
+            foreach ($method in @('HEAD', 'GET')) {
+                try {
+                    $request = [System.Net.HttpWebRequest]::Create($url)
+                    $request.Method = $method
+                    $request.AllowAutoRedirect = $false
+                    $request.UserAgent = $UA
+                    $request.Timeout = 20000
+                    $response = $request.GetResponse()
+                    try {
+                        $location = [string]$response.Headers['Location']
+                        if ($location -match '/releases/tag/([^/?#]+)') { return [uri]::UnescapeDataString($matches[1]) }
+                    } finally {
+                        $response.Close()
+                    }
+                } catch [System.Net.WebException] {
+                    $response = $_.Exception.Response
+                    try {
+                        if ($response) {
+                            $location = [string]$response.Headers['Location']
+                            if ($location -match '/releases/tag/([^/?#]+)') { return [uri]::UnescapeDataString($matches[1]) }
+                        }
+                    } finally {
+                        if ($response) { $response.Close() }
+                    }
+                } catch {}
+            }
+            return $null
+        }
+        function Get-LatestLlamaRelease {
+            try {
+                return Invoke-RestMethod $LLAMA_API_LATEST -Headers @{ 'User-Agent' = $UA } -TimeoutSec 30
+            } catch {
+                $tag = Get-LatestLlamaTagFromRedirect
+                if ($tag) {
+                    L '[!] GitHub API limitada; usando fallback por página de release.' 'warn'
+                    return [pscustomobject]@{ tag_name = $tag; assets = @(); is_fallback = $true }
+                }
+                throw 'Limite temporário do GitHub atingido. Aguarde alguns minutos e tente novamente.'
+            }
+        }
+        function New-LlamaReleaseAsset([string]$tag, [string]$name) {
+            [pscustomobject]@{
+                name = $name
+                size = 0
+                browser_download_url = "https://github.com/ggml-org/llama.cpp/releases/download/$([uri]::EscapeDataString($tag))/$([uri]::EscapeDataString($name))"
+            }
+        }
+        function Test-ReleaseAssetUrl([string]$url) {
+            try {
+                $request = [System.Net.HttpWebRequest]::Create($url)
+                $request.Method = 'HEAD'
+                $request.AllowAutoRedirect = $true
+                $request.UserAgent = $UA
+                $request.Timeout = 15000
+                $response = $request.GetResponse()
+                try {
+                    $statusCode = [int]$response.StatusCode
+                    return ($statusCode -ge 200 -and $statusCode -lt 400)
+                } finally {
+                    $response.Close()
+                }
+            } catch {
+                return $false
+            }
         }
         function New-LlamaTarget([string]$vendor, [string]$name, [string]$label, [string[]]$backends, [string]$reason) {
             [pscustomobject]@{
@@ -2484,13 +2843,27 @@ $ctl.BtnLlama.Add_Click({
                 $match = $assets | Where-Object { $_.name -match "^llama-.+-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
                 if ($match) { return $match }
             }
+            foreach ($backend in $backends) {
+                $asset = New-LlamaReleaseAsset $tag "llama-$tag-bin-win-$backend-x64.zip"
+                if (Test-ReleaseAssetUrl $asset.browser_download_url) { return $asset }
+            }
+            foreach ($backend in $backends) {
+                return (New-LlamaReleaseAsset $tag "llama-$tag-bin-win-$backend-x64.zip")
+            }
             return $null
         }
-        function Find-CudaRuntimeAsset($assets, [string[]]$backends) {
+        function Find-CudaRuntimeAsset($assets, [string]$tag, [string[]]$backends) {
             foreach ($backend in $backends) {
                 $backendEsc = [regex]::Escape($backend)
                 $match = $assets | Where-Object { $_.name -match "^cudart-llama-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
                 if ($match) { return $match }
+            }
+            foreach ($backend in $backends) {
+                $asset = New-LlamaReleaseAsset $tag "cudart-llama-bin-win-$backend-x64.zip"
+                if (Test-ReleaseAssetUrl $asset.browser_download_url) { return $asset }
+            }
+            foreach ($backend in $backends) {
+                return (New-LlamaReleaseAsset $tag "cudart-llama-bin-win-$backend-x64.zip")
             }
             return $null
         }
@@ -2517,7 +2890,7 @@ $ctl.BtnLlama.Add_Click({
         $backupDir = $null
         try {
             P 5 'Consultando release do llama.cpp'
-            $rel = Invoke-RestMethod $LLAMA_API_LATEST -Headers @{ 'User-Agent' = $UA } -TimeoutSec 30
+            $rel = Get-LatestLlamaRelease
             $tag = $rel.tag_name
             if (-not $tag) { throw 'Release do llama.cpp sem tag_name.' }
             L "[OK] Último release: $tag"
@@ -2541,6 +2914,7 @@ $ctl.BtnLlama.Add_Click({
                     $script:Ctl.BtnPrimary.Tag       = 'done'
                     $script:Ctl.BtnPrimary.IsEnabled = $true
                     $script:Ctl.BtnLlama.IsEnabled   = $false
+                    $script:Ctl.BtnCancel.Visibility = 'Collapsed'
                     $script:Ctl.BtnCancel.IsEnabled  = $false
                 })
                 return
@@ -2559,7 +2933,7 @@ $ctl.BtnLlama.Add_Click({
 
             $isCuda = (@($target.Backends) | Where-Object { $_ -match '^cuda' } | Select-Object -First 1) -ne $null
             $runtimeAsset = $null
-            if ($isCuda) { $runtimeAsset = Find-CudaRuntimeAsset $rel.assets ([string[]]$target.Backends) }
+            if ($isCuda) { $runtimeAsset = Find-CudaRuntimeAsset $rel.assets $tag ([string[]]$target.Backends) }
 
             P 28 'Baixando binários'
             $tmpMain = Join-Path $env:TEMP "neve_llama_$([guid]::NewGuid().ToString('N')).zip"
@@ -2652,6 +3026,7 @@ $ctl.BtnLlama.Add_Click({
                 $script:Ctl.BtnPrimary.Tag       = 'done'
                 $script:Ctl.BtnPrimary.IsEnabled = $true
                 $script:Ctl.BtnLlama.IsEnabled   = $false
+                $script:Ctl.BtnCancel.Visibility = 'Collapsed'
                 $script:Ctl.BtnCancel.IsEnabled  = $false
             })
         } catch {
@@ -2663,6 +3038,8 @@ $ctl.BtnLlama.Add_Click({
                 $script:Ctl.BtnPrimary.Tag       = 'error'
                 $script:Ctl.BtnPrimary.IsEnabled = $true
                 $script:Ctl.BtnLlama.IsEnabled   = $true
+                $script:Ctl.BtnCancel.Visibility = 'Collapsed'
+                $script:Ctl.BtnCancel.IsEnabled  = $false
                 [System.Windows.MessageBox]::Show(
                     "A atualização do llama.cpp falhou.`r`n`r`nVeja o log em logs\update.log`r`n`r`n$errMsg",
                     'Neve AI - Atualizador',
@@ -2729,16 +3106,16 @@ $llamaLatestTag = $null
 $llamaReleaseObj = $null
 $llamaCheckError = $null
 try {
-    $releaseObj = Invoke-RestMethod $API_LATEST -Headers @{ 'User-Agent' = $UA } -TimeoutSec 20
+    $releaseObj = Get-GitHubLatestRelease $REPO_OWNER $REPO_NAME
     $latestTag  = $releaseObj.tag_name
 } catch {
-    $checkError = "$_"
+    $checkError = Get-FriendlyGitHubError $_
 }
 try {
-    $llamaReleaseObj = Invoke-RestMethod $LLAMA_API_LATEST -Headers @{ 'User-Agent' = $UA } -TimeoutSec 20
+    $llamaReleaseObj = Get-GitHubLatestRelease 'ggml-org' 'llama.cpp'
     $llamaLatestTag  = $llamaReleaseObj.tag_name
 } catch {
-    $llamaCheckError = "$_"
+    $llamaCheckError = Get-FriendlyGitHubError $_
 }
 
 $appIntegrity = Test-NeveAppIntegrity $ROOT
@@ -2746,11 +3123,10 @@ $appIntegrity = Test-NeveAppIntegrity $ROOT
 $ctl.LblCurrent.Text = $currentVersion
 if ($checkError) {
     $ctl.LblCheckTitle.Text = 'Falha ao verificar atualizações'
-    $ctl.LblCheckSub.Text   = 'Não foi possível consultar o GitHub. Veja os detalhes abaixo.'
+    $ctl.LblCheckSub.Text   = $checkError
     $ctl.LblLatest.Text     = '—'
     $ctl.LblStatus.Text     = 'Erro de rede'
     $ctl.LblStatus.Foreground = '#DC2626'
-    $ctl.LblNotes.Text      = $checkError
     $ctl.ChkUpdateNeve.Visibility = 'Collapsed'
 } else {
     $ctl.LblLatest.Text = $latestTag
@@ -2759,21 +3135,26 @@ if ($checkError) {
     if (-not $appIntegrity.Ok) {
         $notes = "Instalação local incompleta. O atualizador vai reparar a partir do release do GitHub.`r`nFaltando: $($appIntegrity.Missing -join ', ')`r`n`r`n$notes"
     }
-    $ctl.LblNotes.Text = $notes
-    if ($currentVersion -eq $latestTag -and $appIntegrity.Ok) {
+    $sameNeveVersion = (Normalize-ReleaseTag $currentVersion) -eq (Normalize-ReleaseTag $latestTag)
+    $hasNeveUpdate = Test-ReleaseTagNewer $currentVersion $latestTag
+    if ($sameNeveVersion -and $appIntegrity.Ok) {
         $ctl.LblStatus.Text     = 'Atualizado'
         $ctl.LblStatus.Foreground = '#10B981'
         $ctl.ChkUpdateNeve.Visibility = 'Collapsed'
-    } elseif ($currentVersion -eq $latestTag -and -not $appIntegrity.Ok) {
+    } elseif ($sameNeveVersion -and -not $appIntegrity.Ok) {
         $ctl.LblStatus.Text     = 'Reparo necessário'
         $ctl.LblStatus.Foreground = '#D97706'
         $ctl.ChkUpdateNeve.Visibility = 'Visible'
         $ctl.ChkUpdateNeve.IsChecked = $true
-    } else {
+    } elseif ($hasNeveUpdate) {
         $ctl.LblStatus.Text     = 'Pendente'
         $ctl.LblStatus.Foreground = '#D97706'
         $ctl.ChkUpdateNeve.Visibility = 'Visible'
         $ctl.ChkUpdateNeve.IsChecked = $false
+    } else {
+        $ctl.LblStatus.Text     = 'Atualizado'
+        $ctl.LblStatus.Foreground = '#10B981'
+        $ctl.ChkUpdateNeve.Visibility = 'Collapsed'
     }
 }
 
@@ -2785,15 +3166,19 @@ if ($llamaCheckError) {
     $ctl.ChkUpdateLlama.Visibility = 'Collapsed'
 } else {
     $ctl.LblLlamaLatest.Text = $llamaLatestTag
-    if ($llamaInstalledTag -and $llamaInstalledTag -eq $llamaLatestTag) {
+    if ($llamaInstalledTag -and ((Normalize-ReleaseTag $llamaInstalledTag) -eq (Normalize-ReleaseTag $llamaLatestTag))) {
         $ctl.LblLlamaStatus.Text = 'Atualizado'
         $ctl.LblLlamaStatus.Foreground = '#10B981'
         $ctl.ChkUpdateLlama.Visibility = 'Collapsed'
-    } elseif ($llamaInstalledTag) {
+    } elseif ($llamaInstalledTag -and (Test-ReleaseTagNewer $llamaInstalledTag $llamaLatestTag)) {
         $ctl.LblLlamaStatus.Text = 'Pendente'
         $ctl.LblLlamaStatus.Foreground = '#D97706'
         $ctl.ChkUpdateLlama.Visibility = 'Visible'
         $ctl.ChkUpdateLlama.IsChecked = $false
+    } elseif ($llamaInstalledTag) {
+        $ctl.LblLlamaStatus.Text = 'Atualizado'
+        $ctl.LblLlamaStatus.Foreground = '#10B981'
+        $ctl.ChkUpdateLlama.Visibility = 'Collapsed'
     } else {
         $ctl.LblLlamaStatus.Text = 'Não instalado'
         $ctl.LblLlamaStatus.Foreground = '#D97706'
@@ -2806,7 +3191,7 @@ if ($ctl.ChkUpdateNeve.Visibility -eq 'Visible' -and $ctl.ChkUpdateLlama.Visibil
     $ctl.LblCheckTitle.Text = 'Atualizações disponíveis'
     $ctl.LblCheckSub.Text = 'Marque uma ou mais atualizações para continuar.'
 } elseif ($ctl.ChkUpdateNeve.Visibility -eq 'Visible') {
-    if ($currentVersion -eq $latestTag -and -not $appIntegrity.Ok) {
+    if (((Normalize-ReleaseTag $currentVersion) -eq (Normalize-ReleaseTag $latestTag)) -and -not $appIntegrity.Ok) {
         $ctl.LblCheckTitle.Text = 'Reparo disponível'
         $ctl.LblCheckSub.Text = 'Arquivos locais estão faltando; o release do GitHub será reaplicado.'
     } else {
@@ -2841,9 +3226,12 @@ $ctl.BtnPrimary.Add_Click({
     $ctl.UpdatePanel.Visibility  = 'Visible'
     $ctl.BtnPrimary.IsEnabled = $false
     $ctl.BtnLlama.IsEnabled   = $false
+    $ctl.BtnCancel.Visibility = 'Visible'
     $ctl.BtnCancel.IsEnabled  = $false
     $ctl.ChkUpdateNeve.IsEnabled = $false
     $ctl.ChkUpdateLlama.IsEnabled = $false
+
+    Stop-NeveRunningApp 'Atualizar'
 
     $argUpdateNeve   = $updateNeve
     $argUpdateLlama  = $updateLlama
@@ -2884,6 +3272,73 @@ $ctl.BtnPrimary.Add_Click({
         }
         function PL([int]$v, [string]$phase) {
             if ($updateNeve) { P (70 + [int][math]::Round($v * 0.30)) $phase } else { P $v $phase }
+        }
+        function Get-LatestLlamaTagFromRedirect {
+            $url = 'https://github.com/ggml-org/llama.cpp/releases/latest'
+            foreach ($method in @('HEAD', 'GET')) {
+                try {
+                    $request = [System.Net.HttpWebRequest]::Create($url)
+                    $request.Method = $method
+                    $request.AllowAutoRedirect = $false
+                    $request.UserAgent = $UA
+                    $request.Timeout = 20000
+                    $response = $request.GetResponse()
+                    try {
+                        $location = [string]$response.Headers['Location']
+                        if ($location -match '/releases/tag/([^/?#]+)') { return [uri]::UnescapeDataString($matches[1]) }
+                    } finally {
+                        $response.Close()
+                    }
+                } catch [System.Net.WebException] {
+                    $response = $_.Exception.Response
+                    try {
+                        if ($response) {
+                            $location = [string]$response.Headers['Location']
+                            if ($location -match '/releases/tag/([^/?#]+)') { return [uri]::UnescapeDataString($matches[1]) }
+                        }
+                    } finally {
+                        if ($response) { $response.Close() }
+                    }
+                } catch {}
+            }
+            return $null
+        }
+        function Get-LatestLlamaRelease {
+            try {
+                return Invoke-RestMethod $LLAMA_API_LATEST -Headers @{ 'User-Agent' = $UA } -TimeoutSec 30
+            } catch {
+                $tag = Get-LatestLlamaTagFromRedirect
+                if ($tag) {
+                    L '[!] GitHub API limitada; usando fallback por página de release.' 'warn'
+                    return [pscustomobject]@{ tag_name = $tag; assets = @(); is_fallback = $true }
+                }
+                throw 'Limite temporário do GitHub atingido. Aguarde alguns minutos e tente novamente.'
+            }
+        }
+        function New-LlamaReleaseAsset([string]$tag, [string]$name) {
+            [pscustomobject]@{
+                name = $name
+                size = 0
+                browser_download_url = "https://github.com/ggml-org/llama.cpp/releases/download/$([uri]::EscapeDataString($tag))/$([uri]::EscapeDataString($name))"
+            }
+        }
+        function Test-ReleaseAssetUrl([string]$url) {
+            try {
+                $request = [System.Net.HttpWebRequest]::Create($url)
+                $request.Method = 'HEAD'
+                $request.AllowAutoRedirect = $true
+                $request.UserAgent = $UA
+                $request.Timeout = 15000
+                $response = $request.GetResponse()
+                try {
+                    $statusCode = [int]$response.StatusCode
+                    return ($statusCode -ge 200 -and $statusCode -lt 400)
+                } finally {
+                    $response.Close()
+                }
+            } catch {
+                return $false
+            }
         }
         function ConvertTo-ProcessArgument([string]$arg) {
             if ($null -eq $arg) { throw 'Argumento nulo.' }
@@ -3305,13 +3760,27 @@ $ctl.BtnPrimary.Add_Click({
                 $match = $assets | Where-Object { $_.name -match "^llama-.+-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
                 if ($match) { return $match }
             }
+            foreach ($backend in $backends) {
+                $asset = New-LlamaReleaseAsset $tag "llama-$tag-bin-win-$backend-x64.zip"
+                if (Test-ReleaseAssetUrl $asset.browser_download_url) { return $asset }
+            }
+            foreach ($backend in $backends) {
+                return (New-LlamaReleaseAsset $tag "llama-$tag-bin-win-$backend-x64.zip")
+            }
             return $null
         }
-        function Find-CudaRuntimeAsset($assets, [string[]]$backends) {
+        function Find-CudaRuntimeAsset($assets, [string]$tag, [string[]]$backends) {
             foreach ($backend in $backends) {
                 $backendEsc = [regex]::Escape($backend)
                 $match = $assets | Where-Object { $_.name -match "^cudart-llama-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
                 if ($match) { return $match }
+            }
+            foreach ($backend in $backends) {
+                $asset = New-LlamaReleaseAsset $tag "cudart-llama-bin-win-$backend-x64.zip"
+                if (Test-ReleaseAssetUrl $asset.browser_download_url) { return $asset }
+            }
+            foreach ($backend in $backends) {
+                return (New-LlamaReleaseAsset $tag "cudart-llama-bin-win-$backend-x64.zip")
             }
             return $null
         }
@@ -3420,7 +3889,7 @@ $ctl.BtnPrimary.Add_Click({
             $tmpFiles = @(); $stageDir = $null; $backupDir = $null
             try {
                 PL 5 'Consultando release do llama.cpp'
-                $rel = Invoke-RestMethod $LLAMA_API_LATEST -Headers @{ 'User-Agent' = $UA } -TimeoutSec 30
+                $rel = Get-LatestLlamaRelease
                 $tag = $rel.tag_name
                 if (-not $tag) { throw 'Release do llama.cpp sem tag_name.' }
                 $installed = Get-InstalledLlamaInfo $ROOT
@@ -3438,7 +3907,7 @@ $ctl.BtnPrimary.Add_Click({
                 if (-not $mainAsset) { throw "O release $tag não contém um asset Windows x64 para $($target.Label). Nada foi instalado." }
                 $isCuda = (@($target.Backends) | Where-Object { $_ -match '^cuda' } | Select-Object -First 1) -ne $null
                 $runtimeAsset = $null
-                if ($isCuda) { $runtimeAsset = Find-CudaRuntimeAsset $rel.assets ([string[]]$target.Backends) }
+                if ($isCuda) { $runtimeAsset = Find-CudaRuntimeAsset $rel.assets $tag ([string[]]$target.Backends) }
 
                 PL 28 'Baixando llama.cpp'
                 $tmpMain = Join-Path $env:TEMP "neve_llama_$([guid]::NewGuid().ToString('N')).zip"
@@ -3513,6 +3982,7 @@ $ctl.BtnPrimary.Add_Click({
                 $script:Ctl.BtnPrimary.Tag       = 'done'
                 $script:Ctl.BtnPrimary.IsEnabled = $true
                 $script:Ctl.BtnPrimary.Visibility = 'Visible'
+                $script:Ctl.BtnCancel.Visibility = 'Collapsed'
                 $script:Ctl.BtnCancel.IsEnabled  = $false
             })
         } catch {
@@ -3524,6 +3994,8 @@ $ctl.BtnPrimary.Add_Click({
                 $script:Ctl.BtnPrimary.Tag       = 'error'
                 $script:Ctl.BtnPrimary.IsEnabled = $true
                 $script:Ctl.BtnPrimary.Visibility = 'Visible'
+                $script:Ctl.BtnCancel.Visibility = 'Collapsed'
+                $script:Ctl.BtnCancel.IsEnabled = $false
                 [System.Windows.MessageBox]::Show(
                     "A atualização falhou.`r`n`r`nVeja o log em logs\update.log`r`n`r`n$errMsg",
                     'Neve AI - Atualizador',
@@ -3682,7 +4154,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Border x:Name="bd" Background="Transparent" CornerRadius="6">
-                                <TextBlock Text="X" FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <TextBlock Text="×" FontSize="22" FontWeight="Normal" Foreground="#71717A" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-5,0,0"/>
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
@@ -3795,8 +4267,8 @@ if (-not (Test-Path $LOGO_PATH)) {
 
             <Border Grid.Row="2" BorderBrush="#EEEEEE" BorderThickness="0,1,0,0" Padding="32,0,32,0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Button x:Name="BtnCancel" Style="{StaticResource GhostBtn}" Content="Cancelar" Margin="0,0,10,0"/>
-                    <Button x:Name="BtnPrimary" Style="{StaticResource PrimaryBtn}" Content="Buildar e publicar"/>
+                    <Button x:Name="BtnCancel" Style="{StaticResource GhostBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/>
+                    <Button x:Name="BtnPrimary" Style="{StaticResource PrimaryBtn}" Content="Publicar"/>
                 </StackPanel>
             </Border>
         </Grid>
@@ -4133,10 +4605,13 @@ function Start-BuildDeploy {
         $ctl.LblPhase.Text = 'Preparando'
         $ctl.LblStep.Text = 'Preparando build...'
         $ctl.BtnPrimary.IsEnabled = $false
+        $ctl.BtnCancel.Visibility = 'Collapsed'
         $ctl.BtnCancel.IsEnabled = $false
     }
 
     try {
+        Stop-NeveRunningApp 'Buildar'
+
         Set-Location -LiteralPath $ROOT
         Append-Log "Pasta do build: $ROOT" 'ok'
 
@@ -4213,13 +4688,13 @@ function Convert-LegacyWindowXamlToHubPage([string]$legacyXaml) {
 	$openWindow = [regex]::new('(?s)^\s*<Window\b.*?>', [System.Text.RegularExpressions.RegexOptions]::Singleline)
 	$pageXaml = $openWindow.Replace(
 		$legacyXaml,
-		'<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="#FAFAFA">',
+		'<UserControl xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="Transparent">',
 		1
 	)
 	$pageXaml = $pageXaml.Replace('</Window>', '</UserControl>')
 	$pageXaml = $pageXaml.Replace('<Window.Resources>', '<UserControl.Resources>')
 	$pageXaml = $pageXaml.Replace('</Window.Resources>', '</UserControl.Resources>')
-	$pageXaml = $pageXaml.Replace('<Border CornerRadius="14" Background="#FAFAFA" BorderBrush="#E4E4E7" BorderThickness="1">', '<Border Background="#FAFAFA">')
+	$pageXaml = $pageXaml.Replace('<Border CornerRadius="14" Background="#FAFAFA" BorderBrush="#E4E4E7" BorderThickness="1">', '<Border Background="#FAFAFA" CornerRadius="0,0,14,14" ClipToBounds="True">')
 	$rowRegex = [regex]::new('<RowDefinition Height="56"/>')
 	$pageXaml = $rowRegex.Replace($pageXaml, '<RowDefinition Height="0"/>', 1)
 	return $pageXaml
@@ -4245,6 +4720,77 @@ function Convert-LegacyScriptToHubModule([string]$source, [string]$mode) {
 	$modified = [regex]::Replace($modified, '(?m)^\[void\]\$window\.ShowDialog\(\)\s*$', '')
 	$modified = [regex]::Replace($modified, '(?m)^exit \$script:ExitCode\s*$', '')
 
+	$sharedHelpers = @'
+$script:NeveAppCloseRequested = $false
+function Stop-HubNeveProcessTree([int]$ProcessId) {
+	try {
+		$children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$ProcessId" -EA SilentlyContinue)
+		foreach ($child in $children) { Stop-HubNeveProcessTree ([int]$child.ProcessId) }
+	} catch {}
+	try {
+		$proc = Get-Process -Id $ProcessId -EA SilentlyContinue
+		if ($proc -and -not $proc.HasExited) { Stop-Process -Id $ProcessId -Force -EA SilentlyContinue }
+	} catch {}
+}
+
+function Stop-NeveRunningApp([string]$Reason = 'operação') {
+	if ($script:NeveAppCloseRequested) { return }
+	$script:NeveAppCloseRequested = $true
+
+	try {
+		Add-Content -LiteralPath $LOG -Value ("[INFO] Encerrando Neve AI antes de iniciar: {0}" -f $Reason) -Encoding UTF8
+	} catch {}
+
+	$targets = @()
+	$browserProfile = ''
+	try { $browserProfile = (Join-Path $ROOT 'logs\browser-app').ToLowerInvariant() } catch {}
+	$browserProfileAlt = $browserProfile -replace '\\', '/'
+
+	try {
+		foreach ($proc in @(Get-CimInstance Win32_Process -EA SilentlyContinue)) {
+			$processId = [int]$proc.ProcessId
+			if ($processId -eq $PID) { continue }
+
+			$name = if ($proc.Name) { [string]$proc.Name } else { '' }
+			$cmd = if ($proc.CommandLine) { [string]$proc.CommandLine } else { '' }
+			$nameLower = $name.ToLowerInvariant()
+			$cmdLower = $cmd.ToLowerInvariant()
+
+			if ($cmdLower.Contains('instalar.ps1') -or $cmdLower.Contains('install-launcher.log')) {
+				continue
+			}
+
+			$isTarget = $false
+			if ($nameLower -like 'llama-server*' -or $nameLower -like 'llama_server*') {
+				$isTarget = $true
+			}
+			if ($cmdLower.Contains('neveai.main:app')) {
+				$isTarget = $true
+			}
+			if ($cmdLower.Contains('neve_window.py')) {
+				$isTarget = $true
+			}
+			if ($browserProfile -and ($cmdLower.Contains($browserProfile) -or $cmdLower.Contains($browserProfileAlt))) {
+				$isTarget = $true
+			}
+			if ($cmdLower.Contains('--app=http://localhost:8080') -or $cmdLower.Contains('--app=http://127.0.0.1:8080')) {
+				$isTarget = $true
+			}
+
+			if ($isTarget) { $targets += $processId }
+		}
+	} catch {}
+
+	foreach ($targetPid in @($targets | Sort-Object -Unique)) {
+		try { Stop-HubNeveProcessTree ([int]$targetPid) } catch {}
+	}
+
+	if ($targets.Count -gt 0) {
+		Start-Sleep -Milliseconds 600
+	}
+}
+'@
+
 	return @"
 param(`$HubWindowParam, `$HubPageHostParam, `$HubPageRegistryParam, `$HubModeParam, `$HubScriptPathParam)
 `$script:HubWindow = `$HubWindowParam
@@ -4252,6 +4798,7 @@ param(`$HubWindowParam, `$HubPageHostParam, `$HubPageRegistryParam, `$HubModePar
 `$script:HubPageRegistry = `$HubPageRegistryParam
 `$script:HubMode = `$HubModeParam
 `$script:HubScriptPath = `$HubScriptPathParam
+$sharedHelpers
 $modified
 "@
 }
@@ -4339,7 +4886,11 @@ $ctl.BtnHubBack.Add_Click({ Select-HubHome })
 $ctl.BtnHubHomeInstall.Add_Click({ Select-HubPage 'install' })
 $ctl.BtnHubHomeUpdate.Add_Click({ Select-HubPage 'update' })
 $ctl.BtnHubHomeBuild.Add_Click({ Select-HubPage 'build' })
-Select-HubHome
+if ($StartPage -eq 'home') {
+	Select-HubHome
+} else {
+	Select-HubPage $StartPage
+}
 
 # =============================================================================
 # Mostrar a janela

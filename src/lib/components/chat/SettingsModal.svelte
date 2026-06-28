@@ -250,7 +250,7 @@
 	});
 </script>
 
-<Modal size="md" bind:show>
+<Modal size="md" bind:show keepMounted>
 	<div class="text-gray-700 dark:text-gray-100">
 		<div class="flex justify-between items-center px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20">
 			<div class="text-lg font-semibold dark:text-gray-100">

@@ -32,20 +32,20 @@
 ### Pré-requisitos
 
 - **Python 3.11 ou 3.12** instalado e no PATH
-- **Node.js 18+** instalado e no PATH (Opcional)
+- **Node.js 18+** instalado e no PATH
 - Conexão com a internet (apenas durante a instalação)
 
 ### Executar o instalador
 
 ```bat
-instalar.bat
+instalar.bat → Instalar
 ```
 
 <h1 align="center">
-<img width="770" alt="{90671A9E-4D1D-4F70-B79F-50BA23439830}" src="https://github.com/user-attachments/assets/ab888b7f-8d8c-4f71-af4f-4c4e3aa7f1c6" />
+<img width="780" alt="{85754D50-C041-4293-894E-C38B064643B3}" src="https://github.com/user-attachments/assets/950e4a6c-a95f-420d-a4f3-44c1f8ea80d7" />
 </h1>
 
-O instalador (`instalar.bat` → `Instalar`) realiza automaticamente as seguintes ações:
+O instalador realiza automaticamente as seguintes ações:
 
 1. **Detecta a GPU** — NVIDIA (identifica a série e configura CUDA), AMD (HIP/ROCm ou Vulkan) ou CPU
 2. **Baixa o llama.cpp** mais recente do GitHub (binários compilados para o hardware detectado)
@@ -57,23 +57,22 @@ O instalador (`instalar.bat` → `Instalar`) realiza automaticamente as seguinte
 
 ---
 
-## Atualizando o Neve AI
+## Atualizando a Neve AI
 
 ```bat
-instalar.bat
+instalar.bat → Atualizar
 ```
 
 <h1 align="center">
-<img width="769" alt="{443E706C-E71A-49BD-B960-E24B1B4A8B96}" src="https://github.com/user-attachments/assets/dbea24b7-8fb1-4c7a-aceb-387ff2298a64" />
+<img width="781" alt="{B1C7232C-0F8D-4E74-8FE6-963D284FED4B}" src="https://github.com/user-attachments/assets/469a93d7-4c0c-4660-83e4-bb543327046c" />
 </h1>
 
-O atualizador (`instalar.bat` → `Atualizar`) realiza automaticamente as seguintes ações:
+O atualizador realiza automaticamente as seguintes ações:
 
 1. **Lê a versão local** do arquivo `version.txt` na raiz do projeto.
 2. **Consulta a última release** em [github.com/Etamus/NeveAI/releases/latest](https://github.com/Etamus/NeveAI/releases/latest) e mostra:
    - versão instalada × versão disponível
    - status: **Atualizado**, **Pendente** (`vX → vY`) ou **Erro de rede**
-   - notas da release
 3. Se já estiver na última versão, exibe **"Você já está na última versão"** e oferece apenas o botão **Fechar** (nada é baixado).
 4. Se houver atualização pendente, ao clicar em **Atualizar**:
    - Baixa o `zipball` da release no `%TEMP%`
@@ -85,7 +84,7 @@ O atualizador (`instalar.bat` → `Atualizar`) realiza automaticamente as seguin
 
 ---
 
-## Iniciando o Neve AI
+## Iniciando a Neve AI
 
 ```bat
 iniciar.bat
@@ -258,7 +257,7 @@ instalar.bat → Buildar
 ```
 
 <h1 align="center">
-<img width="770" alt="{D4ACC183-9EB2-4DFD-8529-566561581969}" src="https://github.com/user-attachments/assets/e129dd06-7b5f-46e7-91b0-2dc47b7e4bd9" />
+<img width="781" alt="{C01EC582-F13F-4CC0-BFC9-93D0D1A52B1C}" src="https://github.com/user-attachments/assets/fec18717-6fc5-4296-abb2-4d1360d86a78" />
 </h1>
 
 ### Dev mode (hot reload)

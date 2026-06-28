@@ -1,5 +1,31 @@
+<script lang="ts" context="module">
+	import { get as getStoreValue, writable } from 'svelte/store';
+
+	type LocalModelAction = 'load' | 'unload';
+	type LocalModelProcessingState = {
+		loading: string[];
+		settlingUnload: string[];
+		pinnedUnload: string[];
+		visualUnload: string[];
+		actions: Record<string, LocalModelAction>;
+	};
+
+	const localModelProcessingStore = writable<LocalModelProcessingState>({
+		loading: [],
+		settlingUnload: [],
+		pinnedUnload: [],
+		visualUnload: [],
+		actions: {}
+	});
+	const localActionRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	const localActionReleaseTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	const localVisualUnloadClearTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	const localActionReleasePending = new Set<string>();
+	const localActionReleaseTokens = new Map<string, number>();
+</script>
+
 <script lang="ts">
-	import { onMount, onDestroy, getContext } from 'svelte';
+	import { onMount, onDestroy, getContext, tick } from 'svelte';
 	import { fade, slide } from 'svelte/transition';
 	import { marked } from 'marked';
 	import fileSaver from 'file-saver';
@@ -71,12 +97,22 @@
 	let localLoading = false;
 	let loadingModels: Set<string> = new Set();
 	let settlingUnloadModels: Set<string> = new Set();
+	let pinnedUnloadModels: Set<string> = new Set();
+	let visualUnloadModels: Set<string> = new Set();
+	let reopenedUnloadVisualModels: Set<string> = new Set();
 	let localModelActions: Record<string, 'load' | 'unload'> = {};
 	let localError = '';
 	let localSuccess = '';
 	let vramInfo: LocalVramInfo | null = null;
 	let llamacppStatus: LlamaCppStatus | null = null;
 	let vramPreviewModel: LocalModel | null = null;
+	const unsubscribeLocalModelProcessing = localModelProcessingStore.subscribe((state) => {
+		loadingModels = new Set(state.loading);
+		settlingUnloadModels = new Set(state.settlingUnload);
+		pinnedUnloadModels = new Set(state.pinnedUnload);
+		visualUnloadModels = new Set(state.visualUnload);
+		localModelActions = state.actions;
+	});
 
 	let loadModalMmprojFile: string = '';
 
@@ -211,12 +247,16 @@
 	let previousShow = false;
 	let collapseAnimationEnabled = false;
 	let collapseAnimationTimer: ReturnType<typeof setTimeout> | null = null;
+	let destroyed = false;
+	let openingActionRefreshInProgress = false;
 
 	const perPage = 30;
 	const MODEL_ROW_HEIGHT_PX = 72;
 	const HIGHLIGHTED_MODEL_ROW_HEIGHT_PX = 72;
 	const NORMAL_LIST_VISIBLE_ROWS = 6;
 	const HIGHLIGHTED_LIST_VISIBLE_ROWS = 3;
+	const LOCAL_UNLOAD_REOPEN_PIN_MS = 140;
+	const LOCAL_UNLOAD_VISUAL_CLEAR_MS = 900;
 	let currentPage = 1;
 
 	$: hasCachedModelRows = localModels.length > 0 || (adminModels?.length ?? 0) > 0;
@@ -225,24 +265,354 @@
 	// ─── SHARED SEARCH ──────────────────────────────────────────────────────
 	let searchValue = '';
 
+	const uniqueFilenames = (filenames: string[]) => [...new Set(filenames.filter(Boolean))];
+	const cancelLocalActionRefresh = (filename: string) => {
+		const timer = localActionRefreshTimers.get(filename);
+		if (timer) {
+			clearTimeout(timer);
+			localActionRefreshTimers.delete(filename);
+		}
+	};
+	const cancelLocalActionRelease = (filename: string) => {
+		const timer = localActionReleaseTimers.get(filename);
+		if (timer) {
+			clearTimeout(timer);
+			localActionReleaseTimers.delete(filename);
+		}
+		localActionReleasePending.delete(filename);
+		localActionReleaseTokens.set(filename, (localActionReleaseTokens.get(filename) ?? 0) + 1);
+	};
+	const cancelVisualUnloadClear = (filename: string) => {
+		const timer = localVisualUnloadClearTimers.get(filename);
+		if (timer) {
+			clearTimeout(timer);
+			localVisualUnloadClearTimers.delete(filename);
+		}
+	};
+	const clearLocalModelVisualUnload = (filename: string) => {
+		cancelVisualUnloadClear(filename);
+		localModelProcessingStore.update((state) => ({
+			...state,
+			visualUnload: state.visualUnload.filter((f) => f !== filename)
+		}));
+	};
+	const scheduleVisualUnloadClear = (filename: string) => {
+		cancelVisualUnloadClear(filename);
+		const timer = setTimeout(() => {
+			localVisualUnloadClearTimers.delete(filename);
+			const state = getStoreValue(localModelProcessingStore);
+			if (
+				state.actions[filename] === 'unload' ||
+				state.pinnedUnload.includes(filename) ||
+				highlightedLoadedItem?.gguf?.filename === filename
+			) {
+				scheduleVisualUnloadClear(filename);
+				return;
+			}
+			clearLocalModelVisualUnload(filename);
+		}, LOCAL_UNLOAD_VISUAL_CLEAR_MS);
+		localVisualUnloadClearTimers.set(filename, timer);
+	};
+	const cancelOrphanedLocalActionTimers = () => {
+		const { actions } = getStoreValue(localModelProcessingStore);
+		const activeFilenames = new Set(Object.keys(actions));
+
+		[...localActionRefreshTimers.keys()].forEach((filename) => {
+			if (!activeFilenames.has(filename)) cancelLocalActionRefresh(filename);
+		});
+		[...localActionReleaseTimers.keys()].forEach((filename) => {
+			if (!activeFilenames.has(filename)) cancelLocalActionRelease(filename);
+		});
+		[...localActionReleasePending].forEach((filename) => {
+			if (!activeFilenames.has(filename)) localActionReleasePending.delete(filename);
+		});
+		localModelProcessingStore.update((state) => ({
+			...state,
+			pinnedUnload: state.pinnedUnload.filter((filename) => activeFilenames.has(filename)),
+			visualUnload: state.visualUnload.filter(
+				(filename) => activeFilenames.has(filename) || localVisualUnloadClearTimers.has(filename)
+			)
+		}));
+	};
+	const cancelAllLocalActionTimers = () => {
+		[...localActionRefreshTimers.keys()].forEach(cancelLocalActionRefresh);
+		[...localActionReleaseTimers.keys()].forEach(cancelLocalActionRelease);
+		[...localVisualUnloadClearTimers.keys()].forEach(cancelVisualUnloadClear);
+		localActionReleasePending.clear();
+	};
 	const setLocalModelAction = (filename: string, action: 'load' | 'unload') => {
-		localModelActions = { ...localModelActions, [filename]: action };
+		cancelLocalActionRefresh(filename);
+		cancelLocalActionRelease(filename);
+		cancelVisualUnloadClear(filename);
+		localModelProcessingStore.update((state) => ({
+			loading: uniqueFilenames([...state.loading, filename]),
+			settlingUnload: state.settlingUnload.filter((f) => f !== filename),
+			pinnedUnload:
+				action === 'unload'
+					? uniqueFilenames([...state.pinnedUnload, filename])
+					: state.pinnedUnload.filter((f) => f !== filename),
+			visualUnload:
+				action === 'unload'
+					? uniqueFilenames([...state.visualUnload, filename])
+					: state.visualUnload.filter((f) => f !== filename),
+			actions: { ...state.actions, [filename]: action }
+		}));
 	};
-	const clearLocalModelAction = (filename: string) => {
-		const nextActions = { ...localModelActions };
-		delete nextActions[filename];
-		localModelActions = nextActions;
+	const clearLocalModelUnloadPin = (filename: string) => {
+		localModelProcessingStore.update((state) => ({
+			...state,
+			pinnedUnload: state.pinnedUnload.filter((f) => f !== filename)
+		}));
 	};
-	const clearLocalModelProcessing = (filename: string) => {
-		clearLocalModelAction(filename);
-		loadingModels = new Set([...loadingModels].filter((f) => f !== filename));
-		settlingUnloadModels = new Set([...settlingUnloadModels].filter((f) => f !== filename));
+	const clearReopenedUnloadVisual = (filename: string) => {
+		if (!reopenedUnloadVisualModels.has(filename)) return;
+		const nextModels = new Set(reopenedUnloadVisualModels);
+		nextModels.delete(filename);
+		reopenedUnloadVisualModels = nextModels;
 	};
-	const clearLocalModelLoading = (filename: string) => {
-		loadingModels = new Set([...loadingModels].filter((f) => f !== filename));
+	const guardReopenedUnloadVisuals = () => {
+		const filenames = Object.entries(getStoreValue(localModelProcessingStore).actions)
+			.filter(([, action]) => action === 'unload')
+			.map(([filename]) => filename);
+
+		if (filenames.length === 0) return;
+
+		reopenedUnloadVisualModels = new Set([...reopenedUnloadVisualModels, ...filenames]);
+		localModelProcessingStore.update((state) => ({
+			...state,
+			pinnedUnload: uniqueFilenames([...state.pinnedUnload, ...filenames]),
+			visualUnload: uniqueFilenames([...state.visualUnload, ...filenames])
+		}));
 	};
+	const clearLocalModelProcessing = (filename: string, preserveVisualUnload = false) => {
+		cancelLocalActionRefresh(filename);
+		cancelLocalActionRelease(filename);
+		if (!preserveVisualUnload) {
+			clearReopenedUnloadVisual(filename);
+		}
+		localModelProcessingStore.update((state) => {
+			const nextActions = { ...state.actions };
+			delete nextActions[filename];
+			return {
+				loading: state.loading.filter((f) => f !== filename),
+				settlingUnload: state.settlingUnload.filter((f) => f !== filename),
+				pinnedUnload: state.pinnedUnload.filter((f) => f !== filename),
+				visualUnload: preserveVisualUnload
+					? state.visualUnload
+					: state.visualUnload.filter((f) => f !== filename),
+				actions: nextActions
+			};
+		});
+	};
+	const setLocalModelUnloadSettling = (filename: string) => {
+		localModelProcessingStore.update((state) => ({
+			loading: state.loading.filter((f) => f !== filename),
+			settlingUnload: uniqueFilenames([...state.settlingUnload, filename]),
+			pinnedUnload: uniqueFilenames([...state.pinnedUnload, filename]),
+			visualUnload: uniqueFilenames([...state.visualUnload, filename]),
+			actions: { ...state.actions, [filename]: 'unload' }
+		}));
+	};
+	const isLocalModelLoading = (filename: string) => localModelActions[filename] === 'load';
 	const isLocalModelUnloading = (filename: string) =>
 		localModelActions[filename] === 'unload' || settlingUnloadModels.has(filename);
+	const isLocalModelUnloadPinned = (model: LocalModel) =>
+		isLocalModelUnloading(model.filename) &&
+		(model.is_loaded || pinnedUnloadModels.has(model.filename));
+	const isLocalActionVisuallySettled = (filename: string, action: LocalModelAction) => {
+		if (action === 'load') {
+			return loadedLocalModel?.filename === filename;
+		}
+
+		const model = localModels.find((localModel) => localModel.filename === filename);
+		return (
+			(!model || !model.is_loaded) &&
+			!pinnedUnloadModels.has(filename) &&
+			highlightedLoadedItem?.gguf?.filename !== filename
+		);
+	};
+	const waitForPaint = () =>
+		new Promise<void>((resolve) => {
+			if (typeof requestAnimationFrame === 'function') {
+				requestAnimationFrame(() => resolve());
+			} else {
+				setTimeout(resolve, 0);
+			}
+		});
+	const wait = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
+	const releasePinnedSettledUnloadsAfterOpen = async () => {
+		if (!show || destroyed) return;
+
+		await tick();
+		await waitForPaint();
+		await wait(LOCAL_UNLOAD_REOPEN_PIN_MS);
+
+		if (!show || destroyed) return;
+
+		const state = getStoreValue(localModelProcessingStore);
+		state.pinnedUnload.forEach((filename) => {
+			if (
+				state.actions[filename] === 'unload' &&
+				state.settlingUnload.includes(filename) &&
+				!state.loading.includes(filename)
+			) {
+				clearLocalModelUnloadPin(filename);
+				scheduleLocalActionVisualRelease(filename, 'unload');
+			}
+		});
+	};
+	const pinUnsettledUnloadsBeforeClose = () => {
+		const state = getStoreValue(localModelProcessingStore);
+		const unsettledUnloadFilenames = Object.entries(state.actions)
+			.filter(([filename, action]) => action === 'unload' && !isLocalActionVisuallySettled(filename, action))
+			.map(([filename]) => filename);
+
+		if (unsettledUnloadFilenames.length === 0) return;
+
+		localModelProcessingStore.update((currentState) => ({
+			...currentState,
+			pinnedUnload: uniqueFilenames([...currentState.pinnedUnload, ...unsettledUnloadFilenames])
+		}));
+	};
+	const scheduleLocalActionVisualRelease = (filename: string, expectedAction: LocalModelAction) => {
+		if (destroyed) return;
+		cancelLocalActionRelease(filename);
+		const token = localActionReleaseTokens.get(filename) ?? 0;
+		localActionReleasePending.add(filename);
+		let release: () => Promise<void>;
+
+		const queueReleaseCheck = (delay = 80) => {
+			const timer = setTimeout(release, delay);
+			localActionReleaseTimers.set(filename, timer);
+		};
+
+		release = async () => {
+			if ((localActionReleaseTokens.get(filename) ?? 0) !== token) return;
+			if (destroyed) return;
+			const currentAction = getStoreValue(localModelProcessingStore).actions[filename];
+			if (currentAction !== expectedAction) {
+				localActionReleaseTimers.delete(filename);
+				localActionReleasePending.delete(filename);
+				return;
+			}
+			if (!show) {
+				queueReleaseCheck(200);
+				return;
+			}
+			if (expectedAction === 'unload' && getStoreValue(localModelProcessingStore).pinnedUnload.includes(filename)) {
+				queueReleaseCheck();
+				return;
+			}
+			if (!isLocalActionVisuallySettled(filename, expectedAction)) {
+				queueReleaseCheck();
+				return;
+			}
+
+			await tick();
+			await waitForPaint();
+			await waitForPaint();
+
+			if ((localActionReleaseTokens.get(filename) ?? 0) !== token) return;
+			if (destroyed) return;
+			if (!show) {
+				queueReleaseCheck(200);
+				return;
+			}
+			if (expectedAction === 'unload' && getStoreValue(localModelProcessingStore).pinnedUnload.includes(filename)) {
+				queueReleaseCheck();
+				return;
+			}
+			if (!isLocalActionVisuallySettled(filename, expectedAction)) {
+				queueReleaseCheck();
+				return;
+			}
+
+			localActionReleaseTimers.delete(filename);
+			localActionReleasePending.delete(filename);
+			if (getStoreValue(localModelProcessingStore).actions[filename] === expectedAction) {
+				clearLocalModelProcessing(filename, expectedAction === 'unload');
+				if (expectedAction === 'unload') {
+					scheduleVisualUnloadClear(filename);
+				}
+			}
+		};
+
+		const timer = setTimeout(() => {
+			if ((localActionReleaseTokens.get(filename) ?? 0) !== token) return;
+			if (destroyed) return;
+			void release();
+		}, 0);
+		localActionReleaseTimers.set(filename, timer);
+	};
+	const clearSettledLocalModelActions = (refreshedLocalModels: LocalModel[]) => {
+		const { actions } = getStoreValue(localModelProcessingStore);
+		Object.entries(actions).forEach(([filename, action]) => {
+			const refreshedModel = refreshedLocalModels.find((model) => model.filename === filename);
+			if (action === 'load' && refreshedModel?.is_loaded) {
+				scheduleLocalActionVisualRelease(filename, action);
+			}
+			if (action === 'unload' && (!refreshedModel || !refreshedModel.is_loaded)) {
+				if (show && getStoreValue(localModelProcessingStore).pinnedUnload.includes(filename)) {
+					void releasePinnedSettledUnloadsAfterOpen();
+				} else {
+					scheduleLocalActionVisualRelease(filename, action);
+				}
+			}
+		});
+	};
+	const scheduleLocalActionRefresh = (filename: string, attempts = 120) => {
+		if (destroyed) return;
+		const { actions } = getStoreValue(localModelProcessingStore);
+		if (
+			attempts <= 0 ||
+			!actions[filename] ||
+			localActionRefreshTimers.has(filename)
+		) return;
+		const timer = setTimeout(async () => {
+			localActionRefreshTimers.delete(filename);
+			if (destroyed) return;
+			if (!getStoreValue(localModelProcessingStore).actions[filename]) return;
+			await refreshUnifiedModelData(false);
+			if (getStoreValue(localModelProcessingStore).actions[filename]) {
+				scheduleLocalActionRefresh(filename, attempts - 1);
+			}
+		}, 700);
+		localActionRefreshTimers.set(filename, timer);
+	};
+	const refreshUntilLocalActionSettles = async (filename: string) => {
+		if (destroyed) return;
+		await refreshUnifiedModelData(false);
+		if (getStoreValue(localModelProcessingStore).actions[filename]) {
+			scheduleLocalActionRefresh(filename);
+		}
+	};
+	const refreshLocalActionsAfterOpen = async () => {
+		if (openingActionRefreshInProgress || destroyed) return;
+		openingActionRefreshInProgress = true;
+		cancelOrphanedLocalActionTimers();
+
+		try {
+			const { actions } = getStoreValue(localModelProcessingStore);
+			if (Object.keys(actions).length === 0) return;
+
+			Object.keys(actions).forEach((filename) => {
+				cancelLocalActionRefresh(filename);
+				cancelLocalActionRelease(filename);
+			});
+
+			await refreshUnifiedModelData(false);
+			await releasePinnedSettledUnloadsAfterOpen();
+
+			const latestActions = getStoreValue(localModelProcessingStore).actions;
+			Object.keys(latestActions).forEach((filename) => {
+				if (!localActionReleasePending.has(filename)) {
+					scheduleLocalActionRefresh(filename, 120);
+				}
+			});
+		} finally {
+			openingActionRefreshInProgress = false;
+		}
+	};
 	const disableCollapseAnimation = () => {
 		collapseAnimationEnabled = false;
 		if (collapseAnimationTimer) {
@@ -356,8 +726,14 @@
 
 		// Sort GGUFs: loaded/unloading first, then unloaded. Loading stays in place.
 		ggufItems.sort((a, b) => {
-			const aPriority = a.gguf?.is_loaded || isLocalModelUnloading(a.gguf.filename) ? 1 : 0;
-			const bPriority = b.gguf?.is_loaded || isLocalModelUnloading(b.gguf.filename) ? 1 : 0;
+			const aPriority =
+				a.gguf?.is_loaded || isLocalModelUnloadPinned(a.gguf)
+					? 1
+					: 0;
+			const bPriority =
+				b.gguf?.is_loaded || isLocalModelUnloadPinned(b.gguf)
+					? 1
+					: 0;
 			return bPriority - aPriority;
 		});
 
@@ -376,7 +752,7 @@
 		return [...ggufItems, ...adminOnlyItems];
 	})();
 
-	$: unloadingLocalModel = localModels.find((model) => isLocalModelUnloading(model.filename)) ?? null;
+	$: unloadingLocalModel = localModels.find((model) => isLocalModelUnloadPinned(model)) ?? null;
 	$: activeHighlightedModelKey = loadedLocalModel?.filename ?? unloadingLocalModel?.filename ?? null;
 	$: if (activeHighlightedModelKey && activeHighlightedModelKey !== highlightedLoadedModelId) {
 		disableCollapseAnimation();
@@ -390,14 +766,40 @@
 	}
 	$: {
 		const openingModal = show && !previousShow;
+		const closingModal = !show && previousShow;
 		previousShow = show;
 		if (openingModal) {
+			selectedModelId = null;
+			guardReopenedUnloadVisuals();
 			disableCollapseAnimation();
 			currentPage = 1;
 			modelsBelowLoadedCollapsed = Boolean(activeHighlightedModelKey);
+			void refreshLocalActionsAfterOpen();
+		} else if (closingModal) {
+			pinUnsettledUnloadsBeforeClose();
+			selectedModelId = null;
 		}
 	}
-	$: highlightedLoadedItem = mergedModels.find((item) => item.gguf?.is_loaded || (item.gguf && isLocalModelUnloading(item.gguf.filename))) ?? null;
+	$: highlightedLoadedItem =
+		mergedModels.find(
+			(item) =>
+				item.gguf?.is_loaded ||
+				(item.gguf && isLocalModelUnloadPinned(item.gguf))
+		) ?? null;
+	$: if (reopenedUnloadVisualModels.size > 0) {
+		const highlightedFilename = highlightedLoadedItem?.gguf?.filename ?? null;
+		const nextModels = new Set(
+			[...reopenedUnloadVisualModels].filter(
+				(filename) =>
+					filename === highlightedFilename ||
+					localModelActions[filename] === 'unload' ||
+					pinnedUnloadModels.has(filename)
+			)
+		);
+		if (nextModels.size !== reopenedUnloadVisualModels.size) {
+			reopenedUnloadVisualModels = nextModels;
+		}
+	}
 	$: hasHighlightedLoadedModel = Boolean(highlightedLoadedItem);
 	$: scrollableMergedModels = highlightedLoadedItem ? mergedModels.filter((item) => item.key !== highlightedLoadedItem.key) : mergedModels;
 	$: filteredScrollableMergedModels = localAccessError
@@ -501,34 +903,8 @@
 		);
 	};
 
-	const markLocalModelUnloaded = (model: LocalModel) => {
-		localModels = localModels.map((localModel) =>
-			isSameLocalModel(localModel, model)
-				? {
-						...localModel,
-						is_loaded: false,
-						loaded_at: null,
-						n_gpu_layers: null,
-						n_ctx: null,
-						mmproj_filename: null,
-						cache_type: null,
-						speculative_decoding: null,
-						token_prediction: null
-					}
-				: localModel
-		);
-	};
-
-	const refreshAfterLocalAction = () => {
-		void (async () => {
-			await refreshGlobalModelsStore();
-			await refreshUnifiedModelData(false);
-		})();
-	};
-
 	async function handleLoad(model: LocalModel) {
 		setLocalModelAction(model.filename, 'load');
-		loadingModels = new Set([...loadingModels, model.filename]);
 		localError = '';
 		localSuccess = '';
 		let completed = false;
@@ -546,8 +922,8 @@
 			markLocalModelLoaded(model, result);
 			localSuccess = `${model.filename} carregado com sucesso!`;
 			completed = true;
-			clearLocalModelProcessing(model.filename);
-			refreshAfterLocalAction();
+			await refreshUntilLocalActionSettles(model.filename);
+			void refreshGlobalModelsStore();
 		} catch (e: any) {
 			localError = normalizeLlamaCppErrorMessage(e, 'Erro ao carregar modelo');
 		} finally {
@@ -627,7 +1003,6 @@
 		loadModalMmprojFile = '';
 		loadModalFromContext = false;
 		setLocalModelAction(model.filename, 'load');
-		loadingModels = new Set([...loadingModels, model.filename]);
 		localError = '';
 		localSuccess = '';
 		let completed = false;
@@ -645,8 +1020,8 @@
 			markLocalModelLoaded(model, result, mmprojFile);
 			localSuccess = `${model.filename} carregado! (visão: ${mmprojFile})`;
 			completed = true;
-			clearLocalModelProcessing(model.filename);
-			refreshAfterLocalAction();
+			await refreshUntilLocalActionSettles(model.filename);
+			void refreshGlobalModelsStore();
 		} catch (e: any) {
 			localError = normalizeLlamaCppErrorMessage(e, 'Erro ao carregar modelo');
 		} finally {
@@ -659,17 +1034,15 @@
 	async function handleUnload(model: LocalModel) {
 		currentPage = 1;
 		setLocalModelAction(model.filename, 'unload');
-		loadingModels = new Set([...loadingModels, model.filename]);
 		localError = '';
 		localSuccess = '';
 		let completed = false;
 		try {
 			await unloadLocalModel(localStorage.token, model.id);
 			localSuccess = `${model.filename} descarregado.`;
-			await refreshUnifiedModelData(false);
-			markLocalModelUnloaded(model);
+			setLocalModelUnloadSettling(model.filename);
 			completed = true;
-			clearLocalModelProcessing(model.filename);
+			await refreshUntilLocalActionSettles(model.filename);
 			void refreshGlobalModelsStore();
 		} catch (e: any) {
 			localError = normalizeLlamaCppErrorMessage(e, 'Erro ao descarregar modelo');
@@ -697,7 +1070,7 @@
 		}
 	};
 
-	async function refreshUnifiedModelData(initial = true) {
+	async function refreshUnifiedModelData(initial = true): Promise<LocalModel[] | null> {
 		if (initial) localLoading = true;
 		try {
 			const [newLocalModels, newMmProjFiles, newLlamaCppStatus] = await Promise.all([
@@ -710,15 +1083,13 @@
 			if (JSON.stringify(newLocalModels) !== JSON.stringify(localModels)) localModels = newLocalModels;
 			if (JSON.stringify(newMmProjFiles) !== JSON.stringify(mmProjFiles)) mmProjFiles = newMmProjFiles;
 			llamacppStatus = newLlamaCppStatus;
-			const settledUnloadFilenames = [...settlingUnloadModels].filter((filename) => {
-				const refreshedModel = newLocalModels.find((model) => model.filename === filename);
-				return !refreshedModel?.is_loaded;
-			});
-			settledUnloadFilenames.forEach(clearLocalModelProcessing);
+			clearSettledLocalModelActions(newLocalModels);
+			return newLocalModels;
 		} catch (e: any) {
 			if (!localModelActionInProgress) {
 				localError = normalizeLlamaCppErrorMessage(e, 'Falha ao atualizar');
 			}
+			return null;
 		} finally {
 			await refreshLocalVram();
 			if (initial) localLoading = false;
@@ -815,19 +1186,24 @@
 		await updateUserSettings(localStorage.token, { ui: $settings });
 	};
 
-	onMount(async () => {
-		if (!preloadApplied) {
-			await refreshUnifiedModelData();
-		} else if (vramInfo === null) {
-			refreshLocalVram();
-		}
-		if (preloadApplied) {
-			llamacppStatus = await getLlamaCppStatus(localStorage.token).catch(() => null);
-		}
+	onMount(() => {
+		destroyed = false;
+		cancelOrphanedLocalActionTimers();
 
-		// Auto-refresh: poll for new GGUF files every 3 seconds
+		void (async () => {
+			if (!preloadApplied) {
+				await refreshUnifiedModelData();
+			} else if (vramInfo === null) {
+				refreshLocalVram();
+			}
+			if (preloadApplied) {
+				llamacppStatus = await getLlamaCppStatus(localStorage.token).catch(() => null);
+			}
+			await refreshLocalActionsAfterOpen();
+		})();
+
 		const pollInterval = setInterval(async () => {
-			if (loadingModels.size > 0) return;
+			if (loadingModels.size > 0 || settlingUnloadModels.size > 0) return;
 
 			const prevIds = new Set(localModels.map((m) => m.id).filter(Boolean));
 			await refreshUnifiedModelData(false);
@@ -842,11 +1218,13 @@
 			}
 		}, 3000);
 
-		const id = $page.url.searchParams.get('id') || $showSettingsModelId;
-		if (id) {
-			selectedModelId = id;
-			showSettingsModelId.set('');
-		}
+		void (async () => {
+			const id = $page.url.searchParams.get('id') || $showSettingsModelId;
+			if (id) {
+				selectedModelId = id;
+				showSettingsModelId.set('');
+			}
+		})();
 
 		return () => {
 			clearInterval(pollInterval);
@@ -854,7 +1232,10 @@
 	});
 
 	onDestroy(() => {
+		destroyed = true;
 		disableCollapseAnimation();
+		cancelAllLocalActionTimers();
+		unsubscribeLocalModelProcessing();
 	});
 </script>
 
@@ -994,10 +1375,12 @@
 	</div>
 {/snippet}
 
-{#snippet modelRow(item)}
+{#snippet modelRow(item, isHighlighted)}
 	{@const gm = item.gguf}
 	{@const am = item.admin}
-	{@const isProcessing = gm && (loadingModels.has(gm.filename) || settlingUnloadModels.has(gm.filename))}
+	{@const isUnloadVisualProcessing = gm && isHighlighted && (visualUnloadModels.has(gm.filename) || reopenedUnloadVisualModels.has(gm.filename))}
+	{@const isLoadProcessing = gm && localModelActions[gm.filename] === 'load' && loadingModels.has(gm.filename)}
+	{@const isProcessing = gm && (isLoadProcessing || isUnloadVisualProcessing)}
 	{@const rowHeight = HIGHLIGHTED_MODEL_ROW_HEIGHT_PX}
 	<div
 		class="flex w-full snap-start shrink-0 overflow-hidden px-3 py-1 {(am?.meta?.hidden || (am && !(am?.is_active ?? true))) ? 'opacity-50' : ''}"
@@ -1193,7 +1576,7 @@
 
 					{#if highlightedLoadedItem}
 						<div class="shrink-0 mb-2">
-							{@render modelRow(highlightedLoadedItem)}
+							{@render modelRow(highlightedLoadedItem, true)}
 						</div>
 					{/if}
 
@@ -1219,7 +1602,7 @@
 									</div>
 								{:else if visibleMergedModels.length > 0}
 									{#each visibleMergedModels as item (item.key)}
-										{@render modelRow(item)}
+										{@render modelRow(item, false)}
 									{/each}
 								{/if}
 

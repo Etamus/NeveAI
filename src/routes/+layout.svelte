@@ -119,6 +119,20 @@
 
 	const BREAKPOINT = 768;
 
+	const preloadAppVersion = async () => {
+		const res = await getVersion(localStorage.token ?? '').catch(() => null);
+		const deploymentId = res?.deployment_id ?? null;
+		const version = res?.version ?? null;
+
+		if (deploymentId !== null) {
+			NEVEAI_DEPLOYMENT_ID.set(deploymentId);
+		}
+
+		if (version !== null) {
+			NEVEAI_VERSION.set(version);
+		}
+	};
+
 	const setupSocket = async (enableWebsocket) => {
 		const { io } = await import('socket.io-client');
 		const _socket = io(`${NEVEAI_BASE_URL}` || undefined, {
@@ -615,6 +629,7 @@
 
 	onMount(async () => {
 		window.addEventListener('message', windowMessageEventHandler);
+		preloadAppVersion();
 
 		let touchstartY = 0;
 

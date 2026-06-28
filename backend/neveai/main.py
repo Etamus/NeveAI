@@ -14,7 +14,7 @@ from uuid import uuid4
 
 
 from contextlib import asynccontextmanager
-from urllib.parse import urlencode, parse_qs, urlparse
+from urllib.parse import urlencode, parse_qs, urlparse, unquote
 from pydantic import BaseModel
 from sqlalchemy import text
 
@@ -2300,6 +2300,13 @@ async def update_webhook_url(form_data: UrlForm, user=Depends(get_admin_user)):
 
 @app.get("/api/version")
 async def get_app_version():
+    return {
+        "version": get_local_project_version(),
+        "deployment_id": DEPLOYMENT_ID,
+    }
+
+
+def get_local_project_version():
     version = VERSION
     version_file = BASE_DIR / "version.txt"
 
@@ -2310,10 +2317,126 @@ async def get_app_version():
     except Exception:
         pass
 
+    return version
+
+
+def normalize_project_version(version: str):
+    return (version or "").strip().lstrip("vV")
+
+
+def get_version_sort_key(version: str):
+    normalized = normalize_project_version(version)
+    numbers = [int(value) for value in re.findall(r"\d+", normalized)]
+    return numbers
+
+
+def is_project_update_available(current: str, latest: str):
+    current_normalized = normalize_project_version(current)
+    latest_normalized = normalize_project_version(latest)
+    if (
+        not current_normalized
+        or not latest_normalized
+        or current_normalized == "0.0.0"
+        or current_normalized == latest_normalized
+    ):
+        return False
+
+    current_key = get_version_sort_key(current_normalized)
+    latest_key = get_version_sort_key(latest_normalized)
+    if not current_key or not latest_key:
+        return False
+
+    max_len = max(len(current_key), len(latest_key))
+    current_key += [0] * (max_len - len(current_key))
+    latest_key += [0] * (max_len - len(latest_key))
+    return latest_key > current_key
+
+
+def sanitize_github_release_error(error: Exception):
+    response = getattr(error, "response", None)
+    if response is not None and getattr(response, "status", None) == 403:
+        return "Limite temporário do GitHub atingido. A verificação será tentada novamente depois."
+
+    return str(error)
+
+
+def get_installed_llamacpp_info():
+    version_file = BASE_DIR / "llamacpp-server" / "version.txt"
+    tag = ""
+    backend = ""
+    asset = ""
+
+    try:
+        lines = version_file.read_text(encoding="utf-8").splitlines()
+        if len(lines) > 0:
+            tag = lines[0].strip()
+        if len(lines) > 1:
+            backend = lines[1].strip()
+        if len(lines) > 2:
+            asset = lines[2].strip()
+    except Exception:
+        pass
+
     return {
-        "version": version,
-        "deployment_id": DEPLOYMENT_ID,
+        "current": normalize_project_version(tag),
+        "current_tag": tag,
+        "backend": backend,
+        "asset": asset,
     }
+
+
+async def get_github_latest_release_tag(session, repo: str):
+    api_error = None
+    try:
+        async with session.get(
+            f"https://api.github.com/repos/{repo}/releases/latest",
+            ssl=AIOHTTP_CLIENT_SESSION_SSL,
+        ) as response:
+            response.raise_for_status()
+            data = await response.json()
+            return (data.get("tag_name") or "").strip()
+    except Exception as e:
+        api_error = e
+
+    try:
+        async with session.get(
+            f"https://github.com/{repo}/releases/latest",
+            allow_redirects=False,
+            ssl=AIOHTTP_CLIENT_SESSION_SSL,
+        ) as response:
+            location = response.headers.get("Location", "")
+            match = re.search(r"/releases/tag/([^/?#]+)", location)
+            if match:
+                return unquote(match.group(1)).strip()
+    except Exception:
+        pass
+
+    raise api_error
+
+
+def launch_installer_update_page():
+    import subprocess
+
+    installer_path = BASE_DIR / "instalar.bat"
+    if not installer_path.exists():
+        raise FileNotFoundError(f"instalar.bat não encontrado em {installer_path}")
+
+    command = [
+        "cmd.exe",
+        "/c",
+        "start",
+        "",
+        "/D",
+        str(BASE_DIR),
+        str(installer_path),
+        "--page",
+        "update",
+    ]
+    subprocess.Popen(
+        command,
+        cwd=str(BASE_DIR),
+        close_fds=True,
+    )
 
 
 @app.post("/api/shutdown")
@@ -2352,28 +2475,89 @@ async def shutdown_app(background_tasks: BackgroundTasks, user=Depends(get_admin
     return {"status": True, "message": "Shutting down"}
 
 
+@app.post("/api/updater/start")
+async def start_app_updater(user=Depends(get_admin_user)):
+    """Abre o hub direto em Atualizar. O instalador encerra o app somente ao iniciar a ação."""
+    try:
+        await anyio.to_thread.run_sync(launch_installer_update_page)
+    except Exception as e:
+        log.exception("Failed to launch Neve AI updater")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Falha ao abrir o atualizador: {e}",
+        )
+
+    return {"status": True, "message": "Updater opened"}
+
+
 @app.get("/api/version/updates")
 async def get_app_latest_release_version(user=Depends(get_verified_user)):
+    current_version = get_local_project_version()
+    current_version_normalized = normalize_project_version(current_version)
+    llama_cpp = get_installed_llamacpp_info()
+    latest_version = current_version
+    latest_llama_tag = llama_cpp["current_tag"]
+    neve_update_available = False
+    llama_update_available = False
+
     if not ENABLE_VERSION_UPDATE_CHECK:
         log.debug(
             f"Version update check is disabled, returning current version as latest version"
         )
-        return {"current": VERSION, "latest": VERSION}
-    try:
-        timeout = aiohttp.ClientTimeout(total=1)
-        async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
-            async with session.get(
-                "https://api.github.com/repos/Etamus/NeveAI/releases/latest",
-                ssl=AIOHTTP_CLIENT_SESSION_SSL,
-            ) as response:
-                response.raise_for_status()
-                data = await response.json()
-                latest_version = data["tag_name"]
+        return {
+            "current": current_version_normalized,
+            "latest": current_version_normalized,
+            "current_tag": current_version,
+            "latest_tag": current_version,
+            "neve_update_available": False,
+            "update_available": False,
+            "llama_cpp": {
+                **llama_cpp,
+                "latest": normalize_project_version(latest_llama_tag),
+                "latest_tag": latest_llama_tag,
+                "update_available": False,
+            },
+        }
 
-                return {"current": VERSION, "latest": latest_version[1:]}
+    timeout = aiohttp.ClientTimeout(total=5)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+            try:
+                latest_version = await get_github_latest_release_tag(session, "Etamus/NeveAI")
+                neve_update_available = is_project_update_available(
+                    current_version, latest_version
+                )
+            except Exception as e:
+                log.debug(e)
+                latest_version = current_version
+
+            try:
+                latest_llama_tag = await get_github_latest_release_tag(
+                    session, "ggml-org/llama.cpp"
+                )
+                llama_update_available = is_project_update_available(
+                    llama_cpp["current_tag"], latest_llama_tag
+                )
+            except Exception as e:
+                log.debug(e)
+                latest_llama_tag = llama_cpp["current_tag"]
     except Exception as e:
         log.debug(e)
-        return {"current": VERSION, "latest": VERSION}
+
+    return {
+        "current": current_version_normalized,
+        "latest": normalize_project_version(latest_version),
+        "current_tag": current_version,
+        "latest_tag": latest_version,
+        "neve_update_available": neve_update_available,
+        "update_available": neve_update_available or llama_update_available,
+        "llama_cpp": {
+            **llama_cpp,
+            "latest": normalize_project_version(latest_llama_tag),
+            "latest_tag": latest_llama_tag,
+            "update_available": llama_update_available,
+        }
+    }
 
 
 @app.get("/api/changelog")

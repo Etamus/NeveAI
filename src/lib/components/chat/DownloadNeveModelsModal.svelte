@@ -1,3 +1,34 @@
+<script lang="ts" context="module">
+	const neveCatalogCacheKey = 'neveai.downloadModels.catalog';
+	let memoryCatalogCache: any[] = [];
+
+	const readCachedNeveCatalog = () => {
+		if (memoryCatalogCache.length > 0) return memoryCatalogCache;
+		if (typeof localStorage === 'undefined') return [];
+
+		try {
+			const cached = JSON.parse(localStorage.getItem(neveCatalogCacheKey) ?? 'null');
+			if (!Array.isArray(cached?.catalog)) return [];
+			memoryCatalogCache = cached.catalog;
+			return memoryCatalogCache;
+		} catch {
+			return [];
+		}
+	};
+
+	const writeCachedNeveCatalog = (catalog: any[]) => {
+		memoryCatalogCache = Array.isArray(catalog) ? catalog : [];
+		if (typeof localStorage === 'undefined') return;
+
+		try {
+			localStorage.setItem(
+				neveCatalogCacheKey,
+				JSON.stringify({ timestamp: Date.now(), catalog: memoryCatalogCache })
+			);
+		} catch {}
+	};
+</script>
+
 <script lang="ts">
 	import { getContext, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -27,7 +58,7 @@
 	export let show = false;
 
 	let loading = false;
-	let catalog: NeveCatalogModel[] = [];
+	let catalog: NeveCatalogModel[] = readCachedNeveCatalog();
 	let catalogError = '';
 	let selectedId: string | null = null;
 	let wasShown = false;
@@ -60,10 +91,13 @@
 		try {
 			catalogError = '';
 			catalog = await getNeveCatalog(localStorage.token);
+			writeCachedNeveCatalog(catalog);
 		} catch (e: any) {
 			catalogError = normalizeLlamaCppErrorMessage(e, 'Falha ao carregar catálogo');
 			toast.error(catalogError);
-			catalog = [];
+			if (catalog.length === 0) {
+				catalog = readCachedNeveCatalog();
+			}
 		}
 	};
 
@@ -170,7 +204,7 @@
 	};
 
 	const hydrateModal = async () => {
-		loading = true;
+		loading = catalog.length === 0;
 		const [catalogResult, activeResult] = await Promise.allSettled([
 			getNeveCatalog(localStorage.token),
 			getActiveNeveDownload(localStorage.token)
@@ -179,13 +213,16 @@
 		if (catalogResult.status === 'fulfilled') {
 			catalogError = '';
 			catalog = catalogResult.value;
+			writeCachedNeveCatalog(catalog);
 		} else {
 			catalogError = normalizeLlamaCppErrorMessage(
 				catalogResult.reason,
 				'Falha ao carregar catálogo'
 			);
 			toast.error(catalogError);
-			catalog = [];
+			if (catalog.length === 0) {
+				catalog = readCachedNeveCatalog();
+			}
 		}
 
 		if (activeResult.status === 'fulfilled' && activeResult.value?.task_id) {
@@ -286,7 +323,7 @@
 	});
 </script>
 
-<Modal bind:show size="w-[24rem]">
+<Modal bind:show size="w-[24rem]" keepMounted>
 	<div>
 		<div
 			class="flex justify-between dark:text-gray-300 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20"

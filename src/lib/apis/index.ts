@@ -12,6 +12,17 @@ export const shutdownApp = async (token: string) => {
 	return res?.ok ?? false;
 };
 
+export const startAppUpdater = async (token: string) => {
+	const res = await fetch(`${NEVEAI_BASE_URL}/api/updater/start`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			Authorization: `Bearer ${token}`
+		}
+	}).catch(() => null);
+	return res?.ok ?? false;
+};
+
 export const getModels = async (
 	token: string = '',
 	connections: object | null = null,

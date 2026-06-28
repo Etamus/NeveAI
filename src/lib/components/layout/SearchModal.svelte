@@ -1,3 +1,17 @@
+<script lang="ts" context="module">
+	const searchModalCache: {
+		query: string;
+		page: number;
+		chatList: any[] | null;
+		allChatsLoaded: boolean;
+	} = {
+		query: '',
+		page: 1,
+		chatList: null,
+		allChatsLoaded: false
+	};
+</script>
+
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { getContext, onDestroy, onMount, tick } from 'svelte';
@@ -37,15 +51,17 @@
 		}
 	];
 
-	let query = '';
-	let page = 1;
+	let query = searchModalCache.query;
+	let page = searchModalCache.page;
 
-	let chatList = null;
+	let chatList = searchModalCache.chatList;
 
 	let chatListLoading = false;
-	let allChatsLoaded = false;
+	let allChatsLoaded = searchModalCache.allChatsLoaded;
 
 	let searchDebounceTimeout;
+	let searchRequestId = 0;
+	let wasShown = false;
 
 	let selectedIdx = null;
 	let selectedChat = null;
@@ -111,6 +127,13 @@
 		}
 	};
 
+	const persistSearchCache = () => {
+		searchModalCache.query = query;
+		searchModalCache.page = page;
+		searchModalCache.chatList = chatList;
+		searchModalCache.allChatsLoaded = allChatsLoaded;
+	};
+
 	const searchHandler = async () => {
 		if (!show) {
 			return;
@@ -121,30 +144,37 @@
 		}
 
 		page = 1;
-		chatList = null;
-		if (query === '') {
-			chatList = await getChatList(localStorage.token, page);
-		} else {
-			searchDebounceTimeout = setTimeout(async () => {
-				chatList = await getChatListBySearchText(localStorage.token, query, page);
-
-				if ((chatList ?? []).length === 0) {
-					allChatsLoaded = true;
-				} else {
-					allChatsLoaded = false;
-				}
-			}, 500);
-		}
-
+		const currentQuery = query;
+		const requestId = ++searchRequestId;
 		selectedChat = null;
 		messages = null;
 		history = null;
 		selectedModels = [''];
 
-		if ((chatList ?? []).length === 0) {
-			allChatsLoaded = true;
+		const runSearch = async () => {
+			chatListLoading = true;
+			try {
+				const nextChatList =
+					currentQuery === ''
+						? await getChatList(localStorage.token, page)
+						: await getChatListBySearchText(localStorage.token, currentQuery, page);
+
+				if (requestId !== searchRequestId || currentQuery !== query) return;
+
+				chatList = nextChatList;
+				allChatsLoaded = (chatList ?? []).length === 0;
+				persistSearchCache();
+			} finally {
+				if (requestId === searchRequestId) {
+					chatListLoading = false;
+				}
+			}
+		};
+
+		if (currentQuery === '') {
+			await runSearch();
 		} else {
-			allChatsLoaded = false;
+			searchDebounceTimeout = setTimeout(runSearch, 500);
 		}
 	};
 
@@ -164,14 +194,18 @@
 		allChatsLoaded = newChatList.length === 0;
 
 		if (newChatList.length > 0) {
-			chatList = [...chatList, ...newChatList];
+			chatList = [...(chatList ?? []), ...newChatList];
+			persistSearchCache();
 		}
 
 		chatListLoading = false;
 	};
 
-	$: if (show) {
+	$: if (show && !wasShown) {
+		wasShown = true;
 		searchHandler();
+	} else if (!show && wasShown) {
+		wasShown = false;
 	}
 
 	const onKeyDown = (e) => {
@@ -255,7 +289,7 @@
 	});
 </script>
 
-<Modal size="xl" bind:show containerClassName="p-2 sm:p-3">
+<Modal size="xl" bind:show containerClassName="p-2 sm:p-3" keepMounted>
 	<div
 		class="py-3 dark:text-gray-300 text-gray-700 flex flex-col"
 		style="height: min(42rem, calc(100dvh - 1.5rem));"

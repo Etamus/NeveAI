@@ -274,9 +274,26 @@
 		}
 	};
 
+	const refreshModelEditorResources = async () => {
+		const [toolsResult, functionsResult] = await Promise.allSettled([
+			getTools(localStorage.token),
+			getFunctions(localStorage.token)
+		]);
+
+		if (toolsResult.status === 'fulfilled') {
+			await tools.set(toolsResult.value);
+		}
+		if (functionsResult.status === 'fulfilled') {
+			await functions.set(functionsResult.value);
+		}
+	};
+
 	onMount(async () => {
-		await tools.set(await getTools(localStorage.token));
-		await functions.set(await getFunctions(localStorage.token));
+		const resourcesReady = Array.isArray($tools) && Array.isArray($functions);
+		const resourcesPromise = refreshModelEditorResources();
+		if (!resourcesReady) {
+			await resourcesPromise;
+		}
 
 		// Scroll to top 'workspace-container' element
 		const workspaceContainer = document.getElementById('workspace-container');

@@ -71,6 +71,7 @@
 	let unifiedModelsVramInfo: LocalVramInfo | null = null;
 	let unifiedModelsVramPromise: Promise<void> | null = null;
 	const unifiedModelsVramCacheKey = 'neveai.unifiedModels.vramInfo';
+	const unifiedModelsPreloadCacheKey = 'neveai.unifiedModels.preload';
 
 	const getCachedUnifiedModelsVram = () => {
 		if (typeof localStorage === 'undefined') return null;
@@ -89,6 +90,28 @@
 		try {
 			localStorage.setItem(
 				unifiedModelsVramCacheKey,
+				JSON.stringify({ timestamp: Date.now(), data })
+			);
+		} catch {}
+	};
+
+	const getCachedUnifiedModelsPreload = () => {
+		if (typeof localStorage === 'undefined') return null;
+		try {
+			const cached = JSON.parse(localStorage.getItem(unifiedModelsPreloadCacheKey) ?? 'null');
+			if (!cached?.data || !cached?.timestamp) return null;
+			if (Date.now() - cached.timestamp > 5 * 60 * 1000) return null;
+			return cached.data as UnifiedModelsPreload;
+		} catch {
+			return null;
+		}
+	};
+
+	const setCachedUnifiedModelsPreload = (data: UnifiedModelsPreload) => {
+		if (typeof localStorage === 'undefined') return;
+		try {
+			localStorage.setItem(
+				unifiedModelsPreloadCacheKey,
 				JSON.stringify({ timestamp: Date.now(), data })
 			);
 		} catch {}
@@ -137,6 +160,9 @@
 
 	const refreshUnifiedModelsPreload = async () => {
 		if (unifiedModelsPreloadPromise) return unifiedModelsPreloadPromise;
+		if (!unifiedModelsPreload) {
+			unifiedModelsPreload = getCachedUnifiedModelsPreload();
+		}
 		if (!unifiedModelsVramInfo) unifiedModelsVramInfo = getCachedUnifiedModelsVram();
 		refreshUnifiedModelsVram();
 
@@ -174,6 +200,7 @@
 				adminModels: currentAdminModels,
 				vramInfo: unifiedModelsVramInfo
 			};
+			setCachedUnifiedModelsPreload(unifiedModelsPreload);
 
 			const [workspaceModelsResult, baseModels] = await Promise.all([
 				workspaceModelsPromise,
@@ -194,6 +221,7 @@
 				adminModels,
 				vramInfo: unifiedModelsVramInfo
 			};
+			setCachedUnifiedModelsPreload(unifiedModelsPreload);
 		})().finally(() => {
 			unifiedModelsPreloadPromise = null;
 		});
@@ -208,6 +236,7 @@
 
 	onMount(() => {
 		unifiedModelsVramInfo = getCachedUnifiedModelsVram();
+		unifiedModelsPreload = getCachedUnifiedModelsPreload();
 		refreshUnifiedModelsPreload();
 		refreshUnifiedModelsVram();
 	});
@@ -216,7 +245,7 @@
 <ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
 
 {#if unifiedModelsPreload?.loaded}
-	<Modal size="md" className="bg-white dark:bg-gray-900 rounded-xl w-[36rem]!" bind:show={$showLocalModelsModal}>
+	<Modal size="md" className="bg-white dark:bg-gray-900 rounded-xl w-[36rem]!" bind:show={$showLocalModelsModal} keepMounted>
 		<UnifiedModels preload={unifiedModelsPreload} show={$showLocalModelsModal} />
 	</Modal>
 {/if}

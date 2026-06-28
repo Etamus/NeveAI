@@ -8,6 +8,7 @@
 	export let size = 'md';
 	export let containerClassName = 'p-3';
 	export let className = 'bg-white dark:bg-gray-900 rounded-xl';
+	export let keepMounted = false;
 
 	let modalElement = null;
 	let mounted = false;
@@ -15,6 +16,7 @@
 	// https://www.w3.org/WAI/WCAG21/Understanding/focus-order.html
 	// https://www.w3.org/WAI/WCAG21/Understanding/keyboard.html
 	let focusTrap: FocusTrap.FocusTrap | null = null;
+	let modalInBody = false;
 
 	const sizeToWidth = (size) => {
 		if (size === 'full') {
@@ -54,12 +56,30 @@
 		return modals.length && modals[modals.length - 1] === modalElement;
 	};
 
+	const appendModalElement = () => {
+		if (!modalElement || modalInBody) return;
+		document.body.appendChild(modalElement);
+		modalInBody = true;
+	};
+
+	const removeModalElement = () => {
+		if (!modalElement || !modalInBody) return;
+		if (modalElement.parentElement === document.body) {
+			document.body.removeChild(modalElement);
+		}
+		modalInBody = false;
+	};
+
 	onMount(() => {
 		mounted = true;
 	});
 
+	$: if (keepMounted && modalElement && !modalInBody) {
+		appendModalElement();
+	}
+
 	$: if (show && modalElement) {
-		document.body.appendChild(modalElement);
+		appendModalElement();
 		focusTrap = FocusTrap.createFocusTrap(modalElement, {
 			allowOutsideClick: (e) => {
 				return (
@@ -73,9 +93,12 @@
 		window.addEventListener('keydown', handleKeyDown);
 		document.body.style.overflow = 'hidden';
 	} else if (modalElement) {
-		focusTrap.deactivate();
+		focusTrap?.deactivate();
+		focusTrap = null;
 		window.removeEventListener('keydown', handleKeyDown);
-		document.body.removeChild(modalElement);
+		if (!keepMounted) {
+			removeModalElement();
+		}
 		document.body.style.overflow = 'unset';
 	}
 
@@ -84,13 +107,11 @@
 		if (focusTrap) {
 			focusTrap.deactivate();
 		}
-		if (modalElement) {
-			document.body.removeChild(modalElement);
-		}
+		removeModalElement();
 	});
 </script>
 
-{#if show}
+{#if show || keepMounted}
 	<!-- svelte-ignore a11y-click-events-have-key-events -->
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
 	<!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
@@ -99,7 +120,10 @@
 		aria-modal="true"
 		role="dialog"
 		tabindex="-1"
-		class="modal fixed top-0 right-0 left-0 bottom-0 bg-black/30 dark:bg-black/60 w-full h-screen max-h-[100dvh] {containerClassName}  flex justify-center z-9999 overflow-y-auto overscroll-contain"
+		aria-hidden={!show}
+		class="modal fixed top-0 right-0 left-0 bottom-0 bg-black/30 dark:bg-black/60 w-full h-screen max-h-[100dvh] {containerClassName} {show
+			? 'flex'
+			: 'hidden'} justify-center z-9999 overflow-y-auto overscroll-contain"
 		style="scrollbar-gutter: stable;"
 		in:fade={{ duration: 150 }}
 		on:mousedown={() => {
