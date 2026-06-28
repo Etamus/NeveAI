@@ -812,7 +812,7 @@ $ctl.ChkInstallPython.IsChecked = $false
 # Node.js pode ser baixado em modo portatil pelo instalador.
 if (-not $pyOk) {
     [System.Windows.MessageBox]::Show(
-        "Python 3.11/3.12 válido não foi encontrado.`n`nMarque a opção `"Instalar Python 3.11 automaticamente`" para o instalador baixar e configurar o Python antes da instalação.",
+        "Python 3.11/3.12 válido não foi encontrado.`n`nMarque a opção `"Instalar Python 3.11`" para o instalador baixar e configurar o Python antes da instalação.",
         'Pré-requisitos', 'OK', 'Warning') | Out-Null
 }
 
