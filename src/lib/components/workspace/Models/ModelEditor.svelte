@@ -685,11 +685,11 @@
 							</div>
 						</div>
 
-						<!-- Right: Funcionalidades (static, does not scroll) -->
+						<!-- Right: Capacidades (static, does not scroll) -->
 						<div class="border-l border-gray-300/50 dark:border-gray-600/30"></div>
 						<div class="w-[45%] min-w-0 pl-6 h-full overflow-hidden">
 							<div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
-								{$i18n.t('Funcionalidades')}
+								{$i18n.t('Capacidades')}
 							</div>
 							<DefaultFeatures availableFeatures={['web_search', 'code_interpreter', 'code_execution', 'toggle_reasoning']} bind:featureIds={defaultFeatureIds} tooltipsEnabled={false} />
 						</div>

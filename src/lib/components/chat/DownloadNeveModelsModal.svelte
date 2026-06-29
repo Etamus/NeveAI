@@ -27,16 +27,30 @@
 			);
 		} catch {}
 	};
+
+	const modelBadges: Record<string, string[]> = {
+		'neve-echo-s': ['4GB+', 'Q4_K_XL'],
+		'neve-echo': ['6GB+', 'Q4_K_XL'],
+		'neve-prism': ['8GB+', 'Q5_K_XL'],
+		'neve-prism-x': ['8GB+', 'Q6_K_XL'],
+		'neve-sense': ['12GB+', 'Q4_K_XL'],
+		'neve-strata-s': ['6GB+', 'Q8_K_XL'],
+		'neve-strata': ['16GB+', 'Q4_K_XL'],
+		'neve-strata-x': ['16GB+', 'Q4_K_XL'],
+		'neve-cascade-s': ['CPU', 'Q8_0'],
+		'neve-cascade-x': ['CPU', 'Q3_K_XL']
+	};
 </script>
 
 <script lang="ts">
-	import { getContext, onDestroy } from 'svelte';
+	import { getContext, onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import Modal from '$lib/components/common/Modal.svelte';
-	import GarbageBin from '$lib/components/icons/GarbageBin.svelte';
+	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import DownloadProgressToast from '$lib/components/chat/DownloadNeveModelsProgressToast.svelte';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 	import { getModels } from '$lib/apis';
 	import { models } from '$lib/stores';
@@ -54,13 +68,15 @@
 	} from '$lib/apis/llamacpp';
 
 	const i18n = getContext('i18n');
+	const downloadProgressToastId = 'neveai-download-model-progress';
 
 	export let show = false;
 
 	let loading = false;
 	let catalog: NeveCatalogModel[] = readCachedNeveCatalog();
 	let catalogError = '';
-	let selectedId: string | null = null;
+	let selectedIds: Set<string> = new Set();
+	let queuedModelIds: string[] = [];
 	let wasShown = false;
 
 	let downloading = false;
@@ -72,6 +88,14 @@
 	let downloadingModelName = '';
 	let currentEs: EventSource | null = null;
 	let uninstallingModelId: string | null = null;
+	let showUninstallConfirm = false;
+	let uninstallTarget: NeveCatalogModel | null = null;
+	let progressToastVisible = false;
+	let modalBlockersOpen = false;
+	let modalObserver: MutationObserver | null = null;
+	let selectedDownloadItems: NeveCatalogModel[] = [];
+	let selectedDownloadCount = 0;
+	let selectedDownloadSizeLabel = '0 GB';
 
 	const activeStatuses = ['queued', 'resolving', 'downloading', 'cancelling'];
 
@@ -101,8 +125,91 @@
 		}
 	};
 
-	const modelNameFor = (modelId?: string | null) => {
-		return catalog.find((model) => model.id === modelId)?.name || downloadingModelName || 'Modelo';
+	const modelNameFor = (modelId?: string | null) =>
+		catalog.find((model) => model.id === modelId)?.name || downloadingModelName || 'Modelo';
+
+	const getSelectableModels = () =>
+		catalog.filter((item) => selectedIds.has(item.id) && !item.installed);
+
+	const parseSizeLabelToGb = (sizeLabel?: string): number => {
+		const match = `${sizeLabel ?? ''}`.trim().match(/^([\d,.]+)\s*(B|KB|MB|GB|TB)?/i);
+		if (!match) return 0;
+
+		const value = Number.parseFloat(match[1].replace(',', '.'));
+		if (!Number.isFinite(value)) return 0;
+
+		const unit = (match[2] ?? 'GB').toUpperCase();
+		if (unit === 'TB') return value * 1024;
+		if (unit === 'MB') return value / 1024;
+		if (unit === 'KB') return value / (1024 * 1024);
+		if (unit === 'B') return value / (1024 * 1024 * 1024);
+		return value;
+	};
+
+	const formatTotalSize = (sizeGb: number): string => {
+		if (!sizeGb) return '0 GB';
+		return `${sizeGb.toFixed(1)} GB`;
+	};
+
+	const hasVisibleModalBlocker = () => {
+		if (typeof document === 'undefined') return false;
+		const dialogs = Array.from(
+			document.querySelectorAll<HTMLElement>('.modal, [role="dialog"][aria-modal="true"]')
+		);
+
+		return dialogs.some((dialog) => {
+			if (dialog.closest('[data-sonner-toast]')) return false;
+			if (dialog.getAttribute('aria-hidden') === 'true') return false;
+			if (dialog.classList.contains('hidden')) return false;
+			return dialog.offsetParent !== null || dialog.getClientRects().length > 0;
+		});
+	};
+
+	const syncModalBlockers = () => {
+		modalBlockersOpen = hasVisibleModalBlocker();
+	};
+
+	const toggleSelection = (item: NeveCatalogModel) => {
+		if (downloading || item.installed) return;
+		const next = new Set(selectedIds);
+		if (next.has(item.id)) {
+			next.delete(item.id);
+		} else {
+			next.add(item.id);
+		}
+		selectedIds = next;
+	};
+
+	const removeSelection = (modelId?: string | null) => {
+		if (!modelId || !selectedIds.has(modelId)) return;
+		const next = new Set(selectedIds);
+		next.delete(modelId);
+		selectedIds = next;
+	};
+
+	const showDownloadProgressToast = (name: string, progressValue: number, label: string) => {
+		if (!downloading || show || !name) return;
+		progressToastVisible = true;
+		toast.custom(DownloadProgressToast, {
+			id: downloadProgressToastId,
+			class: 'neve-download-progress-toast-shell',
+			componentProps: {
+				name,
+				progress: progressValue,
+				label,
+				cancelling,
+				onCancel: handleCancelDownload
+			},
+			duration: Number.POSITIVE_INFINITY,
+			dismissable: false,
+			unstyled: true
+		});
+	};
+
+	const dismissDownloadProgressToast = () => {
+		if (!progressToastVisible) return;
+		toast.dismiss(downloadProgressToastId);
+		progressToastVisible = false;
 	};
 
 	const applyDownloadState = (state: NeveDownloadState) => {
@@ -111,7 +218,9 @@
 		}
 		if (state.model_id) {
 			downloadingModelId = state.model_id;
-			selectedId = state.model_id;
+			if (!selectedIds.has(state.model_id)) {
+				selectedIds = new Set([...selectedIds, state.model_id]);
+			}
 		}
 		if (state.name) {
 			downloadingModelName = state.name;
@@ -129,7 +238,7 @@
 			const verb = state.resumed ? 'Retomando' : 'Baixando';
 			progressLabel = `${verb}${fileLabel} ${sz}`.trim();
 		} else if (state.status === 'queued') {
-			progressLabel = 'Na fila...';
+			progressLabel = queuedModelIds.length > 0 ? `Na fila (${queuedModelIds.length} restante${queuedModelIds.length === 1 ? '' : 's'})...` : 'Na fila...';
 		} else if (state.status === 'cancelling') {
 			progressLabel = 'Cancelando e limpando arquivos...';
 		} else if (state.status === 'completed') {
@@ -142,7 +251,10 @@
 		}
 	};
 
-	const clearDownloadState = (keepSelectedId: string | null = null) => {
+	const clearDownloadState = () => {
+		if (currentEs) {
+			currentEs.close();
+		}
 		downloading = false;
 		cancelling = false;
 		progress = 0;
@@ -150,8 +262,20 @@
 		currentTaskId = null;
 		downloadingModelId = null;
 		downloadingModelName = '';
-		selectedId = keepSelectedId;
 		currentEs = null;
+		dismissDownloadProgressToast();
+	};
+
+	const startNextQueuedDownload = async () => {
+		const nextId = queuedModelIds.find((id) => {
+			const entry = catalog.find((model) => model.id === id);
+			return entry && !entry.installed;
+		});
+
+		queuedModelIds = nextId ? queuedModelIds.filter((id) => id !== nextId) : [];
+		if (!nextId) return;
+
+		await startSingleDownload(nextId);
 	};
 
 	const attachToDownload = (taskId: string, initialState?: NeveDownloadState | null) => {
@@ -179,24 +303,31 @@
 			taskId,
 			applyDownloadState,
 			async (state) => {
-				const name = modelNameFor(state.model_id ?? downloadingModelId);
-				clearDownloadState(null);
+				const completedId = state.model_id ?? downloadingModelId;
+				const name = modelNameFor(completedId);
+				clearDownloadState();
+				removeSelection(completedId);
+
 				if (state.message === 'Já instalado') {
 					toast.info(`${name}: já instalado`);
 				} else {
 					toast.success(`${name} baixado com sucesso`);
 				}
+
 				await loadCatalog();
+				models.set(await getModels(localStorage.token, null, false, true));
+				await startNextQueuedDownload();
 			},
 			(err: any) => {
-				const retryId = downloadingModelId;
-				clearDownloadState(retryId);
+				queuedModelIds = [];
+				clearDownloadState();
 				toast.error(normalizeLlamaCppErrorMessage(err, 'Falha no download'));
 			},
 			async (state) => {
+				queuedModelIds = [];
 				const retryId = state.model_id ?? downloadingModelId;
 				const name = modelNameFor(retryId);
-				clearDownloadState(retryId ?? null);
+				clearDownloadState();
 				toast.info(`${name}: download cancelado e arquivos parciais removidos`);
 				await loadCatalog();
 			}
@@ -236,6 +367,12 @@
 		loading = false;
 	};
 
+	$: selectedDownloadItems = catalog.filter((item) => selectedIds.has(item.id) && !item.installed);
+	$: selectedDownloadCount = selectedDownloadItems.length;
+	$: selectedDownloadSizeLabel = formatTotalSize(
+		selectedDownloadItems.reduce((total, item) => total + parseSizeLabelToGb(item.size_label), 0)
+	);
+
 	$: if (show && !wasShown) {
 		wasShown = true;
 		void hydrateModal();
@@ -243,27 +380,35 @@
 		wasShown = false;
 	}
 
-	const handleDownload = async () => {
-		if (!selectedId || downloading) return;
-		const entry = catalog.find((m) => m.id === selectedId);
+	$: if (downloading && !show && !modalBlockersOpen && downloadingModelName) {
+		showDownloadProgressToast(downloadingModelName, progress, progressLabel);
+	} else {
+		dismissDownloadProgressToast();
+	}
+
+	async function startSingleDownload(modelId: string) {
+		const entry = catalog.find((m) => m.id === modelId);
 		if (!entry) return;
+
 		downloading = true;
 		cancelling = false;
 		downloadingModelId = entry.id;
 		downloadingModelName = entry.name;
 		progress = 0;
 		progressLabel = 'Conectando...';
+
 		try {
 			const activeDownload = await getActiveNeveDownload(localStorage.token);
 			if (activeDownload?.task_id) {
 				attachToDownload(activeDownload.task_id, activeDownload);
 				if (activeDownload.model_id !== entry.id) {
+					queuedModelIds = [];
 					toast.info('Já existe um download de modelo em andamento');
 				}
 				return;
 			}
 
-			const taskId = await startNeveDownload(localStorage.token, selectedId);
+			const taskId = await startNeveDownload(localStorage.token, modelId);
 			attachToDownload(taskId, {
 				task_id: taskId,
 				model_id: entry.id,
@@ -272,22 +417,33 @@
 				progress: 0
 			});
 		} catch (e: any) {
-			clearDownloadState(selectedId);
+			queuedModelIds = [];
+			clearDownloadState();
 			toast.error(normalizeLlamaCppErrorMessage(e, 'Falha ao iniciar download'));
 		}
+	}
+
+	const handleDownload = async () => {
+		if (downloading || loading) return;
+
+		const targets = getSelectableModels().map((item) => item.id);
+		if (targets.length === 0) return;
+
+		queuedModelIds = targets.slice(1);
+		await startSingleDownload(targets[0]);
 	};
 
 	const handleCancelDownload = async () => {
 		if (!currentTaskId || !downloading || cancelling) return;
 
 		cancelling = true;
+		queuedModelIds = [];
 		progressLabel = 'Cancelando e limpando arquivos...';
 		try {
 			const state = await cancelNeveDownload(localStorage.token, currentTaskId);
 			applyDownloadState(state);
 			if (state.status === 'cancelled') {
-				const retryId = state.model_id ?? downloadingModelId;
-				clearDownloadState(retryId ?? null);
+				clearDownloadState();
 				await loadCatalog();
 			}
 		} catch (e: any) {
@@ -296,15 +452,26 @@
 		}
 	};
 
+	const requestUninstall = (item: NeveCatalogModel) => {
+		if (!item.installed || downloading || uninstallingModelId) return;
+		uninstallTarget = item;
+		showUninstallConfirm = true;
+	};
+
+	const confirmUninstall = async () => {
+		if (!uninstallTarget) return;
+		const target = uninstallTarget;
+		uninstallTarget = null;
+		await handleUninstall(target);
+	};
+
 	const handleUninstall = async (item: NeveCatalogModel) => {
 		if (!item.installed || downloading || uninstallingModelId) return;
 
 		uninstallingModelId = item.id;
 		try {
 			await deleteNeveCatalogModel(localStorage.token, item.id);
-			if (selectedId === item.id) {
-				selectedId = null;
-			}
+			removeSelection(item.id);
 			await loadCatalog();
 			models.set(await getModels(localStorage.token, null, false, true));
 			toast.success(`${item.name} desinstalado`);
@@ -315,15 +482,31 @@
 		}
 	};
 
+	onMount(() => {
+		syncModalBlockers();
+		if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
+			modalObserver = new MutationObserver(syncModalBlockers);
+			modalObserver.observe(document.body, {
+				attributes: true,
+				attributeFilter: ['aria-hidden', 'class', 'style'],
+				childList: true,
+				subtree: true
+			});
+		}
+	});
+
 	onDestroy(() => {
+		modalObserver?.disconnect();
+		modalObserver = null;
 		if (currentEs) {
 			currentEs.close();
 			currentEs = null;
 		}
+		dismissDownloadProgressToast();
 	});
 </script>
 
-<Modal bind:show size="w-[24rem]" keepMounted>
+<Modal bind:show size="w-[40rem]" keepMounted>
 	<div>
 		<div
 			class="flex justify-between dark:text-gray-300 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20"
@@ -340,7 +523,7 @@
 		</div>
 
 		<div class="flex flex-col w-full px-5 pt-4 pb-4 dark:text-gray-200">
-			<div class="flex h-[20.75rem] max-h-[20.75rem] snap-y snap-mandatory flex-col gap-1 overflow-y-auto pr-1">
+			<div class="flex h-[26.15rem] max-h-[26.15rem] snap-y snap-mandatory flex-col gap-1 overflow-y-auto pr-1">
 				{#if loading && catalog.length === 0}
 					<div class="flex h-full items-center justify-center">
 						<Spinner className="size-5" />
@@ -362,134 +545,93 @@
 					</div>
 				{:else}
 					{#each catalog as item (item.id)}
-					<label
-						class="relative flex h-[3.25rem] shrink-0 snap-start items-center gap-3 px-3 rounded-lg transition border {item.installed
-							? 'opacity-60 cursor-default border-transparent'
-							: selectedId === item.id
-							? `${downloading ? 'cursor-default' : 'cursor-pointer'} border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-850`
-							: 'cursor-pointer border-transparent hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
-					>
-						<input
-							type="radio"
-							name="neve-model"
-							class="sr-only"
-							value={item.id}
-							bind:group={selectedId}
-							disabled={downloading || item.installed}
-						/>
-						<img
-							src="{NEVEAI_BASE_URL}/static/favicon.png"
-							alt=""
-							class="size-7 rounded-full object-cover shrink-0"
-						/>
-						<div class="flex-1 min-w-0 self-center">
-							<div class="w-full text-left">
-								<div class="flex items-center gap-1.5 flex-wrap">
-									<span class="text-sm font-semibold line-clamp-1">
+						{@const selected = selectedIds.has(item.id)}
+						{@const isCurrentDownload = downloading && downloadingModelId === item.id}
+						<div
+							class="relative flex h-[4.15rem] shrink-0 snap-start items-center gap-3 rounded-lg px-3 transition border {item.installed
+								? 'opacity-70 border-transparent'
+								: selected
+								? `${downloading ? 'cursor-default' : ''} border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-850`
+								: 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
+						>
+							<button
+								type="button"
+								class="mr-2 flex size-5 shrink-0 items-center justify-center rounded-full border transition {selected
+									? 'border-black bg-black text-white dark:border-white dark:bg-white dark:text-black'
+									: 'border-gray-300 bg-white text-transparent dark:border-gray-700 dark:bg-gray-900'} {item.installed || downloading ? 'cursor-default opacity-50' : 'cursor-pointer hover:border-gray-500 dark:hover:border-gray-500'}"
+								disabled={item.installed || downloading}
+								aria-label={selected ? `Remover ${item.name} da seleção` : `Selecionar ${item.name}`}
+								aria-pressed={selected}
+								on:click|stopPropagation={() => toggleSelection(item)}
+							>
+								{#if selected}
+									<svg class="size-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+										<path d="M4.5 10.5 8 14l7.5-8" />
+									</svg>
+								{/if}
+							</button>
+
+							<img
+								src="{NEVEAI_BASE_URL}/static/favicon.png"
+								alt=""
+								class="size-8 rounded-full object-cover shrink-0"
+							/>
+
+							<div class="min-w-0 flex-1 self-center">
+								<div class="flex min-w-0 items-center gap-1.5">
+									<span class="shrink-0 text-sm font-semibold leading-none">
 										{item.name}
 									</span>
-								</div>
-								{#if item.size_label}
-									<div
-										class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400"
-									>
-										<span class="line-clamp-1">{item.size_label}</span>
+									<div class="flex min-w-0 flex-wrap items-center gap-1">
+										{#each modelBadges[item.id] ?? [] as badge}
+											<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[10px] font-medium leading-none text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+												{badge}
+											</span>
+										{/each}
 									</div>
+								</div>
+								<div
+									class="mt-1 text-gray-500 dark:text-gray-400 line-clamp-1"
+									style="font-size: 14px !important; line-height: 1.08rem; transform: scale(1.04); transform-origin: left center; width: calc(100% / 1.04);"
+								>
+									{item.description}
+								</div>
+							</div>
+
+							<div class="flex w-24 shrink-0 items-center justify-end">
+								{#if item.installed}
+									<button
+										type="button"
+										class="group inline-flex h-7 w-full cursor-pointer items-center justify-center px-2 text-center text-xs font-medium text-gray-500 transition hover:text-gray-900 disabled:cursor-default disabled:opacity-60 dark:text-gray-400 dark:hover:text-gray-100"
+										disabled={uninstallingModelId === item.id}
+										title="Desinstalar"
+										aria-label="Desinstalar {item.name}"
+										on:click|preventDefault|stopPropagation={() => requestUninstall(item)}
+									>
+										{#if uninstallingModelId === item.id}
+											<Spinner className="size-3.5" />
+										{:else}
+											<span class="group-hover:hidden">Instalado</span>
+											<span class="hidden group-hover:block">Desinstalar</span>
+										{/if}
+									</button>
+								{:else if isCurrentDownload}
+									<span
+										class="inline-flex h-7 w-full items-center justify-center rounded-md bg-gray-850 px-2 text-center text-xs font-medium text-gray-200 shadow-xs dark:bg-gray-850 dark:text-gray-200"
+									>
+										Baixando
+									</span>
 								{/if}
 							</div>
 						</div>
-						<div class="flex shrink-0 items-center gap-2">
-							{#if item.installed}
-								<button
-									type="button"
-									class="group inline-flex h-7 w-24 cursor-pointer items-center justify-center rounded-md bg-gray-850 px-2 text-center text-xs font-medium text-gray-200 shadow-xs transition hover:bg-gray-800 hover:text-white disabled:cursor-default disabled:opacity-60 dark:bg-gray-850 dark:text-gray-200 dark:hover:bg-gray-800 dark:hover:text-white"
-									disabled={uninstallingModelId === item.id}
-									title="Desinstalar"
-									aria-label="Desinstalar {item.name}"
-									on:click|preventDefault|stopPropagation={() => handleUninstall(item)}
-								>
-									{#if uninstallingModelId === item.id}
-										<Spinner className="size-3.5" />
-									{:else}
-										<span class="group-hover:hidden">Instalado</span>
-										<span class="hidden group-hover:block">
-											<GarbageBin className="size-4" strokeWidth="1.8" />
-										</span>
-									{/if}
-								</button>
-							{:else if downloading && downloadingModelId === item.id}
-								<span
-									class="inline-flex h-7 w-24 items-center justify-center rounded-md bg-gray-850 px-2 text-center text-xs font-medium text-gray-200 shadow-xs dark:bg-gray-850 dark:text-gray-200"
-								>
-									Baixando
-								</span>
-							{/if}
-							{#if !item.installed && !(downloading && downloadingModelId === item.id) && item.hardware_label}
-								<span
-									class="inline-flex h-7 w-24 items-center justify-center gap-1.5 rounded-md bg-gray-850 px-2 text-center text-xs font-medium text-gray-200 shadow-xs dark:bg-gray-850 dark:text-gray-200"
-									title={item.hardware_kind === 'cpu' ? 'CPU' : 'VRAM'}
-								>
-									{#if item.hardware_kind === 'cpu'}
-										<svg
-											class="size-4 shrink-0"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="1.8"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											aria-hidden="true"
-										>
-											<rect x="7" y="7" width="10" height="10" rx="2" />
-											<path d="M9.5 3.5v3" />
-											<path d="M14.5 3.5v3" />
-											<path d="M9.5 17.5v3" />
-											<path d="M14.5 17.5v3" />
-											<path d="M3.5 9.5h3" />
-											<path d="M3.5 14.5h3" />
-											<path d="M17.5 9.5h3" />
-											<path d="M17.5 14.5h3" />
-										</svg>
-									{:else}
-										<svg
-											class="h-[1.1rem] w-6 shrink-0"
-											viewBox="0 0 32 22"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="1.8"
-											stroke-linecap="round"
-											stroke-linejoin="round"
-											aria-hidden="true"
-										>
-											<rect x="3" y="5" width="22" height="12" rx="2.5" />
-											<path d="M25 8h4v6h-4" />
-											<circle cx="10" cy="11" r="3" />
-											<circle cx="18" cy="11" r="3" />
-											<path d="M10 8v6" />
-											<path d="M7 11h6" />
-											<path d="M18 8v6" />
-											<path d="M15 11h6" />
-											<path d="M6 17v2.5" />
-											<path d="M9 17v2.5" />
-											<path d="M12 17v2.5" />
-											<path d="M15 17v2.5" />
-											<path d="M6 3h8" />
-											<path d="M17 3h5" />
-										</svg>
-									{/if}
-									<span class="whitespace-nowrap leading-none">{item.hardware_label}</span>
-								</span>
-							{/if}
-						</div>
-					</label>
 					{/each}
 				{/if}
 			</div>
 
 			{#if downloading}
-				<div class="mt-4">
+				<div class="mx-auto mt-6 w-[92%]">
 					<div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
-						<span>{progressLabel}</span>
+						<span class="line-clamp-1">{progressLabel}</span>
 						<span>{Math.round(progress * 100)}%</span>
 					</div>
 					<div class="w-full h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
@@ -501,8 +643,9 @@
 				</div>
 			{/if}
 
-			<div class="flex justify-end gap-2 pt-4">
+			<div class="flex items-center gap-2 pt-4">
 				{#if downloading}
+					<div class="flex-1"></div>
 					<button
 						class="px-4 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-850 transition rounded-lg disabled:opacity-40 flex items-center gap-2"
 						disabled={cancelling}
@@ -514,9 +657,41 @@
 						{$i18n.t(cancelling ? 'Cancelando...' : 'Cancelar')}
 					</button>
 				{:else}
+					<div class="min-w-0 flex-1">
+						{#if selectedDownloadCount > 0}
+							<div class="flex min-w-0 items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+								<span class="whitespace-nowrap">
+									{selectedDownloadCount}
+									{selectedDownloadCount === 1 ? 'item selecionado' : 'itens selecionados'}
+								</span>
+								<span class="whitespace-nowrap font-medium text-gray-600 dark:text-gray-300">
+									{selectedDownloadSizeLabel}
+								</span>
+							</div>
+						{/if}
+					</div>
+					{#if false}
+						<div class="hidden">
+							<button
+								type="button"
+								class="px-1 text-sm leading-none text-gray-400 transition hover:text-gray-900 dark:text-gray-500 dark:hover:text-gray-100"
+								aria-label="Limpar seleÃ§Ã£o"
+								on:click={() => {}}
+							>
+								-
+							</button>
+							<span class="whitespace-nowrap">
+								{selectedDownloadCount}
+								{selectedDownloadCount === 1 ? 'item selecionado' : 'itens selecionados'}
+							</span>
+							<span class="whitespace-nowrap font-medium text-gray-600 dark:text-gray-300">
+								{selectedDownloadSizeLabel}
+							</span>
+						</div>
+					{/if}
 					<button
 						class="px-4 py-1.5 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg disabled:opacity-40 flex items-center gap-2"
-						disabled={!selectedId || loading}
+						disabled={selectedDownloadCount === 0 || loading}
 						on:click={handleDownload}
 					>
 						{$i18n.t('Baixar')}
@@ -526,3 +701,15 @@
 		</div>
 	</div>
 </Modal>
+
+<ConfirmDialog
+	bind:show={showUninstallConfirm}
+	title="Desinstalar modelo?"
+	message={`Tem certeza que deseja desinstalar ${uninstallTarget?.name ?? 'este modelo'}?`}
+	confirmLabel="Confirmar"
+	cancelLabel="Cancelar"
+	onConfirm={confirmUninstall}
+	on:cancel={() => {
+		uninstallTarget = null;
+	}}
+/>

@@ -806,15 +806,10 @@ if ($detected.Name) {
 }
 $ctl.CmbBackend.SelectedIndex = $detected.Backend
 $ctl.CmbVram.SelectedIndex    = 0
-$ctl.ChkInstallPython.IsChecked = $false
+$ctl.ChkInstallPython.IsChecked = (-not $pyOk)
 
-# Se faltar Python, o instalador pode baixar o Python 3.11 quando a opcao estiver marcada.
+# Se faltar Python, o instalador ja deixa a instalacao automatica marcada.
 # Node.js pode ser baixado em modo portatil pelo instalador.
-if (-not $pyOk) {
-    [System.Windows.MessageBox]::Show(
-        "Python 3.11/3.12 válido não foi encontrado.`n`nMarque a opção `"Instalar Python 3.11`" para o instalador baixar e configurar o Python antes da instalação.",
-        'Pré-requisitos', 'OK', 'Warning') | Out-Null
-}
 
 # =============================================================================
 # Funcoes auxiliares de UI (chamadas via Dispatcher)

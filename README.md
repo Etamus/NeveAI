@@ -32,7 +32,7 @@
 ### Pré-requisitos
 
 - **Python 3.11 ou 3.12** instalado e no PATH
-- **Node.js 18+** instalado e no PATH
+- **Node.js 18+** instalado e no PATH (Opcional)
 - Conexão com a internet (apenas durante a instalação)
 
 ### Executar o instalador

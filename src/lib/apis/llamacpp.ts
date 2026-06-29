@@ -244,6 +244,10 @@ export const unloadLocalModel = async (token: string = '', model_id: string): Pr
 
 	if (!res.ok) {
 		const err = await res.json().catch(() => ({ detail: 'Falha ao descarregar modelo' }));
+		const detail = `${err.detail || ''}`.toLowerCase();
+		if (res.status === 404 && detail.includes('model not loaded')) {
+			return { id: model_id, status: 'unloaded' };
+		}
 		throw new Error(err.detail || 'Falha ao descarregar modelo');
 	}
 
@@ -259,6 +263,7 @@ export interface NeveCatalogModel {
 	name: string;
 	repo: string;
 	installed: boolean;
+	description?: string;
 	size_label?: string;
 	hardware_label?: string;
 	hardware_kind?: 'gpu' | 'cpu';

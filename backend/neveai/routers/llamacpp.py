@@ -642,7 +642,7 @@ class LocalModelManager:
                 raise KeyError(f"Model not loaded: {model_id}")
 
             await self._kill_server(model_id)
-            del self._loaded[model_id]
+            self._loaded.pop(model_id, None)
             log.info(f"Model unloaded: {model_id}")
             return {"id": model_id, "status": "unloaded"}
 

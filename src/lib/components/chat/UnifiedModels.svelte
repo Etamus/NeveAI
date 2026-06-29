@@ -629,7 +629,12 @@
 			collapseAnimationTimer = null;
 		}, 240);
 	};
-	const getCacheChipLabel = (cacheType?: string | null) => (cacheType || 'f16').toUpperCase();
+	const getCacheChipLabel = (cacheType?: string | null) => {
+		const normalized = (cacheType || 'f16').toLowerCase();
+		if (normalized === 'f16') return 'FP16';
+		if (normalized === 'f32') return 'FP32';
+		return normalized.toUpperCase();
+	};
 	const getSpeculativeChipLabel = (speculativeDecoding?: string | null) => {
 		if (speculativeDecoding === 'low') return 'Moderado';
 		if (speculativeDecoding === 'off') return 'Desligado';
@@ -1246,7 +1251,7 @@
 
 			{#if loadModalStep === 'context'}
 				<p class="text-sm font-semibold text-gray-900 dark:text-white">Tamanho do Contexto</p>
-				<div class="flex flex-col gap-1.5 max-h-72 overflow-y-auto scrollbar-none">
+				<div class="flex flex-col gap-1.5 max-h-80 overflow-y-auto scrollbar-none">
 					{#each LOCAL_MODEL_CONTEXT_OPTIONS as sz}
 						<button
 							class="flex items-center justify-between px-3 py-2 rounded-lg text-xs text-left transition {contextModalSize === sz ? 'bg-black text-white dark:bg-white dark:text-black' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
@@ -1378,7 +1383,7 @@
 {#snippet modelRow(item, isHighlighted)}
 	{@const gm = item.gguf}
 	{@const am = item.admin}
-	{@const isUnloadVisualProcessing = gm && isHighlighted && (visualUnloadModels.has(gm.filename) || reopenedUnloadVisualModels.has(gm.filename))}
+	{@const isUnloadVisualProcessing = gm && isHighlighted && (isLocalModelUnloading(gm.filename) || visualUnloadModels.has(gm.filename) || reopenedUnloadVisualModels.has(gm.filename))}
 	{@const isLoadProcessing = gm && localModelActions[gm.filename] === 'load' && loadingModels.has(gm.filename)}
 	{@const isProcessing = gm && (isLoadProcessing || isUnloadVisualProcessing)}
 	{@const rowHeight = HIGHLIGHTED_MODEL_ROW_HEIGHT_PX}
@@ -1388,7 +1393,7 @@
 		id={am ? `model-item-${am.id}` : undefined}
 	>
 		<div
-			class="flex h-full min-w-0 gap-3 w-full overflow-hidden px-2 py-2 rounded-2xl transition-colors cursor-pointer {(gm?.is_loaded || isProcessing) ? 'border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30' : 'hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
+			class="flex h-full min-w-0 gap-3 w-full overflow-hidden px-2 py-2 rounded-lg transition-colors cursor-pointer {(gm?.is_loaded || isProcessing) ? 'border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30' : 'hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
 			on:click={(e) => {
 				if (am && (am?.is_active ?? true) && !(e.target as HTMLElement).closest('button') && !(e.target as HTMLElement).closest('[data-melt-dropdown-menu]')) {
 					selectedModelId = am.id;
