@@ -56,6 +56,8 @@
 	let dragged = false;
 	let minSize = 0;
 	let paneReady = false;
+	const CONTROLS_MIN_WIDTH_PX = 350;
+	const CHAT_MIN_WIDTH_WITH_ARTIFACTS_PX = 520;
 
 	// Tab state for Controls+Files panel
 	let activeTab = savedTab;
@@ -66,6 +68,22 @@
 
 	$: hasMessages = history?.messages && Object.keys(history.messages).length > 0;
 
+	const getPaneBounds = (containerWidth: number) => {
+		const min = Math.floor((CONTROLS_MIN_WIDTH_PX / containerWidth) * 100);
+		const max = $showArtifacts
+			? Math.max(min, 100 - Math.ceil((CHAT_MIN_WIDTH_WITH_ARTIFACTS_PX / containerWidth) * 100))
+			: 100;
+
+		return { min, max };
+	};
+
+	const getCurrentPaneBounds = () => {
+		const container = document.getElementById('chat-container') as HTMLElement | null;
+		if (!container) return { min: minSize, max: 100 };
+
+		return getPaneBounds(container.clientWidth);
+	};
+
 	$: showFilesTab =
 		!!$selectedTerminalId ||
 		(codeInterpreterEnabled && $config?.code?.interpreter_engine !== 'jupyter');
@@ -73,6 +91,11 @@
 	// Auto-close if nothing to show
 	$: if (!showFilesTab && !$showArtifacts && !$showEmbeds && !$showCallOverlay) {
 		showControls.set(false);
+	}
+
+	$: if (largeScreen && $showControls && $showArtifacts && pane && pane.isExpanded()) {
+		const { max } = getCurrentPaneBounds();
+		if (pane.getSize() > max) pane.resize(max);
 	}
 
 	// Auto-switch to Files tab when display_file is triggered
@@ -131,7 +154,8 @@
 
 	export const openPane = () => {
 		// Always open at 50% of the chat container width
-		const target = Math.max(50, minSize);
+		const { min, max } = getCurrentPaneBounds();
+		const target = Math.min(Math.max(50, min), max);
 		pane.resize(target);
 	};
 
@@ -187,19 +211,23 @@
 			const container = document.getElementById('chat-container') as HTMLElement;
 			if (!container) return;
 
-			minSize = Math.floor((350 / container.clientWidth) * 100);
+			minSize = getPaneBounds(container.clientWidth).min;
 			resizeObserver = new ResizeObserver((entries) => {
 				for (let entry of entries) {
 					const width = entry.contentRect.width;
-					minSize = Math.floor((350 / width) * 100);
+					const { min, max } = getPaneBounds(width);
+					minSize = min;
 					if ($showControls) {
-						if (pane && pane.isExpanded() && pane.getSize() < minSize) {
-							pane.resize(minSize);
+						if (pane && pane.isExpanded() && pane.getSize() < min) {
+							pane.resize(min);
+						} else if (pane && pane.isExpanded() && pane.getSize() > max) {
+							pane.resize(max);
 						} else {
 							let size = Math.floor(
 								(parseInt(localStorage?.chatControlsSize) / container.clientWidth) * 100
 							);
-							if (size < minSize && pane) pane.resize(minSize);
+							if (size < min && pane) pane.resize(min);
+							if (size > max && pane) pane.resize(max);
 						}
 					}
 				}
@@ -309,9 +337,21 @@
 		class="z-10 bg-white dark:bg-gray-850 border-l border-gray-200/70 dark:border-gray-700/50 shadow-[-4px_0_16px_0_rgba(0,0,0,0.04)] dark:shadow-[-4px_0_16px_0_rgba(0,0,0,0.20)]"
 		onResize={(size) => {
 			if ($showControls && pane.isExpanded()) {
-				if (size < minSize) pane.resize(minSize);
-				if (size < minSize) {
+				const { min, max } = getCurrentPaneBounds();
+
+				if (size < min) {
+					pane.resize(min);
 					localStorage.chatControlsSize = 0;
+					return;
+				}
+
+				if (size > max) {
+					pane.resize(max);
+					const container = document.getElementById('chat-container');
+					if (container) {
+						localStorage.chatControlsSize = Math.floor((max / 100) * container.clientWidth);
+					}
+					return;
 				} else {
 					const container = document.getElementById('chat-container');
 					localStorage.chatControlsSize = Math.floor((size / 100) * container.clientWidth);

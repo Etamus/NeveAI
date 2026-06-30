@@ -32,7 +32,7 @@
 		false)
 			? 'focus:outline focus:outline-2 focus:outline-gray-800 focus:dark:outline-gray-200'
 			: 'outline outline-1 outline-gray-100 dark:outline-gray-800'} {state
-			? ' bg-emerald-500 dark:bg-emerald-700'
+			? ' bg-blue-500 dark:bg-blue-600'
 			: 'bg-gray-200 dark:bg-transparent'}"
 		onCheckedChange={async () => {
 			await tick();
@@ -44,4 +44,3 @@
 		/>
 	</Switch.Root>
 </Tooltip>
-

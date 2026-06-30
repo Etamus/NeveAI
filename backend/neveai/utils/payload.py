@@ -76,6 +76,7 @@ def remove_neveai_params(params: dict) -> dict:
         "stream_delta_chunk_size": int,
         "function_calling": str,
         "reasoning_tags": list,
+        "reasoning_extended": bool,
         "system": str,
     }
 

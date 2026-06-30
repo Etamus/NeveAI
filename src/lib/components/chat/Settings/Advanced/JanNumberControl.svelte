@@ -3,8 +3,17 @@
 	export let min: number = 0;
 	export let max: number = 1;
 	export let step: number = 0.05;
+	export let disabled = false;
+
+	$: if (value !== null && value !== undefined) {
+		const numericValue = Number(value);
+		if (Number.isFinite(numericValue) && numericValue > max) {
+			value = max;
+		}
+	}
 
 	const adjust = (delta: number) => {
+		if (disabled) return;
 		const decimals = (step.toString().split('.')[1] || '').length;
 		let newVal = Number((value + delta).toFixed(decimals));
 		newVal = Math.max(min, Math.min(max, newVal));
@@ -13,13 +22,13 @@
 </script>
 
 <div
-	class="flex items-center overflow-hidden rounded-md border border-gray-200 dark:border-gray-700 divide-x divide-gray-200 dark:divide-gray-700 shrink-0"
+	class="flex items-center overflow-hidden rounded-md border border-gray-200 dark:border-gray-700 divide-x divide-gray-200 dark:divide-gray-700 shrink-0 {disabled ? 'opacity-60' : ''}"
 >
 	<button
 		type="button"
 		class="h-7 w-6 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition disabled:opacity-30"
 		on:click={() => adjust(-step)}
-		disabled={value <= min}
+		disabled={disabled || value <= min}
 		aria-label="Decrease"
 	>
 		<svg
@@ -41,12 +50,13 @@
 		{min}
 		{max}
 		{step}
+		{disabled}
 	/>
 	<button
 		type="button"
 		class="h-7 w-6 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition disabled:opacity-30"
 		on:click={() => adjust(step)}
-		disabled={value >= max}
+		disabled={disabled || value >= max}
 		aria-label="Increase"
 	>
 		<svg

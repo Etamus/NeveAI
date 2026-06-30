@@ -168,6 +168,7 @@
 	let stableDiffusionStandbyModel: LocalModel | null = null;
 	let restoringStableDiffusionStandbyModel = false;
 	let thinkingEnabled = true;
+	let thinkingExtendedEnabled = true;
 
 	// Sincronizar toggle do chat com a store — controla auto-show de artifacts
 	$: chatCodeExecutionEnabled.set(codeExecutionEnabled);
@@ -216,6 +217,19 @@
 			cancelAnimationFrame(_flushRAF);
 			_flushRAF = null;
 		}
+	};
+
+	const normalizeContextSizeErrorMessage = (message: unknown) => {
+		const text = `${message ?? ''}`;
+		const lower = text.toLowerCase();
+		if (
+			lower.includes('exceed_context_size_error') ||
+			lower.includes('exceeds the available context size') ||
+			(lower.includes('n_prompt_tokens') && lower.includes('n_ctx'))
+		) {
+			return 'A solicitação excede a quantidade de tokens disponíveis. Aumente e tente novamente.';
+		}
+		return text;
 	};
 
 	let chat = null;
@@ -461,6 +475,7 @@
 						codeInterpreterEnabled = input.codeInterpreterEnabled;
 						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
 						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
+						thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
 					}
 				} catch (e) {}
 			}
@@ -760,6 +775,9 @@
 						}
 					}, 100);
 				} else if (type === 'chat:message:error') {
+					if (typeof data?.error?.content === 'string') {
+						data.error.content = normalizeContextSizeErrorMessage(data.error.content);
+					}
 					message.error = data.error;
 				} else if (type === 'chat:message:favorite') {
 					// Update message favorite status
@@ -1023,6 +1041,7 @@
 						codeInterpreterEnabled = input.codeInterpreterEnabled;
 						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
 						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
+						thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
 					}
 				} catch (e) {}
 			}
@@ -2846,6 +2865,14 @@
 				params: {
 					...$settings?.params,
 					...params,
+					...(!thinkingExtendedEnabled && canCurrentModelsToggleReasoning()
+						? {
+								temperature: 0.5,
+								min_p: 0.1,
+								dry_multiplier: 0.1,
+								reasoning_extended: false
+							}
+						: {}),
 					stop: getStopTokens(),
 					...(!thinkingEnabled && canCurrentModelsToggleReasoning() ? { no_think: true } : {})
 				},
@@ -2916,6 +2943,7 @@
 			if (typeof errorMessage === 'object') {
 				errorMessage = $i18n.t(`Uh-oh! There was an issue with the response.`);
 			}
+			errorMessage = normalizeContextSizeErrorMessage(errorMessage);
 
 			toast.error(`${errorMessage}`);
 			responseMessage.error = {
@@ -2957,22 +2985,20 @@
 		console.error(innerError);
 		if ('detail' in innerError) {
 			// FastAPI error
-			toast.error(innerError.detail);
 			errorMessage = innerError.detail;
 		} else if ('error' in innerError) {
 			// OpenAI error
 			if ('message' in innerError.error) {
-				toast.error(innerError.error.message);
 				errorMessage = innerError.error.message;
 			} else {
-				toast.error(innerError.error);
 				errorMessage = innerError.error;
 			}
 		} else if ('message' in innerError) {
 			// OpenAI error
-			toast.error(innerError.message);
 			errorMessage = innerError.message;
 		}
+		errorMessage = normalizeContextSizeErrorMessage(errorMessage);
+		toast.error(errorMessage);
 
 		responseMessage.error = {
 			content: $i18n.t(`Uh-oh! There was an issue with the response.`) + '\n' + errorMessage
@@ -3470,7 +3496,7 @@
 			{/if}
 
 			<PaneGroup direction="horizontal" class="w-full h-full">
-				<Pane defaultSize={50} minSize={30} class="h-full flex relative max-w-full flex-col">
+				<Pane defaultSize={50} minSize={$showArtifacts ? 38 : 30} class="h-full flex relative max-w-full flex-col">
 					<FilesOverlay show={dragged} />
 					<Navbar
 						bind:this={navbarElement}
@@ -3586,6 +3612,7 @@
 									bind:deepSearchEnabled
 									bind:stableDiffusionEnabled
 									bind:thinkingEnabled
+									bind:thinkingExtendedEnabled
 									bind:atSelectedModel
 									bind:showCommands
 									bind:dragged
@@ -3662,6 +3689,7 @@
 									bind:deepSearchEnabled
 									bind:stableDiffusionEnabled
 									bind:thinkingEnabled
+									bind:thinkingExtendedEnabled
 									bind:atSelectedModel
 									bind:showCommands
 									bind:dragged
@@ -3692,6 +3720,7 @@
 				<ModelSettingsSheet
 					bind:params
 					bind:chatFiles
+					thinkingExtendedEnabled={thinkingExtendedEnabled || !canCurrentModelsToggleReasoning()}
 					selectedModelName={$models.find((m) => m.id === selectedModelIds?.at(0))?.name ?? selectedModelIds?.at(0) ?? ''}
 				/>
 

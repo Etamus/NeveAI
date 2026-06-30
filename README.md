@@ -205,7 +205,7 @@ Neve AI/
 - Embeddings locais (sentence-transformers) ou via API
 
 ### Outras Funcionalidades
-- **Busca na web** via DuckDuckGo (sem chave de API)
+- **Busca na web** via SearXNG (sem chave de API)
 - **Execução de código Python** via Pyodide (WebAssembly, no browser)
 - **Geração de imagens** via Neve-Image-Turbo local em Q4_0 com Encoder, stable-diffusion.cpp e 8 steps
 - **MCP (Model Context Protocol)** v1.26 para ferramentas externas

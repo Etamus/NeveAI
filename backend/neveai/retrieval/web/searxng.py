@@ -1,7 +1,9 @@
 import logging
 from typing import Optional
+from urllib.parse import urljoin
 
 import requests
+from bs4 import BeautifulSoup
 from neveai.retrieval.web.main import SearchResult, get_filtered_results
 
 log = logging.getLogger(__name__)
@@ -41,7 +43,9 @@ def search_searxng(
     language = kwargs.get("language", "all")
     safesearch = kwargs.get("safesearch", "1")
     time_range = kwargs.get("time_range", "")
-    categories = "".join(kwargs.get("categories", []))
+    categories = ",".join(kwargs.get("categories", []))
+    engines = ",".join(kwargs.get("engines", []))
+    timeout = kwargs.get("timeout", 10)
 
     params = {
         "q": query,
@@ -54,11 +58,17 @@ def search_searxng(
         "theme": "simple",
         "image_proxy": 0,
     }
+    if engines:
+        params["engines"] = engines
 
     # Legacy query format
     if "<query>" in query_url:
         # Strip all query parameters from the URL
         query_url = query_url.split("?")[0]
+    elif query_url.rstrip("/").endswith("/search"):
+        query_url = query_url.rstrip("/")
+    else:
+        query_url = urljoin(query_url.rstrip("/") + "/", "search")
 
     log.debug(f"searching {query_url}")
 
@@ -66,18 +76,39 @@ def search_searxng(
         query_url,
         headers={
             "User-Agent": "Neve AI (https://github.com/Etamus/NeveAI) RAG Bot",
-            "Accept": "text/html",
+            "Accept": "application/json, text/html",
             "Accept-Encoding": "gzip, deflate",
             "Accept-Language": "en-US,en;q=0.5",
             "Connection": "keep-alive",
         },
         params=params,
+        timeout=timeout,
     )
 
     response.raise_for_status()  # Raise an exception for HTTP errors.
 
-    json_response = response.json()
-    results = json_response.get("results", [])
+    try:
+        json_response = response.json()
+        results = json_response.get("results", [])
+    except ValueError:
+        soup = BeautifulSoup(response.text, "html.parser")
+        results = []
+        for result in soup.select("article.result"):
+            link = result.select_one("h3 a[href], a.url_header[href], a[href]")
+            href = link.get("href") if link else ""
+            if not href:
+                continue
+
+            snippet = result.select_one(".content, p")
+            results.append(
+                {
+                    "url": href,
+                    "title": link.get_text(" ", strip=True),
+                    "content": snippet.get_text(" ", strip=True) if snippet else "",
+                    "score": 0,
+                }
+            )
+
     sorted_results = sorted(results, key=lambda x: x.get("score", 0), reverse=True)
     if filter_list:
         sorted_results = get_filtered_results(sorted_results, filter_list)

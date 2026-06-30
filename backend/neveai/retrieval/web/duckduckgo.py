@@ -12,6 +12,7 @@ def search_duckduckgo(
     filter_list: Optional[list[str]] = None,
     concurrent_requests: Optional[int] = None,
     backend: Optional[str] = "auto",
+    timeout: Optional[float] = None,
 ) -> list[SearchResult]:
     """
     Search using DuckDuckGo's Search API and return the results as a list of SearchResult objects.
@@ -32,7 +33,7 @@ def search_duckduckgo(
 
     # Use the DDGS context manager to create a DDGS object
     search_results = []
-    with DDGS(timeout=15) as ddgs:
+    with DDGS(timeout=timeout or 15) as ddgs:
         if concurrent_requests:
             ddgs.threads = concurrent_requests
 
@@ -89,23 +90,23 @@ def search_duckduckgo(
 
             return merged
 
-        # Use the ddgs.text() method to perform the search
-        try:
-            search_results = collect_results("duckduckgo")
-            if len(search_results) < count:
+        candidate_backends = []
+        for candidate in [backend, "duckduckgo", "auto", "bing", "brave", "yahoo"]:
+            if candidate and candidate not in candidate_backends:
+                candidate_backends.append(candidate)
+
+        for search_backend in candidate_backends:
+            try:
                 search_results = merge_unique_results(
                     search_results,
-                    collect_results("auto"),
+                    collect_results(search_backend),
                 )
-        except RatelimitException as e:
-            log.error(f"RatelimitException: {e}")
-        except Exception as e:
-            log.error(f"DuckDuckGo search error (duckduckgo backend): {e}")
-            # Fallback: try auto backend
-            try:
-                search_results = collect_results("auto")
-            except Exception as e2:
-                log.error(f"DuckDuckGo fallback search error (auto backend): {e2}")
+                if len(search_results) >= count:
+                    break
+            except RatelimitException as e:
+                log.warning(f"DDGS rate limit ({search_backend} backend): {e}")
+            except Exception as e:
+                log.warning(f"DDGS search error ({search_backend} backend): {e}")
     if filter_list:
         search_results = get_filtered_results(search_results, filter_list)
 

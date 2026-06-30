@@ -51,6 +51,21 @@ MMPROJ_DIR.mkdir(parents=True, exist_ok=True)
 LLAMACPP_LOG_DIR = BASE_DIR / "logs" / "llamacpp"
 LLAMACPP_LOG_DIR.mkdir(parents=True, exist_ok=True)
 LLAMACPP_HEALTH_POLL_INTERVAL = 0.2
+LLAMACPP_CONTEXT_SIZE_ERROR_MESSAGE = (
+    "A solicitação excede a quantidade de tokens disponíveis. Aumente e tente novamente."
+)
+
+
+def _normalize_llamacpp_error_message(error_text: str) -> str:
+    text = str(error_text or "")
+    lower = text.lower()
+    if (
+        "exceed_context_size_error" in lower
+        or "exceeds the available context size" in lower
+        or ("n_prompt_tokens" in lower and "n_ctx" in lower)
+    ):
+        return LLAMACPP_CONTEXT_SIZE_ERROR_MESSAGE
+    return text
 
 # ---------------------------------------------------------------------------
 # mmproj compatibility helpers
@@ -917,7 +932,7 @@ class LocalModelManager:
         messages: list[dict],
         stream: bool = False,
         temperature: float = 0.7,
-        top_p: float = 0.9,
+        top_p: float = 1.0,
         top_k: int = 0,
         min_p: float = 0.0,
         max_tokens: int = -1,
@@ -1048,7 +1063,7 @@ class LocalModelManager:
             resp = await client.post("/v1/chat/completions", json=payload, timeout=300.0)
             if resp.status_code != 200:
                 log.error(f"llama-server non-stream error {resp.status_code}: {resp.text[:1000]}")
-                raise RuntimeError(f"llama-server error: {resp.status_code} - {resp.text}")
+                raise RuntimeError(_normalize_llamacpp_error_message(resp.text))
             result = resp.json()
             # Override model name to our model_id
             result["model"] = model_id
@@ -1067,6 +1082,7 @@ class LocalModelManager:
                     if resp.status_code != 200:
                         text = await resp.aread()
                         error_text = text.decode("utf-8", errors="replace")[:500]
+                        user_error = _normalize_llamacpp_error_message(error_text)
                         log.error(f"llama-server stream error {resp.status_code}: {error_text}")
                         error_data = {
                             "id": f"chatcmpl-error-{int(time.time())}",
@@ -1075,7 +1091,7 @@ class LocalModelManager:
                             "model": model_id,
                             "choices": [{
                                 "index": 0,
-                                "delta": {"content": f"\n\n[Server Error {resp.status_code}: {error_text}]"},
+                                "delta": {"content": f"\n\n{user_error}"},
                                 "finish_reason": "stop",
                             }],
                         }
@@ -1328,7 +1344,7 @@ async def local_chat_completion(request: Request):
     messages = body.get("messages", [])
     stream = body.get("stream", False)
     temperature = body.get("temperature", 0.7)
-    top_p = body.get("top_p", 0.9)
+    top_p = body.get("top_p", 1.0)
     max_tokens = body.get("max_tokens", -1)  # -1 = unlimited (bounded by n_ctx)
     stop = body.get("stop", None)
     frequency_penalty = body.get("frequency_penalty", 0.0)
@@ -1464,10 +1480,15 @@ async def generate_chat_completion(
 
     # --- Thinking/Reasoning toggle ---
     no_think = bool(form_data.get("no_think", False))
+    reasoning_extended = form_data.get("reasoning_extended", True)
+    if reasoning_extended is False or str(reasoning_extended).lower() == "false":
+        form_data["temperature"] = 0.5
+        form_data["min_p"] = 0.1
+        form_data["dry_multiplier"] = 0.1
 
     stream = form_data.get("stream", False)
     temperature = form_data.get("temperature", 0.7)
-    top_p = form_data.get("top_p", 0.9)
+    top_p = form_data.get("top_p", 1.0)
     top_k = form_data.get("top_k", 0)
     min_p = form_data.get("min_p", 0.0)
     max_tokens = form_data.get("max_tokens", -1)  # -1 = unlimited (bounded by n_ctx)
@@ -1644,7 +1665,7 @@ NEVE_CATALOG = [
         "hardware_kind": "gpu",
         "size_label": "3.9 GB",
         "description": "Modelo de uso geral e raciocínio para tarefas rápidas.",
-        "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
+        "params": {"temperature": 1, "min_p": 0.05},
         "default_feature_ids": ["web_search", "toggle_reasoning"],
     },
     {
@@ -1655,7 +1676,7 @@ NEVE_CATALOG = [
         "hardware_kind": "gpu",
         "size_label": "6.3 GB",
         "description": "Modelo de uso geral e raciocínio para tarefas variadas.",
-        "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
+        "params": {"temperature": 1, "min_p": 0.05},
         "default_feature_ids": ["toggle_reasoning"],
     },
     {
@@ -1666,7 +1687,7 @@ NEVE_CATALOG = [
         "hardware_kind": "gpu",
         "size_label": "7.9 GB",
         "description": "Modelo de visão para análise de imagens em alta precisão.",
-        "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
+        "params": {"temperature": 1, "min_p": 0.05},
         "default_feature_ids": [],
     },
     {
@@ -1677,7 +1698,7 @@ NEVE_CATALOG = [
         "hardware_kind": "gpu",
         "size_label": "8.2 GB",
         "description": "Modelo de visão e raciocínio para cenários visuais complexos.",
-        "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
+        "params": {"temperature": 0.6, "min_p": 0.05},
         "default_feature_ids": ["code_execution", "toggle_reasoning"],
     },
     {
@@ -1699,7 +1720,7 @@ NEVE_CATALOG = [
         "hardware_kind": "gpu",
         "size_label": "5.5 GB",
         "description": "Modelo de programação e raciocínio para execução em escala.",
-        "params": {"temperature": 0.7, "min_p": 0.1},
+        "params": {"temperature": 0.6, "min_p": 0.05},
         "default_feature_ids": ["code_execution", "toggle_reasoning"],
     },
     {
@@ -1710,7 +1731,7 @@ NEVE_CATALOG = [
         "hardware_kind": "gpu",
         "size_label": "16.3 GB",
         "description": "Modelo de programação e raciocínio para códigos robustos.",
-        "params": {"temperature": 0.7, "min_p": 0.1},
+        "params": {"temperature": 0.7, "min_p": 0.05},
         "default_feature_ids": ["code_execution", "toggle_reasoning"],
     },
     {
@@ -1721,7 +1742,7 @@ NEVE_CATALOG = [
         "hardware_kind": "gpu",
         "size_label": "18.2 GB",
         "description": "Modelo de programação e raciocínio para arquiteturas complexas.",
-        "params": {"temperature": 0.7, "min_p": 0.1},
+        "params": {"temperature": 0.6, "min_p": 0.05},
         "default_feature_ids": ["code_execution", "toggle_reasoning"],
     },
     {
@@ -1732,7 +1753,7 @@ NEVE_CATALOG = [
         "hardware_kind": "cpu",
         "size_label": "0.09 GB",
         "description": "Modelo de baixo consumo para eficiência extrema.",
-        "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
+        "params": {"temperature": 0.1, "min_p": 0.1, "dry_multiplier": 0.1},
         "default_feature_ids": [],
     },
     {
@@ -1743,7 +1764,7 @@ NEVE_CATALOG = [
         "hardware_kind": "cpu",
         "size_label": "0.6 GB",
         "description": "Modelo de baixo consumo para hardware limitado.",
-        "params": {"temperature": 0.6, "min_p": 0.1, "dry_multiplier": 0.5},
+        "params": {"temperature": 0.7, "min_p": 0.1, "dry_multiplier": 0.1},
         "default_feature_ids": [],
     },
 ]

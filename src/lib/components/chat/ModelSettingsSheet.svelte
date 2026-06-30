@@ -11,6 +11,11 @@
 	export let params: Record<string, any> = {};
 	export let chatFiles: any[] = [];
 	export let selectedModelName = '';
+	export let thinkingExtendedEnabled = true;
+
+	$: disabledReasoningParams = thinkingExtendedEnabled
+		? []
+		: ['temperature', 'min_p', 'dry_multiplier'];
 
 	const getOpen = (key: string, fallback = true): boolean => {
 		const v = localStorage.getItem(`chatControls.${key}`);
@@ -118,6 +123,7 @@
 								custom={true}
 								separators={true}
 								janStyle={true}
+								disabledParams={disabledReasoningParams}
 								bind:params
 							/>
 						</div>

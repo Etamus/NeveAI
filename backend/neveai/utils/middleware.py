@@ -1125,13 +1125,13 @@ def sanitize_generated_search_query(query: Any) -> str:
         return ""
 
     cleaned = html.unescape(unquote(query))
-    cleaned = re.sub(r"\s+", " ", cleaned).strip().strip("\"'`.,;:")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip().strip("\"'`.,;:?!")
 
     previous = None
     while cleaned and previous != cleaned:
         previous = cleaned
         for pattern in TRAILING_SEARCH_QUERY_ARTIFACT_PATTERNS:
-            cleaned = pattern.sub("", cleaned).strip().strip("\"'`.,;:")
+            cleaned = pattern.sub("", cleaned).strip().strip("\"'`.,;:?!")
 
     return cleaned
 
@@ -1155,6 +1155,43 @@ def sanitize_generated_search_queries(
             sanitized.append(fallback)
 
     return sanitized
+
+
+def build_primary_web_search_query(user_message: str) -> str:
+    query = sanitize_generated_search_query(user_message)
+    query = re.sub(r"\s+", " ", query).strip()
+    return query or re.sub(r"\s+", " ", str(user_message)).strip()
+
+
+def filter_web_search_queries(
+    queries: list[str],
+    primary_query: str,
+    max_queries: int,
+) -> list[str]:
+    primary_years = set(re.findall(r"\b(?:19|20)\d{2}\b", primary_query))
+    filtered = []
+    seen = set()
+
+    for query in [primary_query, *(queries or [])]:
+        cleaned = sanitize_generated_search_query(query)
+        if not cleaned:
+            continue
+
+        query_years = set(re.findall(r"\b(?:19|20)\d{2}\b", cleaned))
+        if primary_years and not query_years.issubset(primary_years):
+            continue
+
+        key = cleaned.casefold()
+        if key in seen:
+            continue
+
+        filtered.append(cleaned)
+        seen.add(key)
+
+        if len(filtered) >= max_queries:
+            break
+
+    return filtered or [primary_query]
 
 
 def process_tool_result(
@@ -1861,9 +1898,9 @@ async def chat_web_search_handler(
     event_emitter = extra_params["__event_emitter__"]
     features = extra_params.get("__features__", {}) or {}
     deep_search_enabled = bool(features.get("deep_search"))
-    deep_search_result_count = 50
-    deep_search_loaded_count = 50
-    deep_search_context_count = 25
+    deep_search_result_count = 20
+    deep_search_loaded_count = 20
+    deep_search_context_count = 10
     request.state.deep_search_enabled = deep_search_enabled
     await event_emitter(
         {
@@ -1879,41 +1916,49 @@ async def chat_web_search_handler(
 
     messages = form_data["messages"]
     user_message = get_last_user_message(messages)
+    primary_query = build_primary_web_search_query(user_message)
 
     queries = []
-    try:
-        res = await generate_queries(
-            request,
-            {
-                "model": form_data["model"],
-                "messages": messages,
-                "prompt": user_message,
-                "type": "web_search",
-                "chat_id": extra_params.get("__chat_id__"),
-            },
-            user,
-        )
-
-        response = res["choices"][0]["message"]["content"]
-
+    if deep_search_enabled:
         try:
-            bracket_start = response.find("{")
-            bracket_end = response.rfind("}") + 1
+            res = await generate_queries(
+                request,
+                {
+                    "model": form_data["model"],
+                    "messages": messages,
+                    "prompt": user_message,
+                    "type": "web_search",
+                    "chat_id": extra_params.get("__chat_id__"),
+                },
+                user,
+            )
 
-            if bracket_start == -1 or bracket_end == -1:
-                raise Exception("No JSON object found in the response")
+            response = res["choices"][0]["message"]["content"]
 
-            response = response[bracket_start:bracket_end]
-            queries = json.loads(response)
-            queries = queries.get("queries", [])
+            try:
+                bracket_start = response.find("{")
+                bracket_end = response.rfind("}") + 1
+
+                if bracket_start == -1 or bracket_end == -1:
+                    raise Exception("No JSON object found in the response")
+
+                response = response[bracket_start:bracket_end]
+                queries = json.loads(response)
+                queries = queries.get("queries", [])
+            except Exception:
+                queries = [response]
+
         except Exception as e:
-            queries = [response]
+            log.exception(e)
+            queries = [primary_query]
+    else:
+        queries = [primary_query]
 
-    except Exception as e:
-        log.exception(e)
-        queries = [user_message]
-
-    queries = sanitize_generated_search_queries(queries, user_message)
+    queries = filter_web_search_queries(
+        sanitize_generated_search_queries(queries, primary_query),
+        primary_query,
+        3 if deep_search_enabled else 1,
+    )
 
     if ENABLE_QUERIES_CACHE:
         request.state.cached_queries = queries
@@ -1955,7 +2000,7 @@ async def chat_web_search_handler(
             request,
             SearchForm(
                 queries=queries,
-                engine="duckduckgo" if deep_search_enabled else None,
+                engine="searxng" if deep_search_enabled else None,
                 result_count=deep_search_result_count if deep_search_enabled else None,
                 max_loaded_urls=deep_search_loaded_count
                 if deep_search_enabled
@@ -1964,7 +2009,7 @@ async def chat_web_search_handler(
             user=user,
         )
 
-        if results:
+        if results and results.get("status") is not False:
             files = form_data.get("files", [])
 
             if results.get("collection_names"):
@@ -2023,9 +2068,9 @@ async def chat_web_search_handler(
                     "data": {
                         "action": "web_search",
                         "deep_search": deep_search_enabled,
-                        "description": "No search results found",
+                        "description": "Nenhum resultado encontrado",
+                        "queries": queries,
                         "done": True,
-                        "error": True,
                     },
                 }
             )
@@ -2039,10 +2084,9 @@ async def chat_web_search_handler(
                 "data": {
                     "action": "web_search",
                     "deep_search": deep_search_enabled,
-                    "description": "An error occurred while searching the web",
+                    "description": "Falha ao pesquisar na web",
                     "queries": queries,
                     "done": True,
-                    "error": True,
                 },
             }
         )
@@ -2056,9 +2100,8 @@ async def chat_web_search_handler(
                     "data": {
                         "action": "web_search",
                         "deep_search": deep_search_enabled,
-                        "description": "A pesquisa na web foi concluída sem resultados.",
+                        "description": "Pesquisa concluída sem resultados",
                         "done": True,
-                        "error": True,
                     },
                 }
             )
@@ -2357,47 +2400,59 @@ async def chat_completion_files_handler(
         features.get("deep_search")
         or getattr(request.state, "deep_search_enabled", False)
     )
-    deep_search_context_count = 25
+    deep_search_context_count = 10
     sources = []
 
     if files := body.get("metadata", {}).get("files", None):
         # Check if all files are in full context mode
         all_full_context = all(item.get("context") == "full" for item in files)
 
+        user_message = get_last_user_message(body["messages"])
+        primary_query = build_primary_web_search_query(user_message)
         queries = []
         if not all_full_context:
-            try:
-                queries_response = await generate_queries(
-                    request,
-                    {
-                        "model": body["model"],
-                        "messages": body["messages"],
-                        "type": "retrieval",
-                        "chat_id": body.get("metadata", {}).get("chat_id"),
-                    },
-                    user,
-                )
-                queries_response = queries_response["choices"][0]["message"]["content"]
-
+            cached_queries = getattr(request.state, "cached_queries", None)
+            if cached_queries:
+                queries = cached_queries
+            elif deep_search_enabled:
+                queries = [primary_query]
+            else:
                 try:
-                    bracket_start = queries_response.find("{")
-                    bracket_end = queries_response.rfind("}") + 1
+                    queries_response = await generate_queries(
+                        request,
+                        {
+                            "model": body["model"],
+                            "messages": body["messages"],
+                            "type": "retrieval",
+                            "chat_id": body.get("metadata", {}).get("chat_id"),
+                        },
+                        user,
+                    )
+                    if isinstance(queries_response, list):
+                        queries = queries_response
+                    else:
+                        queries_response = queries_response["choices"][0]["message"]["content"]
 
-                    if bracket_start == -1 or bracket_end == -1:
-                        raise Exception("No JSON object found in the response")
+                        try:
+                            bracket_start = queries_response.find("{")
+                            bracket_end = queries_response.rfind("}") + 1
 
-                    queries_response = queries_response[bracket_start:bracket_end]
-                    queries_response = json.loads(queries_response)
-                except Exception as e:
-                    queries_response = {"queries": [queries_response]}
+                            if bracket_start == -1 or bracket_end == -1:
+                                raise Exception("No JSON object found in the response")
 
-                queries = queries_response.get("queries", [])
-            except:
-                pass
+                            queries_response = queries_response[bracket_start:bracket_end]
+                            queries_response = json.loads(queries_response)
+                        except Exception:
+                            queries_response = {"queries": [queries_response]}
 
-            queries = sanitize_generated_search_queries(
-                queries,
-                get_last_user_message(body["messages"]),
+                        queries = queries_response.get("queries", [])
+                except Exception:
+                    pass
+
+            queries = filter_web_search_queries(
+                sanitize_generated_search_queries(queries, primary_query),
+                primary_query,
+                3 if deep_search_enabled else 2,
             )
 
             await __event_emitter__(
@@ -2413,10 +2468,10 @@ async def chat_completion_files_handler(
             )
 
         if len(queries) == 0:
-            queries = [get_last_user_message(body["messages"])]
-            queries = sanitize_generated_search_queries(
-                queries,
-                get_last_user_message(body["messages"]),
+            queries = filter_web_search_queries(
+                sanitize_generated_search_queries([primary_query], primary_query),
+                primary_query,
+                1,
             )
 
         retrieval_k = request.app.state.config.TOP_K
@@ -2490,6 +2545,10 @@ def apply_params_to_form_data(form_data, model):
     _no_think = params.pop("no_think", False)
     if _no_think:
         form_data["no_think"] = True
+
+    _reasoning_extended = params.pop("reasoning_extended", True)
+    if _reasoning_extended is False or str(_reasoning_extended).lower() == "false":
+        form_data["reasoning_extended"] = False
 
     neveai_params = {
         "stream_response": bool,

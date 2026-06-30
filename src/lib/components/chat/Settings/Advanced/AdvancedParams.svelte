@@ -12,6 +12,12 @@
 	export let separators = false;
 	export let janStyle = false;
 	export let tooltipsEnabled = true;
+	export let disabledParams: string[] = [];
+
+	const isParamDisabled = (key: string) => disabledParams.includes(key);
+	const disabledRowClass = (key: string) =>
+		isParamDisabled(key) ? 'opacity-50 grayscale pointer-events-none select-none' : '';
+	const MAX_TOKENS_LIMIT = 262144;
 
 	const defaultParams = {
 		// Advanced - llama.cpp compatible params only
@@ -36,13 +42,19 @@
 	};
 
 	export let params = defaultParams;
+	$: if (params && (params?.max_tokens ?? null) !== null) {
+		const maxTokens = Number(params.max_tokens);
+		if (Number.isFinite(maxTokens) && maxTokens > MAX_TOKENS_LIMIT) {
+			params.max_tokens = MAX_TOKENS_LIMIT;
+		}
+	}
 	$: if (params) {
 		onChange(params);
 	}
 </script>
 <div class=" space-y-1 text-xs pb-safe-bottom">
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5">
+		<div class="flex w-full items-center justify-between py-1.5 {disabledRowClass('temperature')}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('The temperature of the model. Increasing the temperature will make the model answer more creatively.') : ""}
 				placement="top-start"
@@ -51,21 +63,22 @@
 				{#if (params?.temperature ?? null) === null}
 					<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('Temperature')}</div>
 				{:else}
-					<button type="button" class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.temperature = null; }}>{$i18n.t('Temperature')}</button>
+					<button type="button" disabled={isParamDisabled('temperature')} class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.temperature = null; }}>{$i18n.t('Temperature')}</button>
 				{/if}
 			</Tooltip>
 			{#if (params?.temperature ?? null) === null}
 				<button
 					type="button"
 					class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700"
+					disabled={isParamDisabled('temperature')}
 					on:click={() => { params.temperature = 0.8; }}
 				>{$i18n.t('Default')}</button>
 			{:else}
-				<JanNumberControl bind:value={params.temperature} min={0} max={2} step={0.05} />
+				<JanNumberControl bind:value={params.temperature} min={0} max={2} step={0.05} disabled={isParamDisabled('temperature')} />
 			{/if}
 		</div>
 	{:else}
-		<div class=" py-0.5 w-full justify-between">
+		<div class=" py-0.5 w-full justify-between {disabledRowClass('temperature')}">
 		<Tooltip
 			content={tooltipsEnabled ? $i18n.t(
 				'The temperature of the model. Increasing the temperature will make the model answer more creatively.'
@@ -80,6 +93,7 @@
 				<button
 					class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
 					type="button"
+					disabled={isParamDisabled('temperature')}
 					on:click={() => {
 						params.temperature = (params?.temperature ?? null) === null ? 0.8 : null;
 					}}
@@ -103,6 +117,7 @@
 						max="2"
 						step="0.05"
 						bind:value={params.temperature}
+						disabled={isParamDisabled('temperature')}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer bg-gray-200 dark:bg-gray-700"
 					/>
 				</div>
@@ -114,6 +129,7 @@
 						min="0"
 						max="2"
 						step="any"
+						disabled={isParamDisabled('temperature')}
 					/>
 				</div>
 			</div>
@@ -140,7 +156,7 @@
 					on:click={() => { params.max_tokens = 128; }}
 				>{$i18n.t('Default')}</button>
 			{:else}
-				<JanNumberControl bind:value={params.max_tokens} min={0} max={131072} step={128} />
+				<JanNumberControl bind:value={params.max_tokens} min={0} max={MAX_TOKENS_LIMIT} step={128} />
 			{/if}
 		</div>
 	{:else}
@@ -180,7 +196,7 @@
 						id="steps-range"
 						type="range"
 						min="-2"
-						max="131072"
+						max={MAX_TOKENS_LIMIT}
 						step="1"
 						bind:value={params.max_tokens}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer bg-gray-200 dark:bg-gray-700"
@@ -200,7 +216,7 @@
 	</div>
 	{/if}
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5">
+		<div class="flex w-full items-center justify-between py-1.5 {disabledRowClass('min_p')}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('Alternative to the top_p, and aims to ensure a balance of quality and variety. The parameter p represents the minimum probability for a token to be considered, relative to the probability of the most likely token. For example, with p=0.05 and the most likely token having a probability of 0.9, logits with a value less than 0.045 are filtered out.') : ""}
 				placement="top-start"
@@ -209,17 +225,17 @@
 				{#if (params?.min_p ?? null) === null}
 					<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('min_p')}</div>
 				{:else}
-					<button type="button" class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.min_p = null; }}>{$i18n.t('min_p')}</button>
+					<button type="button" disabled={isParamDisabled('min_p')} class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.min_p = null; }}>{$i18n.t('min_p')}</button>
 				{/if}
 			</Tooltip>
 			{#if (params?.min_p ?? null) === null}
-				<button type="button" class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700" on:click={() => { params.min_p = 0.0; }}>{$i18n.t('Default')}</button>
+				<button type="button" disabled={isParamDisabled('min_p')} class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700" on:click={() => { params.min_p = 0.0; }}>{$i18n.t('Default')}</button>
 			{:else}
-				<JanNumberControl bind:value={params.min_p} min={0} max={1} step={0.05} />
+				<JanNumberControl bind:value={params.min_p} min={0} max={1} step={0.05} disabled={isParamDisabled('min_p')} />
 			{/if}
 		</div>
 	{:else}
-		<div class=" py-0.5 w-full justify-between">
+		<div class=" py-0.5 w-full justify-between {disabledRowClass('min_p')}">
 		<Tooltip
 			content={tooltipsEnabled ? $i18n.t(
 				'Alternative to the top_p, and aims to ensure a balance of quality and variety. The parameter p represents the minimum probability for a token to be considered, relative to the probability of the most likely token. For example, with p=0.05 and the most likely token having a probability of 0.9, logits with a value less than 0.045 are filtered out.'
@@ -234,6 +250,7 @@
 				<button
 					class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
 					type="button"
+					disabled={isParamDisabled('min_p')}
 					on:click={() => {
 						params.min_p = (params?.min_p ?? null) === null ? 0.0 : null;
 					}}
@@ -257,6 +274,7 @@
 						max="1"
 						step="0.05"
 						bind:value={params.min_p}
+						disabled={isParamDisabled('min_p')}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer bg-gray-200 dark:bg-gray-700"
 					/>
 				</div>
@@ -268,6 +286,7 @@
 						min="0"
 						max="1"
 						step="any"
+						disabled={isParamDisabled('min_p')}
 					/>
 				</div>
 			</div>
@@ -423,7 +442,7 @@
 	</div>
 	{/if}
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5">
+		<div class="flex w-full items-center justify-between py-1.5 {disabledRowClass('dry_multiplier')}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('Multiplicador de penalidade de repetição DRY (Não Se Repita). 0 desativa o DRY. Valores maiores penalizam sequências repetitivas com mais intensidade. Padrão 0.') : ""}
 				placement="top-start"
@@ -432,17 +451,17 @@
 				{#if (params?.dry_multiplier ?? null) === null}
 					<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('dry_multiplier')}</div>
 				{:else}
-					<button type="button" class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.dry_multiplier = null; }}>{$i18n.t('dry_multiplier')}</button>
+					<button type="button" disabled={isParamDisabled('dry_multiplier')} class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.dry_multiplier = null; }}>{$i18n.t('dry_multiplier')}</button>
 				{/if}
 			</Tooltip>
 			{#if (params?.dry_multiplier ?? null) === null}
-				<button type="button" class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700" on:click={() => { params.dry_multiplier = 0; }}>{$i18n.t('Default')}</button>
+				<button type="button" disabled={isParamDisabled('dry_multiplier')} class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700" on:click={() => { params.dry_multiplier = 0; }}>{$i18n.t('Default')}</button>
 			{:else}
-				<JanNumberControl bind:value={params.dry_multiplier} min={0} max={3} step={0.05} />
+				<JanNumberControl bind:value={params.dry_multiplier} min={0} max={3} step={0.05} disabled={isParamDisabled('dry_multiplier')} />
 			{/if}
 		</div>
 	{:else}
-		<div class=" py-0.5 w-full justify-between">
+		<div class=" py-0.5 w-full justify-between {disabledRowClass('dry_multiplier')}">
 		<Tooltip
 			content={tooltipsEnabled ? $i18n.t(
 				'Multiplicador de penalidade de repetição DRY (Não Se Repita). 0 desativa o DRY. Valores maiores penalizam sequências repetitivas com mais intensidade. Padrão 0.'
@@ -457,6 +476,7 @@
 				<button
 					class="p-1 px-3 text-xs flex rounded transition flex-shrink-0 outline-none"
 					type="button"
+					disabled={isParamDisabled('dry_multiplier')}
 					on:click={() => {
 						params.dry_multiplier = (params?.dry_multiplier ?? null) === null ? 0 : null;
 					}}
@@ -479,6 +499,7 @@
 						max="3"
 						step="0.05"
 						bind:value={params.dry_multiplier}
+						disabled={isParamDisabled('dry_multiplier')}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer bg-gray-200 dark:bg-gray-700"
 					/>
 				</div>
@@ -490,6 +511,7 @@
 						min="0"
 						max="3"
 						step="any"
+						disabled={isParamDisabled('dry_multiplier')}
 					/>
 				</div>
 			</div>

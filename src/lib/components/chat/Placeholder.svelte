@@ -55,6 +55,7 @@
 	export let deepSearchEnabled = false;
 	export let stableDiffusionEnabled = false;
 	export let thinkingEnabled = true;
+	export let thinkingExtendedEnabled = true;
 
 	export let onUpload: Function = (e) => {};
 	export let onSelect = (e) => {};
@@ -136,6 +137,7 @@
 					bind:deepSearchEnabled
 					bind:stableDiffusionEnabled
 					bind:thinkingEnabled
+					bind:thinkingExtendedEnabled
 					bind:atSelectedModel
 					bind:showCommands
 					bind:dragged

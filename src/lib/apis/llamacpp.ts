@@ -70,6 +70,13 @@ export const normalizeLlamaCppErrorMessage = (
 		return 'Este modelo não tem suporte a Predição de tokens. Desative e tente carregar novamente.';
 	}
 	if (
+		lower.includes('exceed_context_size_error') ||
+		lower.includes('exceeds the available context size') ||
+		(lower.includes('n_prompt_tokens') && lower.includes('n_ctx'))
+	) {
+		return 'A solicitação excede a quantidade de tokens disponíveis. Aumente e tente novamente.';
+	}
+	if (
 		lower === 'failed to fetch' ||
 		lower.includes('failed to fetch') ||
 		lower.includes('load failed') ||

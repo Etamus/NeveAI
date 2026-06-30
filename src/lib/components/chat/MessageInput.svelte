@@ -73,6 +73,7 @@
 
 	import RichTextInput from '../common/RichTextInput.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
+	import Switch from '../common/Switch.svelte';
 	import FileItem from '../common/FileItem.svelte';
 	import Image from '../common/Image.svelte';
 	import Spinner from '../common/Spinner.svelte';
@@ -139,6 +140,7 @@
 	export let codeExecutionEnabled = false;
 	export let stableDiffusionEnabled = false;
 	export let thinkingEnabled = true;
+	export let thinkingExtendedEnabled = true;
 
 	let showTerminalMenu = false;
 
@@ -177,7 +179,8 @@
 		codeInterpreterEnabled,
 		codeExecutionEnabled,
 		stableDiffusionEnabled,
-		thinkingEnabled
+		thinkingEnabled,
+		thinkingExtendedEnabled
 	});
 
 	$: isCompact =
@@ -503,6 +506,7 @@
 	let loaded = false;
 	let showThinkingDropdown = false;
 	const THINKING_MODE_STORAGE_KEY = 'neveai.globalThinkingEnabled';
+	const THINKING_EXTENDED_STORAGE_KEY = 'neveai.thinkingExtendedEnabled';
 	let appliedThinkingModeKey = '';
 
 	const getGlobalThinkingEnabled = () => {
@@ -515,6 +519,18 @@
 		showThinkingDropdown = false;
 		if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
 			localStorage.setItem(THINKING_MODE_STORAGE_KEY, String(enabled));
+		}
+	};
+
+	const getThinkingExtendedEnabled = () => {
+		if (typeof window === 'undefined' || typeof localStorage === 'undefined') return true;
+		return localStorage.getItem(THINKING_EXTENDED_STORAGE_KEY) !== 'false';
+	};
+
+	const setThinkingExtendedMode = (enabled: boolean) => {
+		thinkingExtendedEnabled = enabled;
+		if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+			localStorage.setItem(THINKING_EXTENDED_STORAGE_KEY, String(enabled));
 		}
 	};
 
@@ -559,6 +575,7 @@
 	let shiftKey = false;
 	let isInputMultiline = false;
 	let chatInputContainerEl: HTMLElement | null = null;
+	$: activeChipTextClass = $showArtifacts ? 'hidden @sm:inline' : 'inline';
 
 	let user = null;
 	export let placeholder = '';
@@ -639,10 +656,12 @@
 	$: thinkingModeModelKey = showThinkingButton ? selectedModels.join('\u0000') : '';
 	$: if (showThinkingButton && thinkingModeModelKey !== appliedThinkingModeKey) {
 		thinkingEnabled = getGlobalThinkingEnabled();
+		thinkingExtendedEnabled = getThinkingExtendedEnabled();
 		appliedThinkingModeKey = thinkingModeModelKey;
 	}
 	$: if (!showThinkingButton) {
 		thinkingEnabled = true;
+		thinkingExtendedEnabled = true;
 		appliedThinkingModeKey = '';
 	}
 
@@ -1811,10 +1830,13 @@
 												type="button"
 												class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition cursor-pointer bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
 												style="font-size: 0.79rem; font-family: 'Segoe UI', sans-serif; font-weight: 400; letter-spacing: 0.01em;"
-												aria-label={thinkingEnabled ? 'Raciocínio' : 'Rápido'}
+												aria-label={`${thinkingEnabled ? 'Raciocínio' : 'Rápido'}${thinkingExtendedEnabled ? ' Estendido' : ''}`}
 												on:click|preventDefault={() => { showThinkingDropdown = !showThinkingDropdown; }}
 											>
 												<span>{thinkingEnabled ? 'Raciocínio' : 'Rápido'}</span>
+												{#if thinkingExtendedEnabled}
+													<span class="text-gray-500 dark:text-gray-500">Estendido</span>
+												{/if}
 												<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform {showThinkingDropdown ? 'rotate-180' : ''}">
 													<path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
 												</svg>
@@ -1832,10 +1854,7 @@
 														class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
 														on:click={() => setThinkingMode(false)}
 													>
-														<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-4">
-															<path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd" />
-														</svg>
-														<div class="flex-1 text-left"><div>Rápido</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Para respostas rápidas</div></div>
+														<div class="flex-1 text-left"><div>Rápido</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Para respostas imediatas</div></div>
 														{#if !thinkingEnabled}
 															<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
 																<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
@@ -1847,9 +1866,6 @@
 														class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
 														on:click={() => setThinkingMode(true)}
 													>
-														<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-4">
-															<path d="M12 2a7 7 0 0 0-7 7c0 2.862 1.782 5.3 4.25 6.318V17.5a.75.75 0 0 0 .75.75h4a.75.75 0 0 0 .75-.75v-2.182C17.218 14.3 19 11.862 19 9a7 7 0 0 0-7-7ZM9.25 19.75a.75.75 0 0 0 0 1.5h5.5a.75.75 0 0 0 0-1.5h-5.5ZM9.75 22.75a.75.75 0 0 0 0 1.5h4.5a.75.75 0 0 0 0-1.5h-4.5Z" />
-														</svg>
 														<div class="flex-1 text-left"><div>Raciocínio</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Para tarefas complexas</div></div>
 														{#if thinkingEnabled}
 															<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
@@ -1857,6 +1873,17 @@
 															</svg>
 														{/if}
 													</button>
+													<div class="my-1 border-t border-gray-100 dark:border-gray-800"></div>
+													<div class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200">
+														<div class="flex-1 text-left">
+															<div>Estendido</div>
+															<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Permite respostas mais amplas</div>
+														</div>
+														<Switch
+															bind:state={thinkingExtendedEnabled}
+															on:change={(e) => setThinkingExtendedMode(e.detail)}
+														/>
+													</div>
 												</div>
 											{/if}
 										</div>
@@ -2027,6 +2054,7 @@
 																<XMark className="size-4" strokeWidth="1.75" />
 															</span>
 														</div>
+														<span class="text-[0.8125rem] font-medium truncate {activeChipTextClass}">{filter?.name}</span>
 													</button>
 												</Tooltip>
 											{/if}
@@ -2046,7 +2074,7 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-												<span class="text-[0.8125rem] font-medium hidden @sm:inline">Busca</span>
+												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Busca</span>
 											</button>
 										{/if}
 
@@ -2064,7 +2092,7 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-												<span class="text-[0.8125rem] font-medium hidden @sm:inline">{$i18n.t('Deep Search')}</span>
+												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Deep Search')}</span>
 											</button>
 										{/if}
 
@@ -2082,7 +2110,7 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-												<span class="text-[0.8125rem] font-medium hidden @sm:inline">Imagem</span>
+												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Imagem</span>
 											</button>
 										{/if}
 
@@ -2102,7 +2130,7 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-												<span class="text-[0.8125rem] font-medium hidden @sm:inline">Intérprete</span>
+												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Intérprete</span>
 											</button>
 										{/if}
 
@@ -2122,7 +2150,7 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-												<span class="text-[0.8125rem] font-medium hidden @sm:inline">Artefatos</span>
+												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Artefatos</span>
 											</button>
 										{/if}
 
@@ -2140,7 +2168,7 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-												<span class="text-[0.8125rem] font-medium hidden @sm:inline">Imagem</span>
+												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Imagem</span>
 											</button>
 										{/if}
 
@@ -2181,10 +2209,13 @@
 													type="button"
 													class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition cursor-pointer bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
 													style="font-size: 0.79rem; font-family: 'Segoe UI', sans-serif; font-weight: 400; letter-spacing: 0.01em;"
-													aria-label={thinkingEnabled ? 'Raciocínio' : 'Rápido'}
+													aria-label={`${thinkingEnabled ? 'Raciocínio' : 'Rápido'}${thinkingExtendedEnabled ? ' Estendido' : ''}`}
 													on:click|preventDefault={() => { showThinkingDropdown = !showThinkingDropdown; }}
 												>
 													<span>{thinkingEnabled ? 'Raciocínio' : 'Rápido'}</span>
+													{#if thinkingExtendedEnabled}
+														<span class="text-gray-500 dark:text-gray-500">Estendido</span>
+													{/if}
 													<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform {showThinkingDropdown ? 'rotate-180' : ''}">
 														<path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
 													</svg>
@@ -2202,10 +2233,7 @@
 															class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
 															on:click={() => setThinkingMode(false)}
 														>
-															<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-4">
-																<path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd" />
-															</svg>
-															<div class="flex-1 text-left"><div>Rápido</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Para respostas rápidas</div></div>
+															<div class="flex-1 text-left"><div>Rápido</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Para respostas imediatas</div></div>
 															{#if !thinkingEnabled}
 																<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
 																	<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
@@ -2217,9 +2245,6 @@
 															class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
 															on:click={() => setThinkingMode(true)}
 														>
-															<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-4">
-																<path d="M12 2a7 7 0 0 0-7 7c0 2.862 1.782 5.3 4.25 6.318V17.5a.75.75 0 0 0 .75.75h4a.75.75 0 0 0 .75-.75v-2.182C17.218 14.3 19 11.862 19 9a7 7 0 0 0-7-7ZM9.25 19.75a.75.75 0 0 0 0 1.5h5.5a.75.75 0 0 0 0-1.5h-5.5ZM9.75 22.75a.75.75 0 0 0 0 1.5h4.5a.75.75 0 0 0 0-1.5h-4.5Z" />
-															</svg>
 															<div class="flex-1 text-left"><div>Raciocínio</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Para tarefas complexas</div></div>
 															{#if thinkingEnabled}
 																<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
@@ -2227,6 +2252,17 @@
 																</svg>
 															{/if}
 														</button>
+														<div class="my-1 border-t border-gray-100 dark:border-gray-800"></div>
+														<div class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200">
+															<div class="flex-1 text-left">
+																<div>Estendido</div>
+																<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Permite respostas mais amplas</div>
+															</div>
+															<Switch
+																bind:state={thinkingExtendedEnabled}
+																on:change={(e) => setThinkingExtendedMode(e.detail)}
+															/>
+														</div>
 													</div>
 												{/if}
 											</div>

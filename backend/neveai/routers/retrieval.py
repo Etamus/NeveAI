@@ -6,7 +6,13 @@ import shutil
 import asyncio
 
 import re
+import time
 import uuid
+from concurrent.futures import (
+    ThreadPoolExecutor,
+    TimeoutError as FuturesTimeoutError,
+    as_completed,
+)
 from datetime import datetime
 from pathlib import Path
 from typing import Iterator, List, Optional, Sequence, Union
@@ -123,6 +129,27 @@ from neveai.env import (
 from neveai.constants import ERROR_MESSAGES
 
 log = logging.getLogger(__name__)
+
+SEARXNG_PUBLIC_QUERY_URLS = (
+    "https://searx.tiekoetter.com/search",
+    "https://searx.linxx.net/search",
+    "https://searxng.website/search",
+    "https://search.bladerunn.in/search",
+    "https://baresearch.org/search",
+)
+SEARXNG_LOCAL_QUERY_URLS = (
+    "http://127.0.0.1:8888/search",
+    "http://127.0.0.1:8081/search",
+)
+SEARXNG_FAST_ENGINES = ("duckduckgo", "qwant")
+SEARXNG_DEEP_ENGINES = ("duckduckgo", "qwant", "bing", "brave", "mojeek")
+SEARXNG_FAST_TIMEOUT = 3
+SEARXNG_DEEP_TIMEOUT = 7
+DDGS_FAST_TIMEOUT = 8
+DDGS_DEEP_TIMEOUT = 15
+SEARXNG_FAILURE_BACKOFF_SECONDS = 180
+FREE_WEB_SEARCH_QUERY_TIMEOUT = 35
+SEARXNG_UNAVAILABLE_UNTIL: dict[str, float] = {}
 
 ##########################################
 #
@@ -1962,6 +1989,135 @@ def search_web(
 
     result_count = result_count or request.app.state.config.WEB_SEARCH_RESULT_COUNT
 
+    def get_free_search_profile() -> dict:
+        deep_search_enabled = bool(getattr(request.state, "deep_search_enabled", False))
+        if deep_search_enabled:
+            return {
+                "count": min(max(result_count or 20, 10), 20),
+                "engines": SEARXNG_DEEP_ENGINES,
+                "searxng_timeout": SEARXNG_DEEP_TIMEOUT,
+                "ddgs_timeout": DDGS_DEEP_TIMEOUT,
+                "public_url_limit": 0,
+            }
+
+        return {
+            "count": min(result_count or 5, 5),
+            "engines": SEARXNG_FAST_ENGINES,
+            "searxng_timeout": SEARXNG_FAST_TIMEOUT,
+            "ddgs_timeout": DDGS_FAST_TIMEOUT,
+            "public_url_limit": 0,
+        }
+
+    def get_searxng_query_urls(public_url_limit: int) -> list[str]:
+        urls = []
+        configured_url = request.app.state.config.SEARXNG_QUERY_URL or ""
+        for raw_url in re.split(r"[\s,]+", configured_url.strip()):
+            if raw_url:
+                urls.append(raw_url)
+
+        urls.extend(SEARXNG_LOCAL_QUERY_URLS)
+        urls.extend(SEARXNG_PUBLIC_QUERY_URLS[:public_url_limit])
+
+        unique_urls = []
+        seen_urls = set()
+        now = time.monotonic()
+        for url in urls:
+            normalized_url = url.strip()
+            if not normalized_url or normalized_url in seen_urls:
+                continue
+            if SEARXNG_UNAVAILABLE_UNTIL.get(normalized_url, 0) > now:
+                continue
+            unique_urls.append(normalized_url)
+            seen_urls.add(normalized_url)
+
+        return unique_urls
+
+    def mark_searxng_unavailable(query_url: str, error: Exception | None = None) -> None:
+        if not error:
+            return
+
+        error_text = str(error).lower()
+        should_backoff = any(
+            token in error_text
+            for token in ("403", "429", "too many", "timeout", "timed out")
+        ) or any(
+            token in error_text
+            for token in ("connection refused", "failed to establish", "max retries")
+        )
+        if should_backoff:
+            SEARXNG_UNAVAILABLE_UNTIL[query_url] = (
+                time.monotonic() + SEARXNG_FAILURE_BACKOFF_SECONDS
+            )
+
+    def search_searxng_then_ddgs() -> list[SearchResult]:
+        profile = get_free_search_profile()
+        search_count = profile["count"]
+        searxng_errors = []
+        query_urls = get_searxng_query_urls(profile["public_url_limit"])
+
+        def run_searxng_query(query_url: str) -> list[SearchResult]:
+            return search_searxng(
+                query_url,
+                query,
+                search_count,
+                request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
+                language=request.app.state.config.SEARXNG_LANGUAGE,
+                engines=profile["engines"],
+                timeout=profile["searxng_timeout"],
+            )
+
+        if query_urls:
+            executor = ThreadPoolExecutor(max_workers=len(query_urls))
+            futures = {
+                executor.submit(run_searxng_query, query_url): query_url
+                for query_url in query_urls
+            }
+            try:
+                for future in as_completed(
+                    futures,
+                    timeout=profile["searxng_timeout"] + 1,
+                ):
+                    query_url = futures[future]
+                    try:
+                        results = future.result()
+                        if results:
+                            executor.shutdown(wait=False, cancel_futures=True)
+                            return results[:search_count]
+
+                        searxng_errors.append(f"{query_url}: no results")
+                    except Exception as e:
+                        mark_searxng_unavailable(query_url, e)
+                        searxng_errors.append(f"{query_url}: {e}")
+            except FuturesTimeoutError:
+                for query_url in query_urls:
+                    SEARXNG_UNAVAILABLE_UNTIL[query_url] = (
+                        time.monotonic() + SEARXNG_FAILURE_BACKOFF_SECONDS
+                    )
+                searxng_errors.append("SearXNG timeout")
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
+
+        ddgs_results = search_duckduckgo(
+            query,
+            search_count,
+            request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
+            concurrent_requests=request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS,
+            backend=request.app.state.config.DDGS_BACKEND,
+            timeout=profile["ddgs_timeout"],
+        )
+        if searxng_errors and not ddgs_results:
+            log.warning(
+                "SearXNG and DDGS returned no results. %s",
+                " | ".join(searxng_errors[-3:]),
+            )
+        elif searxng_errors:
+            log.debug(
+                "SearXNG unavailable; DDGS fallback returned results. %s",
+                " | ".join(searxng_errors[-3:]),
+            )
+
+        return ddgs_results
+
     # TODO: add playwright to search the web
     if engine == "ollama_cloud":
         return search_ollama_cloud(
@@ -1984,17 +2140,7 @@ def search_web(
         else:
             raise Exception("No PERPLEXITY_API_KEY found in environment variables")
     elif engine == "searxng":
-        if request.app.state.config.SEARXNG_QUERY_URL:
-            searxng_kwargs = {"language": request.app.state.config.SEARXNG_LANGUAGE}
-            return search_searxng(
-                request.app.state.config.SEARXNG_QUERY_URL,
-                query,
-                request.app.state.config.WEB_SEARCH_RESULT_COUNT,
-                request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
-                **searxng_kwargs,
-            )
-        else:
-            raise Exception("No SEARXNG_QUERY_URL found in environment variables")
+        return search_searxng_then_ddgs()
     elif engine == "yacy":
         if request.app.state.config.YACY_QUERY_URL:
             return search_yacy(
@@ -2095,13 +2241,16 @@ def search_web(
             )
         else:
             raise Exception("No SERPLY_API_KEY found in environment variables")
-    elif engine == "duckduckgo":
+    elif engine == "duckduckgo" or engine == "ddgs":
         return search_duckduckgo(
             query,
             result_count,
             request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
             concurrent_requests=request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS,
             backend=request.app.state.config.DDGS_BACKEND,
+            timeout=DDGS_DEEP_TIMEOUT
+            if bool(getattr(request.state, "deep_search_enabled", False))
+            else DDGS_FAST_TIMEOUT,
         )
     elif engine == "tavily":
         if request.app.state.config.TAVILY_API_KEY:
@@ -2278,11 +2427,40 @@ async def process_web_search(
         logging.debug(
             f"trying to web search with {search_engine, form_data.queries}"
         )
+        normalized_search_engine = (search_engine or "").lower()
+        free_search_engine = normalized_search_engine in {"searxng", "duckduckgo", "ddgs"}
+        per_query_timeout = (
+            FREE_WEB_SEARCH_QUERY_TIMEOUT
+            if free_search_engine
+            else max(FREE_WEB_SEARCH_QUERY_TIMEOUT, 60)
+        )
+
+        async def run_search_query(query):
+            try:
+                return await asyncio.wait_for(
+                    run_in_threadpool(
+                        search_web,
+                        request,
+                        search_engine,
+                        query,
+                        user,
+                        result_count,
+                    ),
+                    timeout=per_query_timeout,
+                )
+            except asyncio.TimeoutError:
+                log.warning("Web search query timed out: %s", query)
+                return []
+            except Exception as e:
+                log.warning("Web search query failed: %s (%s)", query, e)
+                return []
 
         # Use semaphore to limit concurrent requests based on WEB_SEARCH_CONCURRENT_REQUESTS
         # 0 or None = unlimited (previous behavior), positive number = limited concurrency
         # Set to 1 for sequential execution (rate-limited APIs like Brave free tier)
         concurrent_limit = request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS
+        if free_search_engine and not concurrent_limit:
+            concurrent_limit = 1
 
         if concurrent_limit:
             # Limited concurrency with semaphore
@@ -2290,35 +2468,21 @@ async def process_web_search(
 
             async def search_query_with_semaphore(query):
                 async with semaphore:
-                    return await run_in_threadpool(
-                        search_web,
-                        request,
-                        search_engine,
-                        query,
-                        user,
-                        result_count,
-                    )
+                    return await run_search_query(query)
 
             search_tasks = [
                 search_query_with_semaphore(query) for query in form_data.queries
             ]
         else:
             # Unlimited parallel execution (previous behavior)
-            search_tasks = [
-                run_in_threadpool(
-                    search_web,
-                    request,
-                    search_engine,
-                    query,
-                    user,
-                    result_count,
-                )
-                for query in form_data.queries
-            ]
+            search_tasks = [run_search_query(query) for query in form_data.queries]
 
-        search_results = await asyncio.gather(*search_tasks)
+        search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
 
         for result in search_results:
+            if isinstance(result, Exception):
+                log.warning("Web search task failed: %s", result)
+                continue
             if result:
                 for item in result:
                     if item and item.link:
@@ -2348,10 +2512,15 @@ async def process_web_search(
         )
 
     if len(urls) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=ERROR_MESSAGES.DEFAULT("No results found from web search"),
-        )
+        return {
+            "status": False,
+            "collection_names": [],
+            "filenames": [],
+            "items": [],
+            "loaded_items": [],
+            "searched_count": 0,
+            "loaded_count": 0,
+        }
 
     try:
         if request.app.state.config.BYPASS_WEB_SEARCH_WEB_LOADER:
@@ -2379,7 +2548,26 @@ async def process_web_search(
                 requests_per_second=request.app.state.config.WEB_LOADER_CONCURRENT_REQUESTS,
                 trust_env=request.app.state.config.WEB_SEARCH_TRUST_ENV,
             )
-            docs = await loader.aload()
+            try:
+                docs = await loader.aload()
+            except Exception as e:
+                log.warning("Web loader failed; using search snippets instead: %s", e)
+                docs = []
+
+            if not docs and searched_result_items:
+                docs = [
+                    Document(
+                        page_content=item.get("snippet") or item.get("title") or "",
+                        metadata={
+                            "source": item.get("link"),
+                            "title": item.get("title"),
+                            "snippet": item.get("snippet"),
+                            "link": item.get("link"),
+                        },
+                    )
+                    for item in searched_result_items
+                    if item.get("link") and (item.get("snippet") or item.get("title"))
+                ]
 
         urls = [
             doc.metadata.get("source") for doc in docs if doc.metadata.get("source")
@@ -2387,6 +2575,17 @@ async def process_web_search(
         loaded_result_items = [
             dict(item) for item in result_items if item.link in urls
         ]  # only keep the search results that have been loaded
+
+        if len(urls) == 0:
+            return {
+                "status": False,
+                "collection_names": [],
+                "filenames": [],
+                "items": searched_result_items,
+                "loaded_items": [],
+                "searched_count": len(searched_urls),
+                "loaded_count": 0,
+            }
 
         if request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:
             return {
