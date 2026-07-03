@@ -691,7 +691,11 @@
 							<div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
 								{$i18n.t('Capacidades')}
 							</div>
-							<DefaultFeatures availableFeatures={['web_search', 'code_interpreter', 'code_execution', 'toggle_reasoning']} bind:featureIds={defaultFeatureIds} tooltipsEnabled={false} />
+							<DefaultFeatures
+								availableFeatures={['web_search', 'code_interpreter', 'code_execution', 'toggle_reasoning']}
+								bind:featureIds={defaultFeatureIds}
+								tooltipsEnabled={false}
+							/>
 						</div>
 					</div>
 				</div>

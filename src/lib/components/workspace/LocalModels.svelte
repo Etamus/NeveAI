@@ -37,16 +37,22 @@
 
 	const getSpeculativeDecodingForLoad = () => {
 		const { speculative } = getLocalModelLoadPreferences();
-		return getTokenPredictionForLoad() !== 'off'
+		return getContextShiftForLoad() === 'on' || getTokenPredictionForLoad() === 'on'
 			? 'off'
 			: speculative === 'default'
-				? 'high'
+				? 'off'
 				: speculative;
 	};
 
 	const getTokenPredictionForLoad = () => {
-		const { tokenPrediction } = getLocalModelLoadPreferences();
+		const { tokenPrediction, contextShift } = getLocalModelLoadPreferences();
+		if (contextShift === 'on') return 'off';
 		return tokenPrediction;
+	};
+
+	const getContextShiftForLoad = () => {
+		const { contextShift } = getLocalModelLoadPreferences();
+		return contextShift;
 	};
 
 	async function refreshModels() {
@@ -77,7 +83,8 @@
 				'',
 				getCacheTypeForLoad(),
 				getSpeculativeDecodingForLoad(),
-				getTokenPredictionForLoad()
+				getTokenPredictionForLoad(),
+				getContextShiftForLoad()
 			);
 			successMessage = `${model.filename} carregado com sucesso!`;
 			await refreshModels();
@@ -156,7 +163,8 @@
 				mmprojFile,
 				getCacheTypeForLoad(),
 				getSpeculativeDecodingForLoad(),
-				getTokenPredictionForLoad()
+				getTokenPredictionForLoad(),
+				getContextShiftForLoad()
 			);
 			successMessage = `${model.filename} carregado com sucesso! (visão: ${mmprojFile})`;
 			await refreshModels();

@@ -16,6 +16,7 @@ export interface LocalModel {
 	cache_type: string | null;
 	speculative_decoding: string | null;
 	token_prediction: string | null;
+	context_shift: string | null;
 }
 
 export interface LocalVramGpu {
@@ -210,7 +211,8 @@ export const loadLocalModel = async (
 	mmproj_filename?: string | null,
 	cache_type: string = 'f16',
 	speculative_decoding: string = 'default',
-	token_prediction: string = 'off'
+	token_prediction: string = 'off',
+	context_shift: string = 'off'
 ): Promise<any> => {
 	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/load`, {
 		method: 'POST',
@@ -226,7 +228,8 @@ export const loadLocalModel = async (
 			mmproj_filename: mmproj_filename ?? null,
 			cache_type,
 			speculative_decoding,
-			token_prediction
+			token_prediction,
+			context_shift
 		})
 	});
 

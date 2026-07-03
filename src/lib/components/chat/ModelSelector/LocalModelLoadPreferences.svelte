@@ -9,6 +9,7 @@
 		LOCAL_MODEL_CONTEXT_OPTIONS,
 		getCachePreferenceLabel,
 		getContextPreferenceLabel,
+		getContextShiftPreferenceLabel,
 		getLocalModelLoadPreferences,
 		getSpeculativePreferenceLabel,
 		getStreamPreferenceLabel,
@@ -16,12 +17,14 @@
 		getVisionPreferenceLabel,
 		setLocalModelCachePreference,
 		setLocalModelContextPreference,
+		setLocalModelContextShiftPreference,
 		setLocalModelSpeculativePreference,
 		setLocalModelStreamPreference,
 		setLocalModelTokenPredictionPreference,
 		setLocalModelVisionPreference,
 		type LocalModelCachePreference,
 		type LocalModelContextPreference,
+		type LocalModelContextShiftPreference,
 		type LocalModelSpeculativePreference,
 		type LocalModelStreamPreference,
 		type LocalModelTokenPredictionPreference,
@@ -34,7 +37,8 @@
 	let cachePreference: LocalModelCachePreference = 'default';
 	let streamPreference: LocalModelStreamPreference = 'default';
 	let speculativePreference: LocalModelSpeculativePreference = 'default';
-	let tokenPredictionPreference: LocalModelTokenPredictionPreference = 'off';
+	let tokenPredictionPreference: LocalModelTokenPredictionPreference = 'default';
+	let contextShiftPreference: LocalModelContextShiftPreference = 'default';
 
 	const contextOptions: LocalModelContextPreference[] = ['ask', ...LOCAL_MODEL_CONTEXT_OPTIONS];
 	const visionOptions: LocalModelVisionPreference[] = ['ask', 'yes', 'no'];
@@ -42,16 +46,22 @@
 	const streamOptions: LocalModelStreamPreference[] = ['default', 'on', 'off'];
 	const speculativeOptions: LocalModelSpeculativePreference[] = ['default', 'high', 'low', 'off'];
 	const tokenPredictionOptions: LocalModelTokenPredictionPreference[] = [
-		'off',
-		'on'
+		'default',
+		'on',
+		'off'
 	];
+	const contextShiftOptions: LocalModelContextShiftPreference[] = ['default', 'on', 'off'];
 
 	$: contextOptionIndex =
 		typeof contextPreference === 'number'
 			? LOCAL_MODEL_CONTEXT_OPTIONS.indexOf(contextPreference)
 			: -1;
-	$: tokenPredictionActive = tokenPredictionPreference !== 'off';
-	$: effectiveSpeculativePreference = tokenPredictionActive ? 'off' : speculativePreference;
+	$: contextShiftActive = contextShiftPreference === 'on';
+	$: tokenPredictionActive = tokenPredictionPreference === 'on';
+	$: speculativeLocked = tokenPredictionActive || contextShiftActive;
+	$: tokenPredictionLocked = contextShiftActive;
+	$: effectiveSpeculativePreference = speculativeLocked ? 'off' : speculativePreference;
+	$: effectiveTokenPredictionPreference = tokenPredictionLocked ? 'off' : tokenPredictionPreference;
 
 	const cycleContextPreference = () => {
 		const idx = contextOptions.indexOf(contextPreference);
@@ -89,16 +99,23 @@
 	};
 
 	const cycleSpeculativePreference = () => {
-		if (tokenPredictionActive) return;
+		if (speculativeLocked) return;
 		const idx = speculativeOptions.indexOf(speculativePreference);
 		speculativePreference = speculativeOptions[(idx + 1) % speculativeOptions.length];
 		setLocalModelSpeculativePreference(speculativePreference);
 	};
 
 	const cycleTokenPredictionPreference = () => {
+		if (tokenPredictionLocked) return;
 		const idx = tokenPredictionOptions.indexOf(tokenPredictionPreference);
 		tokenPredictionPreference = tokenPredictionOptions[(idx + 1) % tokenPredictionOptions.length];
 		setLocalModelTokenPredictionPreference(tokenPredictionPreference);
+	};
+
+	const cycleContextShiftPreference = () => {
+		const idx = contextShiftOptions.indexOf(contextShiftPreference);
+		contextShiftPreference = contextShiftOptions[(idx + 1) % contextShiftOptions.length];
+		setLocalModelContextShiftPreference(contextShiftPreference);
 	};
 
 	const resetContextPreference = () => {
@@ -122,14 +139,20 @@
 	};
 
 	const resetSpeculativePreference = () => {
-		if (tokenPredictionActive) return;
+		if (speculativeLocked) return;
 		speculativePreference = 'default';
 		setLocalModelSpeculativePreference(speculativePreference);
 	};
 
 	const resetTokenPredictionPreference = () => {
-		tokenPredictionPreference = 'off';
+		if (tokenPredictionLocked) return;
+		tokenPredictionPreference = 'default';
 		setLocalModelTokenPredictionPreference(tokenPredictionPreference);
+	};
+
+	const resetContextShiftPreference = () => {
+		contextShiftPreference = 'default';
+		setLocalModelContextShiftPreference(contextShiftPreference);
 	};
 
 	const stopEventPropagation = (event: Event) => {
@@ -144,6 +167,7 @@
 		streamPreference = preferences.stream;
 		speculativePreference = preferences.speculative;
 		tokenPredictionPreference = preferences.tokenPrediction;
+		contextShiftPreference = preferences.contextShift;
 	});
 </script>
 
@@ -288,14 +312,35 @@
 				</button>
 			</div>
 
+			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
+				{#if contextShiftPreference === 'default'}
+					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Deslocamento contextual</div>
+				{:else}
+					<button
+						type="button"
+						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
+						on:click|stopPropagation={resetContextShiftPreference}
+					>
+						Deslocamento contextual
+					</button>
+				{/if}
+				<button
+					type="button"
+					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
+					on:click|stopPropagation={cycleContextShiftPreference}
+				>
+					{getContextShiftPreferenceLabel(contextShiftPreference)}
+				</button>
+			</div>
+
 			<div
 				class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm"
-				class:opacity-60={tokenPredictionActive}
+				class:opacity-60={speculativeLocked}
 			>
-				{#if tokenPredictionActive || speculativePreference === 'default'}
+				{#if speculativeLocked || speculativePreference === 'default'}
 					<div
 						class={`text-sm whitespace-nowrap ${
-							tokenPredictionActive
+							speculativeLocked
 								? 'text-gray-400 dark:text-gray-500'
 								: 'text-gray-700 dark:text-gray-200'
 						}`}
@@ -315,15 +360,26 @@
 					type="button"
 					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap disabled:cursor-not-allowed disabled:text-gray-400 disabled:dark:text-gray-500 disabled:hover:bg-transparent disabled:dark:hover:bg-transparent"
 					on:click|stopPropagation={cycleSpeculativePreference}
-					disabled={tokenPredictionActive}
+					disabled={speculativeLocked}
 				>
 					{getSpeculativePreferenceLabel(effectiveSpeculativePreference)}
 				</button>
 			</div>
 
-			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
-				{#if tokenPredictionPreference === 'off'}
-					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Predição de tokens</div>
+			<div
+				class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm"
+				class:opacity-60={tokenPredictionLocked}
+			>
+				{#if tokenPredictionLocked || tokenPredictionPreference === 'default'}
+					<div
+						class={`text-sm whitespace-nowrap ${
+							tokenPredictionLocked
+								? 'text-gray-400 dark:text-gray-500'
+								: 'text-gray-700 dark:text-gray-200'
+						}`}
+					>
+						Predição de tokens
+					</div>
 				{:else}
 					<button
 						type="button"
@@ -335,10 +391,11 @@
 				{/if}
 				<button
 					type="button"
-					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
+					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap disabled:cursor-not-allowed disabled:text-gray-400 disabled:dark:text-gray-500 disabled:hover:bg-transparent disabled:dark:hover:bg-transparent"
 					on:click|stopPropagation={cycleTokenPredictionPreference}
+					disabled={tokenPredictionLocked}
 				>
-					{getTokenPredictionPreferenceLabel(tokenPredictionPreference)}
+					{getTokenPredictionPreferenceLabel(effectiveTokenPredictionPreference)}
 				</button>
 			</div>
 		</div>

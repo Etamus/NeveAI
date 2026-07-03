@@ -322,9 +322,10 @@ class _LoadedModelInfo:
         "cache_type",
         "speculative_decoding",
         "token_prediction",
+        "context_shift",
     )
 
-    def __init__(self, model_id: str, filename: str, n_gpu_layers: int, n_ctx: int, file_size: int, mmproj_filename: Optional[str] = None, cache_type: str = "f16", speculative_decoding: str = "high", token_prediction: str = "off"):
+    def __init__(self, model_id: str, filename: str, n_gpu_layers: int, n_ctx: int, file_size: int, mmproj_filename: Optional[str] = None, cache_type: str = "f16", speculative_decoding: str = "off", token_prediction: str = "off", context_shift: str = "off"):
         self.model_id = model_id
         self.filename = filename
         self.loaded_at = int(time.time())
@@ -333,19 +334,22 @@ class _LoadedModelInfo:
         self.file_size = file_size
         self.mmproj_filename = mmproj_filename
         self.cache_type = cache_type
+        self.context_shift = _normalize_context_shift(context_shift)
         self.token_prediction = _normalize_token_prediction(token_prediction)
-        if self.token_prediction != "off":
+        if self.context_shift != "off" or self.token_prediction != "off":
+            token_prediction = "off" if self.context_shift != "off" else token_prediction
             speculative_decoding = "off"
+        self.token_prediction = _normalize_token_prediction(token_prediction)
         self.speculative_decoding = _normalize_speculative_decoding(speculative_decoding)
 
 
 def _normalize_speculative_decoding(value: Optional[str]) -> str:
     value = str(value or "default").strip().lower()
     if value == "default":
-        return "high"
+        return "off"
     if value in {"low", "high", "off"}:
         return value
-    return "high"
+    return "off"
 
 
 def _speculative_decoding_args(mode: str) -> list[str]:
@@ -372,6 +376,11 @@ def _normalize_token_prediction(value: Optional[str]) -> str:
     if value in {"on", "stable", "aggressive"}:
         return "on"
     return "off"
+
+
+def _normalize_context_shift(value: Optional[str]) -> str:
+    value = str(value or "off").strip().lower()
+    return "on" if value == "on" else "off"
 
 
 def _token_prediction_args(mode: str) -> list[str]:
@@ -480,6 +489,7 @@ class LocalModelManager:
                     "cache_type": info.cache_type if is_loaded else None,
                     "speculative_decoding": info.speculative_decoding if is_loaded else None,
                     "token_prediction": info.token_prediction if is_loaded else None,
+                    "context_shift": info.context_shift if is_loaded else None,
                 })
         return results
 
@@ -572,6 +582,7 @@ class LocalModelManager:
         cache_type: str = "f16",
         speculative_decoding: str = "default",
         token_prediction: str = "off",
+        context_shift: str = "off",
     ) -> dict:
         """Load a .gguf model by starting a new llama-server subprocess."""
         # Clean up stale entries before loading to prevent phantom models
@@ -599,9 +610,13 @@ class LocalModelManager:
                     raise FileNotFoundError(f"mmproj file not found: {mmproj_filename}")
 
         model_id = f"local/{filepath.stem}"
+        context_shift = _normalize_context_shift(context_shift)
         token_prediction = _normalize_token_prediction(token_prediction)
         speculative_decoding = _normalize_speculative_decoding(speculative_decoding)
-        if token_prediction != "off":
+        if context_shift != "off":
+            token_prediction = "off"
+            speculative_decoding = "off"
+        elif token_prediction != "off":
             speculative_decoding = "off"
 
         async with self._lock:
@@ -622,7 +637,7 @@ class LocalModelManager:
             self._ports[model_id] = port
 
             # Start new llama-server with the model on this port
-            await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type, speculative_decoding, token_prediction)
+            await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type, speculative_decoding, token_prediction, context_shift)
 
             file_size = filepath.stat().st_size
             self._loaded[model_id] = _LoadedModelInfo(
@@ -635,6 +650,7 @@ class LocalModelManager:
                 cache_type,
                 speculative_decoding,
                 token_prediction,
+                context_shift,
             )
 
             log.info(f"Model loaded via llama-server: {model_id} (port={port}, gpu_layers={n_gpu_layers}, ctx={n_ctx}, mmproj={mmproj_filename})")
@@ -648,6 +664,7 @@ class LocalModelManager:
                 "cache_type": cache_type,
                 "speculative_decoding": speculative_decoding,
                 "token_prediction": token_prediction,
+                "context_shift": context_shift,
             }
 
     async def unload_model(self, model_id: str) -> dict:
@@ -707,6 +724,7 @@ class LocalModelManager:
                 "cache_type": info.cache_type,
                 "speculative_decoding": info.speculative_decoding,
                 "token_prediction": info.token_prediction,
+                "context_shift": info.context_shift,
             })
 
         # Unload all models
@@ -734,15 +752,16 @@ class LocalModelManager:
                     n_ctx=m["n_ctx"],
                     mmproj_filename=m.get("mmproj_filename"),
                     cache_type=m.get("cache_type", "f16"),
-                    speculative_decoding=m.get("speculative_decoding", "high"),
+                    speculative_decoding=m.get("speculative_decoding", "off"),
                     token_prediction=m.get("token_prediction", "off"),
+                    context_shift=m.get("context_shift", "off"),
                 )
             except Exception as e:
                 log.error(f"resume: failed to reload {m['filename']}: {e}")
 
     # -- subprocess management ------------------------------------------
 
-    async def _start_server(self, model_path: Path, n_gpu_layers: int, n_ctx: int, mmproj_path: Optional[Path], port: int, model_id: str, cache_type: str = "f16", speculative_decoding: str = "default", token_prediction: str = "off"):
+    async def _start_server(self, model_path: Path, n_gpu_layers: int, n_ctx: int, mmproj_path: Optional[Path], port: int, model_id: str, cache_type: str = "f16", speculative_decoding: str = "default", token_prediction: str = "off", context_shift: str = "off"):
         """Start llama-server.exe with the given model on the given port."""
         if not LLAMACPP_SERVER_BIN.exists():
             raise FileNotFoundError(
@@ -763,9 +782,13 @@ class LocalModelManager:
             "--no-webui",
         ]
 
+        context_shift = _normalize_context_shift(context_shift)
+        if context_shift != "off":
+            cmd += ["--context-shift"]
+
         # Speculative decoding modes are disabled for vision models because
         # multimodal prefill can make speculative paths unreliable.
-        if mmproj_path is None:
+        if mmproj_path is None and context_shift == "off":
             token_prediction = _normalize_token_prediction(token_prediction)
             if token_prediction != "off":
                 cmd += _token_prediction_args(token_prediction)
@@ -1144,8 +1167,9 @@ class LoadModelRequest(BaseModel):
     n_ctx: int = 4096
     mmproj_filename: Optional[str] = None
     cache_type: str = "f16"  # f16 | q8_0 | q4_0
-    speculative_decoding: str = "default"  # default/high | low | off
+    speculative_decoding: str = "default"  # default/off | high | low
     token_prediction: str = "off"  # on | off
+    context_shift: str = "off"  # on | off
 
 class UnloadModelRequest(BaseModel):
     model_id: str
@@ -1304,6 +1328,7 @@ async def load_model(req: LoadModelRequest, request: Request):
             cache_type=req.cache_type,
             speculative_decoding=req.speculative_decoding,
             token_prediction=req.token_prediction,
+            context_shift=req.context_shift,
         )
         # Invalidate cached base models so /api/models returns fresh n_ctx
         request.app.state.BASE_MODELS = None
@@ -1548,6 +1573,7 @@ async def generate_chat_completion(
                         cache_type=loaded_info.cache_type,
                         speculative_decoding=loaded_info.speculative_decoding,
                         token_prediction=loaded_info.token_prediction,
+                        context_shift=loaded_info.context_shift,
                     )
                 except Exception as e:
                     log.error(

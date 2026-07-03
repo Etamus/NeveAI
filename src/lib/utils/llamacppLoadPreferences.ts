@@ -3,7 +3,8 @@ export type LocalModelVisionPreference = 'ask' | 'yes' | 'no';
 export type LocalModelCachePreference = 'default' | 'f16' | 'q8_0' | 'q4_0';
 export type LocalModelStreamPreference = 'default' | 'on' | 'off';
 export type LocalModelSpeculativePreference = 'default' | 'high' | 'low' | 'off';
-export type LocalModelTokenPredictionPreference = 'on' | 'off';
+export type LocalModelTokenPredictionPreference = 'default' | 'on' | 'off';
+export type LocalModelContextShiftPreference = 'default' | 'on' | 'off';
 
 export const LOCAL_MODEL_CONTEXT_OPTIONS = [
 	2048,
@@ -22,6 +23,7 @@ const CACHE_KEY = 'llamacpp_cache_type';
 const STREAM_KEY = 'llamacpp_stream_response';
 const SPECULATIVE_KEY = 'llamacpp_speculative_decoding';
 const TOKEN_PREDICTION_KEY = 'llamacpp_token_prediction';
+const CONTEXT_SHIFT_KEY = 'llamacpp_context_shift';
 
 const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 
@@ -51,7 +53,13 @@ const parseSpeculativePreference = (value: string | null): LocalModelSpeculative
 const parseTokenPredictionPreference = (
 	value: string | null
 ): LocalModelTokenPredictionPreference => {
+	if (!value || value === 'default') return 'default';
 	return value === 'on' || value === 'stable' || value === 'aggressive' ? 'on' : 'off';
+};
+
+const parseContextShiftPreference = (value: string | null): LocalModelContextShiftPreference => {
+	if (!value || value === 'default') return 'default';
+	return value === 'on' ? 'on' : 'off';
 };
 
 export const getLocalModelLoadPreferences = () => {
@@ -62,7 +70,8 @@ export const getLocalModelLoadPreferences = () => {
 			cache: 'default' as LocalModelCachePreference,
 			stream: 'default' as LocalModelStreamPreference,
 			speculative: 'default' as LocalModelSpeculativePreference,
-			tokenPrediction: 'off' as LocalModelTokenPredictionPreference
+			tokenPrediction: 'default' as LocalModelTokenPredictionPreference,
+			contextShift: 'default' as LocalModelContextShiftPreference
 		};
 	}
 
@@ -72,7 +81,8 @@ export const getLocalModelLoadPreferences = () => {
 		cache: parseCachePreference(localStorage.getItem(CACHE_KEY)),
 		stream: parseStreamPreference(localStorage.getItem(STREAM_KEY)),
 		speculative: parseSpeculativePreference(localStorage.getItem(SPECULATIVE_KEY)),
-		tokenPrediction: parseTokenPredictionPreference(localStorage.getItem(TOKEN_PREDICTION_KEY))
+		tokenPrediction: parseTokenPredictionPreference(localStorage.getItem(TOKEN_PREDICTION_KEY)),
+		contextShift: parseContextShiftPreference(localStorage.getItem(CONTEXT_SHIFT_KEY))
 	};
 };
 
@@ -120,12 +130,24 @@ export const setLocalModelTokenPredictionPreference = (
 	preference: LocalModelTokenPredictionPreference
 ) => {
 	if (!hasStorage()) return;
-	if (preference === 'off') {
+	if (preference === 'default') {
 		localStorage.removeItem(TOKEN_PREDICTION_KEY);
 		return;
 	}
 
 	localStorage.setItem(TOKEN_PREDICTION_KEY, preference);
+};
+
+export const setLocalModelContextShiftPreference = (
+	preference: LocalModelContextShiftPreference
+) => {
+	if (!hasStorage()) return;
+	if (preference === 'default') {
+		localStorage.removeItem(CONTEXT_SHIFT_KEY);
+		return;
+	}
+
+	localStorage.setItem(CONTEXT_SHIFT_KEY, preference);
 };
 
 export const getContextPreferenceLabel = (preference: LocalModelContextPreference) => {
@@ -153,7 +175,7 @@ export const getStreamPreferenceLabel = (preference: LocalModelStreamPreference)
 
 export const getSpeculativePreferenceLabel = (preference: LocalModelSpeculativePreference) => {
 	if (preference === 'low') return 'Moderado';
-	if (preference === 'high') return 'Rápido';
+	if (preference === 'high') return 'Agressivo';
 	if (preference === 'off') return 'Desligado';
 	return 'Padrão';
 };
@@ -162,5 +184,14 @@ export const getTokenPredictionPreferenceLabel = (
 	preference: LocalModelTokenPredictionPreference
 ) => {
 	if (preference === 'on') return 'Ligado';
-	return 'Desligado';
+	if (preference === 'off') return 'Desligado';
+	return 'Padrão';
+};
+
+export const getContextShiftPreferenceLabel = (
+	preference: LocalModelContextShiftPreference
+) => {
+	if (preference === 'on') return 'Ligado';
+	if (preference === 'off') return 'Desligado';
+	return 'Padrão';
 };

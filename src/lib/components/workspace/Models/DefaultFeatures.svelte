@@ -11,23 +11,27 @@
 
 	const featureLabels = {
 		web_search: {
-			label: $i18n.t('Web Search'),
-			description: $i18n.t('Model can search the web for information')
+			label: $i18n.t('Busca na web'),
+			description: $i18n.t('Modelo pode buscar informações na web')
 		},
 		image_generation: {
-			label: $i18n.t('Image Generation'),
-			description: $i18n.t('Model can generate images based on text prompts')
+			label: $i18n.t('Geração de imagem'),
+			description: $i18n.t('Modelo inicia com geração de imagem por padrão')
 		},
 		code_interpreter: {
-			label: $i18n.t('Code Interpreter'),
-			description: $i18n.t('Model can execute code and perform calculations')
+			label: $i18n.t('Intérprete de código'),
+			description: $i18n.t('Modelo pode executar código e cálculos')
 		},
 		code_execution: {
-			label: $i18n.t('Code Execution'),
-			description: $i18n.t('Enable the Run button in code blocks for this model')
+			label: $i18n.t('Mostrar artefatos'),
+			description: $i18n.t('Modelo pode abrir artefatos por padrão')
+		},
+		deep_search: {
+			label: $i18n.t('Pesquisa profunda'),
+			description: $i18n.t('Modelo inicia com pesquisa profunda por padrão')
 		},
 		toggle_reasoning: {
-			label: $i18n.t('Toggle Reasoning'),
+			label: $i18n.t('Alternar raciocínio'),
 			description: $i18n.t('Show the Rápido/Raciocínio toggle in the message input bar')
 		},
 		stable_diffusion: {
@@ -36,7 +40,14 @@
 		}
 	};
 
-	export let availableFeatures = ['web_search', 'image_generation', 'code_interpreter', 'code_execution', 'stable_diffusion'];
+	export let availableFeatures = [
+		'web_search',
+		'code_interpreter',
+		'code_execution',
+		'deep_search',
+		'image_generation',
+		'toggle_reasoning'
+	];
 	export let featureIds: string[] = [];
 	export let tooltipsEnabled = true;
 

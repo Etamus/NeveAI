@@ -134,16 +134,22 @@
 
 	const getSpeculativeDecodingForLoad = () => {
 		const { speculative } = getLocalModelLoadPreferences();
-		return getTokenPredictionForLoad() !== 'off'
+		return getContextShiftForLoad() === 'on' || getTokenPredictionForLoad() === 'on'
 			? 'off'
 			: speculative === 'default'
-				? 'high'
+				? 'off'
 				: speculative;
 	};
 
 	const getTokenPredictionForLoad = () => {
-		const { tokenPrediction } = getLocalModelLoadPreferences();
+		const { tokenPrediction, contextShift } = getLocalModelLoadPreferences();
+		if (contextShift === 'on') return 'off';
 		return tokenPrediction;
+	};
+
+	const getContextShiftForLoad = () => {
+		const { contextShift } = getLocalModelLoadPreferences();
+		return contextShift;
 	};
 
 	const clampPercent = (value: number) => Math.max(0, Math.min(100, value));
@@ -637,8 +643,8 @@
 	};
 	const getSpeculativeChipLabel = (speculativeDecoding?: string | null) => {
 		if (speculativeDecoding === 'low') return 'Moderado';
-		if (speculativeDecoding === 'off') return 'Desligado';
-		return 'Rápido';
+		if (speculativeDecoding === 'high') return 'Agressivo';
+		return 'Desligado';
 	};
 
 	const getTokenPredictionChipLabel = (tokenPrediction?: string | null) => {
@@ -652,6 +658,9 @@
 	};
 	const isTokenPredictionActive = (tokenPrediction?: string | null) =>
 		tokenPrediction === 'on' || tokenPrediction === 'stable' || tokenPrediction === 'aggressive';
+	const isContextShiftActive = (contextShift?: string | null) => contextShift === 'on';
+	const isSpeculativeDecodingActive = (speculativeDecoding?: string | null) =>
+		speculativeDecoding === 'low' || speculativeDecoding === 'high';
 	const getModelImageVersion = (model: any) =>
 		model?.updated_at ?? model?.info?.updated_at ?? model?.meta?.updated_at ?? '';
 	const getModelProfileImageUrl = (model: any) => {
@@ -892,7 +901,8 @@
 						cache_type: result?.cache_type ?? getCacheTypeForLoad(),
 						speculative_decoding:
 							result?.speculative_decoding ?? getSpeculativeDecodingForLoad(),
-						token_prediction: result?.token_prediction ?? getTokenPredictionForLoad()
+						token_prediction: result?.token_prediction ?? getTokenPredictionForLoad(),
+						context_shift: result?.context_shift ?? getContextShiftForLoad()
 					}
 				: {
 						...localModel,
@@ -903,7 +913,8 @@
 						mmproj_filename: null,
 						cache_type: null,
 						speculative_decoding: null,
-						token_prediction: null
+						token_prediction: null,
+						context_shift: null
 					}
 		);
 	};
@@ -922,7 +933,8 @@
 				'',
 				getCacheTypeForLoad(),
 				getSpeculativeDecodingForLoad(),
-				getTokenPredictionForLoad()
+				getTokenPredictionForLoad(),
+				getContextShiftForLoad()
 			);
 			markLocalModelLoaded(model, result);
 			localSuccess = `${model.filename} carregado com sucesso!`;
@@ -1020,7 +1032,8 @@
 				mmprojFile,
 				getCacheTypeForLoad(),
 				getSpeculativeDecodingForLoad(),
-				getTokenPredictionForLoad()
+				getTokenPredictionForLoad(),
+				getContextShiftForLoad()
 			);
 			markLocalModelLoaded(model, result, mmprojFile);
 			localSuccess = `${model.filename} carregado! (visão: ${mmprojFile})`;
@@ -1448,9 +1461,11 @@
 									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">CTX: {gm.n_ctx}</span>
 								{/if}
 								<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">KV: {getCacheChipLabel(gm.cache_type)}</span>
-								{#if isTokenPredictionActive(gm.token_prediction)}
+								{#if isContextShiftActive(gm.context_shift)}
+									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">DC: Ligado</span>
+								{:else if isTokenPredictionActive(gm.token_prediction)}
 									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">PT: {getTokenPredictionChipLabel(gm.token_prediction)}</span>
-								{:else}
+								{:else if isSpeculativeDecodingActive(gm.speculative_decoding)}
 									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">DE: {getSpeculativeChipLabel(gm.speculative_decoding)}</span>
 								{/if}
 								{#if gm?.mmproj_filename}

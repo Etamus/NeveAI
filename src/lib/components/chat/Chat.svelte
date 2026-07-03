@@ -330,12 +330,15 @@
 			const standbyLoadPreferences = getLocalModelLoadPreferences();
 			const standbyCacheType =
 				standbyLoadPreferences.cache === 'default' ? 'f16' : standbyLoadPreferences.cache;
+			const standbyContextShift = normalizeLocalContextShift(
+				standbyModel.context_shift ?? standbyLoadPreferences.contextShift
+			);
 			const standbyTokenPrediction = normalizeLocalTokenPrediction(
 				standbyModel.token_prediction ?? standbyLoadPreferences.tokenPrediction
 			);
 			const standbySpeculativePreference =
 				standbyModel.speculative_decoding ?? standbyLoadPreferences.speculative;
-			const standbySpeculativeDecoding = isLocalTokenPredictionEnabled(standbyTokenPrediction)
+			const standbySpeculativeDecoding = isLocalContextShiftEnabled(standbyContextShift) || isLocalTokenPredictionEnabled(standbyTokenPrediction)
 				? 'off'
 				: normalizeLocalSpeculativeDecoding(standbySpeculativePreference);
 
@@ -347,7 +350,8 @@
 				standbyModel.mmproj_filename ?? null,
 				standbyCacheType,
 				standbySpeculativeDecoding,
-				standbyTokenPrediction
+				isLocalContextShiftEnabled(standbyContextShift) ? 'off' : standbyTokenPrediction,
+				standbyContextShift
 			);
 
 			stableDiffusionStandbyModel = null;
@@ -2089,6 +2093,7 @@
 		cacheType: string;
 		speculativeDecoding: string;
 		tokenPrediction: string;
+		contextShift: string;
 	};
 
 	const normalizeLocalCacheType = (cacheType?: string | null) => {
@@ -2096,7 +2101,7 @@
 	};
 
 	const normalizeLocalSpeculativeDecoding = (speculativeDecoding?: string | null) => {
-		return speculativeDecoding && speculativeDecoding !== 'default' ? speculativeDecoding : 'high';
+		return speculativeDecoding && speculativeDecoding !== 'default' ? speculativeDecoding : 'off';
 	};
 
 	const normalizeLocalTokenPrediction = (tokenPrediction?: string | null) => {
@@ -2105,8 +2110,16 @@
 			: 'off';
 	};
 
+	const normalizeLocalContextShift = (contextShift?: string | null) => {
+		return contextShift === 'on' ? 'on' : 'off';
+	};
+
 	const isLocalTokenPredictionEnabled = (tokenPrediction?: string | null) => {
 		return normalizeLocalTokenPrediction(tokenPrediction) !== 'off';
+	};
+
+	const isLocalContextShiftEnabled = (contextShift?: string | null) => {
+		return normalizeLocalContextShift(contextShift) !== 'off';
 	};
 
 	const resolveLocalModelLoadPlan = async (
@@ -2150,8 +2163,11 @@
 			}
 		}
 
-		const tokenPrediction = normalizeLocalTokenPrediction(loadPreferences.tokenPrediction);
-		const speculativeDecoding = isLocalTokenPredictionEnabled(tokenPrediction)
+		const contextShift = normalizeLocalContextShift(loadPreferences.contextShift);
+		const tokenPrediction = isLocalContextShiftEnabled(contextShift)
+			? 'off'
+			: normalizeLocalTokenPrediction(loadPreferences.tokenPrediction);
+		const speculativeDecoding = isLocalContextShiftEnabled(contextShift) || isLocalTokenPredictionEnabled(tokenPrediction)
 			? 'off'
 			: normalizeLocalSpeculativeDecoding(loadPreferences.speculative);
 
@@ -2162,7 +2178,8 @@
 			mmprojFilename,
 			cacheType: normalizeLocalCacheType(loadPreferences.cache),
 			speculativeDecoding,
-			tokenPrediction
+			tokenPrediction,
+			contextShift
 		};
 	};
 
@@ -2173,7 +2190,8 @@
 			normalizeLocalCacheType(loadedModel.cache_type) === loadPlan.cacheType &&
 			normalizeLocalSpeculativeDecoding(loadedModel.speculative_decoding) ===
 				loadPlan.speculativeDecoding &&
-			normalizeLocalTokenPrediction(loadedModel.token_prediction) === loadPlan.tokenPrediction
+			normalizeLocalTokenPrediction(loadedModel.token_prediction) === loadPlan.tokenPrediction &&
+			normalizeLocalContextShift(loadedModel.context_shift) === loadPlan.contextShift
 		);
 	};
 
@@ -2240,7 +2258,8 @@
 									loadPlan.mmprojFilename,
 									loadPlan.cacheType,
 									loadPlan.speculativeDecoding,
-									loadPlan.tokenPrediction
+									loadPlan.tokenPrediction,
+									loadPlan.contextShift
 								);
 							try {
 								await doLoad();
