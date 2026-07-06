@@ -1830,12 +1830,12 @@
 												type="button"
 												class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition cursor-pointer bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
 												style="font-size: 0.79rem; font-family: 'Segoe UI', sans-serif; font-weight: 400; letter-spacing: 0.01em;"
-												aria-label={`${thinkingEnabled ? 'Raciocínio' : 'Rápido'}${thinkingExtendedEnabled ? ' Estendido' : ''}`}
+												aria-label={`${thinkingEnabled ? 'Raciocínio' : 'Rápido'}${thinkingExtendedEnabled ? ' Aprimorado' : ''}`}
 												on:click|preventDefault={() => { showThinkingDropdown = !showThinkingDropdown; }}
 											>
 												<span>{thinkingEnabled ? 'Raciocínio' : 'Rápido'}</span>
 												{#if thinkingExtendedEnabled}
-													<span class="text-gray-500 dark:text-gray-500">Estendido</span>
+													<span class="text-gray-500 dark:text-gray-500">Aprimorado</span>
 												{/if}
 												<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform {showThinkingDropdown ? 'rotate-180' : ''}">
 													<path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
@@ -1876,8 +1876,8 @@
 													<div class="my-1 border-t border-gray-100 dark:border-gray-800"></div>
 													<div class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200">
 														<div class="flex-1 text-left">
-															<div>Estendido</div>
-															<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Permite respostas mais amplas</div>
+															<div>Aprimorado</div>
+															<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Permite pensamento mais amplo</div>
 														</div>
 														<Switch
 															bind:state={thinkingExtendedEnabled}
@@ -2209,12 +2209,12 @@
 													type="button"
 													class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition cursor-pointer bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
 													style="font-size: 0.79rem; font-family: 'Segoe UI', sans-serif; font-weight: 400; letter-spacing: 0.01em;"
-													aria-label={`${thinkingEnabled ? 'Raciocínio' : 'Rápido'}${thinkingExtendedEnabled ? ' Estendido' : ''}`}
+													aria-label={`${thinkingEnabled ? 'Raciocínio' : 'Rápido'}${thinkingExtendedEnabled ? ' Aprimorado' : ''}`}
 													on:click|preventDefault={() => { showThinkingDropdown = !showThinkingDropdown; }}
 												>
 													<span>{thinkingEnabled ? 'Raciocínio' : 'Rápido'}</span>
 													{#if thinkingExtendedEnabled}
-														<span class="text-gray-500 dark:text-gray-500">Estendido</span>
+														<span class="text-gray-500 dark:text-gray-500">Aprimorado</span>
 													{/if}
 													<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform {showThinkingDropdown ? 'rotate-180' : ''}">
 														<path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
@@ -2255,8 +2255,8 @@
 														<div class="my-1 border-t border-gray-100 dark:border-gray-800"></div>
 														<div class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200">
 															<div class="flex-1 text-left">
-																<div>Estendido</div>
-																<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Permite respostas mais amplas</div>
+																<div>Aprimorado</div>
+																<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Permite pensamento mais amplo</div>
 															</div>
 															<Switch
 																bind:state={thinkingExtendedEnabled}

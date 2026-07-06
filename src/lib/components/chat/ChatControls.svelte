@@ -58,6 +58,7 @@
 	let paneReady = false;
 	const CONTROLS_MIN_WIDTH_PX = 350;
 	const CHAT_MIN_WIDTH_WITH_ARTIFACTS_PX = 520;
+	const CHAT_MIN_PERCENT_WITH_ARTIFACTS = 38;
 
 	// Tab state for Controls+Files panel
 	let activeTab = savedTab;
@@ -70,9 +71,11 @@
 
 	const getPaneBounds = (containerWidth: number) => {
 		const min = Math.floor((CONTROLS_MIN_WIDTH_PX / containerWidth) * 100);
-		const max = $showArtifacts
-			? Math.max(min, 100 - Math.ceil((CHAT_MIN_WIDTH_WITH_ARTIFACTS_PX / containerWidth) * 100))
-			: 100;
+		const artifactMax = Math.min(
+			100 - CHAT_MIN_PERCENT_WITH_ARTIFACTS,
+			100 - Math.ceil((CHAT_MIN_WIDTH_WITH_ARTIFACTS_PX / containerWidth) * 100)
+		);
+		const max = $showArtifacts ? Math.max(min, artifactMax) : 100;
 
 		return { min, max };
 	};
@@ -84,6 +87,29 @@
 		return getPaneBounds(container.clientWidth);
 	};
 
+	const clampPaneSize = (persist = false) => {
+		if (!largeScreen || !$showControls || !pane || !pane.isExpanded()) return;
+
+		const { min, max } = getCurrentPaneBounds();
+		const size = pane.getSize();
+		const nextSize = Math.min(Math.max(size, min), max);
+		if (nextSize !== size) {
+			pane.resize(nextSize);
+		}
+
+		if (persist) {
+			const container = document.getElementById('chat-container');
+			if (container) {
+				localStorage.chatControlsSize = Math.floor((nextSize / 100) * container.clientWidth);
+			}
+		}
+	};
+
+	const requestPaneClamp = async () => {
+		await tick();
+		clampPaneSize(true);
+	};
+
 	$: showFilesTab =
 		!!$selectedTerminalId ||
 		(codeInterpreterEnabled && $config?.code?.interpreter_engine !== 'jupyter');
@@ -93,9 +119,12 @@
 		showControls.set(false);
 	}
 
-	$: if (largeScreen && $showControls && $showArtifacts && pane && pane.isExpanded()) {
-		const { max } = getCurrentPaneBounds();
-		if (pane.getSize() > max) pane.resize(max);
+	$: if (largeScreen && $showControls && pane) {
+		$showArtifacts;
+		$showEmbeds;
+		$showCallOverlay;
+		showFilesTab;
+		requestPaneClamp();
 	}
 
 	// Auto-switch to Files tab when display_file is triggered
@@ -157,6 +186,7 @@
 		const { min, max } = getCurrentPaneBounds();
 		const target = Math.min(Math.max(50, min), max);
 		pane.resize(target);
+		clampPaneSize(true);
 	};
 
 	const handleMediaQuery = async (e) => {

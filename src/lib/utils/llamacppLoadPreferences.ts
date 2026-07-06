@@ -174,8 +174,8 @@ export const getStreamPreferenceLabel = (preference: LocalModelStreamPreference)
 };
 
 export const getSpeculativePreferenceLabel = (preference: LocalModelSpeculativePreference) => {
-	if (preference === 'low') return 'Moderado';
-	if (preference === 'high') return 'Agressivo';
+	if (preference === 'low') return 'Baixo';
+	if (preference === 'high') return 'Alto';
 	if (preference === 'off') return 'Desligado';
 	return 'Padrão';
 };

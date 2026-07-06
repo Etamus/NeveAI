@@ -642,8 +642,8 @@
 		return normalized.toUpperCase();
 	};
 	const getSpeculativeChipLabel = (speculativeDecoding?: string | null) => {
-		if (speculativeDecoding === 'low') return 'Moderado';
-		if (speculativeDecoding === 'high') return 'Agressivo';
+		if (speculativeDecoding === 'low') return 'Baixo';
+		if (speculativeDecoding === 'high') return 'Alto';
 		return 'Desligado';
 	};
 

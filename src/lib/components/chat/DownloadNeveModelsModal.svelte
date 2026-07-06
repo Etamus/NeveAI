@@ -187,6 +187,11 @@
 		selectedIds = next;
 	};
 
+	const clearSelections = () => {
+		if (downloading || selectedIds.size === 0) return;
+		selectedIds = new Set();
+	};
+
 	const showDownloadProgressToast = (name: string, progressValue: number, label: string) => {
 		if (!downloading || show || !name) return;
 		progressToastVisible = true;
@@ -657,9 +662,16 @@
 						{$i18n.t(cancelling ? 'Cancelando...' : 'Cancelar')}
 					</button>
 				{:else}
-					<div class="min-w-0 flex-1">
+					<div class="min-w-0 flex flex-1 items-center justify-between gap-3">
 						{#if selectedDownloadCount > 0}
-							<div class="flex min-w-0 items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+							<button
+								type="button"
+								class="shrink-0 text-xs font-medium text-gray-400 transition hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
+								on:click={clearSelections}
+							>
+								Desmarcar tudo
+							</button>
+							<div class="flex min-w-0 items-center justify-end gap-2 text-xs text-gray-500 dark:text-gray-400">
 								<span class="whitespace-nowrap">
 									{selectedDownloadCount}
 									{selectedDownloadCount === 1 ? 'item selecionado' : 'itens selecionados'}
@@ -690,7 +702,7 @@
 						</div>
 					{/if}
 					<button
-						class="px-4 py-1.5 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg disabled:opacity-40 flex items-center gap-2"
+						class="ml-2 px-4 py-1.5 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg disabled:opacity-40 flex items-center gap-2"
 						disabled={selectedDownloadCount === 0 || loading}
 						on:click={handleDownload}
 					>

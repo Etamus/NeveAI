@@ -15,6 +15,7 @@ import html
 import inspect
 import re
 import ast
+import unicodedata
 from urllib.parse import unquote
 
 from uuid import uuid4
@@ -1163,6 +1164,99 @@ def build_primary_web_search_query(user_message: str) -> str:
     return query or re.sub(r"\s+", " ", str(user_message)).strip()
 
 
+def normalize_web_search_intent_text(text: Any) -> str:
+    if not isinstance(text, str):
+        return ""
+
+    text = html.unescape(unquote(text))
+    text = re.sub(r"https?://\S+|www\.\S+", " url ", text, flags=re.IGNORECASE)
+    text = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
+    text = re.sub(r"`[^`]*`", " ", text)
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9\s?!./:-]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+WEB_SEARCH_CASUAL_PATTERNS = (
+    re.compile(
+        r"^(?:oi|ola|olá|opa|e ai|eai|bom dia|boa tarde|boa noite|hello|hi|hey)"
+        r"(?:\s+(?:tudo bem|como vai|beleza|bom dia|boa tarde|boa noite))*[!?.\s]*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:obrigado|obrigada|valeu|vlw|thanks|thank you|ok|okay|certo|sim|nao|não|beleza|show|perfeito)[!?.\s]*$",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:teste|testando|ping|funcionando|voce esta ai|você está aí|ta ai|tá aí)[!?.\s]*$",
+        re.IGNORECASE,
+    ),
+)
+
+WEB_SEARCH_FORCE_PATTERNS = (
+    re.compile(
+        r"\b(?:pesquise|pesquisar|pesquisa|busque|buscar|busca|procure|procurar|"
+        r"search|look up|google|na web|na internet|online|fontes?|links?|referencias?|referências?)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(?:site:|url|https?://|www\.)", re.IGNORECASE),
+)
+
+WEB_SEARCH_VOLATILE_PATTERNS = (
+    re.compile(
+        r"\b(?:atual|atuais|atualmente|agora|hoje|ontem|amanha|amanhã|recente|recentes|"
+        r"ultimo|ultima|ultimos|ultimas|último|última|últimos|últimas|latest|current|recent|today|news)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:noticia|noticias|notícia|notícias|preco|preço|cotacao|cotação|dolar|dólar|"
+        r"euro|clima|tempo|previsao|previsão|placar|resultado|agenda|calendario|calendário)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:versao|versão|release|changelog|lancamento|lançamento|patch|update|"
+        r"ranking|tier list|meta|melhor(?:es)?|comparativo|comparar|review|benchmark)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:presidente|governador|prefeito|ministro|senador|deputado|ceo|cto|cfo|"
+        r"diretor|fundador|dono|eleicao|eleição|ganhou|venceu|vencedor|campeao|campeão)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\b(?:19|20)\d{2}\b"),
+)
+
+
+def should_run_web_search_for_message(
+    user_message: Any, deep_search_enabled: bool = False
+) -> bool:
+    text = normalize_web_search_intent_text(user_message)
+    if not text:
+        return False
+
+    if any(pattern.search(text) for pattern in WEB_SEARCH_CASUAL_PATTERNS):
+        return False
+
+    words = re.findall(r"[a-z0-9]+", text)
+    if len(words) <= 2 and not any(
+        pattern.search(text) for pattern in WEB_SEARCH_FORCE_PATTERNS
+    ):
+        return False
+
+    if any(pattern.search(text) for pattern in WEB_SEARCH_FORCE_PATTERNS):
+        return True
+
+    if any(pattern.search(text) for pattern in WEB_SEARCH_VOLATILE_PATTERNS):
+        return True
+
+    if deep_search_enabled:
+        return len(words) >= 4
+
+    return False
+
+
 def filter_web_search_queries(
     queries: list[str],
     primary_query: str,
@@ -1902,6 +1996,12 @@ async def chat_web_search_handler(
     deep_search_loaded_count = 20
     deep_search_context_count = 10
     request.state.deep_search_enabled = deep_search_enabled
+
+    messages = form_data["messages"]
+    user_message = get_last_user_message(messages)
+    if not should_run_web_search_for_message(user_message, deep_search_enabled):
+        return form_data
+
     await event_emitter(
         {
             "type": "status",
@@ -1914,8 +2014,6 @@ async def chat_web_search_handler(
         }
     )
 
-    messages = form_data["messages"]
-    user_message = get_last_user_message(messages)
     primary_query = build_primary_web_search_query(user_message)
 
     queries = []

@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { DropdownMenu } from 'bits-ui';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Bookmark from '$lib/components/icons/Bookmark.svelte';
+	import ChevronRight from '$lib/components/icons/ChevronRight.svelte';
 	import { flyAndScale } from '$lib/utils/transitions';
 	import {
 		LOCAL_MODEL_CONTEXT_OPTIONS,
@@ -39,6 +40,88 @@
 	let speculativePreference: LocalModelSpeculativePreference = 'default';
 	let tokenPredictionPreference: LocalModelTokenPredictionPreference = 'default';
 	let contextShiftPreference: LocalModelContextShiftPreference = 'default';
+	type LocalModelPresetId =
+		| 'user'
+		| 'light'
+		| 'balanced'
+		| 'quality'
+		| 'high_prediction';
+
+	type LocalModelPreset = {
+		id: LocalModelPresetId;
+		label: string;
+		description: string;
+		context?: LocalModelContextPreference;
+		vision?: LocalModelVisionPreference;
+		cache?: LocalModelCachePreference;
+		stream?: LocalModelStreamPreference;
+		speculative?: LocalModelSpeculativePreference;
+		tokenPrediction?: LocalModelTokenPredictionPreference;
+		contextShift?: LocalModelContextShiftPreference;
+	};
+
+	const presetStorageKey = 'llamacpp_load_preference_preset';
+	const userPresetStorageKey = 'llamacpp_load_preference_user_snapshot';
+	let selectedPreset: LocalModelPresetId = 'user';
+	let showPresetDropdown = false;
+	let presetButtonElement: HTMLButtonElement | null = null;
+	let presetMenuElement: HTMLDivElement | null = null;
+
+	const presetOptions: LocalModelPreset[] = [
+		{
+			id: 'user',
+			label: 'Usuário',
+			description: ''
+		},
+		{
+			id: 'light',
+			label: 'Desempenho',
+			description: 'Baixo consumo e contexto',
+			context: 4096,
+			vision: 'no',
+			cache: 'q4_0',
+			stream: 'on',
+			contextShift: 'on',
+			speculative: 'off',
+			tokenPrediction: 'off'
+		},
+		{
+			id: 'balanced',
+			label: 'Equilibrado',
+			description: 'Perfil estável para uso geral',
+			context: 8192,
+			vision: 'ask',
+			cache: 'q8_0',
+			stream: 'on',
+			contextShift: 'off',
+			speculative: 'off',
+			tokenPrediction: 'off'
+		},
+		{
+			id: 'quality',
+			label: 'Qualidade',
+			description: 'Focado em máxima fidelidade',
+			context: 16384,
+			vision: 'yes',
+			cache: 'f16',
+			stream: 'on',
+			contextShift: 'off',
+			speculative: 'off',
+			tokenPrediction: 'off'
+		},
+		{
+			id: 'high_prediction',
+			label: 'Acelerado',
+			description: 'Prioriza velocidade de geração',
+			context: 8192,
+			vision: 'no',
+			cache: 'q8_0',
+			stream: 'on',
+			contextShift: 'off',
+			speculative: 'off',
+			tokenPrediction: 'on'
+		}
+	];
 
 	const contextOptions: LocalModelContextPreference[] = ['ask', ...LOCAL_MODEL_CONTEXT_OPTIONS];
 	const visionOptions: LocalModelVisionPreference[] = ['ask', 'yes', 'no'];
@@ -56,20 +139,134 @@
 		typeof contextPreference === 'number'
 			? LOCAL_MODEL_CONTEXT_OPTIONS.indexOf(contextPreference)
 			: -1;
+	$: presetLocked = selectedPreset !== 'user';
 	$: contextShiftActive = contextShiftPreference === 'on';
 	$: tokenPredictionActive = tokenPredictionPreference === 'on';
 	$: speculativeLocked = tokenPredictionActive || contextShiftActive;
 	$: tokenPredictionLocked = contextShiftActive;
 	$: effectiveSpeculativePreference = speculativeLocked ? 'off' : speculativePreference;
 	$: effectiveTokenPredictionPreference = tokenPredictionLocked ? 'off' : tokenPredictionPreference;
+	$: selectedPresetLabel =
+		presetOptions.find((preset) => preset.id === selectedPreset)?.label ?? 'Usuário';
+	$: if (!show && showPresetDropdown) {
+		showPresetDropdown = false;
+	}
+
+	const setStoredPreset = (preset: LocalModelPresetId) => {
+		if (typeof localStorage === 'undefined') return;
+		localStorage.setItem(presetStorageKey, preset);
+	};
+
+	const readStoredPreset = (): LocalModelPresetId => {
+		if (typeof localStorage === 'undefined') return 'user';
+		const stored = localStorage.getItem(presetStorageKey) as LocalModelPresetId | null;
+		return presetOptions.some((preset) => preset.id === stored) ? stored! : 'user';
+	};
+
+	const getCurrentUserPresetSnapshot = () => ({
+		context: contextPreference,
+		vision: visionPreference,
+		cache: cachePreference,
+		stream: streamPreference,
+		speculative: speculativePreference,
+		tokenPrediction: tokenPredictionPreference,
+		contextShift: contextShiftPreference
+	});
+
+	const saveUserPresetSnapshot = () => {
+		if (typeof localStorage === 'undefined') return;
+		localStorage.setItem(userPresetStorageKey, JSON.stringify(getCurrentUserPresetSnapshot()));
+	};
+
+	const restoreUserPresetSnapshot = () => {
+		if (typeof localStorage === 'undefined') return;
+
+		let snapshot = null;
+		try {
+			snapshot = JSON.parse(localStorage.getItem(userPresetStorageKey) ?? 'null');
+		} catch {
+			snapshot = null;
+		}
+		if (!snapshot || typeof snapshot !== 'object') return;
+
+		contextPreference = snapshot.context ?? contextPreference;
+		visionPreference = snapshot.vision ?? visionPreference;
+		cachePreference = snapshot.cache ?? cachePreference;
+		streamPreference = snapshot.stream ?? streamPreference;
+		speculativePreference = snapshot.speculative ?? speculativePreference;
+		tokenPredictionPreference = snapshot.tokenPrediction ?? tokenPredictionPreference;
+		contextShiftPreference = snapshot.contextShift ?? contextShiftPreference;
+
+		setLocalModelContextPreference(contextPreference);
+		setLocalModelVisionPreference(visionPreference);
+		setLocalModelCachePreference(cachePreference);
+		setLocalModelStreamPreference(streamPreference);
+		setLocalModelSpeculativePreference(speculativePreference);
+		setLocalModelTokenPredictionPreference(tokenPredictionPreference);
+		setLocalModelContextShiftPreference(contextShiftPreference);
+	};
+
+	const applyLocalModelPreset = (presetId: LocalModelPresetId) => {
+		const preset = presetOptions.find((item) => item.id === presetId);
+		if (!preset) return;
+		const wasUserPreset = selectedPreset === 'user';
+
+		if (wasUserPreset && preset.id !== 'user') {
+			saveUserPresetSnapshot();
+		}
+
+		selectedPreset = preset.id;
+		setStoredPreset(preset.id);
+		showPresetDropdown = false;
+
+		if (preset.id === 'user') {
+			if (wasUserPreset) {
+				saveUserPresetSnapshot();
+			} else {
+				restoreUserPresetSnapshot();
+			}
+			return;
+		}
+
+		if (preset.context !== undefined) {
+			contextPreference = preset.context;
+			setLocalModelContextPreference(contextPreference);
+		}
+		if (preset.vision !== undefined) {
+			visionPreference = preset.vision;
+			setLocalModelVisionPreference(visionPreference);
+		}
+		if (preset.cache !== undefined) {
+			cachePreference = preset.cache;
+			setLocalModelCachePreference(cachePreference);
+		}
+		if (preset.stream !== undefined) {
+			streamPreference = preset.stream;
+			setLocalModelStreamPreference(streamPreference);
+		}
+		if (preset.contextShift !== undefined) {
+			contextShiftPreference = preset.contextShift;
+			setLocalModelContextShiftPreference(contextShiftPreference);
+		}
+		if (preset.speculative !== undefined) {
+			speculativePreference = preset.speculative;
+			setLocalModelSpeculativePreference(speculativePreference);
+		}
+		if (preset.tokenPrediction !== undefined) {
+			tokenPredictionPreference = preset.tokenPrediction;
+			setLocalModelTokenPredictionPreference(tokenPredictionPreference);
+		}
+	};
 
 	const cycleContextPreference = () => {
+		if (presetLocked) return;
 		const idx = contextOptions.indexOf(contextPreference);
 		contextPreference = contextOptions[(idx + 1) % contextOptions.length];
 		setLocalModelContextPreference(contextPreference);
 	};
 
 	const stepContextPreference = (direction: -1 | 1) => {
+		if (presetLocked) return;
 		if (contextOptionIndex < 0) return;
 
 		const nextIndex = Math.max(
@@ -81,76 +278,85 @@
 	};
 
 	const cycleVisionPreference = () => {
+		if (presetLocked) return;
 		const idx = visionOptions.indexOf(visionPreference);
 		visionPreference = visionOptions[(idx + 1) % visionOptions.length];
 		setLocalModelVisionPreference(visionPreference);
 	};
 
 	const cycleCachePreference = () => {
+		if (presetLocked) return;
 		const idx = cacheOptions.indexOf(cachePreference);
 		cachePreference = cacheOptions[(idx + 1) % cacheOptions.length];
 		setLocalModelCachePreference(cachePreference);
 	};
 
 	const cycleStreamPreference = () => {
+		if (presetLocked) return;
 		const idx = streamOptions.indexOf(streamPreference);
 		streamPreference = streamOptions[(idx + 1) % streamOptions.length];
 		setLocalModelStreamPreference(streamPreference);
 	};
 
 	const cycleSpeculativePreference = () => {
-		if (speculativeLocked) return;
+		if (presetLocked || speculativeLocked) return;
 		const idx = speculativeOptions.indexOf(speculativePreference);
 		speculativePreference = speculativeOptions[(idx + 1) % speculativeOptions.length];
 		setLocalModelSpeculativePreference(speculativePreference);
 	};
 
 	const cycleTokenPredictionPreference = () => {
-		if (tokenPredictionLocked) return;
+		if (presetLocked || tokenPredictionLocked) return;
 		const idx = tokenPredictionOptions.indexOf(tokenPredictionPreference);
 		tokenPredictionPreference = tokenPredictionOptions[(idx + 1) % tokenPredictionOptions.length];
 		setLocalModelTokenPredictionPreference(tokenPredictionPreference);
 	};
 
 	const cycleContextShiftPreference = () => {
+		if (presetLocked) return;
 		const idx = contextShiftOptions.indexOf(contextShiftPreference);
 		contextShiftPreference = contextShiftOptions[(idx + 1) % contextShiftOptions.length];
 		setLocalModelContextShiftPreference(contextShiftPreference);
 	};
 
 	const resetContextPreference = () => {
+		if (presetLocked) return;
 		contextPreference = 'ask';
 		setLocalModelContextPreference(contextPreference);
 	};
 
 	const resetVisionPreference = () => {
+		if (presetLocked) return;
 		visionPreference = 'ask';
 		setLocalModelVisionPreference(visionPreference);
 	};
 
 	const resetCachePreference = () => {
+		if (presetLocked) return;
 		cachePreference = 'default';
 		setLocalModelCachePreference(cachePreference);
 	};
 
 	const resetStreamPreference = () => {
+		if (presetLocked) return;
 		streamPreference = 'default';
 		setLocalModelStreamPreference(streamPreference);
 	};
 
 	const resetSpeculativePreference = () => {
-		if (speculativeLocked) return;
+		if (presetLocked || speculativeLocked) return;
 		speculativePreference = 'default';
 		setLocalModelSpeculativePreference(speculativePreference);
 	};
 
 	const resetTokenPredictionPreference = () => {
-		if (tokenPredictionLocked) return;
+		if (presetLocked || tokenPredictionLocked) return;
 		tokenPredictionPreference = 'default';
 		setLocalModelTokenPredictionPreference(tokenPredictionPreference);
 	};
 
 	const resetContextShiftPreference = () => {
+		if (presetLocked) return;
 		contextShiftPreference = 'default';
 		setLocalModelContextShiftPreference(contextShiftPreference);
 	};
@@ -159,7 +365,37 @@
 		event.stopPropagation();
 	};
 
+	const togglePresetDropdown = (event: MouseEvent) => {
+		event.preventDefault();
+		event.stopPropagation();
+		showPresetDropdown = !showPresetDropdown;
+	};
+
+	const handlePresetOutsidePointerDown = (event: PointerEvent) => {
+		if (!showPresetDropdown) return;
+
+		const target = event.target as Node | null;
+		if (
+			target &&
+			(presetButtonElement?.contains(target) || presetMenuElement?.contains(target))
+		) {
+			return;
+		}
+
+		showPresetDropdown = false;
+
+		if (
+			target instanceof Element &&
+			target.closest('[data-local-model-preferences-root]')
+		) {
+			event.preventDefault();
+			event.stopPropagation();
+			event.stopImmediatePropagation();
+		}
+	};
+
 	onMount(() => {
+		document.addEventListener('pointerdown', handlePresetOutsidePointerDown, true);
 		const preferences = getLocalModelLoadPreferences();
 		contextPreference = preferences.context;
 		visionPreference = preferences.vision;
@@ -168,6 +404,14 @@
 		speculativePreference = preferences.speculative;
 		tokenPredictionPreference = preferences.tokenPrediction;
 		contextShiftPreference = preferences.contextShift;
+		selectedPreset = readStoredPreset();
+		if (selectedPreset !== 'user') {
+			applyLocalModelPreset(selectedPreset);
+		}
+	});
+
+	onDestroy(() => {
+		document.removeEventListener('pointerdown', handlePresetOutsidePointerDown, true);
 	});
 </script>
 
@@ -185,7 +429,8 @@
 	</Tooltip>
 
 	<DropdownMenu.Content
-		class="z-50 w-76 rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-850 dark:text-white shadow-md outline-hidden"
+		data-local-model-preferences-root
+		class="relative z-50 w-76 rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-850 dark:text-white shadow-md outline-hidden"
 		style="font-family: 'Segoe UI', sans-serif;"
 		transition={flyAndScale}
 		side="bottom"
@@ -193,9 +438,67 @@
 		sideOffset={4}
 		alignOffset={6}
 	>
-		<div class="px-3 pt-2 pb-1.5 text-sm font-semibold text-gray-800 dark:text-gray-100">Predefinições</div>
+		<div class="flex items-center justify-between gap-2 px-3 pt-2 pb-1.5">
+			<div class="text-sm font-semibold text-gray-800 dark:text-gray-100">Predefinições</div>
+			<button
+				bind:this={presetButtonElement}
+				type="button"
+				class={`inline-flex h-7 max-w-[8.5rem] items-center gap-1 rounded-md bg-gray-50 px-2.5 text-xs font-medium transition-colors hover:text-gray-800 aria-expanded:text-gray-800 dark:bg-gray-800/70 dark:hover:text-gray-100 dark:aria-expanded:text-gray-100 ${
+					selectedPreset === 'user'
+						? 'text-gray-500 dark:text-gray-400'
+						: 'text-gray-800 dark:text-gray-100'
+				}`}
+				aria-label="Abrir presets de carregamento"
+				aria-expanded={showPresetDropdown}
+				on:click={togglePresetDropdown}
+			>
+				<span class="truncate">{selectedPresetLabel}</span>
+				<ChevronRight className="size-3 shrink-0" strokeWidth="2" />
+			</button>
+		</div>
+		{#if showPresetDropdown}
+			<div
+				bind:this={presetMenuElement}
+				class="absolute z-[60] w-56 rounded-md border border-gray-100 bg-white p-1 text-sm text-gray-700 shadow-md outline-hidden dark:border-gray-800 dark:bg-gray-850 dark:text-gray-200"
+				style="left: calc(100% - 0.25rem); top: 0.5rem; font-family: 'Segoe UI', sans-serif;"
+				transition={flyAndScale}
+				on:pointerdown|stopPropagation
+			>
+				{#each presetOptions as preset, presetIndex}
+					{#if presetIndex === 1}
+						<div class="mx-2 my-1 border-t border-gray-100 dark:border-gray-800"></div>
+					{/if}
+					<button
+						type="button"
+						class="flex w-full cursor-pointer select-none items-center gap-2 rounded-sm px-2 py-1.5 text-left outline-hidden transition hover:bg-gray-50 dark:hover:bg-gray-800"
+						on:click|stopPropagation={() => applyLocalModelPreset(preset.id)}
+					>
+						<div class="min-w-0 flex-1">
+							<div class="truncate text-sm leading-5">{preset.label}</div>
+							{#if preset.description}
+								<div class="truncate text-[11px] leading-4 text-gray-400 dark:text-gray-500">
+									{preset.description}
+								</div>
+							{/if}
+						</div>
+						<div class="flex size-5 shrink-0 items-center justify-center">
+							{#if selectedPreset === preset.id}
+								<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
+									<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+								</svg>
+							{/if}
+						</div>
+					</button>
+				{/each}
+			</div>
+		{/if}
 		<div class="mx-3 mb-1 border-t border-gray-100 dark:border-gray-800"></div>
-		<div class="flex flex-col gap-1 text-sm">
+		<div
+			class="flex flex-col gap-1 text-sm transition"
+			class:opacity-60={presetLocked}
+			class:pointer-events-none={presetLocked}
+			aria-disabled={presetLocked}
+		>
 			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
 				{#if contextPreference === 'ask'}
 					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Tamanho do contexto</div>
