@@ -5,6 +5,7 @@ import json
 import asyncio
 import logging
 import time
+from pathlib import Path
 
 from neveai.models.groups import Groups
 from neveai.models.models import (
@@ -74,6 +75,58 @@ def local_model_display_name(model: dict) -> str:
         .replace("_", " ")
         .title()
     )
+
+
+def get_static_profile_image_response(profile_image_url: str, etag: Optional[str] = None):
+    if not profile_image_url:
+        return None
+
+    if profile_image_url.startswith("/static/"):
+        relative_path = profile_image_url.removeprefix("/static/")
+    elif profile_image_url.startswith("static/"):
+        relative_path = profile_image_url.removeprefix("static/")
+    else:
+        return None
+
+    static_root = Path(STATIC_DIR).resolve()
+    image_path = (static_root / relative_path).resolve()
+
+    try:
+        image_path.relative_to(static_root)
+    except ValueError:
+        return None
+
+    if not image_path.is_file():
+        return None
+
+    headers = {"Content-Disposition": "inline", "Cache-Control": "no-cache"}
+    if etag:
+        headers["ETag"] = etag
+
+    return FileResponse(image_path, headers=headers)
+
+
+def lock_neve_catalog_profile_image(model: ModelModel, form_data: ModelForm) -> ModelForm:
+    existing_meta = model.meta.model_dump() if model.meta else {}
+    catalog_profile_image_url = llamacpp.get_catalog_profile_image_url(existing_meta)
+    if not catalog_profile_image_url:
+        return form_data
+
+    form_model_data = form_data.model_dump()
+    form_meta = form_model_data.get("meta") or {}
+    form_meta["profile_image_url"] = catalog_profile_image_url
+    form_meta["neve_catalog_id"] = existing_meta.get("neve_catalog_id")
+    form_meta["neve_catalog_profile_image_locked"] = True
+
+    if existing_meta.get("neve_catalog_repo"):
+        form_meta["neve_catalog_repo"] = existing_meta.get("neve_catalog_repo")
+    if existing_meta.get("neve_catalog_defaults_version"):
+        form_meta["neve_catalog_defaults_version"] = existing_meta.get(
+            "neve_catalog_defaults_version"
+        )
+
+    form_model_data["meta"] = form_meta
+    return ModelForm(**form_model_data)
 
 
 def build_model_response_with_defaults(
@@ -459,17 +512,30 @@ def get_model_profile_image(id: str, user=Depends(get_verified_user)):
     model = Models.get_model_by_id(id)
 
     if model:
-        etag = f'"{model.updated_at}"' if model.updated_at else None
+        meta = model.meta.model_dump() if model.meta else {}
+        profile_image_url = (
+            llamacpp.get_catalog_profile_image_url(meta)
+            or meta.get("profile_image_url")
+        )
+        etag = (
+            f'"{model.updated_at}:{profile_image_url or "default"}"'
+            if model.updated_at
+            else None
+        )
 
-        if model.meta.profile_image_url:
-            if model.meta.profile_image_url.startswith("http"):
+        static_response = get_static_profile_image_response(profile_image_url, etag)
+        if static_response:
+            return static_response
+
+        if profile_image_url:
+            if profile_image_url.startswith("http"):
                 return Response(
                     status_code=status.HTTP_302_FOUND,
-                    headers={"Location": model.meta.profile_image_url},
+                    headers={"Location": profile_image_url},
                 )
-            elif model.meta.profile_image_url.startswith("data:image"):
+            elif profile_image_url.startswith("data:image"):
                 try:
-                    header, base64_data = model.meta.profile_image_url.split(",", 1)
+                    header, base64_data = profile_image_url.split(",", 1)
                     image_data = base64.b64decode(base64_data)
                     image_buffer = io.BytesIO(image_data)
                     media_type = header.split(";")[0].lstrip("data:")
@@ -578,6 +644,7 @@ async def update_model_by_id(
         )
 
     form_data = mark_model_form_user_customized(form_data)
+    form_data = lock_neve_catalog_profile_image(model, form_data)
     model = Models.update_model_by_id(form_data.id, ModelForm(**form_data.model_dump()), db=db)
     request.app.state.BASE_MODELS = None
     return model

@@ -275,6 +275,7 @@ export interface NeveCatalogModel {
 	installed: boolean;
 	description?: string;
 	size_label?: string;
+	profile_image_url?: string;
 	hardware_label?: string;
 	hardware_kind?: 'gpu' | 'cpu';
 }

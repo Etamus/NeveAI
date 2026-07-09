@@ -6,6 +6,7 @@
 	export let rows = 1;
 	export let minSize = null;
 	export let maxSize = null;
+	export let maxlength: number | null = null;
 	export let required = false;
 	export let readonly = false;
 	export let className =
@@ -59,6 +60,7 @@
 	class={className}
 	style="field-sizing: content;"
 	{rows}
+	maxlength={maxlength ?? undefined}
 	{required}
 	{readonly}
 	spellcheck={spellcheck !== null ? spellcheck : undefined}

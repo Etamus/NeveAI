@@ -1,6 +1,23 @@
 <script lang="ts" context="module">
 	const neveCatalogCacheKey = 'neveai.downloadModels.catalog';
+	const retiredModelIds = new Set(['neve-prism', 'neve-prism-x', 'neve-strata', 'neve-cascade-s']);
+	const catalogModelOverrides: Record<string, Partial<any>> = {
+		'neve-strata-x': {
+			name: 'Neve Strata'
+		},
+		'neve-cascade-x': {
+			name: 'Neve Cascade',
+			repo: 'NeveAI/Neve-Cascade-3-1B-GGUF'
+		}
+	};
 	let memoryCatalogCache: any[] = [];
+
+	const filterRetiredCatalogModels = (catalog: any[]) =>
+		Array.isArray(catalog)
+			? catalog
+					.filter((model) => !retiredModelIds.has(model?.id))
+					.map((model) => ({ ...model, ...(catalogModelOverrides[model?.id] ?? {}) }))
+			: [];
 
 	const readCachedNeveCatalog = () => {
 		if (memoryCatalogCache.length > 0) return memoryCatalogCache;
@@ -9,7 +26,7 @@
 		try {
 			const cached = JSON.parse(localStorage.getItem(neveCatalogCacheKey) ?? 'null');
 			if (!Array.isArray(cached?.catalog)) return [];
-			memoryCatalogCache = cached.catalog;
+			memoryCatalogCache = filterRetiredCatalogModels(cached.catalog);
 			return memoryCatalogCache;
 		} catch {
 			return [];
@@ -17,7 +34,7 @@
 	};
 
 	const writeCachedNeveCatalog = (catalog: any[]) => {
-		memoryCatalogCache = Array.isArray(catalog) ? catalog : [];
+		memoryCatalogCache = filterRetiredCatalogModels(catalog);
 		if (typeof localStorage === 'undefined') return;
 
 		try {
@@ -31,14 +48,21 @@
 	const modelBadges: Record<string, string[]> = {
 		'neve-echo-s': ['4GB+', 'Q4_K_XL'],
 		'neve-echo': ['6GB+', 'Q4_K_XL'],
-		'neve-prism': ['8GB+', 'Q5_K_XL'],
-		'neve-prism-x': ['8GB+', 'Q6_K_XL'],
 		'neve-sense': ['12GB+', 'Q4_K_XL'],
 		'neve-strata-s': ['6GB+', 'Q8_K_XL'],
-		'neve-strata': ['16GB+', 'Q4_K_XL'],
 		'neve-strata-x': ['16GB+', 'Q4_K_XL'],
-		'neve-cascade-s': ['CPU', 'Q8_0'],
-		'neve-cascade-x': ['CPU', 'Q3_K_XL']
+		'neve-cascade-x': ['CPU', 'Q3_K_XL'],
+		'neve-muse': ['16GB+']
+	};
+
+	const modelIconPaths: Record<string, string> = {
+		'neve-echo-s': '/static/logoechos.png',
+		'neve-echo': '/static/logoecho.png',
+		'neve-sense': '/static/logosense.png',
+		'neve-strata-s': '/static/logostratas.png',
+		'neve-strata-x': '/static/logostrata.png',
+		'neve-cascade-x': '/static/logocascade.png',
+		'neve-muse': '/static/logomuse.png'
 	};
 </script>
 
@@ -53,7 +77,7 @@
 	import DownloadProgressToast from '$lib/components/chat/DownloadNeveModelsProgressToast.svelte';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 	import { getModels } from '$lib/apis';
-	import { models } from '$lib/stores';
+	import { models, showArtifacts } from '$lib/stores';
 
 	import {
 		cancelNeveDownload,
@@ -91,13 +115,19 @@
 	let showUninstallConfirm = false;
 	let uninstallTarget: NeveCatalogModel | null = null;
 	let progressToastVisible = false;
-	let modalBlockersOpen = false;
+	let interfaceBlockersOpen = false;
 	let modalObserver: MutationObserver | null = null;
 	let selectedDownloadItems: NeveCatalogModel[] = [];
 	let selectedDownloadCount = 0;
 	let selectedDownloadSizeLabel = '0 GB';
 
 	const activeStatuses = ['queued', 'resolving', 'downloading', 'cancelling'];
+
+	const getModelIconUrl = (item: NeveCatalogModel) => {
+		const path = item.profile_image_url || modelIconPaths[item.id] || '/static/favicon.png';
+		if (path.startsWith('http') || path.startsWith('data:')) return path;
+		return `${NEVEAI_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+	};
 
 	const fmtBytes = (n: number): string => {
 		if (!n) return '';
@@ -114,7 +144,7 @@
 	const loadCatalog = async () => {
 		try {
 			catalogError = '';
-			catalog = await getNeveCatalog(localStorage.token);
+			catalog = filterRetiredCatalogModels(await getNeveCatalog(localStorage.token));
 			writeCachedNeveCatalog(catalog);
 		} catch (e: any) {
 			catalogError = normalizeLlamaCppErrorMessage(e, 'Falha ao carregar catálogo');
@@ -151,6 +181,12 @@
 		return `${sizeGb.toFixed(1)} GB`;
 	};
 
+	const isVisibleElement = (element: HTMLElement) => {
+		if (element.getAttribute('aria-hidden') === 'true') return false;
+		if (element.classList.contains('hidden')) return false;
+		return element.offsetParent !== null || element.getClientRects().length > 0;
+	};
+
 	const hasVisibleModalBlocker = () => {
 		if (typeof document === 'undefined') return false;
 		const dialogs = Array.from(
@@ -159,14 +195,18 @@
 
 		return dialogs.some((dialog) => {
 			if (dialog.closest('[data-sonner-toast]')) return false;
-			if (dialog.getAttribute('aria-hidden') === 'true') return false;
-			if (dialog.classList.contains('hidden')) return false;
-			return dialog.offsetParent !== null || dialog.getClientRects().length > 0;
+			return isVisibleElement(dialog);
 		});
 	};
 
-	const syncModalBlockers = () => {
-		modalBlockersOpen = hasVisibleModalBlocker();
+	const hasVisibleChatMoreMenu = () => {
+		if (typeof document === 'undefined') return false;
+		const menus = Array.from(document.querySelectorAll<HTMLElement>('[data-neve-chat-more-menu]'));
+		return menus.some((menu) => isVisibleElement(menu));
+	};
+
+	const syncInterfaceBlockers = () => {
+		interfaceBlockersOpen = hasVisibleModalBlocker() || hasVisibleChatMoreMenu();
 	};
 
 	const toggleSelection = (item: NeveCatalogModel) => {
@@ -348,7 +388,7 @@
 
 		if (catalogResult.status === 'fulfilled') {
 			catalogError = '';
-			catalog = catalogResult.value;
+			catalog = filterRetiredCatalogModels(catalogResult.value);
 			writeCachedNeveCatalog(catalog);
 		} else {
 			catalogError = normalizeLlamaCppErrorMessage(
@@ -372,6 +412,20 @@
 		loading = false;
 	};
 
+	const hydrateActiveDownload = async () => {
+		try {
+			const activeDownload = await getActiveNeveDownload(localStorage.token);
+			if (activeDownload?.task_id) {
+				attachToDownload(activeDownload.task_id, activeDownload);
+			} else {
+				toast.dismiss(downloadProgressToastId);
+				progressToastVisible = false;
+			}
+		} catch {
+			// The visible modal load path will surface backend/catalog failures when the user opens it.
+		}
+	};
+
 	$: selectedDownloadItems = catalog.filter((item) => selectedIds.has(item.id) && !item.installed);
 	$: selectedDownloadCount = selectedDownloadItems.length;
 	$: selectedDownloadSizeLabel = formatTotalSize(
@@ -385,7 +439,7 @@
 		wasShown = false;
 	}
 
-	$: if (downloading && !show && !modalBlockersOpen && downloadingModelName) {
+	$: if (downloading && !show && !interfaceBlockersOpen && !$showArtifacts && downloadingModelName) {
 		showDownloadProgressToast(downloadingModelName, progress, progressLabel);
 	} else {
 		dismissDownloadProgressToast();
@@ -488,9 +542,10 @@
 	};
 
 	onMount(() => {
-		syncModalBlockers();
+		syncInterfaceBlockers();
+		void hydrateActiveDownload();
 		if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
-			modalObserver = new MutationObserver(syncModalBlockers);
+			modalObserver = new MutationObserver(syncInterfaceBlockers);
 			modalObserver.observe(document.body, {
 				attributes: true,
 				attributeFilter: ['aria-hidden', 'class', 'style'],
@@ -507,14 +562,19 @@
 			currentEs.close();
 			currentEs = null;
 		}
-		dismissDownloadProgressToast();
 	});
 </script>
 
-<Modal bind:show size="w-[40rem]" keepMounted>
-	<div>
+<Modal
+	bind:show
+	size="w-[min(40rem,calc(100vw-1rem))]"
+	containerClassName="p-2 sm:p-3"
+	className="bg-white dark:bg-gray-900 rounded-xl max-h-[calc(100dvh-1rem)] overflow-hidden"
+	keepMounted
+>
+	<div class="flex max-h-[calc(100dvh-1rem)] flex-col">
 		<div
-			class="flex justify-between dark:text-gray-300 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20"
+			class="flex shrink-0 justify-between dark:text-gray-300 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20"
 		>
 			<div class="text-lg font-medium self-center">{$i18n.t('Baixar modelos')}</div>
 			<button
@@ -527,8 +587,8 @@
 			</button>
 		</div>
 
-		<div class="flex flex-col w-full px-5 pt-4 pb-4 dark:text-gray-200">
-			<div class="flex h-[26.15rem] max-h-[26.15rem] snap-y snap-mandatory flex-col gap-1 overflow-y-auto pr-1">
+		<div class="flex min-h-0 w-full flex-col px-5 pt-4 pb-4 dark:text-gray-200">
+			<div class="flex h-[min(26.15rem,calc(100dvh-12rem))] min-h-[12rem] max-h-[26.15rem] snap-y snap-mandatory flex-col gap-1 overflow-y-auto pr-1">
 				{#if loading && catalog.length === 0}
 					<div class="flex h-full items-center justify-center">
 						<Spinner className="size-5" />
@@ -577,7 +637,7 @@
 							</button>
 
 							<img
-								src="{NEVEAI_BASE_URL}/static/favicon.png"
+								src={getModelIconUrl(item)}
 								alt=""
 								class="size-8 rounded-full object-cover shrink-0"
 							/>
@@ -633,24 +693,22 @@
 				{/if}
 			</div>
 
-			{#if downloading}
-				<div class="mx-auto mt-6 w-[92%]">
-					<div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
-						<span class="line-clamp-1">{progressLabel}</span>
-						<span>{Math.round(progress * 100)}%</span>
-					</div>
-					<div class="w-full h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-						<div
-							class="h-full bg-black dark:bg-white transition-all"
-							style="width: {Math.min(100, Math.max(0, progress * 100))}%"
-						></div>
-					</div>
-				</div>
-			{/if}
-
 			<div class="flex items-center gap-2 pt-4">
 				{#if downloading}
-					<div class="flex-1"></div>
+					<div class="min-w-0 flex-1 pr-2">
+						<div class="mx-auto w-[94%]">
+							<div class="flex justify-between gap-3 text-xs text-gray-500 dark:text-gray-400 mb-1">
+								<span class="min-w-0 line-clamp-1">{progressLabel}</span>
+								<span class="shrink-0">{Math.round(progress * 100)}%</span>
+							</div>
+							<div class="w-full h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
+								<div
+									class="h-full bg-black dark:bg-white transition-all"
+									style="width: {Math.min(100, Math.max(0, progress * 100))}%"
+								></div>
+							</div>
+						</div>
+					</div>
 					<button
 						class="px-4 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-850 transition rounded-lg disabled:opacity-40 flex items-center gap-2"
 						disabled={cancelling}

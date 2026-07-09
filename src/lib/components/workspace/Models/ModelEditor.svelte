@@ -52,6 +52,7 @@
 	let autoSaveTimer: any = null;
 	let initialized = false;
 	let savingOnClose = false;
+	let isCatalogIconLocked = false;
 
 	function debouncedSave() {
 		if (!initialized || !edit) return;
@@ -61,6 +62,7 @@
 	}
 
 	function updateProfileImageUrl(url: string) {
+		if (isCatalogIconLocked) return;
 		info.meta.profile_image_url = url;
 		debouncedSave();
 	}
@@ -69,6 +71,13 @@
 		if (autoSaveTimer) {
 			clearTimeout(autoSaveTimer);
 		}
+		if (advancedParamsMeasureRaf !== null && typeof window !== 'undefined') {
+			window.cancelAnimationFrame(advancedParamsMeasureRaf);
+		}
+		if (modelNameWidthRaf !== null && typeof window !== 'undefined') {
+			window.cancelAnimationFrame(modelNameWidthRaf);
+		}
+		advancedParamsResizeObserver?.disconnect();
 		if (initialized && edit && !savingOnClose) {
 			submitHandler();
 		}
@@ -84,6 +93,38 @@
 	let name = '';
 	let description = '';
 	let baseModelId: string | null = null;
+	const MODEL_DESCRIPTION_MAX_CHARS = 144;
+	const MODEL_NAME_MIN_CHARS = 10;
+	const MODEL_NAME_MAX_CHARS = 22;
+	let modelNameSizerElement: HTMLSpanElement | null = null;
+	let modelNameFieldWidth = `${MODEL_NAME_MIN_CHARS}ch`;
+	let modelNameMeasureText = '';
+	let modelNameInputFocused = false;
+	let modelNameWidthRaf: number | null = null;
+	$: modelNameMeasureText = `${name || ''}`.slice(0, MODEL_NAME_MAX_CHARS);
+	$: modelNameDisplayValue = modelNameInputFocused ? `${name || ''}` : modelNameMeasureText;
+
+	const measureModelNameField = async () => {
+		await tick();
+
+		if (!modelNameSizerElement || modelNameMeasureText.length < MODEL_NAME_MIN_CHARS) {
+			modelNameFieldWidth = `${MODEL_NAME_MIN_CHARS}ch`;
+			return;
+		}
+
+		const measuredWidth = Math.ceil(modelNameSizerElement.getBoundingClientRect().width) + 1;
+		modelNameFieldWidth = `${measuredWidth}px`;
+	};
+
+	const scheduleModelNameFieldMeasure = () => {
+		if (typeof window === 'undefined' || modelNameWidthRaf !== null) return;
+		modelNameWidthRaf = window.requestAnimationFrame(() => {
+			modelNameWidthRaf = null;
+			void measureModelNameField();
+		});
+	};
+
+	$: name, scheduleModelNameFieldMeasure();
 
 	let enableDescription = true;
 
@@ -99,6 +140,60 @@
 	let system = '';
 	let showSystemPromptField = false;
 	$: if (system !== '') showSystemPromptField = true;
+	let advancedParamsWindowElement: HTMLDivElement | null = null;
+	let advancedParamsViewportHeight = 'auto';
+	let advancedParamsResizeObserver: ResizeObserver | null = null;
+	let advancedParamsMeasureRaf: number | null = null;
+
+	const measureAdvancedParamsViewport = async () => {
+		await tick();
+		if (!advancedParamsWindowElement) return;
+
+		const paramsRoot = advancedParamsWindowElement.querySelector<HTMLElement>(
+			'.model-editor-advanced-params > div'
+		);
+		if (!paramsRoot) return;
+
+		const rows = Array.from(paramsRoot.children).filter(
+			(child): child is HTMLElement =>
+				child instanceof HTMLElement && child.offsetParent !== null
+		);
+		if (rows.length === 0) return;
+
+		const lastVisibleRow = rows[Math.min(3, rows.length - 1)];
+		const viewportTop = advancedParamsWindowElement.getBoundingClientRect().top;
+		const lastRowBottom = lastVisibleRow.getBoundingClientRect().bottom;
+		const nextHeight = `${Math.ceil(lastRowBottom - viewportTop + 1)}px`;
+
+		if (advancedParamsViewportHeight !== nextHeight) {
+			advancedParamsViewportHeight = nextHeight;
+		}
+	};
+
+	const scheduleAdvancedParamsMeasure = () => {
+		if (typeof window === 'undefined' || advancedParamsMeasureRaf !== null) return;
+		advancedParamsMeasureRaf = window.requestAnimationFrame(() => {
+			advancedParamsMeasureRaf = null;
+			void measureAdvancedParamsViewport();
+		});
+	};
+
+	const observeAdvancedParamsViewport = () => {
+		if (typeof ResizeObserver === 'undefined' || !advancedParamsWindowElement) return;
+
+		advancedParamsResizeObserver?.disconnect();
+		advancedParamsResizeObserver = new ResizeObserver(scheduleAdvancedParamsMeasure);
+		advancedParamsResizeObserver.observe(advancedParamsWindowElement);
+
+		const paramsRoot = advancedParamsWindowElement.querySelector<HTMLElement>(
+			'.model-editor-advanced-params > div'
+		);
+		if (paramsRoot) {
+			advancedParamsResizeObserver.observe(paramsRoot);
+		}
+	};
+
+	$: params, showSystemPromptField, loaded, scheduleAdvancedParamsMeasure();
 	const DEFAULT_MODEL_PROFILE_IMAGE_URL = `${NEVEAI_BASE_URL}/static/favicon.png`;
 	let info = {
 		id: '',
@@ -118,6 +213,10 @@
 	let params = {
 		system: ''
 	};
+
+	$: isCatalogIconLocked = Boolean(
+		info?.meta?.neve_catalog_profile_image_locked || info?.meta?.neve_catalog_id
+	);
 
 	let knowledge = [];
 	let toolIds = [];
@@ -387,8 +486,10 @@
 		}
 
 		loaded = true;
+		await tick();
+		observeAdvancedParamsViewport();
+		scheduleAdvancedParamsMeasure();
 		if (edit) {
-			await tick();
 			initialized = true;
 		}
 	});
@@ -541,10 +642,16 @@
 										class="rounded-xl flex shrink-0 items-center {info.meta.profile_image_url !==
 										DEFAULT_MODEL_PROFILE_IMAGE_URL
 											? 'bg-transparent'
-											: 'bg-white'} shadow-xl group relative"
+											: 'bg-white'} shadow-xl relative {isCatalogIconLocked
+											? 'cursor-default disabled:opacity-100'
+											: 'group'}"
 										type="button"
-										aria-label={$i18n.t('Upload profile image')}
+										disabled={isCatalogIconLocked}
+										aria-label={isCatalogIconLocked
+											? $i18n.t('Default model image')
+											: $i18n.t('Upload profile image')}
 										on:click={() => {
+											if (isCatalogIconLocked) return;
 											filesInputElement.click();
 										}}
 									>
@@ -562,12 +669,14 @@
 											/>
 										{/if}
 
-										<div
-											class="absolute top-0 bottom-0 left-0 right-0 bg-white dark:bg-black rounded-lg opacity-0 group-hover:opacity-20 transition"
-										></div>
+										{#if !isCatalogIconLocked}
+											<div
+												class="absolute top-0 bottom-0 left-0 right-0 bg-white dark:bg-black rounded-lg opacity-0 group-hover:opacity-20 transition"
+											></div>
+										{/if}
 									</button>
 
-									{#if info.meta.profile_image_url && info.meta.profile_image_url !== DEFAULT_MODEL_PROFILE_IMAGE_URL}
+									{#if !isCatalogIconLocked && info.meta.profile_image_url && info.meta.profile_image_url !== DEFAULT_MODEL_PROFILE_IMAGE_URL}
 										<button
 											class="absolute right-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-md transition hover:text-gray-700 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300 dark:hover:text-white"
 											type="button"
@@ -585,11 +694,28 @@
 						</div>
 
 						<div class="flex flex-col w-full flex-1">
-							<div class="flex flex-col w-full mt-2">
+							<div class="relative flex flex-col w-full max-w-full min-w-0 mt-2">
+								<span
+									bind:this={modelNameSizerElement}
+									class="pointer-events-none absolute left-0 top-0 invisible whitespace-pre text-2xl font-semibold leading-none"
+									aria-hidden="true"
+								>
+									{modelNameMeasureText}
+								</span>
 								<input
-									class="text-2xl font-semibold leading-none w-full bg-transparent outline-hidden p-0"
+									class="text-2xl font-semibold leading-none min-w-0 max-w-full bg-transparent outline-hidden p-0"
+									style="width: {modelNameFieldWidth};"
 									placeholder={$i18n.t('Model Name')}
-									bind:value={name}
+									value={modelNameDisplayValue}
+									on:input={(e) => {
+										name = e.currentTarget.value;
+									}}
+									on:focus={() => {
+										modelNameInputFocused = true;
+									}}
+									on:blur={() => {
+										modelNameInputFocused = false;
+									}}
 									spellcheck="false"
 									required
 								/>
@@ -632,6 +758,7 @@
 									className="text-sm w-full pr-6 bg-transparent outline-hidden resize-none overflow-y-hidden"
 									placeholder={$i18n.t('Add a short description about what this model does')}
 									spellcheck={false}
+									maxlength={MODEL_DESCRIPTION_MAX_CHARS}
 									bind:value={description}
 								/>
 							</div>
@@ -641,47 +768,54 @@
 				</div>
 
 				<!-- Params (scrollable) + Features (static) side by side -->
-				<div class="flex-1 min-h-0 overflow-hidden px-4 pb-6 border-t border-gray-200/30 dark:border-gray-700/20 mt-2 pt-9.5">
+				<div class="flex-1 min-h-0 overflow-hidden px-4 pb-4 border-t border-gray-200/30 dark:border-gray-700/20 mt-2 pt-6">
 					<div class="flex gap-0 w-full pl-8 h-full min-h-0">
 						<!-- Left: Parâmetros Avançados + System Prompt (only this scrolls) -->
 						<div class="w-[55%] min-w-0 h-full flex flex-col pr-1">
 							<div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 py-0 pl-2 pr-5 shrink-0">
 								{$i18n.t('Parâmetros Avançados')}
 							</div>
-							<div class="flex-1 min-h-0 overflow-y-auto pr-5" on:scroll={() => tippyHideAll()}>
-								<div class="model-editor-advanced-params">
-									<AdvancedParams admin={true} custom={true} janStyle={true} bind:params tooltipsEnabled={false} />
-								</div>
+							<div class="min-h-0 pr-5">
+								<div
+									bind:this={advancedParamsWindowElement}
+									class="model-editor-advanced-params-window"
+									style="height: {advancedParamsViewportHeight}; max-height: {advancedParamsViewportHeight};"
+									on:scroll={() => tippyHideAll()}
+								>
+									<div class="model-editor-advanced-params">
+										<AdvancedParams admin={true} custom={true} janStyle={true} bind:params tooltipsEnabled={false} />
+									</div>
 
-							<!-- System Prompt -->
-											<div class="mt-0.5">
-								<div class="flex w-full items-center justify-between py-1">
-									{#if showSystemPromptField}
-										<button
-											type="button"
-											class="ml-2 text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition"
-											on:click={() => { system = ''; showSystemPromptField = false; }}
-										>{$i18n.t('System Prompt')}</button>
-									{:else}
-										<div class="ml-2 text-xs text-gray-700 dark:text-gray-300">{$i18n.t('System Prompt')}</div>
-									{/if}
-									{#if !showSystemPromptField}
-										<button
-											type="button"
-											class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700"
-											on:click={() => { showSystemPromptField = true; }}
-										>{$i18n.t('Default')}</button>
-									{/if}
+									<!-- System Prompt -->
+									<div class="mt-0.5">
+										<div class="flex w-full items-center justify-between py-1">
+											{#if showSystemPromptField}
+												<button
+													type="button"
+													class="ml-2 text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition"
+													on:click={() => { system = ''; showSystemPromptField = false; }}
+												>{$i18n.t('System Prompt')}</button>
+											{:else}
+												<div class="ml-2 text-xs text-gray-700 dark:text-gray-300">{$i18n.t('System Prompt')}</div>
+											{/if}
+											{#if !showSystemPromptField}
+												<button
+													type="button"
+													class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700"
+													on:click={() => { showSystemPromptField = true; }}
+												>{$i18n.t('Default')}</button>
+											{/if}
+										</div>
+										{#if showSystemPromptField}
+											<Textarea
+												className="text-xs w-full bg-transparent border border-gray-200/40 dark:border-gray-700/30 rounded-lg px-3 py-2 outline-hidden resize-none overflow-y-auto focus:border-gray-300 dark:focus:border-gray-600 transition min-h-[5rem]"
+												placeholder={$i18n.t('Digite o prompt do sistema')}
+												rows={4}
+												bind:value={system}
+											/>
+										{/if}
+									</div>
 								</div>
-								{#if showSystemPromptField}
-									<Textarea
-										className="text-xs w-full bg-transparent border border-gray-200/40 dark:border-gray-700/30 rounded-lg px-3 py-2 outline-hidden resize-none overflow-y-auto focus:border-gray-300 dark:focus:border-gray-600 transition min-h-[5rem]"
-										placeholder={$i18n.t('Digite o prompt do sistema')}
-										rows={4}
-										bind:value={system}
-									/>
-								{/if}
-							</div>
 							</div>
 						</div>
 
@@ -709,6 +843,13 @@
 {/if}
 
 <style>
+	.model-editor-advanced-params-window {
+		overflow-y: auto;
+		overflow-x: hidden;
+		overscroll-behavior: contain;
+		padding-right: 0.25rem;
+	}
+
 	.model-editor-advanced-params :global(.inline-tooltip) {
 		margin-left: 0.5rem;
 	}

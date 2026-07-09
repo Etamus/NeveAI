@@ -2772,8 +2772,7 @@
 			});
 		}
 
-		const streamPreference = getLocalModelLoadPreferences().stream;
-		const stream = streamPreference === 'off' ? false : true;
+		const stream = $settings?.streamResponse ?? true;
 
 		let messages = [
 			params?.system || $settings.system
