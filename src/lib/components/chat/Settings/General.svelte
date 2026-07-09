@@ -34,6 +34,7 @@
 	let largeTextAsFile = false;
 	let widescreenMode = false;
 	let expandDetails = false;
+	let streamResponse = true;
 	let chatBubble = true;
 	let backgroundImageUrl: string | null = null;
 	let filesInputElement: HTMLInputElement;
@@ -119,6 +120,7 @@
 		largeTextAsFile = $settings?.largeTextAsFile ?? false;
 		widescreenMode = $settings?.widescreenMode ?? false;
 		expandDetails = $settings?.expandDetails ?? false;
+		streamResponse = $settings?.streamResponse ?? true;
 		chatBubble = $settings?.chatBubble ?? true;
 		backgroundImageUrl = $settings?.backgroundImageUrl ?? null;
 
@@ -272,6 +274,24 @@
 							bind:state={expandDetails}
 							on:change={() => {
 								saveSettings({ expandDetails });
+							}}
+						/>
+					</div>
+				</div>
+			</div>
+
+			<div>
+				<div class=" py-0.5 flex w-full justify-between">
+					<div id="stream-response-label" class=" self-center text-sm">
+						{$i18n.t('Resposta em streaming')}
+					</div>
+
+					<div class="flex items-center gap-2 p-1">
+						<Switch
+							ariaLabelledbyId="stream-response-label"
+							bind:state={streamResponse}
+							on:change={() => {
+								saveSettings({ streamResponse });
 							}}
 						/>
 					</div>

@@ -272,6 +272,7 @@
 
 	<div slot="content">
 		<DropdownMenu.Content
+			data-neve-chat-more-menu
 			class="select-none w-full max-w-[200px] rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-md"
 			sideOffset={8}
 			side="bottom"

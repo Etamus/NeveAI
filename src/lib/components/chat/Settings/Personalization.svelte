@@ -4,7 +4,6 @@
 	import { createEventDispatcher, onMount, getContext, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import ManageModal from './Personalization/ManageModal.svelte';
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	const dispatch = createEventDispatcher();
 
 	const i18n = getContext('i18n');
@@ -35,19 +34,9 @@
 	<div class="py-1 overflow-y-scroll max-h-[28rem] md:max-h-full">
 		<div>
 			<div class="flex items-center justify-between mb-1">
-				<Tooltip
-					content={$i18n.t(
-						'This is an experimental feature, it may not function as expected and is subject to change at any time.'
-					)}
-				>
-					<div class="flex items-center gap-2 text-sm font-medium">
-						{$i18n.t('Memory')}
-						<span
-							class="text-[0.65rem] font-medium uppercase px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
-							>{$i18n.t('Experimental')}</span
-						>
-					</div>
-				</Tooltip>
+				<div class="flex items-center gap-2 text-sm font-medium">
+					{$i18n.t('Memory')}
+				</div>
 
 				<div class="">
 					<Switch

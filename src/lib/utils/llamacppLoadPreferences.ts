@@ -1,7 +1,6 @@
 export type LocalModelContextPreference = 'ask' | number;
 export type LocalModelVisionPreference = 'ask' | 'yes' | 'no';
 export type LocalModelCachePreference = 'default' | 'f16' | 'q8_0' | 'q4_0';
-export type LocalModelStreamPreference = 'default' | 'on' | 'off';
 export type LocalModelSpeculativePreference = 'default' | 'high' | 'low' | 'off';
 export type LocalModelTokenPredictionPreference = 'default' | 'on' | 'off';
 export type LocalModelContextShiftPreference = 'default' | 'on' | 'off';
@@ -20,7 +19,6 @@ export const LOCAL_MODEL_CONTEXT_OPTIONS = [
 const CONTEXT_KEY = 'llamacpp_load_context';
 const VISION_KEY = 'llamacpp_load_vision';
 const CACHE_KEY = 'llamacpp_cache_type';
-const STREAM_KEY = 'llamacpp_stream_response';
 const SPECULATIVE_KEY = 'llamacpp_speculative_decoding';
 const TOKEN_PREDICTION_KEY = 'llamacpp_token_prediction';
 const CONTEXT_SHIFT_KEY = 'llamacpp_context_shift';
@@ -40,10 +38,6 @@ const parseVisionPreference = (value: string | null): LocalModelVisionPreference
 
 const parseCachePreference = (value: string | null): LocalModelCachePreference => {
 	return value === 'q8_0' || value === 'q4_0' || value === 'f16' ? value : 'default';
-};
-
-const parseStreamPreference = (value: string | null): LocalModelStreamPreference => {
-	return value === 'on' || value === 'off' ? value : 'default';
 };
 
 const parseSpeculativePreference = (value: string | null): LocalModelSpeculativePreference => {
@@ -68,7 +62,6 @@ export const getLocalModelLoadPreferences = () => {
 			context: 'ask' as LocalModelContextPreference,
 			vision: 'ask' as LocalModelVisionPreference,
 			cache: 'default' as LocalModelCachePreference,
-			stream: 'default' as LocalModelStreamPreference,
 			speculative: 'default' as LocalModelSpeculativePreference,
 			tokenPrediction: 'default' as LocalModelTokenPredictionPreference,
 			contextShift: 'default' as LocalModelContextShiftPreference
@@ -79,7 +72,6 @@ export const getLocalModelLoadPreferences = () => {
 		context: parseContextPreference(localStorage.getItem(CONTEXT_KEY)),
 		vision: parseVisionPreference(localStorage.getItem(VISION_KEY)),
 		cache: parseCachePreference(localStorage.getItem(CACHE_KEY)),
-		stream: parseStreamPreference(localStorage.getItem(STREAM_KEY)),
 		speculative: parseSpeculativePreference(localStorage.getItem(SPECULATIVE_KEY)),
 		tokenPrediction: parseTokenPredictionPreference(localStorage.getItem(TOKEN_PREDICTION_KEY)),
 		contextShift: parseContextShiftPreference(localStorage.getItem(CONTEXT_SHIFT_KEY))
@@ -104,16 +96,6 @@ export const setLocalModelCachePreference = (preference: LocalModelCachePreferen
 	}
 
 	localStorage.setItem(CACHE_KEY, preference);
-};
-
-export const setLocalModelStreamPreference = (preference: LocalModelStreamPreference) => {
-	if (!hasStorage()) return;
-	if (preference === 'default') {
-		localStorage.removeItem(STREAM_KEY);
-		return;
-	}
-
-	localStorage.setItem(STREAM_KEY, preference);
 };
 
 export const setLocalModelSpeculativePreference = (preference: LocalModelSpeculativePreference) => {
@@ -164,12 +146,6 @@ export const getCachePreferenceLabel = (preference: LocalModelCachePreference) =
 	if (preference === 'q8_0') return 'Q8_0';
 	if (preference === 'q4_0') return 'Q4_0';
 	if (preference === 'f16') return 'FP16';
-	return 'Padrão';
-};
-
-export const getStreamPreferenceLabel = (preference: LocalModelStreamPreference) => {
-	if (preference === 'on') return 'Ligado';
-	if (preference === 'off') return 'Desligado';
 	return 'Padrão';
 };
 

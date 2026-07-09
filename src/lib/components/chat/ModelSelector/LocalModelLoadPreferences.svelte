@@ -13,21 +13,18 @@
 		getContextShiftPreferenceLabel,
 		getLocalModelLoadPreferences,
 		getSpeculativePreferenceLabel,
-		getStreamPreferenceLabel,
 		getTokenPredictionPreferenceLabel,
 		getVisionPreferenceLabel,
 		setLocalModelCachePreference,
 		setLocalModelContextPreference,
 		setLocalModelContextShiftPreference,
 		setLocalModelSpeculativePreference,
-		setLocalModelStreamPreference,
 		setLocalModelTokenPredictionPreference,
 		setLocalModelVisionPreference,
 		type LocalModelCachePreference,
 		type LocalModelContextPreference,
 		type LocalModelContextShiftPreference,
 		type LocalModelSpeculativePreference,
-		type LocalModelStreamPreference,
 		type LocalModelTokenPredictionPreference,
 		type LocalModelVisionPreference
 	} from '$lib/utils/llamacppLoadPreferences';
@@ -36,7 +33,6 @@
 	let contextPreference: LocalModelContextPreference = 'ask';
 	let visionPreference: LocalModelVisionPreference = 'ask';
 	let cachePreference: LocalModelCachePreference = 'default';
-	let streamPreference: LocalModelStreamPreference = 'default';
 	let speculativePreference: LocalModelSpeculativePreference = 'default';
 	let tokenPredictionPreference: LocalModelTokenPredictionPreference = 'default';
 	let contextShiftPreference: LocalModelContextShiftPreference = 'default';
@@ -54,7 +50,6 @@
 		context?: LocalModelContextPreference;
 		vision?: LocalModelVisionPreference;
 		cache?: LocalModelCachePreference;
-		stream?: LocalModelStreamPreference;
 		speculative?: LocalModelSpeculativePreference;
 		tokenPrediction?: LocalModelTokenPredictionPreference;
 		contextShift?: LocalModelContextShiftPreference;
@@ -80,7 +75,6 @@
 			context: 4096,
 			vision: 'no',
 			cache: 'q4_0',
-			stream: 'on',
 			contextShift: 'on',
 			speculative: 'off',
 			tokenPrediction: 'off'
@@ -92,7 +86,6 @@
 			context: 8192,
 			vision: 'ask',
 			cache: 'q8_0',
-			stream: 'on',
 			contextShift: 'off',
 			speculative: 'off',
 			tokenPrediction: 'off'
@@ -104,7 +97,6 @@
 			context: 16384,
 			vision: 'yes',
 			cache: 'f16',
-			stream: 'on',
 			contextShift: 'off',
 			speculative: 'off',
 			tokenPrediction: 'off'
@@ -116,7 +108,6 @@
 			context: 8192,
 			vision: 'no',
 			cache: 'q8_0',
-			stream: 'on',
 			contextShift: 'off',
 			speculative: 'off',
 			tokenPrediction: 'on'
@@ -126,7 +117,6 @@
 	const contextOptions: LocalModelContextPreference[] = ['ask', ...LOCAL_MODEL_CONTEXT_OPTIONS];
 	const visionOptions: LocalModelVisionPreference[] = ['ask', 'yes', 'no'];
 	const cacheOptions: LocalModelCachePreference[] = ['default', 'f16', 'q8_0', 'q4_0'];
-	const streamOptions: LocalModelStreamPreference[] = ['default', 'on', 'off'];
 	const speculativeOptions: LocalModelSpeculativePreference[] = ['default', 'high', 'low', 'off'];
 	const tokenPredictionOptions: LocalModelTokenPredictionPreference[] = [
 		'default',
@@ -167,7 +157,6 @@
 		context: contextPreference,
 		vision: visionPreference,
 		cache: cachePreference,
-		stream: streamPreference,
 		speculative: speculativePreference,
 		tokenPrediction: tokenPredictionPreference,
 		contextShift: contextShiftPreference
@@ -192,7 +181,6 @@
 		contextPreference = snapshot.context ?? contextPreference;
 		visionPreference = snapshot.vision ?? visionPreference;
 		cachePreference = snapshot.cache ?? cachePreference;
-		streamPreference = snapshot.stream ?? streamPreference;
 		speculativePreference = snapshot.speculative ?? speculativePreference;
 		tokenPredictionPreference = snapshot.tokenPrediction ?? tokenPredictionPreference;
 		contextShiftPreference = snapshot.contextShift ?? contextShiftPreference;
@@ -200,7 +188,6 @@
 		setLocalModelContextPreference(contextPreference);
 		setLocalModelVisionPreference(visionPreference);
 		setLocalModelCachePreference(cachePreference);
-		setLocalModelStreamPreference(streamPreference);
 		setLocalModelSpeculativePreference(speculativePreference);
 		setLocalModelTokenPredictionPreference(tokenPredictionPreference);
 		setLocalModelContextShiftPreference(contextShiftPreference);
@@ -239,10 +226,6 @@
 		if (preset.cache !== undefined) {
 			cachePreference = preset.cache;
 			setLocalModelCachePreference(cachePreference);
-		}
-		if (preset.stream !== undefined) {
-			streamPreference = preset.stream;
-			setLocalModelStreamPreference(streamPreference);
 		}
 		if (preset.contextShift !== undefined) {
 			contextShiftPreference = preset.contextShift;
@@ -291,13 +274,6 @@
 		setLocalModelCachePreference(cachePreference);
 	};
 
-	const cycleStreamPreference = () => {
-		if (presetLocked) return;
-		const idx = streamOptions.indexOf(streamPreference);
-		streamPreference = streamOptions[(idx + 1) % streamOptions.length];
-		setLocalModelStreamPreference(streamPreference);
-	};
-
 	const cycleSpeculativePreference = () => {
 		if (presetLocked || speculativeLocked) return;
 		const idx = speculativeOptions.indexOf(speculativePreference);
@@ -335,12 +311,6 @@
 		if (presetLocked) return;
 		cachePreference = 'default';
 		setLocalModelCachePreference(cachePreference);
-	};
-
-	const resetStreamPreference = () => {
-		if (presetLocked) return;
-		streamPreference = 'default';
-		setLocalModelStreamPreference(streamPreference);
 	};
 
 	const resetSpeculativePreference = () => {
@@ -400,7 +370,6 @@
 		contextPreference = preferences.context;
 		visionPreference = preferences.vision;
 		cachePreference = preferences.cache;
-		streamPreference = preferences.stream;
 		speculativePreference = preferences.speculative;
 		tokenPredictionPreference = preferences.tokenPrediction;
 		contextShiftPreference = preferences.contextShift;
@@ -460,7 +429,7 @@
 			<div
 				bind:this={presetMenuElement}
 				class="absolute z-[60] w-56 rounded-md border border-gray-100 bg-white p-1 text-sm text-gray-700 shadow-md outline-hidden dark:border-gray-800 dark:bg-gray-850 dark:text-gray-200"
-				style="left: calc(100% - 0.25rem); top: 0.5rem; font-family: 'Segoe UI', sans-serif;"
+				style="left: calc(100% - 0.80rem); top: 0.5rem; font-family: 'Segoe UI', sans-serif;"
 				transition={flyAndScale}
 				on:pointerdown|stopPropagation
 			>
@@ -496,8 +465,8 @@
 		<div
 			class="flex flex-col gap-1 text-sm transition"
 			class:opacity-60={presetLocked}
-			class:pointer-events-none={presetLocked}
-			aria-disabled={presetLocked}
+			class:pointer-events-none={presetLocked || showPresetDropdown}
+			aria-disabled={presetLocked || showPresetDropdown}
 		>
 			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
 				{#if contextPreference === 'ask'}
@@ -591,27 +560,6 @@
 					on:click|stopPropagation={cycleCachePreference}
 				>
 					{getCachePreferenceLabel(cachePreference)}
-				</button>
-			</div>
-
-			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
-				{#if streamPreference === 'default'}
-					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Stream de resposta</div>
-				{:else}
-					<button
-						type="button"
-						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
-						on:click|stopPropagation={resetStreamPreference}
-					>
-						Stream de resposta
-					</button>
-				{/if}
-				<button
-					type="button"
-					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
-					on:click|stopPropagation={cycleStreamPreference}
-				>
-					{getStreamPreferenceLabel(streamPreference)}
 				</button>
 			</div>
 

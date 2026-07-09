@@ -1811,7 +1811,10 @@ async def chat_completion(
         reasoning_tags = form_data.get("params", {}).get("reasoning_tags")
 
         # Model Params
-        if model_info_params.get("stream_response") is not None:
+        if (
+            "stream" not in form_data
+            and model_info_params.get("stream_response") is not None
+        ):
             form_data["stream"] = model_info_params.get("stream_response")
 
         if model_info_params.get("stream_delta_chunk_size"):

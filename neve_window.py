@@ -1,14 +1,12 @@
 """
-Neve AI — Abre a interface em janela de app isolada usando o navegador padrão
-do sistema em modo --app (Chrome, Brave, Edge ou qualquer Chromium).
-Sem dependências externas além da stdlib do Python.
+Neve AI — Abre a interface em janela de app isolada usando Chromium/Edge em
+modo --app. Sem dependências externas além da stdlib do Python.
 """
 
 import os
 import re
 import subprocess
 import time
-import webbrowser
 import winreg
 import ctypes
 from ctypes import wintypes
@@ -36,14 +34,42 @@ _user32.ShowWindow.restype = wintypes.BOOL
 _user32.SetForegroundWindow.argtypes = [wintypes.HWND]
 _user32.SetForegroundWindow.restype = wintypes.BOOL
 
-# ProgIds de navegadores NÃO-Chromium — não suportam --app isolado
-_NON_CHROMIUM = {"firefoxurl", "firefoxhtml", "operahtml", "iexplore", "msedgehtm"}
+# ProgIds de navegadores NÃO-Chromium — não suportam --app isolado.
+_NON_CHROMIUM = {"firefoxurl", "firefoxhtml", "iexplore"}
+_CHROMIUM_EXE_NAMES = {
+    "chrome.exe",
+    "msedge.exe",
+    "brave.exe",
+    "chromium.exe",
+    "vivaldi.exe",
+    "opera.exe",
+}
+
+
+def _show_error(message: str) -> None:
+    ctypes.windll.user32.MessageBoxW(None, message, "Neve AI", 0x10)
+
+
+def _is_supported_chromium_exe(exe: str | None) -> bool:
+    return bool(exe and os.path.exists(exe) and os.path.basename(exe).lower() in _CHROMIUM_EXE_NAMES)
+
+
+def _exe_from_command(cmd: str) -> str | None:
+    quoted = re.match(r'"([^"]+\.exe)"', cmd, re.IGNORECASE)
+    if quoted:
+        return quoted.group(1)
+
+    unquoted = re.match(r"([A-Za-z]:\\[^\r\n]+?\.exe)(?:\s|$)", cmd, re.IGNORECASE)
+    if unquoted:
+        return unquoted.group(1)
+
+    return None
 
 
 def _chromium_exe_from_progid(prog_id: str) -> str | None:
     """
     Lê HKCR\\<ProgId>\\shell\\open\\command e extrai o caminho do .exe.
-    Retorna None se o ProgId não for de um navegador Chromium.
+    Retorna None se o ProgId não for de um navegador Chromium suportado.
     """
     if prog_id.lower() in _NON_CHROMIUM:
         return None
@@ -52,17 +78,14 @@ def _chromium_exe_from_progid(prog_id: str) -> str | None:
                              rf"{prog_id}\shell\open\command")
         cmd, _ = winreg.QueryValueEx(key, "")
         winreg.CloseKey(key)
-        # Extrai caminho entre aspas: "C:\path\browser.exe" ...
-        m = re.match(r'"([^"]+\.exe)"', cmd, re.IGNORECASE)
-        if m:
-            exe = m.group(1)
-            return exe if os.path.exists(exe) else None
+        exe = _exe_from_command(cmd)
+        return exe if _is_supported_chromium_exe(exe) else None
     except OSError:
         pass
     return None
 
 
-def _find_chromium_browser() -> str | None:
+def _find_default_chromium_browser() -> str | None:
     """Detecta o navegador padrão do sistema e retorna o exe se for Chromium."""
     try:
         key = winreg.OpenKey(
@@ -75,6 +98,60 @@ def _find_chromium_browser() -> str | None:
         return _chromium_exe_from_progid(prog_id)
     except OSError:
         return None
+
+
+def _browser_from_app_paths(exe_name: str) -> str | None:
+    subkey = rf"Software\Microsoft\Windows\CurrentVersion\App Paths\{exe_name}"
+    for root_key in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        try:
+            key = winreg.OpenKey(root_key, subkey)
+            exe, _ = winreg.QueryValueEx(key, "")
+            winreg.CloseKey(key)
+            if _is_supported_chromium_exe(exe):
+                return exe
+        except OSError:
+            continue
+    return None
+
+
+def _common_browser_paths() -> list[str]:
+    program_files = [os.environ.get("ProgramFiles"), os.environ.get("ProgramFiles(x86)")]
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    candidates: list[str] = []
+
+    for base in [path for path in program_files if path]:
+        candidates.extend([
+            os.path.join(base, "Microsoft", "Edge", "Application", "msedge.exe"),
+            os.path.join(base, "Google", "Chrome", "Application", "chrome.exe"),
+            os.path.join(base, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+            os.path.join(base, "Chromium", "Application", "chromium.exe"),
+        ])
+
+    if local_app_data:
+        candidates.extend([
+            os.path.join(local_app_data, "Google", "Chrome", "Application", "chrome.exe"),
+            os.path.join(local_app_data, "BraveSoftware", "Brave-Browser", "Application", "brave.exe"),
+            os.path.join(local_app_data, "Chromium", "Application", "chromium.exe"),
+        ])
+
+    return candidates
+
+
+def _find_chromium_browser() -> str | None:
+    default_browser = _find_default_chromium_browser()
+    if default_browser:
+        return default_browser
+
+    for exe_name in ("msedge.exe", "chrome.exe", "brave.exe", "chromium.exe"):
+        browser = _browser_from_app_paths(exe_name)
+        if browser:
+            return browser
+
+    for candidate in _common_browser_paths():
+        if _is_supported_chromium_exe(candidate):
+            return candidate
+
+    return None
 
 
 def _window_title(hwnd) -> str:
@@ -129,24 +206,26 @@ def _bring_app_to_front(process: subprocess.Popen | None = None, timeout: float 
 
 def main():
     browser = _find_chromium_browser()
-    if browser:
-        os.makedirs(_PROFILE, exist_ok=True)
-        process = subprocess.Popen([
-            browser,
-            f"--app={_URL}",
-            "--window-size=1280,820",
-            "--window-position=160,80",
-            "--start-windowed",
-            "--no-first-run",
-            "--no-default-browser-check",
-            "--disable-extensions",
-            f"--user-data-dir={_PROFILE}",
-        ])
-        _bring_app_to_front(process)
-    else:
-        # Navegador não-Chromium ou não detectado — abre normalmente
-        webbrowser.open(_URL)
-        _bring_app_to_front(None)
+    if not browser:
+        _show_error(
+            "Não foi possível encontrar Edge, Chrome, Brave ou Chromium para abrir o Neve AI "
+            "em janela de app."
+        )
+        return
+
+    os.makedirs(_PROFILE, exist_ok=True)
+    process = subprocess.Popen([
+        browser,
+        f"--app={_URL}",
+        "--window-size=1280,820",
+        "--window-position=160,80",
+        "--start-windowed",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-extensions",
+        f"--user-data-dir={_PROFILE}",
+    ])
+    _bring_app_to_front(process)
 
 
 if __name__ == "__main__":

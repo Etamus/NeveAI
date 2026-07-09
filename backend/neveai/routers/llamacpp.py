@@ -1690,8 +1690,9 @@ NEVE_CATALOG = [
         "hardware_label": "4 GB",
         "hardware_kind": "gpu",
         "size_label": "3.9 GB",
-        "description": "Modelo de uso geral e raciocínio para tarefas rápidas.",
-        "params": {"temperature": 1, "min_p": 0.05},
+        "profile_image_url": "/static/logoechos.png",
+        "description": "Modelo de uso geral e raciocínio para tarefas imediatas.",
+        "params": {"temperature": 1, "min_p": 0.05, "dry_multiplier": 0.25},
         "default_feature_ids": ["web_search", "toggle_reasoning"],
     },
     {
@@ -1701,31 +1702,10 @@ NEVE_CATALOG = [
         "hardware_label": "6 GB",
         "hardware_kind": "gpu",
         "size_label": "6.3 GB",
+        "profile_image_url": "/static/logoecho.png",
         "description": "Modelo de uso geral e raciocínio para tarefas variadas.",
-        "params": {"temperature": 1, "min_p": 0.05},
+        "params": {"temperature": 1, "min_p": 0.05, "dry_multiplier": 0.15},
         "default_feature_ids": ["toggle_reasoning"],
-    },
-    {
-        "id": "neve-prism",
-        "name": "Neve Prism",
-        "repo": "NeveAI/Neve-Prism-3-12B-GGUF",
-        "hardware_label": "8 GB",
-        "hardware_kind": "gpu",
-        "size_label": "7.9 GB",
-        "description": "Modelo de visão para análise de imagens em alta precisão.",
-        "params": {"temperature": 1, "min_p": 0.05},
-        "default_feature_ids": [],
-    },
-    {
-        "id": "neve-prism-x",
-        "name": "Neve Prism X",
-        "repo": "NeveAI/Neve-Prism-X2-9B-GGUF",
-        "hardware_label": "8 GB",
-        "hardware_kind": "gpu",
-        "size_label": "8.2 GB",
-        "description": "Modelo de visão e raciocínio para cenários visuais complexos.",
-        "params": {"temperature": 0.6, "min_p": 0.05},
-        "default_feature_ids": ["code_execution", "toggle_reasoning"],
     },
     {
         "id": "neve-sense",
@@ -1734,63 +1714,65 @@ NEVE_CATALOG = [
         "hardware_label": "12 GB",
         "hardware_kind": "gpu",
         "size_label": "11.1 GB",
+        "profile_image_url": "/static/logosense.png",
         "description": "Modelo de análise e resumo para documentos complexos.",
-        "params": {"temperature": 0.3, "min_p": 0.05},
+        "params": {"temperature": 0.3, "min_p": 0.1},
         "default_feature_ids": [],
     },
     {
         "id": "neve-strata-s",
         "name": "Neve Strata S",
-        "repo": "NeveAI/Neve-Strata-S2-4B-GGUF",
+        "repo": "NeveAI/Neve-Strata-S3-9B-MTP-GGUF",
         "hardware_label": "6 GB",
         "hardware_kind": "gpu",
-        "size_label": "5.5 GB",
+        "size_label": "5.7 GB",
+        "profile_image_url": "/static/logostratas.png",
         "description": "Modelo de programação e raciocínio para execução em escala.",
-        "params": {"temperature": 0.6, "min_p": 0.05},
-        "default_feature_ids": ["code_execution", "toggle_reasoning"],
-    },
-    {
-        "id": "neve-strata",
-        "name": "Neve Strata",
-        "repo": "NeveAI/Neve-Strata-4-30B-GGUF",
-        "hardware_label": "16 GB",
-        "hardware_kind": "gpu",
-        "size_label": "16.3 GB",
-        "description": "Modelo de programação e raciocínio para códigos robustos.",
-        "params": {"temperature": 0.7, "min_p": 0.05},
+        "params": {"temperature": 0.4, "min_p": 0.1},
         "default_feature_ids": ["code_execution", "toggle_reasoning"],
     },
     {
         "id": "neve-strata-x",
-        "name": "Neve Strata X",
+        "name": "Neve Strata",
         "repo": "NeveAI/Neve-Strata-X2-35B-GGUF",
         "hardware_label": "16 GB",
         "hardware_kind": "gpu",
         "size_label": "18.2 GB",
+        "profile_image_url": "/static/logostrata.png",
         "description": "Modelo de programação e raciocínio para arquiteturas complexas.",
-        "params": {"temperature": 0.6, "min_p": 0.05},
+        "params": {"temperature": 0.6, "min_p": 0.1},
         "default_feature_ids": ["code_execution", "toggle_reasoning"],
     },
     {
-        "id": "neve-cascade-s",
-        "name": "Neve Cascade S",
-        "repo": "NeveAI/Neve-Cascade-S-90M-GGUF",
-        "hardware_label": "CPU",
-        "hardware_kind": "cpu",
-        "size_label": "0.09 GB",
-        "description": "Modelo de baixo consumo para eficiência extrema.",
-        "params": {"temperature": 0.1, "min_p": 0.1, "dry_multiplier": 0.1},
-        "default_feature_ids": [],
-    },
-    {
         "id": "neve-cascade-x",
-        "name": "Neve Cascade X",
-        "repo": "NeveAI/Neve-Cascade-X3-1B-GGUF",
+        "name": "Neve Cascade",
+        "repo": "NeveAI/Neve-Cascade-3-1B-GGUF",
         "hardware_label": "CPU",
         "hardware_kind": "cpu",
         "size_label": "0.6 GB",
+        "profile_image_url": "/static/logocascade.png",
         "description": "Modelo de baixo consumo para hardware limitado.",
-        "params": {"temperature": 0.7, "min_p": 0.1, "dry_multiplier": 0.1},
+        "params": {"temperature": 1, "min_p": 0.05, "dry_multiplier": 0.15},
+        "default_feature_ids": [],
+    },
+    {
+        "id": "neve-muse",
+        "name": "Neve Muse",
+        "repo": "NeveAI/Neve-Muse-2-24B-GGUF",
+        "hardware_label": "16 GB",
+        "hardware_kind": "gpu",
+        "size_label": "13.3 GB",
+        "profile_image_url": "/static/logomuse.png",
+        "description": "Modelo de conversação para simulação de interações humanas.",
+        "params": {
+            "temperature": 1,
+            "min_p": 0.05,
+            "xtc_threshold": 0.1,
+            "xtc_probability": 0.35,
+            "dry_multiplier": 0.1,
+            "dry_allowed_length": 2,
+            "dry_base": 1.75,
+        },
         "default_feature_ids": [],
     },
 ]
@@ -1804,6 +1786,13 @@ NEVE_DOWNLOAD_STATE_DIR = DATA_DIR / "downloads"
 NEVE_DOWNLOAD_STATE_PATH = NEVE_DOWNLOAD_STATE_DIR / "neve_catalog_downloads.json"
 NEVE_DOWNLOAD_STATE_TMP_PATH = NEVE_DOWNLOAD_STATE_DIR / "neve_catalog_downloads.json.tmp"
 NEVE_DOWNLOAD_PERSIST_INTERVAL = 1.0
+NEVE_DOWNLOAD_CHUNK_SIZE = 8 * 1024 * 1024
+NEVE_DOWNLOAD_PROGRESS_INTERVAL = 0.25
+NEVE_DOWNLOAD_PROGRESS_BYTES = 8 * 1024 * 1024
+NEVE_DOWNLOAD_HEADERS = {
+    "User-Agent": "NeveAI/1.0",
+    "Accept-Encoding": "identity",
+}
 _DOWNLOAD_LAST_PERSIST = 0.0
 
 
@@ -1943,6 +1932,19 @@ def _catalog_entry(model_id: str) -> Optional[dict]:
     return next((m for m in NEVE_CATALOG if m["id"] == model_id), None)
 
 
+def get_catalog_profile_image_url(meta: Optional[dict] = None) -> Optional[str]:
+    meta = meta or {}
+    catalog_id = meta.get("neve_catalog_id")
+    if not catalog_id:
+        return None
+
+    entry = _catalog_entry(catalog_id)
+    if not entry:
+        return None
+
+    return entry.get("profile_image_url")
+
+
 def _catalog_model_id(repo_filename: str) -> str:
     return f"local/{Path(repo_filename).stem}"
 
@@ -1955,12 +1957,13 @@ def _catalog_model_form(entry: dict, repo_filename: str) -> ModelForm:
     }
 
     meta = {
-        "profile_image_url": "/static/favicon.png",
+        "profile_image_url": entry.get("profile_image_url", "/static/favicon.png"),
         "description": entry.get("description"),
         "capabilities": capabilities,
         "neve_catalog_id": entry["id"],
         "neve_catalog_repo": entry["repo"],
         "neve_catalog_defaults_version": NEVE_CATALOG_DEFAULTS_VERSION,
+        "neve_catalog_profile_image_locked": True,
         "managed_by": "neve_download",
     }
 
@@ -2202,7 +2205,9 @@ async def _stream_download_file(
             tmp_path.unlink()
             resume_from = 0
 
-        headers = {"Range": f"bytes={resume_from}-"} if resume_from > 0 else None
+        headers = dict(NEVE_DOWNLOAD_HEADERS)
+        if resume_from > 0:
+            headers["Range"] = f"bytes={resume_from}-"
         async with client.stream("GET", url, headers=headers) as r:
             if resume_from > 0 and r.status_code == 416 and expected_size and resume_from == expected_size:
                 actual_sha256 = _sha256_file(tmp_path) if expected_sha256 else None
@@ -2233,6 +2238,8 @@ async def _stream_download_file(
             range_total = _parse_content_range_total(r.headers.get("content-range"))
             total = expected_size or range_total or (resume_from + content_length)
             downloaded = resume_from
+            last_progress_update = time.monotonic()
+            last_progress_bytes = downloaded
             file_mode = "ab" if resume_from > 0 else "wb"
             _set_task(
                 task_id,
@@ -2249,19 +2256,34 @@ async def _stream_download_file(
                 expected_checksum=expected_sha256,
             )
             with open(tmp_path, file_mode) as f:
-                async for chunk in r.aiter_bytes(chunk_size=1024 * 1024):
+                async for chunk in r.aiter_bytes(chunk_size=NEVE_DOWNLOAD_CHUNK_SIZE):
                     _raise_if_download_cancelled(task_id)
                     if not chunk:
                         continue
                     f.write(chunk)
                     downloaded += len(chunk)
-                    progress = (downloaded / total) if total > 0 else 0.0
-                    _set_task(
-                        task_id,
-                        downloaded=downloaded,
-                        total=total,
-                        progress=progress,
+                    now = time.monotonic()
+                    should_update_progress = (
+                        now - last_progress_update >= NEVE_DOWNLOAD_PROGRESS_INTERVAL
+                        or downloaded - last_progress_bytes >= NEVE_DOWNLOAD_PROGRESS_BYTES
+                        or (total > 0 and downloaded >= total)
                     )
+                    if should_update_progress:
+                        progress = (downloaded / total) if total > 0 else 0.0
+                        _set_task(
+                            task_id,
+                            downloaded=downloaded,
+                            total=total,
+                            progress=progress,
+                        )
+                        last_progress_update = now
+                        last_progress_bytes = downloaded
+            _set_task(
+                task_id,
+                downloaded=downloaded,
+                total=total,
+                progress=(downloaded / total) if total > 0 else 0.0,
+            )
     _raise_if_download_cancelled(task_id)
     if expected_size > 0 and tmp_path.stat().st_size != expected_size:
         raise RuntimeError(
