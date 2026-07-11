@@ -163,7 +163,9 @@
 		const lastVisibleRow = rows[Math.min(3, rows.length - 1)];
 		const viewportTop = advancedParamsWindowElement.getBoundingClientRect().top;
 		const lastRowBottom = lastVisibleRow.getBoundingClientRect().bottom;
-		const nextHeight = `${Math.ceil(lastRowBottom - viewportTop + 1)}px`;
+		const nextHeight = `${Math.ceil(
+			lastRowBottom - viewportTop + advancedParamsWindowElement.scrollTop + 1
+		)}px`;
 
 		if (advancedParamsViewportHeight !== nextHeight) {
 			advancedParamsViewportHeight = nextHeight;
@@ -678,7 +680,7 @@
 
 									{#if !isCatalogIconLocked && info.meta.profile_image_url && info.meta.profile_image_url !== DEFAULT_MODEL_PROFILE_IMAGE_URL}
 										<button
-											class="absolute right-1.5 top-1.5 z-10 flex size-6 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 shadow-md transition hover:text-gray-700 dark:border-gray-700 dark:bg-gray-850 dark:text-gray-300 dark:hover:text-white"
+											class="absolute -right-1 top-30 z-10 flex size-7 items-center justify-center rounded-full border border-white bg-gray-500 text-white shadow-lg shadow-black/20 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-white/70 dark:border-gray-200 dark:bg-gray-600 dark:hover:bg-gray-500"
 											type="button"
 											aria-label={$i18n.t('Reset Image')}
 											title={$i18n.t('Reset Image')}
@@ -770,10 +772,10 @@
 				<!-- Params (scrollable) + Features (static) side by side -->
 				<div class="flex-1 min-h-0 overflow-hidden px-4 pb-4 border-t border-gray-200/30 dark:border-gray-700/20 mt-2 pt-6">
 					<div class="flex gap-0 w-full pl-8 h-full min-h-0">
-						<!-- Left: Parâmetros Avançados + System Prompt (only this scrolls) -->
+						<!-- Left: advanced params + system prompt (only this scrolls) -->
 						<div class="w-[55%] min-w-0 h-full flex flex-col pr-1">
 							<div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 py-0 pl-2 pr-5 shrink-0">
-								{$i18n.t('Parâmetros Avançados')}
+								{$i18n.t('Par\u00e2metros avan\u00e7ados')}
 							</div>
 							<div class="min-h-0 pr-5">
 								<div
@@ -786,7 +788,7 @@
 										<AdvancedParams admin={true} custom={true} janStyle={true} bind:params tooltipsEnabled={false} />
 									</div>
 
-									<!-- System Prompt -->
+									<!-- System prompt -->
 									<div class="mt-0.5">
 										<div class="flex w-full items-center justify-between py-1">
 											{#if showSystemPromptField}
@@ -794,9 +796,9 @@
 													type="button"
 													class="ml-2 text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition"
 													on:click={() => { system = ''; showSystemPromptField = false; }}
-												>{$i18n.t('System Prompt')}</button>
+												>{$i18n.t('Prompt do sistema')}</button>
 											{:else}
-												<div class="ml-2 text-xs text-gray-700 dark:text-gray-300">{$i18n.t('System Prompt')}</div>
+												<div class="ml-2 text-xs text-gray-700 dark:text-gray-300">{$i18n.t('Prompt do sistema')}</div>
 											{/if}
 											{#if !showSystemPromptField}
 												<button

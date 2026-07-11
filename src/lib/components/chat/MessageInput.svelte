@@ -114,6 +114,8 @@
 	export let stopResponse: Function;
 
 	export let autoScroll = false;
+	export let showScrollToBottomButton = false;
+	export let onScrollToBottom: Function | null = null;
 	export let generating = false;
 	export let uploadPending = false;
 
@@ -1308,15 +1310,19 @@
 					: 'max-w-2xl'} w-full"
 			>
 				<div class="relative">
-					{#if autoScroll === false && history?.currentId}
+					{#if (showScrollToBottomButton || autoScroll === false) && history?.currentId}
 						<div
 							class=" absolute -top-12 left-0 right-0 flex justify-center z-30 pointer-events-none"
 						>
 							<button
 								class=" bg-white border border-gray-100 dark:border-none dark:bg-white/20 p-1.5 rounded-full pointer-events-auto"
 								on:click={() => {
-									autoScroll = true;
-									scrollToBottom();
+									if (onScrollToBottom) {
+										onScrollToBottom();
+									} else {
+										autoScroll = true;
+										scrollToBottom();
+									}
 								}}
 							>
 								<svg

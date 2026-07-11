@@ -1723,13 +1723,68 @@ export const initMermaid = async () => {
 	return mermaid;
 };
 
+const isMermaidFlowchart = (code: string) => /^\s*(graph|flowchart)\s+/m.test(code);
+
+const quoteMermaidFlowchartLabel = (label: string) => {
+	const trimmed = label.trim();
+	if (!trimmed || (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+		return label;
+	}
+
+	return `"${trimmed.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+};
+
+const normalizeMermaidFlowchartLabels = (code: string) => {
+	if (!isMermaidFlowchart(code)) {
+		return code;
+	}
+
+	let normalized = code;
+	const nodeId = String.raw`([A-Za-z0-9_][A-Za-z0-9_-]*)`;
+
+	normalized = normalized.replace(
+		new RegExp(`${nodeId}\\[\\[([^\\]\\n]+)\\]\\]`, 'g'),
+		(_, id, label) => `${id}[[${quoteMermaidFlowchartLabel(label)}]]`
+	);
+	normalized = normalized.replace(
+		new RegExp(`${nodeId}\\(\\[([^\\]\\n]+)\\]\\)`, 'g'),
+		(_, id, label) => `${id}([${quoteMermaidFlowchartLabel(label)}])`
+	);
+	normalized = normalized.replace(
+		new RegExp(`${nodeId}\\[([^\\]\\n]+)\\]`, 'g'),
+		(match, id, label) =>
+			label.startsWith('[') ? match : `${id}[${quoteMermaidFlowchartLabel(label)}]`
+	);
+	normalized = normalized.replace(
+		new RegExp(`${nodeId}\\{([^}\\n]+)\\}`, 'g'),
+		(_, id, label) => `${id}{${quoteMermaidFlowchartLabel(label)}}`
+	);
+
+	return normalized;
+};
+
 export const renderMermaidDiagram = async (mermaid, code: string) => {
-	const parseResult = await mermaid.parse(code, { suppressErrors: false });
-	if (parseResult) {
-		const { svg } = await mermaid.render(`mermaid-${uuidv4()}`, code);
+	const render = async (source: string) => {
+		const parseResult = await mermaid.parse(source, { suppressErrors: false });
+		if (parseResult) {
+			const { svg } = await mermaid.render(`mermaid-${uuidv4()}`, source);
+			return svg;
+		}
+
+		return '';
+	};
+
+	try {
+		return await render(code);
+	} catch (error) {
+		const normalizedCode = normalizeMermaidFlowchartLabels(code);
+		if (normalizedCode === code) {
+			throw error;
+		}
+
+		const svg = await render(normalizedCode);
 		return svg;
 	}
-	return '';
 };
 
 export const renderVegaVisualization = async (spec: string, i18n?: any) => {

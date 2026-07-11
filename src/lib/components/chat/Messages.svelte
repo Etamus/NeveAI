@@ -54,6 +54,7 @@
 	export let topPadding = false;
 	export let bottomPadding = false;
 	export let autoScroll;
+	export let bottomSpacerHeight = 0;
 
 	export let onSelect = (e) => {};
 
@@ -495,6 +496,13 @@
 							/>
 						{/each}
 					</ul>
+					{#if bottomSpacerHeight > 0}
+						<div
+							aria-hidden="true"
+							class="shrink-0 pointer-events-none"
+							style="height: {bottomSpacerHeight}px;"
+						/>
+					{/if}
 				</section>
 				<div class="pb-18" />
 				{#if bottomPadding}

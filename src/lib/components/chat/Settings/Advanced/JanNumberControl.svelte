@@ -4,6 +4,7 @@
 	export let max: number = 1;
 	export let step: number = 0.05;
 	export let disabled = false;
+	export let adjustMode: 'step' | 'double' = 'step';
 
 	$: if (value !== null && value !== undefined) {
 		const numericValue = Number(value);
@@ -12,10 +13,21 @@
 		}
 	}
 
-	const adjust = (delta: number) => {
+	const decimals = (numericStep: number) => (numericStep.toString().split('.')[1] || '').length;
+
+	const adjust = (direction: -1 | 1) => {
 		if (disabled) return;
-		const decimals = (step.toString().split('.')[1] || '').length;
-		let newVal = Number((value + delta).toFixed(decimals));
+		const currentValue = Number(value);
+		if (!Number.isFinite(currentValue)) return;
+
+		let newVal =
+			adjustMode === 'double'
+				? direction > 0
+					? Math.max(step, currentValue * 2)
+					: Math.max(min, currentValue / 2)
+				: currentValue + direction * step;
+
+		newVal = Number(newVal.toFixed(decimals(step)));
 		newVal = Math.max(min, Math.min(max, newVal));
 		value = newVal;
 	};
@@ -27,7 +39,7 @@
 	<button
 		type="button"
 		class="h-7 w-6 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition disabled:opacity-30"
-		on:click={() => adjust(-step)}
+		on:click={() => adjust(-1)}
 		disabled={disabled || value <= min}
 		aria-label="Decrease"
 	>
@@ -55,7 +67,7 @@
 	<button
 		type="button"
 		class="h-7 w-6 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition disabled:opacity-30"
-		on:click={() => adjust(step)}
+		on:click={() => adjust(1)}
 		disabled={disabled || value >= max}
 		aria-label="Increase"
 	>

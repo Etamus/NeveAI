@@ -85,7 +85,7 @@
 
 			{#if $user?.role === 'admin' || ($user?.permissions.chat?.params ?? true)}
 				<Collapsible
-					title={$i18n.t('Advanced Params')}
+					title={$i18n.t('Par\u00e2metros avan\u00e7ados')}
 					bind:open={showAdvancedParams}
 					onChange={setOpen('advancedParams')}
 					buttonClassName="w-full"
@@ -102,9 +102,9 @@
 										type="button"
 										class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition"
 										on:click={() => { params.system = ''; showSystemPromptField = false; }}
-									>{$i18n.t('System Prompt')}</button>
+									>{$i18n.t('Prompt do sistema')}</button>
 								{:else}
-									<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('System Prompt')}</div>
+									<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('Prompt do sistema')}</div>
 								{/if}
 								{#if !showSystemPromptField}
 									<button

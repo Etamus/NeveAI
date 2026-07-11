@@ -61,9 +61,9 @@
 				className="inline-tooltip"
 			>
 				{#if (params?.temperature ?? null) === null}
-					<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('Temperature')}</div>
+					<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('temperature')}</div>
 				{:else}
-					<button type="button" disabled={isParamDisabled('temperature')} class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.temperature = null; }}>{$i18n.t('Temperature')}</button>
+					<button type="button" disabled={isParamDisabled('temperature')} class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.temperature = null; }}>{$i18n.t('temperature')}</button>
 				{/if}
 			</Tooltip>
 			{#if (params?.temperature ?? null) === null}
@@ -88,7 +88,7 @@
 		>
 			<div class="flex w-full justify-between">
 				<div class=" self-center text-xs">
-					{$i18n.t('Temperature')}
+					{$i18n.t('temperature')}
 				</div>
 				<button
 					class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
@@ -144,9 +144,9 @@
 				className="inline-tooltip"
 			>
 				{#if (params?.max_tokens ?? null) === null}
-					<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('Máximo de tokens')}</div>
+					<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('max_tokens')}</div>
 				{:else}
-					<button type="button" class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.max_tokens = null; }}>{$i18n.t('Máximo de tokens')}</button>
+					<button type="button" class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.max_tokens = null; }}>{$i18n.t('max_tokens')}</button>
 				{/if}
 			</Tooltip>
 			{#if (params?.max_tokens ?? null) === null}
@@ -156,7 +156,7 @@
 					on:click={() => { params.max_tokens = 128; }}
 				>{$i18n.t('Default')}</button>
 			{:else}
-				<JanNumberControl bind:value={params.max_tokens} min={0} max={MAX_TOKENS_LIMIT} step={128} />
+				<JanNumberControl bind:value={params.max_tokens} min={128} max={MAX_TOKENS_LIMIT} step={128} adjustMode="double" />
 			{/if}
 		</div>
 	{:else}
@@ -170,7 +170,7 @@
 		>
 			<div class="flex w-full justify-between">
 				<div class=" self-center text-xs">
-					{$i18n.t('Máximo de tokens')}
+					{$i18n.t('max_tokens')}
 				</div>
 
 				<button
@@ -195,9 +195,9 @@
 					<input
 						id="steps-range"
 						type="range"
-						min="-2"
+						min="128"
 						max={MAX_TOKENS_LIMIT}
-						step="1"
+						step="128"
 						bind:value={params.max_tokens}
 						class="w-full h-2 rounded-lg appearance-none cursor-pointer bg-gray-200 dark:bg-gray-700"
 					/>
@@ -207,8 +207,164 @@
 						bind:value={params.max_tokens}
 						type="number"
 						class=" bg-transparent text-center w-14"
-						min="-2"
-						step="1"
+						min="128"
+						step="128"
+					/>
+				</div>
+			</div>
+		{/if}
+	</div>
+	{/if}
+	{#if janStyle}
+		<div class="flex w-full items-center justify-between py-1.5 {disabledRowClass('top_k')}">
+			<Tooltip
+				content={tooltipsEnabled ? $i18n.t('Limits token sampling to the top K most likely tokens. Use 0 to keep the default behavior.') : ""}
+				placement="top-start"
+				className="inline-tooltip"
+			>
+				{#if (params?.top_k ?? null) === null}
+					<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('top_k')}</div>
+				{:else}
+					<button type="button" disabled={isParamDisabled('top_k')} class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.top_k = null; }}>{$i18n.t('top_k')}</button>
+				{/if}
+			</Tooltip>
+			{#if (params?.top_k ?? null) === null}
+				<button type="button" disabled={isParamDisabled('top_k')} class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700" on:click={() => { params.top_k = 0; }}>{$i18n.t('Default')}</button>
+			{:else}
+				<JanNumberControl bind:value={params.top_k} min={0} max={200} step={0.05} disabled={isParamDisabled('top_k')} />
+			{/if}
+		</div>
+	{:else}
+		<div class=" py-0.5 w-full justify-between {disabledRowClass('top_k')}">
+		<Tooltip
+			content={tooltipsEnabled ? $i18n.t(
+				'Limits token sampling to the top K most likely tokens. Use 0 to keep the default behavior.'
+			) : ""}
+			placement="top-start"
+			className="inline-tooltip"
+		>
+			<div class="flex w-full justify-between">
+				<div class=" self-center text-xs">
+					{$i18n.t('top_k')}
+				</div>
+				<button
+					class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
+					type="button"
+					disabled={isParamDisabled('top_k')}
+					on:click={() => {
+						params.top_k = (params?.top_k ?? null) === null ? 0 : null;
+					}}
+				>
+					{#if (params?.top_k ?? null) === null}
+						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
+					{:else}
+						<span class="ml-2 self-center">{$i18n.t('Custom')}</span>
+					{/if}
+				</button>
+			</div>
+		</Tooltip>
+
+		{#if (params?.top_k ?? null) !== null}
+			<div class="flex mt-0.5 space-x-2">
+				<div class=" flex-1">
+					<input
+						id="steps-range"
+						type="range"
+						min="0"
+						max="200"
+						step="0.05"
+						bind:value={params.top_k}
+						disabled={isParamDisabled('top_k')}
+						class="w-full h-2 rounded-lg appearance-none cursor-pointer bg-gray-200 dark:bg-gray-700"
+					/>
+				</div>
+				<div>
+					<input
+						bind:value={params.top_k}
+						type="number"
+						class=" bg-transparent text-center w-14"
+						min="0"
+						max="200"
+						step="0.05"
+						disabled={isParamDisabled('top_k')}
+					/>
+				</div>
+			</div>
+		{/if}
+	</div>
+	{/if}
+	{#if janStyle}
+		<div class="flex w-full items-center justify-between py-1.5 {disabledRowClass('top_p')}">
+			<Tooltip
+				content={tooltipsEnabled ? $i18n.t('Nucleus sampling probability. Lower values make generation more focused; 1 keeps the default behavior.') : ""}
+				placement="top-start"
+				className="inline-tooltip"
+			>
+				{#if (params?.top_p ?? null) === null}
+					<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('top_p')}</div>
+				{:else}
+					<button type="button" disabled={isParamDisabled('top_p')} class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition" on:click={() => { params.top_p = null; }}>{$i18n.t('top_p')}</button>
+				{/if}
+			</Tooltip>
+			{#if (params?.top_p ?? null) === null}
+				<button type="button" disabled={isParamDisabled('top_p')} class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700" on:click={() => { params.top_p = 1; }}>{$i18n.t('Default')}</button>
+			{:else}
+				<JanNumberControl bind:value={params.top_p} min={0} max={1} step={0.05} disabled={isParamDisabled('top_p')} />
+			{/if}
+		</div>
+	{:else}
+		<div class=" py-0.5 w-full justify-between {disabledRowClass('top_p')}">
+		<Tooltip
+			content={tooltipsEnabled ? $i18n.t(
+				'Nucleus sampling probability. Lower values make generation more focused; 1 keeps the default behavior.'
+			) : ""}
+			placement="top-start"
+			className="inline-tooltip"
+		>
+			<div class="flex w-full justify-between">
+				<div class=" self-center text-xs">
+					{$i18n.t('top_p')}
+				</div>
+				<button
+					class="p-1 px-3 text-xs flex rounded-sm transition shrink-0 outline-hidden"
+					type="button"
+					disabled={isParamDisabled('top_p')}
+					on:click={() => {
+						params.top_p = (params?.top_p ?? null) === null ? 1 : null;
+					}}
+				>
+					{#if (params?.top_p ?? null) === null}
+						<span class="ml-2 self-center">{$i18n.t('Default')}</span>
+					{:else}
+						<span class="ml-2 self-center">{$i18n.t('Custom')}</span>
+					{/if}
+				</button>
+			</div>
+		</Tooltip>
+
+		{#if (params?.top_p ?? null) !== null}
+			<div class="flex mt-0.5 space-x-2">
+				<div class=" flex-1">
+					<input
+						id="steps-range"
+						type="range"
+						min="0"
+						max="1"
+						step="0.05"
+						bind:value={params.top_p}
+						disabled={isParamDisabled('top_p')}
+						class="w-full h-2 rounded-lg appearance-none cursor-pointer bg-gray-200 dark:bg-gray-700"
+					/>
+				</div>
+				<div>
+					<input
+						bind:value={params.top_p}
+						type="number"
+						class=" bg-transparent text-center w-14"
+						min="0"
+						max="1"
+						step="any"
+						disabled={isParamDisabled('top_p')}
 					/>
 				</div>
 			</div>

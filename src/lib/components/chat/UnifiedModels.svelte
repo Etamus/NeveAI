@@ -1573,14 +1573,14 @@
 						type="button"
 						on:click={() => (showDownloadModal = true)}
 					>
-						<span>{$i18n.t('Baixar')}</span>
+						<span>{$i18n.t('Baixar modelos')}</span>
 					</button>
 					<button
 						class="flex text-xs items-center gap-1 px-3 py-1.5 rounded-lg bg-black hover:bg-gray-900 text-white dark:bg-white dark:hover:bg-gray-100 dark:text-black transition font-medium"
 						type="button"
 						on:click={() => (showConfigModal = true)}
 					>
-						<span>{$i18n.t('Settings')}</span>
+						<span>{$i18n.t('Configura\u00e7\u00f5es globais')}</span>
 					</button>
 				</div>
 			</div>

@@ -166,7 +166,7 @@ async def search_web(
 
     try:
         deep_search_enabled = bool(getattr(__request__.state, "deep_search_enabled", False))
-        engine = "duckduckgo" if deep_search_enabled else __request__.app.state.config.WEB_SEARCH_ENGINE
+        engine = __request__.app.state.config.WEB_SEARCH_ENGINE
         user = UserModel(**__user__) if __user__ else None
 
         # Use admin-configured result count if configured, falling back to model-provided count of provided, else default to 5

@@ -10,6 +10,11 @@
 			repo: 'NeveAI/Neve-Cascade-3-1B-GGUF'
 		}
 	};
+	const catalogModelOrder = new Map(
+		['neve-echo-s', 'neve-echo', 'neve-sense', 'neve-strata-s', 'neve-strata-x', 'neve-muse', 'neve-cascade-x'].map(
+			(id, index) => [id, index]
+		)
+	);
 	let memoryCatalogCache: any[] = [];
 
 	const filterRetiredCatalogModels = (catalog: any[]) =>
@@ -17,6 +22,11 @@
 			? catalog
 					.filter((model) => !retiredModelIds.has(model?.id))
 					.map((model) => ({ ...model, ...(catalogModelOverrides[model?.id] ?? {}) }))
+					.sort(
+						(a, b) =>
+							(catalogModelOrder.get(a?.id) ?? Number.MAX_SAFE_INTEGER) -
+							(catalogModelOrder.get(b?.id) ?? Number.MAX_SAFE_INTEGER)
+					)
 			: [];
 
 	const readCachedNeveCatalog = () => {
@@ -49,10 +59,10 @@
 		'neve-echo-s': ['4GB+', 'Q4_K_XL'],
 		'neve-echo': ['6GB+', 'Q4_K_XL'],
 		'neve-sense': ['12GB+', 'Q4_K_XL'],
-		'neve-strata-s': ['6GB+', 'Q8_K_XL'],
+		'neve-strata-s': ['6GB+', 'Q4_K_XL'],
 		'neve-strata-x': ['16GB+', 'Q4_K_XL'],
 		'neve-cascade-x': ['CPU', 'Q3_K_XL'],
-		'neve-muse': ['16GB+']
+		'neve-muse': ['12GB+', 'Q4_K_M']
 	};
 
 	const modelIconPaths: Record<string, string> = {

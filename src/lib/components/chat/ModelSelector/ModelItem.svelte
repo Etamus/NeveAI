@@ -25,6 +25,7 @@
 
 	export let unloadModelHandler: (modelValue: string) => void = () => {};
 	export let pinModelHandler: (modelId: string) => void = () => {};
+	export let reorderEnabled = false;
 
 	export let onClick: () => void = () => {};
 
@@ -57,7 +58,8 @@
 	class="flex group/item w-full text-left font-medium line-clamp-1 select-none items-center rounded-lg py-1.5 my-0.5 pl-3 pr-1.5 text-sm text-gray-700 dark:text-gray-100 outline-hidden transition-all duration-75 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer data-highlighted:bg-muted {index ===
 	selectedModelIdx
 		? 'bg-gray-100 dark:bg-gray-700/60'
-		: ''}"
+		: ''} {reorderEnabled ? 'cursor-grab active:cursor-grabbing' : ''}"
+	data-model-selector-row="true"
 	data-arrow-selected={index === selectedModelIdx}
 	data-value={item.value}
 	on:click={() => {

@@ -9,6 +9,7 @@
 	export let id = '';
 	export let ariaLabelledbyId = '';
 	export let tooltip = false;
+	export let disabled = false;
 
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
@@ -27,14 +28,18 @@
 	<Switch.Root
 		bind:checked={state}
 		{id}
+		{disabled}
 		aria-labelledby={ariaLabelledbyId}
 		class="switch-root flex h-[1.125rem] min-h-[1.125rem] w-8 shrink-0 cursor-pointer items-center rounded-full px-[2px] mx-[1px] transition  {($settings?.highContrastMode ??
 		false)
 			? 'focus:outline focus:outline-2 focus:outline-gray-800 focus:dark:outline-gray-200'
-			: 'outline outline-1 outline-gray-100 dark:outline-gray-800'} {state
+			: 'outline outline-1 outline-gray-100 dark:outline-gray-800'} {disabled
+			? 'opacity-50 cursor-not-allowed pointer-events-none'
+			: ''} {state
 			? ' bg-blue-500 dark:bg-blue-600'
 			: 'bg-gray-200 dark:bg-transparent'}"
 		onCheckedChange={async () => {
+			if (disabled) return;
 			await tick();
 			dispatch('change', state);
 		}}

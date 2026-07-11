@@ -132,6 +132,12 @@
 	let messageInput: MessageInput | undefined;
 
 	let autoScroll = true;
+	let anchoredGeneratingMessageId: string | null = null;
+	let showScrollToBottomButton = false;
+	let generationBottomSpacerHeight = 0;
+	let scrollStateRAF: ReturnType<typeof requestAnimationFrame> | null = null;
+	let generationAnchorRAF: ReturnType<typeof requestAnimationFrame>[] = [];
+	let generationSpacerRAF: ReturnType<typeof requestAnimationFrame> | null = null;
 	let processing = '';
 	let messagesContainerElement: HTMLDivElement;
 
@@ -180,22 +186,70 @@
 	let dragged = false;
 	let generationController = null;
 
+	const USER_MESSAGE_ANCHOR_TOP_OFFSET_PX = 128;
+	const getGenerationBottomReadingPadding = () =>
+		Math.round(
+			Math.min(220, Math.max(120, (messagesContainerElement?.clientHeight ?? 640) * 0.24))
+		);
+
 	// Content buffer system: accumulate streaming content in plain JS (outside Svelte 5 proxy)
 	// to avoid triggering deep reactivity on every token.
 	const _contentBuffers = new Map();
 	let _flushRAF = null;
+	const CODE_BLOCK_SCROLL_INTERVAL_MS = 64;
+	let codeBlockScrollTimer = null;
+	let lastCodeBlockScrollAt = 0;
+
+	const hasOpenCodeFence = (value = '') => {
+		const text = typeof value === 'string' ? value : '';
+		const fences = text.match(/(^|\n)(`{3,}|~{3,})/g);
+		return Boolean(fences && fences.length % 2 === 1);
+	};
+
+	const isStreamingOpenCodeBlock = (messageId = history?.currentId) => {
+		const message = history?.messages?.[messageId];
+		if (!message || message.role !== 'assistant' || message.done === true) {
+			return false;
+		}
+
+		return hasOpenCodeFence(_contentBuffers.get(messageId) ?? message.content ?? '');
+	};
+
+	const scheduleStreamingAwareScrollToBottom = (messageId = history?.currentId) => {
+		if (!isStreamingOpenCodeBlock(messageId)) {
+			scheduleScrollToBottom();
+			return;
+		}
+
+		const now = performance.now();
+		const remaining = Math.max(0, CODE_BLOCK_SCROLL_INTERVAL_MS - (now - lastCodeBlockScrollAt));
+
+		if (!codeBlockScrollTimer) {
+			codeBlockScrollTimer = setTimeout(() => {
+				codeBlockScrollTimer = null;
+				lastCodeBlockScrollAt = performance.now();
+				scheduleScrollToBottom();
+			}, remaining);
+		}
+	};
 
 	const flushContentBuffers = () => {
 		let hasChanges = false;
+		let changedMessageId = null;
 		for (const [msgId, bufContent] of _contentBuffers) {
 			if (history.messages[msgId] && history.messages[msgId].content !== bufContent) {
 				history.messages[msgId].content = bufContent;
 				history.messages[msgId] = history.messages[msgId];
 				hasChanges = true;
+				changedMessageId = msgId;
 			}
 		}
-		if (hasChanges && autoScroll) {
-			scheduleScrollToBottom();
+		if (hasChanges) {
+			scheduleScrollStateUpdate({ updateAutoScroll: !anchoredGeneratingMessageId });
+			scheduleGenerationSpacerFit();
+			if (autoScroll && !anchoredGeneratingMessageId) {
+				scheduleStreamingAwareScrollToBottom(changedMessageId);
+			}
 		}
 		// Continue RAF loop while buffers exist
 		if (_contentBuffers.size > 0) {
@@ -754,6 +808,7 @@
 					// Set all response messages to done
 					for (const messageId of history.messages[responseMessage.parentId].childrenIds) {
 						history.messages[messageId].done = true;
+						releaseGeneratingMessageAnchor(messageId);
 					}
 				} else if (type === 'chat:message:delta' || type === 'message') {
 					// Buffer content outside Svelte proxy to avoid reactive cascade per token
@@ -1066,6 +1121,23 @@
 				audioQueue.set(null);
 				// Reset code execution store so CodeBlock in other views doesn't see stale value
 				chatCodeExecutionEnabled.set(false);
+				if (scrollRAF) {
+					cancelAnimationFrame(scrollRAF);
+					scrollRAF = null;
+				}
+				if (scrollStateRAF) {
+					cancelAnimationFrame(scrollStateRAF);
+					scrollStateRAF = null;
+				}
+				if (generationSpacerRAF) {
+					cancelAnimationFrame(generationSpacerRAF);
+					generationSpacerRAF = null;
+				}
+				cancelGenerationAnchorRAF();
+				if (codeBlockScrollTimer) {
+					clearTimeout(codeBlockScrollTimer);
+					codeBlockScrollTimer = null;
+				}
 			} catch (e) {
 				console.error(e);
 			}
@@ -1454,6 +1526,9 @@
 		}
 
 		autoScroll = true;
+		anchoredGeneratingMessageId = null;
+		showScrollToBottomButton = false;
+		generationBottomSpacerHeight = 0;
 
 		resetInput();
 		await chatId.set('');
@@ -1573,6 +1648,9 @@
 				chatFiles = chatContent?.files ?? [];
 
 				autoScroll = true;
+				anchoredGeneratingMessageId = null;
+				showScrollToBottomButton = false;
+				generationBottomSpacerHeight = 0;
 
 				// Update artifact contents synchronously before tick() so that Artifacts.svelte
 				// mounts with the correct content (prevents stale preview from previous chat)
@@ -1615,6 +1693,285 @@
 		}
 	};
 
+	const scrollToContentBottom = async (behavior = 'auto') => {
+		await tick();
+		if (!messagesContainerElement) return;
+
+		const activeMessageElement = anchoredGeneratingMessageId
+			? document.getElementById(`message-${anchoredGeneratingMessageId}`)
+			: null;
+
+		if (activeMessageElement) {
+			const bottomPadding = getGenerationBottomReadingPadding();
+			let containerRect = messagesContainerElement.getBoundingClientRect();
+			let messageRect = activeMessageElement.getBoundingClientRect();
+			let targetTop =
+				messagesContainerElement.scrollTop +
+				messageRect.bottom -
+				containerRect.bottom +
+				bottomPadding;
+			const maxScrollTop =
+				messagesContainerElement.scrollHeight - messagesContainerElement.clientHeight;
+
+			if (targetTop > maxScrollTop) {
+				generationBottomSpacerHeight += Math.ceil(targetTop - maxScrollTop) + 4;
+				await tick();
+				containerRect = messagesContainerElement.getBoundingClientRect();
+				messageRect = activeMessageElement.getBoundingClientRect();
+				targetTop =
+					messagesContainerElement.scrollTop +
+					messageRect.bottom -
+					containerRect.bottom +
+					bottomPadding;
+			}
+
+			messagesContainerElement.scrollTo({
+				top: Math.max(0, targetTop),
+				behavior
+			});
+			scheduleScrollStateUpdate({ updateAutoScroll: false });
+			return;
+		}
+
+		const effectiveScrollHeight = Math.max(
+			messagesContainerElement.clientHeight,
+			messagesContainerElement.scrollHeight - generationBottomSpacerHeight
+		);
+		messagesContainerElement.scrollTo({
+			top: effectiveScrollHeight,
+			behavior
+		});
+	};
+
+	const isMessagesContainerAtBottom = () => {
+		if (!messagesContainerElement) return true;
+		const effectiveScrollHeight = Math.max(
+			messagesContainerElement.clientHeight,
+			messagesContainerElement.scrollHeight - generationBottomSpacerHeight
+		);
+		return (
+			effectiveScrollHeight - messagesContainerElement.scrollTop <=
+			messagesContainerElement.clientHeight + 5
+		);
+	};
+
+	const updateScrollStateFromContainer = ({
+		updateAutoScroll = !anchoredGeneratingMessageId
+	}: { updateAutoScroll?: boolean } = {}) => {
+		if (!messagesContainerElement) {
+			showScrollToBottomButton = false;
+			return;
+		}
+
+		const activeMessageElement = anchoredGeneratingMessageId
+			? document.getElementById(`message-${anchoredGeneratingMessageId}`)
+			: null;
+
+		if (activeMessageElement) {
+			const containerRect = messagesContainerElement.getBoundingClientRect();
+			const messageRect = activeMessageElement.getBoundingClientRect();
+			const hasHiddenContentBelow = messageRect.bottom > containerRect.bottom + 4;
+			showScrollToBottomButton = hasHiddenContentBelow;
+
+			if (updateAutoScroll) {
+				autoScroll = !hasHiddenContentBelow;
+			}
+			return;
+		}
+
+		const atBottom = isMessagesContainerAtBottom();
+		showScrollToBottomButton = !atBottom;
+
+		if (updateAutoScroll) {
+			autoScroll = atBottom;
+		}
+	};
+
+	const scheduleScrollStateUpdate = ({
+		updateAutoScroll = !anchoredGeneratingMessageId
+	}: { updateAutoScroll?: boolean } = {}) => {
+		if (scrollStateRAF) {
+			cancelAnimationFrame(scrollStateRAF);
+		}
+
+		scrollStateRAF = requestAnimationFrame(() => {
+			scrollStateRAF = null;
+			updateScrollStateFromContainer({ updateAutoScroll });
+		});
+	};
+
+	const fitGenerationSpacerToViewport = async (
+		desiredScrollTop = messagesContainerElement?.scrollTop ?? 0
+	) => {
+		if (!messagesContainerElement || generationBottomSpacerHeight <= 0) return;
+
+		const realScrollHeight = Math.max(
+			messagesContainerElement.clientHeight,
+			messagesContainerElement.scrollHeight - generationBottomSpacerHeight
+		);
+		const nextSpacerHeight = Math.max(
+			0,
+			Math.ceil(desiredScrollTop + messagesContainerElement.clientHeight - realScrollHeight)
+		);
+
+		if (Math.abs(nextSpacerHeight - generationBottomSpacerHeight) > 1) {
+			generationBottomSpacerHeight = nextSpacerHeight;
+			await tick();
+		}
+
+		if (messagesContainerElement) {
+			messagesContainerElement.scrollTop = desiredScrollTop;
+		}
+		scheduleScrollStateUpdate({ updateAutoScroll: !anchoredGeneratingMessageId });
+	};
+
+	const scheduleGenerationSpacerFit = () => {
+		if (!anchoredGeneratingMessageId || !messagesContainerElement || generationBottomSpacerHeight <= 0) {
+			return;
+		}
+
+		if (generationSpacerRAF) {
+			cancelAnimationFrame(generationSpacerRAF);
+		}
+
+		const desiredScrollTop = messagesContainerElement.scrollTop;
+		generationSpacerRAF = requestAnimationFrame(() => {
+			generationSpacerRAF = null;
+			fitGenerationSpacerToViewport(desiredScrollTop);
+		});
+	};
+
+	const waitForLayout = async (frames = 2) => {
+		await tick();
+		for (let i = 0; i < frames; i += 1) {
+			await new Promise((resolve) => requestAnimationFrame(resolve));
+		}
+	};
+
+	const scrollToMessageTop = async (
+		messageId: string,
+		behavior = 'auto',
+		{ topOffset }: { topOffset?: number } = {}
+	) => {
+		if (!messageId) return;
+		await waitForLayout();
+
+		const messageElement = document.getElementById(`message-${messageId}`);
+		if (!messageElement) return;
+
+		const nextScrollMarginTop = `${topOffset ?? 0}px`;
+		const previousScrollMarginTop = messageElement.style.scrollMarginTop;
+		messageElement.style.scrollMarginTop = nextScrollMarginTop;
+		messageElement.scrollIntoView({
+			behavior,
+			block: 'start',
+			inline: 'nearest'
+		});
+		messageElement.style.scrollMarginTop = previousScrollMarginTop;
+
+		if (!messagesContainerElement) {
+			return;
+		}
+
+		const containerRect = messagesContainerElement.getBoundingClientRect();
+		const messageRect = messageElement.getBoundingClientRect();
+		const scrollMarginTop =
+			topOffset ?? (parseFloat(getComputedStyle(messageElement).scrollMarginTop || '0') || 0);
+		const targetTop = messagesContainerElement.scrollTop + messageRect.top - containerRect.top - scrollMarginTop;
+
+		messagesContainerElement.scrollTo({
+			top: Math.max(0, targetTop),
+			behavior
+		});
+	};
+
+	const cancelGenerationAnchorRAF = () => {
+		for (const frame of generationAnchorRAF) {
+			cancelAnimationFrame(frame);
+		}
+		generationAnchorRAF = [];
+	};
+
+	const stabilizeGeneratingAnchor = (
+		scrollTargetMessageId: string,
+		trackedMessageId: string,
+		topOffset = 0
+	) => {
+		cancelGenerationAnchorRAF();
+
+		let attempts = 0;
+		const run = () => {
+			if (anchoredGeneratingMessageId !== trackedMessageId || attempts >= 5) {
+				generationAnchorRAF = [];
+				return;
+			}
+
+			attempts += 1;
+			scrollToMessageTop(scrollTargetMessageId, 'auto', { topOffset }).then(() => {
+				const frame = requestAnimationFrame(run);
+				generationAnchorRAF = [frame];
+			});
+		};
+
+		const frame = requestAnimationFrame(run);
+		generationAnchorRAF = [frame];
+	};
+
+	const anchorGeneratingMessageTop = async (
+		scrollTargetMessageId: string,
+		trackedMessageId = scrollTargetMessageId,
+		{ topOffset = 0 }: { topOffset?: number } = {}
+	) => {
+		anchoredGeneratingMessageId = trackedMessageId;
+		generationBottomSpacerHeight = messagesContainerElement?.clientHeight ?? 0;
+		autoScroll = false;
+		await tick();
+		await scrollToMessageTop(scrollTargetMessageId, 'auto', { topOffset });
+		await fitGenerationSpacerToViewport(messagesContainerElement?.scrollTop ?? 0);
+		autoScroll = false;
+		stabilizeGeneratingAnchor(scrollTargetMessageId, trackedMessageId, topOffset);
+		scheduleScrollStateUpdate({ updateAutoScroll: false });
+	};
+
+	const anchorGeneratingMessageBottom = async (messageId: string) => {
+		anchoredGeneratingMessageId = messageId;
+		generationBottomSpacerHeight = messagesContainerElement?.clientHeight ?? 0;
+		autoScroll = false;
+		await tick();
+		await scrollToContentBottom('auto');
+		autoScroll = false;
+		scheduleScrollStateUpdate({ updateAutoScroll: false });
+	};
+
+	const releaseGeneratingMessageAnchor = (messageId?: string) => {
+		if (!messageId || anchoredGeneratingMessageId === messageId) {
+			anchoredGeneratingMessageId = null;
+			cancelGenerationAnchorRAF();
+			if (generationSpacerRAF) {
+				cancelAnimationFrame(generationSpacerRAF);
+				generationSpacerRAF = null;
+			}
+		}
+	};
+
+	const clearGenerationSpacerIfSafe = async () => {
+		if (!messagesContainerElement || generationBottomSpacerHeight <= 0) return;
+
+		await tick();
+		const maxScrollWithoutSpacer = Math.max(
+			0,
+			messagesContainerElement.scrollHeight -
+				generationBottomSpacerHeight -
+				messagesContainerElement.clientHeight
+		);
+
+		if (messagesContainerElement.scrollTop <= maxScrollWithoutSpacer + 5) {
+			generationBottomSpacerHeight = 0;
+			await tick();
+			updateScrollStateFromContainer({ updateAutoScroll: true });
+		}
+	};
+
 	let scrollRAF = null;
 	const scheduleScrollToBottom = () => {
 		if (!scrollRAF) {
@@ -1623,6 +1980,16 @@
 				await scrollToBottom();
 			});
 		}
+	};
+
+	const scrollToBottomFromInput = async () => {
+		await scrollToContentBottom('smooth');
+		if (!anchoredGeneratingMessageId) {
+			autoScroll = true;
+		}
+		requestAnimationFrame(() => {
+			updateScrollStateFromContainer({ updateAutoScroll: !anchoredGeneratingMessageId });
+		});
 	};
 	const chatCompletedHandler = async (_chatId, modelId, responseMessageId, messages) => {
 		const res = await chatCompleted(localStorage.token, {
@@ -2008,6 +2375,7 @@
 			contentsDebounceTimer = null;
 			lastContentsFingerprint = '';
 
+			const wasAnchored = anchoredGeneratingMessageId === message.id;
 			message.done = true;
 
 			// Immediately remove this chat from activeChatIds so spinner stops
@@ -2049,7 +2417,9 @@
 			history.messages[message.id] = message;
 
 			await tick();
-			if (autoScroll) {
+			if (wasAnchored) {
+				updateScrollStateFromContainer({ updateAutoScroll: false });
+			} else if (autoScroll) {
 				scrollToBottom();
 			}
 
@@ -2074,6 +2444,12 @@
 				message.id,
 				createMessagesList(history, message.id)
 			);
+
+			if (wasAnchored) {
+				await clearGenerationSpacerIfSafe();
+				releaseGeneratingMessageAnchor(message.id);
+				updateScrollStateFromContainer({ updateAutoScroll: false });
+			}
 		} else {
 			// Start periodic flush (200ms) — this is the ONLY place reactive updates
 			// happen during streaming, replacing per-token proxy mutations
@@ -2193,6 +2569,87 @@
 			normalizeLocalTokenPrediction(loadedModel.token_prediction) === loadPlan.tokenPrediction &&
 			normalizeLocalContextShift(loadedModel.context_shift) === loadPlan.contextShift
 		);
+	};
+
+	const ensureLocalModelsReady = async (modelIds: string[]) => {
+		for (const modelId of modelIds) {
+			const model = $models.find((m) => m.id === modelId);
+			if (!model || (model as any).owned_by !== 'llamacpp') {
+				continue;
+			}
+
+			try {
+				const loadedModels = await getLoadedLocalModels(localStorage.token);
+				const loadedModel = loadedModels.find((lm) => lm.id === modelId) ?? null;
+
+				if (stableDiffusionEnabled) {
+					stableDiffusionStandbyModel = loadedModel ?? loadedModels[0] ?? stableDiffusionStandbyModel;
+					continue;
+				}
+
+				const loadPlan = await resolveLocalModelLoadPlan(model, modelId, loadedModel);
+				if (loadPlan === null) {
+					return false;
+				}
+
+				const needsLoad =
+					loadedModel === null || !loadedLocalModelMatchesPlan(loadedModel, loadPlan);
+				if (!needsLoad) {
+					continue;
+				}
+
+				const currentlyLoaded = loadedModels.length > 0 ? loadedModels[0] : null;
+
+				modelLoading = true;
+				try {
+					toast.info($i18n.t('Loading model... Please wait.'));
+					if (currentlyLoaded) {
+						try {
+							await unloadLocalModel(localStorage.token, currentlyLoaded.id);
+						} catch (unloadErr) {
+							console.warn('Could not explicitly unload previous model (may already be inactive):', unloadErr);
+						}
+					}
+
+					const doLoad = () =>
+						loadLocalModel(
+							localStorage.token,
+							loadPlan.modelFilename,
+							loadPlan.gpuLayers,
+							loadPlan.contextSize,
+							loadPlan.mmprojFilename,
+							loadPlan.cacheType,
+							loadPlan.speculativeDecoding,
+							loadPlan.tokenPrediction,
+							loadPlan.contextShift
+						);
+					try {
+						await doLoad();
+					} catch (firstErr) {
+						const firstErrorMessage = normalizeLlamaCppErrorMessage(
+							firstErr,
+							'Falha ao carregar modelo'
+						);
+						if (firstErrorMessage.toLowerCase().includes('tokens')) {
+							throw firstErr;
+						}
+						console.warn('First load attempt failed, retrying in 3s...', firstErr);
+						await new Promise((resolve) => setTimeout(resolve, 3000));
+						await doLoad();
+					}
+					toast.success($i18n.t('Model loaded successfully!'));
+					models.set(await getModels(localStorage.token, null, false, true));
+				} finally {
+					modelLoading = false;
+				}
+			} catch (err: any) {
+				console.error('LlamaCpp model check failed:', err);
+				showLocalModelLoadError(err);
+				return false;
+			}
+		}
+
+		return true;
 	};
 
 	const submitPrompt = async (userPrompt, { _raw = false } = {}) => {
@@ -2415,14 +2872,11 @@
 			newChat?: boolean;
 		} = {}
 	) => {
-		if (autoScroll) {
-			scrollToBottom();
-		}
-
 		let _chatId = JSON.parse(JSON.stringify($chatId));
 		_history = structuredClone(_history);
 
 		const responseMessageIds: Record<PropertyKey, string> = {};
+		const responseMessageOrder: string[] = [];
 		// If modelId is provided, use it, else use selected model
 		let selectedModelIds = modelId
 			? [modelId]
@@ -2462,6 +2916,7 @@
 				}
 
 				responseMessageIds[`${modelId}-${modelIdx ? modelIdx : _modelIdx}`] = responseMessageId;
+				responseMessageOrder.push(responseMessageId);
 			}
 		}
 		history = history;
@@ -2472,6 +2927,11 @@
 		}
 
 		await tick();
+		if (responseMessageOrder.length > 0) {
+			await anchorGeneratingMessageTop(parentId, responseMessageOrder[0], {
+				topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX
+			});
+		}
 
 		_history = structuredClone(history);
 		// Save chat after all messages have been created
@@ -2507,7 +2967,6 @@
 						responseMessageIds[`${modelId}-${modelIdx ? modelIdx : _modelIdx}`];
 					const chatEventEmitter = await getChatEventEmitter(model.id, _chatId);
 
-					scrollToBottom();
 					await sendMessageSocket(
 						model,
 						messages && messages.length > 0
@@ -2716,12 +3175,13 @@
 			toast.error(errorMessage);
 			responseMessage.error = { content: errorMessage };
 			responseMessage.done = true;
+			releaseGeneratingMessageAnchor(responseMessageId);
 			history.messages[responseMessageId] = responseMessage;
 			history.currentId = responseMessageId;
 			taskIds = null;
 
 			await tick();
-			scrollToBottom();
+			await scrollToMessageTop(responseMessageId);
 			return;
 		}
 
@@ -2754,7 +3214,10 @@
 				array.findIndex((i) => JSON.stringify(i) === JSON.stringify(item)) === index
 		);
 
-		scrollToBottom();
+		if (anchoredGeneratingMessageId !== responseMessageId) {
+			await anchorGeneratingMessageTop(responseMessageId);
+		}
+		const wasAnchoredByThisSend = anchoredGeneratingMessageId === responseMessageId;
 		eventTarget.dispatchEvent(
 			new CustomEvent('chat:start', {
 				detail: {
@@ -2969,6 +3432,7 @@
 			};
 
 			responseMessage.done = true;
+			releaseGeneratingMessageAnchor(responseMessageId);
 
 			history.messages[responseMessageId] = responseMessage;
 			history.currentId = responseMessageId;
@@ -2989,7 +3453,16 @@
 		}
 
 		await tick();
-		scrollToBottom();
+		const latestResponseMessage = history.messages[responseMessageId] ?? responseMessage;
+		if (
+			!wasAnchoredByThisSend &&
+			latestResponseMessage?.done !== true &&
+			anchoredGeneratingMessageId !== responseMessageId
+		) {
+			await scrollToMessageTop(responseMessageId);
+		} else {
+			scheduleScrollStateUpdate({ updateAutoScroll: !anchoredGeneratingMessageId });
+		}
 	};
 
 	const handleOpenAIError = async (error, responseMessage) => {
@@ -3022,6 +3495,7 @@
 			content: $i18n.t(`Uh-oh! There was an issue with the response.`) + '\n' + errorMessage
 		};
 		responseMessage.done = true;
+		releaseGeneratingMessageAnchor(responseMessage.id);
 
 		if (responseMessage.statusHistory) {
 			responseMessage.statusHistory = responseMessage.statusHistory.filter(
@@ -3055,6 +3529,7 @@
 			if (responseMessage.parentId && history.messages[responseMessage.parentId]) {
 				for (const messageId of history.messages[responseMessage.parentId].childrenIds) {
 					history.messages[messageId].done = true;
+					releaseGeneratingMessageAnchor(messageId);
 				}
 			}
 
@@ -3098,10 +3573,6 @@
 
 		await tick();
 
-		if (autoScroll) {
-			scrollToBottom();
-		}
-
 		await sendMessage(history, userMessageId);
 	};
 
@@ -3116,15 +3587,16 @@
 				return;
 			}
 
-			if (autoScroll) {
-				scrollToBottom();
-			}
-
 			if (!suggestionPrompt) {
-				const model = $models.find((model) => model.id === message.model);
+				const modelId = message?.selectedModelId ?? message.model;
+				const model = $models.find((model) => model.id === modelId);
 
 				if (!model) {
-					toast.error($i18n.t(`Model {{modelId}} not found`, { modelId: message.model }));
+					toast.error($i18n.t(`Model {{modelId}} not found`, { modelId }));
+					return;
+				}
+
+				if (!(await ensureLocalModelsReady([model.id]))) {
 					return;
 				}
 
@@ -3151,6 +3623,9 @@
 				history = history;
 
 				await tick();
+				await anchorGeneratingMessageTop(userMessage.id, message.id, {
+					topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX
+				});
 				await saveChatHandler($chatId, history);
 
 				const chatEventEmitter = await getChatEventEmitter(model.id, $chatId);
@@ -3168,6 +3643,15 @@
 
 				currentChatPage.set(1);
 				chats.set(await getChatList(localStorage.token, $currentChatPage));
+				return;
+			}
+
+			const retryModelIds =
+				(userMessage?.models ?? [...selectedModels]).length > 1
+					? [message?.selectedModelId ?? message.model]
+					: selectedModels;
+
+			if (!(await ensureLocalModelsReady(retryModelIds))) {
 				return;
 			}
 
@@ -3200,20 +3684,31 @@
 
 		if (history.currentId && history.messages[history.currentId].done == true) {
 			const responseMessage = history.messages[history.currentId];
-			responseMessage.done = false;
-			await tick();
-
 			const model = $models
 				.filter((m) => m.id === (responseMessage?.selectedModelId ?? responseMessage.model))
 				.at(0);
 
 			if (model) {
+				if (!(await ensureLocalModelsReady([model.id]))) {
+					return;
+				}
+
+				responseMessage.done = false;
+				await tick();
+				await anchorGeneratingMessageBottom(responseMessage.id);
+
 				await sendMessageSocket(
 					model,
 					createMessagesList(history, responseMessage.id),
 					history,
 					responseMessage.id,
 					_chatId
+				);
+			} else {
+				toast.error(
+					$i18n.t(`Model {{modelId}} not found`, {
+						modelId: responseMessage?.selectedModelId ?? responseMessage.model
+					})
 				);
 			}
 		}
@@ -3228,6 +3723,7 @@
 		};
 		message.merged = mergedResponse;
 		history.messages[messageId] = message;
+		await anchorGeneratingMessageTop(messageId);
 
 		try {
 			generating = true;
@@ -3260,7 +3756,7 @@
 					}
 
 					if (autoScroll) {
-						scheduleScrollToBottom();
+						scheduleStreamingAwareScrollToBottom(messageId);
 					}
 				}
 
@@ -3270,6 +3766,8 @@
 			}
 		} catch (e) {
 			console.error(e);
+		} finally {
+			releaseGeneratingMessageAnchor(messageId);
 		}
 	};
 
@@ -3580,13 +4078,12 @@
 								class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden"
 								id="messages-container"
 								bind:this={messagesContainerElement}
+								style="overflow-anchor: none;"
 								on:scroll={(e) => {
-									autoScroll =
-										messagesContainerElement.scrollHeight - messagesContainerElement.scrollTop <=
-										messagesContainerElement.clientHeight + 5;
+									updateScrollStateFromContainer();
 								}}
 							>
-								<div class=" h-full w-full flex flex-col">
+								<div class=" min-h-full w-full flex flex-col">
 									<Messages
 										chatId={$chatId}
 										bind:history
@@ -3607,6 +4104,7 @@
 										{addMessages}
 										topPadding={true}
 										bottomPadding={files.length > 0}
+										bottomSpacerHeight={generationBottomSpacerHeight}
 										{onSelect}
 									/>
 								</div>
@@ -3618,6 +4116,8 @@
 									{history}
 									{taskIds}
 									{selectedModels}
+									{showScrollToBottomButton}
+									onScrollToBottom={scrollToBottomFromInput}
 									bind:files
 									bind:prompt
 									bind:autoScroll

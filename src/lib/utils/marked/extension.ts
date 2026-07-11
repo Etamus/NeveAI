@@ -89,6 +89,6 @@ function detailsExtension() {
 
 export default function (options = {}) {
 	return {
-		extensions: [detailsExtension(options)]
+		extensions: [detailsExtension()]
 	};
 }

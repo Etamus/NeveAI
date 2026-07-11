@@ -51,28 +51,92 @@
 	export let featureIds: string[] = [];
 	export let tooltipsEnabled = true;
 
+	let activeFeatureIds: string[] = [];
+	let featureViewState: Record<string, { enabled: boolean; disabled: boolean }> = {};
+
 	const getFeatureLabel = (feature: string) =>
 		featureLabels[feature as keyof typeof featureLabels] ?? {
 			label: feature,
 			description: feature
 		};
 
+	const exclusiveFeatures = new Map([
+		['web_search', 'code_interpreter'],
+		['code_interpreter', 'web_search']
+	]);
+
+	const normalizeFeatureIds = (ids: string[]) => {
+		if (!ids.includes('web_search') || !ids.includes('code_interpreter')) {
+			return ids;
+		}
+
+		const keepFeature =
+			ids.lastIndexOf('code_interpreter') > ids.lastIndexOf('web_search')
+				? 'code_interpreter'
+				: 'web_search';
+		const removeFeature = exclusiveFeatures.get(keepFeature);
+
+		return ids.filter((id) => id !== removeFeature);
+	};
+
 	const setFeatureState = (feature: string, enabled: boolean) => {
+		const lockedByFeature = exclusiveFeatures.get(feature);
+		if (lockedByFeature && activeFeatureIds.includes(lockedByFeature)) return;
+
 		if (enabled) {
-			featureIds = featureIds.includes(feature) ? featureIds : [...featureIds, feature];
+			const exclusiveFeature = exclusiveFeatures.get(feature);
+			const nextFeatureIds = exclusiveFeature
+				? activeFeatureIds.filter((id) => id !== exclusiveFeature)
+				: activeFeatureIds;
+
+			featureIds = nextFeatureIds.includes(feature)
+				? nextFeatureIds
+				: [...nextFeatureIds, feature];
 		} else {
-			featureIds = featureIds.filter((id) => id !== feature);
+			featureIds = activeFeatureIds.filter((id) => id !== feature);
 		}
 	};
+
+	$: {
+		const normalizedFeatureIds = normalizeFeatureIds(featureIds);
+		activeFeatureIds = normalizedFeatureIds;
+		featureViewState = Object.fromEntries(
+			availableFeatures.map((feature) => {
+				const exclusiveFeature = exclusiveFeatures.get(feature);
+				const disabled = Boolean(
+					exclusiveFeature && normalizedFeatureIds.includes(exclusiveFeature)
+				);
+
+				return [
+					feature,
+					{
+						enabled: normalizedFeatureIds.includes(feature) && !disabled,
+						disabled
+					}
+				];
+			})
+		);
+
+		if (normalizedFeatureIds.join('\u0000') !== featureIds.join('\u0000')) {
+			featureIds = normalizedFeatureIds;
+		}
+	}
 </script>
 
 <div>
 	<div class="flex flex-col mt-2 gap-2">
 		{#each availableFeatures as feature}
 			{@const featureLabel = getFeatureLabel(feature)}
-			<div class="flex items-center gap-2">
+			{@const featureState = featureViewState[feature] ?? { enabled: false, disabled: false }}
+			<div
+				class="flex items-center gap-2 transition {featureState.disabled
+					? 'opacity-50 text-gray-400 dark:text-gray-500'
+					: ''}"
+				aria-disabled={featureState.disabled}
+			>
 				<Switch
-					state={featureIds.includes(feature)}
+					state={featureState.enabled}
+					disabled={featureState.disabled}
 					on:change={(e) => {
 						setFeatureState(feature, Boolean(e.detail));
 					}}

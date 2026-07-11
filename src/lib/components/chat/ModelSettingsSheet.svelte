@@ -15,7 +15,7 @@
 
 	$: disabledReasoningParams = thinkingExtendedEnabled
 		? []
-		: ['temperature', 'min_p', 'dry_multiplier'];
+		: ['temperature', 'top_k', 'top_p', 'min_p', 'dry_multiplier'];
 
 	const getOpen = (key: string, fallback = true): boolean => {
 		const v = localStorage.getItem(`chatControls.${key}`);
@@ -116,7 +116,7 @@
 					{/if}
 
 					{#if $user?.role === 'admin' || ($user?.permissions?.chat?.params ?? true)}
-					<div class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 mt-4">{$i18n.t('Advanced Params')}</div>
+					<div class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 mt-4">{$i18n.t('Par\u00e2metros avan\u00e7ados')}</div>
 						<div class="mt-1.5">
 							<AdvancedParams
 								admin={$user?.role === 'admin'}
@@ -136,9 +136,9 @@
 									type="button"
 									class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition"
 									on:click={() => { params.system = ''; showSystemPromptField = false; }}
-								>{$i18n.t('System Prompt')}</button>
+								>{$i18n.t('Prompt do sistema')}</button>
 							{:else}
-								<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('System Prompt')}</div>
+								<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('Prompt do sistema')}</div>
 							{/if}
 							{#if !showSystemPromptField}
 								<button

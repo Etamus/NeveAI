@@ -2,6 +2,7 @@
 	import { DropdownMenu } from 'bits-ui';
 	import { marked } from 'marked';
 	import Fuse from 'fuse.js';
+	import Sortable from 'sortablejs';
 
 	import dayjs from '$lib/dayjs';
 	import relativeTime from 'dayjs/plugin/relativeTime';
@@ -9,7 +10,7 @@
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { flyAndScale } from '$lib/utils/transitions';
-	import { createEventDispatcher, onMount, getContext, tick } from 'svelte';
+	import { createEventDispatcher, onDestroy, onMount, getContext, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 
 	import { deleteModel, getOllamaVersion, pullModel, unloadModel } from '$lib/apis/ollama';
@@ -28,6 +29,7 @@
 	import { toast } from 'svelte-sonner';
 	import { capitalizeFirstLetter, sanitizeResponseContent, splitStream } from '$lib/utils';
 	import { getModels } from '$lib/apis';
+	import { getModelsConfig, setModelsConfig } from '$lib/apis/configs';
 
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
@@ -393,16 +395,140 @@
 
 	const ITEM_HEIGHT = 46;
 	const LIST_VIEWPORT_HEIGHT = 273;
-	const OVERSCAN = 10;
 
 	let listScrollTop = 0;
 	let listContainer;
+	let sortable: Sortable | null = null;
+	let sortableElement: HTMLElement | null = null;
+	let sortableSignature = '';
+	let suppressNextModelClick = false;
 
-	$: visibleStart = Math.max(0, Math.floor(listScrollTop / ITEM_HEIGHT) - OVERSCAN);
-	$: visibleEnd = Math.min(
-		filteredItems.length,
-		Math.ceil((listScrollTop + LIST_VIEWPORT_HEIGHT) / ITEM_HEIGHT) + OVERSCAN
-	);
+	$: canReorderModels =
+		$user?.role === 'admin' &&
+		searchValue === '' &&
+		selectedTag === '' &&
+		selectedConnectionType === '' &&
+		filteredItems.length > 1;
+
+	const destroySortable = () => {
+		if (sortable) {
+			sortable.destroy();
+			sortable = null;
+		}
+		sortableElement = null;
+	};
+
+	const getNormalizedModelOrder = (orderedIds: string[]) => {
+		const allModelIds = items.map((item) => item.value);
+		const orderedExistingIds = orderedIds.filter((id) => allModelIds.includes(id));
+		const remainingIds = allModelIds.filter((id) => !orderedExistingIds.includes(id));
+
+		return [...orderedExistingIds, ...remainingIds];
+	};
+
+	const applyModelOrderToStore = (orderedIds: string[]) => {
+		const order = new Map(orderedIds.map((modelId, idx) => [modelId, idx]));
+		const currentModels = [...$models];
+		const originalOrder = new Map(currentModels.map((model, idx) => [model.id, idx]));
+
+		models.set(
+			currentModels.sort((a, b) => {
+				const orderA = order.has(a.id) ? order.get(a.id) : Number.MAX_SAFE_INTEGER;
+				const orderB = order.has(b.id) ? order.get(b.id) : Number.MAX_SAFE_INTEGER;
+				if (orderA !== orderB) return orderA - orderB;
+				return (originalOrder.get(a.id) ?? 0) - (originalOrder.get(b.id) ?? 0);
+			})
+		);
+	};
+
+	const saveModelOrder = async (orderedIds: string[]) => {
+		try {
+			const currentConfig = await getModelsConfig(localStorage.token);
+			const res = await setModelsConfig(localStorage.token, {
+				DEFAULT_MODELS: currentConfig?.DEFAULT_MODELS ?? null,
+				DEFAULT_PINNED_MODELS: currentConfig?.DEFAULT_PINNED_MODELS ?? null,
+				MODEL_ORDER_LIST: orderedIds,
+				DEFAULT_MODEL_METADATA: currentConfig?.DEFAULT_MODEL_METADATA ?? null,
+				DEFAULT_MODEL_PARAMS: currentConfig?.DEFAULT_MODEL_PARAMS ?? null
+			});
+
+			if (res) {
+				config.set({ ...($config ?? {}), ...res });
+			}
+		} catch (error) {
+			console.error(error);
+			toast.error($i18n.t('Failed to save models configuration'));
+			models.set(
+				await getModels(
+					localStorage.token,
+					$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
+				)
+			);
+		}
+	};
+
+	const reorderModelHandler = async (event: any) => {
+		if (!listContainer || event.oldIndex === event.newIndex) return;
+
+		const orderedIds = Array.from(
+			listContainer.querySelectorAll('[data-model-selector-row="true"]')
+		)
+			.map((element: Element) => element.getAttribute('data-value'))
+			.filter(Boolean) as string[];
+
+		const normalizedOrder = getNormalizedModelOrder(orderedIds);
+		const previousOrder = items.map((item) => item.value);
+
+		sortable?.sort(previousOrder, false);
+		applyModelOrderToStore(normalizedOrder);
+		await tick();
+		sortable?.sort(normalizedOrder, false);
+		await saveModelOrder(normalizedOrder);
+	};
+
+	const syncSortable = async () => {
+		const nextSignature = `${show}:${canReorderModels}:${filteredItems
+			.map((item) => item.value)
+			.join('|')}`;
+
+		if (nextSignature === sortableSignature && sortable && sortableElement === listContainer) return;
+		sortableSignature = nextSignature;
+		const requestedSignature = nextSignature;
+		destroySortable();
+
+		await tick();
+		if (requestedSignature !== sortableSignature) return;
+		if (!show || !canReorderModels || !listContainer) return;
+
+		sortableElement = listContainer;
+		sortable = new Sortable(listContainer, {
+			animation: 150,
+			dataIdAttr: 'data-value',
+			draggable: '[data-model-selector-row="true"]',
+			delay: 180,
+			delayOnTouchOnly: false,
+			fallbackOnBody: true,
+			fallbackClass: 'model-selector-drag-fallback',
+			forceFallback: true,
+			fallbackTolerance: 4,
+			ghostClass: 'model-selector-drag-ghost',
+			chosenClass: 'model-selector-drag-chosen',
+			dragClass: 'model-selector-drag-active',
+			onEnd: async (event) => {
+				suppressNextModelClick = true;
+				await reorderModelHandler(event);
+				window.setTimeout(() => {
+					suppressNextModelClick = false;
+				}, 0);
+			}
+		});
+	};
+
+	$: show, canReorderModels, filteredItems, syncSortable();
+
+	onDestroy(() => {
+		destroySortable();
+	});
 </script>
 
 <DropdownMenu.Root
@@ -573,17 +699,17 @@
 							listScrollTop = listContainer.scrollTop;
 						}}
 					>
-						<div style="height: {visibleStart * ITEM_HEIGHT}px;" />
-						{#each filteredItems.slice(visibleStart, visibleEnd) as item, i (item.value)}
-							{@const index = visibleStart + i}
+						{#each filteredItems as item, index (item.value)}
 							<ModelItem
 								{selectedModelIdx}
 								{item}
 								{index}
 								{value}
+								reorderEnabled={canReorderModels}
 								{pinModelHandler}
 								{unloadModelHandler}
 								onClick={() => {
+									if (suppressNextModelClick) return;
 									value = item.value;
 									selectedModelIdx = index;
 
@@ -591,7 +717,6 @@
 								}}
 							/>
 						{/each}
-						<div style="height: {(filteredItems.length - visibleEnd) * ITEM_HEIGHT}px;" />
 					</div>
 				{/if}
 
@@ -685,3 +810,19 @@
 		</slot>
 	</DropdownMenu.Content>
 </DropdownMenu.Root>
+
+<style>
+	:global(.model-selector-drag-fallback) {
+		opacity: 0 !important;
+		pointer-events: none !important;
+	}
+
+	:global(.model-selector-drag-ghost) {
+		opacity: 0.55;
+	}
+
+	:global(.model-selector-drag-chosen),
+	:global(.model-selector-drag-active) {
+		cursor: grabbing !important;
+	}
+</style>

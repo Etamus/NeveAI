@@ -24,7 +24,8 @@ type ResponseUsage = {
 };
 
 // createOpenAITextStream takes a responseBody with a SSE response,
-// and returns an async generator that emits delta updates with large deltas chunked into random sized chunks
+// and returns an async generator that emits delta updates. Optional smoothing keeps
+// large provider chunks feeling live without flooding the UI with tiny updates.
 export async function createOpenAITextStream(
 	responseBody: ReadableStream<Uint8Array>,
 	splitLargeDeltas: boolean
@@ -35,7 +36,7 @@ export async function createOpenAITextStream(
 		.getReader();
 	let iterator = openAIStreamToIterator(eventStream);
 	if (splitLargeDeltas) {
-		iterator = streamLargeDeltasAsRandomChunks(iterator);
+		iterator = streamLargeDeltasAsSmoothChunks(iterator);
 	}
 	return iterator;
 }
@@ -60,7 +61,6 @@ async function* openAIStreamToIterator(
 
 		try {
 			const parsedData = JSON.parse(data);
-			console.log(parsedData);
 
 			if (parsedData.error) {
 				yield { done: true, value: '', error: parsedData.error };
@@ -92,9 +92,43 @@ async function* openAIStreamToIterator(
 	}
 }
 
-// streamLargeDeltasAsRandomChunks will chunk large deltas (length > 5) into random sized chunks between 1-3 characters
-// This is to simulate a more fluid streaming, even though some providers may send large chunks of text at once
-async function* streamLargeDeltasAsRandomChunks(
+const MIN_SMOOTH_CHUNK_SIZE = 5;
+const MAX_SMOOTH_CHUNK_SIZE = 12;
+const SMOOTH_CHUNK_LOOKAHEAD = 10;
+const SMOOTH_CHUNK_DELAY_MS = 6;
+const MARKDOWN_MARKER_CHARS = new Set(['*', '_', '`', '~']);
+
+const pickSmoothChunkSize = (content: string) => {
+	if (content.length <= MAX_SMOOTH_CHUNK_SIZE) {
+		return content.length;
+	}
+
+	const target =
+		Math.floor(Math.random() * (MAX_SMOOTH_CHUNK_SIZE - MIN_SMOOTH_CHUNK_SIZE + 1)) +
+		MIN_SMOOTH_CHUNK_SIZE;
+	const maxLookahead = Math.min(content.length, target + SMOOTH_CHUNK_LOOKAHEAD);
+
+	for (let i = target; i < maxLookahead; i++) {
+		if (/[\s,.;:!?)}\]]/.test(content[i] ?? '')) {
+			return i + 1;
+		}
+	}
+
+	let chunkSize = Math.min(target, content.length);
+	while (
+		chunkSize < content.length &&
+		MARKDOWN_MARKER_CHARS.has(content[chunkSize]) &&
+		content[chunkSize] === content[chunkSize - 1]
+	) {
+		chunkSize += 1;
+	}
+
+	return chunkSize;
+};
+
+// Smooth large deltas without splitting the UI into single-character bursts.
+// This preserves the live typing feel while reducing Markdown/codeblock reflows.
+async function* streamLargeDeltasAsSmoothChunks(
 	iterator: AsyncGenerator<TextStreamUpdate>
 ): AsyncGenerator<TextStreamUpdate> {
 	for await (const textStreamUpdate of iterator) {
@@ -121,18 +155,18 @@ async function* streamLargeDeltasAsRandomChunks(
 		}
 
 		let content = textStreamUpdate.value;
-		if (content.length < 5) {
+		if (content.length <= MAX_SMOOTH_CHUNK_SIZE) {
 			yield { done: false, value: content };
 			continue;
 		}
 		while (content != '') {
-			const chunkSize = Math.min(Math.floor(Math.random() * 3) + 1, content.length);
+			const chunkSize = pickSmoothChunkSize(content);
 			const chunk = content.slice(0, chunkSize);
 			yield { done: false, value: chunk };
 			// Do not sleep if the tab is hidden
 			// Timers are throttled to 1s in hidden tabs
-			if (document?.visibilityState !== 'hidden') {
-				await sleep(5);
+			if (typeof document !== 'undefined' && document.visibilityState !== 'hidden') {
+				await sleep(SMOOTH_CHUNK_DELAY_MS);
 			}
 			content = content.slice(chunkSize);
 		}
