@@ -2123,6 +2123,7 @@ $script:HubLegacyModules = @{}
 $script:HubWindow = $window
 $script:HubPageHost = $ctl.HubPageHost
 $script:HubScriptPath = $SCRIPT_PATH
+$script:HubActiveMode = 'home'
 
 $script:UpdateLegacySource = @'
 # Neve AI - Atualizador Grafico (WPF)
@@ -4830,16 +4831,56 @@ function Set-HubHeaderState([string]$mode) {
 		$ctl.LblHubBrand.Visibility = 'Visible'
 		$ctl.LblHubMode.Visibility = 'Visible'
 	} else {
-		$ctl.BtnHubBack.Visibility = 'Visible'
 		$ctl.LogoImg.Visibility = 'Collapsed'
 		$ctl.LblHubBrand.Visibility = 'Collapsed'
 		$ctl.LblHubMode.Visibility = 'Collapsed'
 	}
+	Update-HubBackVisibility
+}
+
+function Get-HubLegacyPageControl([string]$mode, [string]$name) {
+	try {
+		if (-not $script:HubLegacyPages.ContainsKey($mode)) { return $null }
+		$page = $script:HubLegacyPages[$mode]
+		if (-not $page) { return $null }
+		return $page.FindName($name)
+	} catch {
+		return $null
+	}
+}
+
+function Test-HubActivePageBusy {
+	switch ($script:HubActiveMode) {
+		'install' {
+			return ([string]$window.Tag -eq 'installing')
+		}
+		'update' {
+			$updatePanel = Get-HubLegacyPageControl 'update' 'UpdatePanel'
+			return ($updatePanel -and $updatePanel.Visibility -eq 'Visible')
+		}
+		'build' {
+			$workPanel = Get-HubLegacyPageControl 'build' 'WorkPanel'
+			return ($workPanel -and $workPanel.Visibility -eq 'Visible')
+		}
+		default {
+			return $false
+		}
+	}
+}
+
+function Update-HubBackVisibility {
+	if (-not $ctl.BtnHubBack) { return }
+	if ($script:HubActiveMode -eq 'home' -or (Test-HubActivePageBusy)) {
+		$ctl.BtnHubBack.Visibility = 'Collapsed'
+	} else {
+		$ctl.BtnHubBack.Visibility = 'Visible'
+	}
 }
 
 function Select-HubHome {
-	if ([string]$window.Tag -eq 'installing') { return }
+	if (Test-HubActivePageBusy) { return }
 
+	$script:HubActiveMode = 'home'
 	Set-HubHeaderState 'home'
 	$ctl.HubHomePanel.Visibility = 'Visible'
 	$ctl.HubPageHost.Visibility = 'Collapsed'
@@ -4848,8 +4889,9 @@ function Select-HubHome {
 }
 
 function Select-HubPage([string]$mode) {
-	if ([string]$window.Tag -eq 'installing') { return }
+	if (Test-HubActivePageBusy) { return }
 
+	$script:HubActiveMode = $mode
 	Set-HubHeaderState $mode
 	$ctl.HubHomePanel.Visibility = 'Collapsed'
 
@@ -4866,6 +4908,7 @@ function Select-HubPage([string]$mode) {
 
 	try {
 		Initialize-HubLegacyPage $mode
+		Update-HubBackVisibility
 	} catch {
 		[System.Windows.MessageBox]::Show(
 			"Falha ao abrir a pagina '$mode'.`r`n`r`n$($_.Exception.Message)",
@@ -4876,6 +4919,12 @@ function Select-HubPage([string]$mode) {
 		Select-HubPage 'install'
 	}
 }
+
+$script:HubBackMonitorTimer = New-Object Windows.Threading.DispatcherTimer
+$script:HubBackMonitorTimer.Interval = [TimeSpan]::FromMilliseconds(150)
+$script:HubBackMonitorTimer.Add_Tick({ Update-HubBackVisibility })
+$script:HubBackMonitorTimer.Start()
+$window.Add_Closed({ try { $script:HubBackMonitorTimer.Stop() } catch {} })
 
 $ctl.BtnHubBack.Add_Click({ Select-HubHome })
 $ctl.BtnHubHomeInstall.Add_Click({ Select-HubPage 'install' })

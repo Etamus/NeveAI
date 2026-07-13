@@ -2136,7 +2136,7 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Intérprete</span>
+												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Ambiente</span>
 											</button>
 										{/if}
 

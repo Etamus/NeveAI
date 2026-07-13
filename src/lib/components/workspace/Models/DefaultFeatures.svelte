@@ -19,11 +19,11 @@
 			description: $i18n.t('Modelo inicia com geração de imagem por padrão')
 		},
 		code_interpreter: {
-			label: $i18n.t('Intérprete de código'),
+			label: $i18n.t('Ambiente de execução'),
 			description: $i18n.t('Modelo pode executar código e cálculos')
 		},
 		code_execution: {
-			label: $i18n.t('Mostrar artefatos'),
+			label: $i18n.t('Artefatos'),
 			description: $i18n.t('Modelo pode abrir artefatos por padrão')
 		},
 		deep_search: {
