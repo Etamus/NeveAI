@@ -113,7 +113,7 @@ Acesse manualmente se preferir: **http://localhost:8080**
 Coloque arquivos `.gguf` em:
 
 ```
-d:\Neve AI\models\
+Neve AI\models\
 ```
 
 Os modelos são carregados dinamicamente pelo painel de modelos da interface. O llama.cpp é iniciado automaticamente ao carregar um modelo, com auto-detecção do arquivo mmproj correspondente quando disponível.
@@ -123,7 +123,7 @@ Os modelos são carregados dinamicamente pelo painel de modelos da interface. O 
 Coloque arquivos mmproj em:
 
 ```
-d:\Neve AI\mmproj\
+Neve AI\mmproj\
 ```
 
 O backend auto-detecta o mmproj compatível pelo prefixo do nome do modelo (ex: `Qwen3.5 9B.gguf` → `Qwen3.5 9B Mmproj F16.gguf`).
