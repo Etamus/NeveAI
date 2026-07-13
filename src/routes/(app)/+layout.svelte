@@ -432,14 +432,14 @@
 
 				{#if loaded}
 					<div
-						class="h-full overflow-hidden transition-all duration-300"
+						class="h-full overflow-hidden transition-[margin-left,width] duration-300"
 						style={$showSidebar && !$mobile ? 'margin-left: var(--sidebar-width, 260px); width: calc(100% - var(--sidebar-width, 260px))' : 'width: 100%'}
 					>
 						<slot />
 					</div>
 				{:else}
 					<div
-						class="h-full flex items-center justify-center transition-all duration-300"
+						class="h-full flex items-center justify-center transition-[margin-left,width] duration-300"
 						style={$showSidebar && !$mobile ? 'margin-left: var(--sidebar-width, 260px); width: calc(100% - var(--sidebar-width, 260px))' : 'width: 100%'}
 					>
 						<Spinner className="size-5" />

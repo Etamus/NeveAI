@@ -1310,7 +1310,7 @@
 					: 'max-w-2xl'} w-full"
 			>
 				<div class="relative">
-					{#if (showScrollToBottomButton || autoScroll === false) && history?.currentId}
+					{#if (showScrollToBottomButton || (!onScrollToBottom && autoScroll === false)) && history?.currentId}
 						<div
 							class=" absolute -top-12 left-0 right-0 flex justify-center z-30 pointer-events-none"
 						>

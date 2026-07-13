@@ -134,10 +134,15 @@
 	let autoScroll = true;
 	let anchoredGeneratingMessageId: string | null = null;
 	let showScrollToBottomButton = false;
+	let scrollToBottomButtonSuppressUntil = 0;
+	let scrollToBottomButtonSuppressTimer: ReturnType<typeof setTimeout> | null = null;
 	let generationBottomSpacerHeight = 0;
 	let scrollStateRAF: ReturnType<typeof requestAnimationFrame> | null = null;
 	let generationAnchorRAF: ReturnType<typeof requestAnimationFrame>[] = [];
 	let generationSpacerRAF: ReturnType<typeof requestAnimationFrame> | null = null;
+	let generationSpacerScrollLimit: number | null = null;
+	let messagesBottomWheelLockUntil = 0;
+	let messagesBottomWheelLockRAF: ReturnType<typeof requestAnimationFrame> | null = null;
 	let processing = '';
 	let messagesContainerElement: HTMLDivElement;
 
@@ -994,9 +999,706 @@
 		} catch {}
 	};
 
+	let stopChatRenderDebug: (() => void) | null = null;
+
+	const startChatRenderDebug = () => {
+		if (localStorage.getItem('NEVE_CHAT_RENDER_DEBUG') !== '1') {
+			return null;
+		}
+
+		const debugPrefix = '[NEVE_CHAT_RENDER_DEBUG]';
+		const root = document.documentElement;
+		const style = document.createElement('style');
+		const panel = document.createElement('div');
+		const observedElements = new Map<Element, { label: string; width: number; height: number }>();
+		const displayLines: string[] = [];
+		const reportLines: string[] = [];
+		let refreshFrame: ReturnType<typeof requestAnimationFrame> | null = null;
+		let scrollElement: HTMLElement | null = null;
+		let lastScrollTop = 0;
+		let scrollFrame: ReturnType<typeof requestAnimationFrame> | null = null;
+		let scrollAttachTimer: ReturnType<typeof setInterval> | null = null;
+		let performanceObserver: any = null;
+		let captureFrame: ReturnType<typeof requestAnimationFrame> | null = null;
+		let captureUntil = 0;
+		let captureLastKey = '';
+		let originalScrollIntoView: any = null;
+		let originalScrollTo: any = null;
+		let wheelSequence = 0;
+
+		const formatNumber = (value: number) => Math.round(value * 10) / 10;
+		const formatRect = (rect?: DOMRect | DOMRectReadOnly | null) => {
+			if (!rect) return null;
+			return {
+				x: formatNumber(rect.x),
+				y: formatNumber(rect.y),
+				width: formatNumber(rect.width),
+				height: formatNumber(rect.height),
+				top: formatNumber(rect.top),
+				right: formatNumber(rect.right),
+				bottom: formatNumber(rect.bottom),
+				left: formatNumber(rect.left)
+			};
+		};
+		const getElementPath = (element: Element | null) => {
+			if (!element) return null;
+			const parts: string[] = [];
+			let current: Element | null = element;
+
+			for (let index = 0; current && index < 7; index += 1) {
+				let part = current.tagName.toLowerCase();
+				if (current.id) {
+					part += `#${current.id}`;
+				} else {
+					const classes = [...current.classList].slice(0, 4);
+					if (classes.length > 0) {
+						part += `.${classes.join('.')}`;
+					}
+				}
+				parts.unshift(part);
+				current = current.parentElement;
+			}
+
+			return parts.join(' > ');
+		};
+		const getTextSnippet = (element: Element | null) => {
+			const text = element?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+			return text.length > 100 ? `${text.slice(0, 100)}...` : text;
+		};
+		const getElementDebugInfo = (element: Element | null) => {
+			if (!element) return null;
+			const rect = element.getBoundingClientRect();
+			const style = element instanceof HTMLElement ? getComputedStyle(element) : null;
+
+			return {
+				label: getElementLabel(element),
+				path: getElementPath(element),
+				rect: formatRect(rect),
+				className: element.className?.toString?.() ?? '',
+				text: getTextSnippet(element),
+				scrollTop: element instanceof HTMLElement ? formatNumber(element.scrollTop) : undefined,
+				scrollHeight:
+					element instanceof HTMLElement ? formatNumber(element.scrollHeight) : undefined,
+				clientHeight:
+					element instanceof HTMLElement ? formatNumber(element.clientHeight) : undefined,
+				style: style
+					? {
+							display: style.display,
+							position: style.position,
+							overflow: `${style.overflowX}/${style.overflowY}`,
+							overflowAnchor: style.overflowAnchor,
+							transform: style.transform,
+							contain: style.contain,
+							contentVisibility: style.contentVisibility,
+							willChange: style.willChange
+						}
+					: undefined
+			};
+		};
+		const elementFromRect = (rect?: DOMRect | DOMRectReadOnly | null) => {
+			if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+			const x = Math.min(window.innerWidth - 1, Math.max(0, rect.left + rect.width / 2));
+			const y = Math.min(window.innerHeight - 1, Math.max(0, rect.top + rect.height / 2));
+			return document.elementFromPoint(x, y);
+		};
+		const getScrollDebugMetrics = (element: HTMLElement | null) => {
+			if (!element) return null;
+			const maxScrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+			const scrollBottom = element.scrollTop + element.clientHeight;
+			const bottomGap = maxScrollTop - element.scrollTop;
+
+			return {
+				scrollTop: formatNumber(element.scrollTop),
+				clientHeight: formatNumber(element.clientHeight),
+				scrollHeight: formatNumber(element.scrollHeight),
+				scrollBottom: formatNumber(scrollBottom),
+				maxScrollTop: formatNumber(maxScrollTop),
+				bottomGap: formatNumber(bottomGap),
+				atBottom: Math.abs(bottomGap) <= 1,
+				overscroll: formatNumber(element.scrollTop - maxScrollTop)
+			};
+		};
+		const getBottomContentDebugInfo = (container: HTMLElement | null) => {
+			if (!container) return null;
+
+			const containerRect = container.getBoundingClientRect();
+			const directChildren = [...container.children].slice(-6).map((child) => ({
+				label: getElementLabel(child),
+				rect: formatRect(child.getBoundingClientRect()),
+				text: getTextSnippet(child)
+			}));
+			const messages = [...container.querySelectorAll('[id^="message-"]')].slice(-6).map((message) => {
+				const rect = message.getBoundingClientRect();
+				return {
+					label: getElementLabel(message),
+					rect: formatRect(rect),
+					distanceToContainerBottom: formatNumber(containerRect.bottom - rect.bottom),
+					text: getTextSnippet(message)
+				};
+			});
+			const bottomElement = document.elementFromPoint(
+				Math.min(window.innerWidth - 1, Math.max(0, containerRect.left + containerRect.width / 2)),
+				Math.min(window.innerHeight - 1, Math.max(0, containerRect.bottom - 4))
+			);
+
+			return {
+				containerRect: formatRect(containerRect),
+				bottomElement: getElementDebugInfo(bottomElement),
+				directChildren,
+				messages
+			};
+		};
+		const getDebugSnapshot = () => {
+			const messagesElement = document.getElementById('messages-container');
+			const inputElement = document.getElementById('message-input-container');
+			const messagesHTMLElement =
+				messagesElement instanceof HTMLElement ? messagesElement : null;
+			const currentMessageElement = history?.currentId
+				? document.getElementById(`message-${history.currentId}`)
+				: null;
+
+			return {
+				time: formatNumber(performance.now()),
+				url: location.pathname,
+				userAgent: navigator.userAgent,
+				devicePixelRatio: window.devicePixelRatio,
+				viewport: {
+					inner: `${window.innerWidth}x${window.innerHeight}`,
+					documentElement: `${document.documentElement.clientWidth}x${document.documentElement.clientHeight}`,
+					visual: window.visualViewport
+						? {
+								width: formatNumber(window.visualViewport.width),
+								height: formatNumber(window.visualViewport.height),
+								offsetTop: formatNumber(window.visualViewport.offsetTop),
+								offsetLeft: formatNumber(window.visualViewport.offsetLeft),
+								scale: formatNumber(window.visualViewport.scale)
+							}
+						: null
+				},
+				state: {
+					autoScroll,
+					anchoredGeneratingMessageId,
+					showScrollToBottomButton,
+					generationBottomSpacerHeight,
+					generating,
+					currentId: history?.currentId
+				},
+				messagesContainer: getElementDebugInfo(messagesElement),
+				messagesScroll: getScrollDebugMetrics(messagesHTMLElement),
+				bottomContent: getBottomContentDebugInfo(messagesHTMLElement),
+				input: getElementDebugInfo(inputElement),
+				currentMessage: getElementDebugInfo(currentMessageElement),
+				activeElement: getElementDebugInfo(document.activeElement)
+			};
+		};
+		const getDebugReport = () => reportLines.join('\n');
+		const updatePanel = () => {
+			panel.textContent = [
+				'Neve render debug ON',
+				'Copiar: copyNeveChatRenderDebug()',
+				'Limpar: clearNeveChatRenderDebug()',
+				'Capturar frames: captureNeveChatRenderDebug(5000)',
+				'Snapshot: snapshotNeveChatRenderDebug()',
+				'Probe fundo: probeNeveChatBottomDebug()',
+				'',
+				...displayLines
+			].join('\n');
+		};
+		const serializeDebugData = (data: unknown) => {
+			if (data === undefined || data === null) return '';
+			try {
+				return JSON.stringify(data, (_key, value) => {
+					if (value instanceof Element) {
+						return getElementDebugInfo(value);
+					}
+					if (value instanceof Window || value instanceof Document) {
+						return '[document]';
+					}
+					return value;
+				});
+			} catch {
+				return String(data);
+			}
+		};
+		const snapshotDebugReport = () => {
+			const snapshot = getDebugSnapshot();
+			pushLine('snapshot', snapshot);
+			return snapshot;
+		};
+		const probeBottomDebugReport = () => {
+			const frames = new Set([1, 2, 4, 8, 16, 32]);
+			let frame = 0;
+			pushLine('bottom-probe start', getDebugSnapshot());
+
+			const run = () => {
+				frame += 1;
+				if (frames.has(frame)) {
+					pushLine(`bottom-probe frame:${frame}`, getDebugSnapshot());
+				}
+
+				if (frame < 32) {
+					requestAnimationFrame(run);
+				} else {
+					pushLine('bottom-probe finished', getDebugSnapshot());
+				}
+			};
+
+			requestAnimationFrame(run);
+			return getDebugSnapshot();
+		};
+		const stopFrameCapture = () => {
+			captureUntil = 0;
+			captureLastKey = '';
+			if (captureFrame) {
+				cancelAnimationFrame(captureFrame);
+				captureFrame = null;
+			}
+			pushLine('frame capture stopped');
+		};
+		const startFrameCapture = (durationMs = 5000) => {
+			captureUntil = performance.now() + Number(durationMs || 5000);
+			captureLastKey = '';
+			if (captureFrame) {
+				cancelAnimationFrame(captureFrame);
+			}
+
+			const run = () => {
+				const snapshot = getDebugSnapshot();
+				const key = JSON.stringify({
+					viewport: snapshot.viewport,
+					state: snapshot.state,
+					messagesContainer: snapshot.messagesContainer?.rect,
+					messagesScroll: snapshot.messagesScroll,
+					messagesScrollTop: snapshot.messagesContainer?.scrollTop,
+					messagesScrollHeight: snapshot.messagesContainer?.scrollHeight,
+					input: snapshot.input?.rect,
+					currentMessage: snapshot.currentMessage?.rect
+				});
+
+				if (key !== captureLastKey) {
+					captureLastKey = key;
+					pushLine('frame', snapshot);
+				}
+
+				if (performance.now() < captureUntil) {
+					captureFrame = requestAnimationFrame(run);
+				} else {
+					captureFrame = null;
+					pushLine('frame capture finished');
+				}
+			};
+
+			pushLine(`frame capture started ${durationMs}ms`);
+			captureFrame = requestAnimationFrame(run);
+			return 'capturing';
+		};
+		const copyDebugReport = async () => {
+			const report = getDebugReport();
+			try {
+				await navigator.clipboard.writeText(report);
+				console.log(debugPrefix, 'debug report copied');
+				return report;
+			} catch {
+				console.log(debugPrefix, 'debug report copy failed; returning report text');
+				return report;
+			}
+		};
+		const clearDebugReport = () => {
+			displayLines.length = 0;
+			reportLines.length = 0;
+			updatePanel();
+			console.log(debugPrefix, 'debug report cleared');
+		};
+
+		const pushLine = (message: string, data?: unknown) => {
+			const timestamp = new Date().toLocaleTimeString('pt-BR', { hour12: false });
+			const line = `${timestamp} ${message}`;
+			const serializedData = serializeDebugData(data);
+			const reportLine = serializedData ? `${line} ${serializedData}` : line;
+			displayLines.push(line);
+			reportLines.push(reportLine);
+			while (displayLines.length > 16) {
+				displayLines.shift();
+			}
+			while (reportLines.length > 5000) {
+				reportLines.shift();
+			}
+			updatePanel();
+			console.log(debugPrefix, message, data ?? '');
+		};
+
+		const flashElement = (element: Element) => {
+			if (!(element instanceof HTMLElement)) return;
+			element.classList.add('neve-chat-render-debug-flash');
+			window.setTimeout(() => {
+				element.classList.remove('neve-chat-render-debug-flash');
+			}, 180);
+		};
+
+		const getElementLabel = (element: Element) => {
+			if (element.id === 'message-input-container') return '#message-input-container';
+			if (element.id === 'messages-container') return '#messages-container';
+			if (element.id?.startsWith('message-')) return `message:${element.id.replace('message-', '')}`;
+			if (element.matches('pre')) return 'codeblock:<pre>';
+			if (element.matches('pre code')) return 'codeblock:<code>';
+			if (element.classList.contains('markdown-prose')) return 'markdown-prose';
+			if (element.classList.contains('chat-assistant')) return 'chat-assistant';
+			if (element.classList.contains('chat-user')) return 'chat-user';
+			if (element.className?.toString().includes('language-')) return 'codeblock:language';
+			if (element.classList.contains('hljs')) return 'codeblock:hljs';
+			return element.tagName.toLowerCase();
+		};
+
+		const observeElement = (element: Element) => {
+			const rect = element.getBoundingClientRect();
+			if (rect.width === 0 && rect.height === 0) return;
+			if (observedElements.has(element)) return;
+
+			observedElements.set(element, {
+				label: getElementLabel(element),
+				width: formatNumber(rect.width),
+				height: formatNumber(rect.height)
+			});
+			resizeObserver.observe(element);
+		};
+
+		const refreshObservedElements = () => {
+			refreshFrame = null;
+			const targets = document.querySelectorAll(
+				[
+					'#messages-container',
+					'[id^="message-"]',
+					'.markdown-prose',
+					'.chat-assistant',
+					'.chat-user',
+					'pre',
+					'pre code',
+					'.hljs',
+					'[class*="language-"]'
+				].join(',')
+			);
+			targets.forEach(observeElement);
+		};
+
+		const scheduleRefreshObservedElements = () => {
+			if (refreshFrame) return;
+			refreshFrame = requestAnimationFrame(refreshObservedElements);
+		};
+
+		const onScroll = () => {
+			if (!scrollElement || scrollFrame) return;
+			scrollFrame = requestAnimationFrame(() => {
+				scrollFrame = null;
+				if (!scrollElement) return;
+				const nextScrollTop = formatNumber(scrollElement.scrollTop);
+				const delta = formatNumber(nextScrollTop - lastScrollTop);
+				if (Math.abs(delta) >= 1) {
+					pushLine(
+						`scrollTop ${lastScrollTop} -> ${nextScrollTop} (delta ${delta})`,
+						{
+							scroll: getScrollDebugMetrics(scrollElement),
+							bottomContent: getBottomContentDebugInfo(scrollElement)
+						}
+					);
+					lastScrollTop = nextScrollTop;
+				}
+			});
+		};
+		const logNearBottomWheelFrames = (sequence: number) => {
+			const frames = new Set([1, 2, 4, 8, 16]);
+			let frame = 0;
+
+			const run = () => {
+				frame += 1;
+				if (sequence !== wheelSequence) return;
+
+				if (frames.has(frame)) {
+					pushLine(`wheel-bottom frame:${frame}`, getDebugSnapshot());
+				}
+
+				if (frame < 16) {
+					requestAnimationFrame(run);
+				}
+			};
+
+			requestAnimationFrame(run);
+		};
+		const onWheel = (event: WheelEvent) => {
+			if (!scrollElement) return;
+
+			const metrics = getScrollDebugMetrics(scrollElement);
+			if (!metrics || Math.abs(event.deltaY) < 0.5) return;
+
+			const nearBottom = metrics.bottomGap <= 48;
+			if (!nearBottom) return;
+
+			wheelSequence += 1;
+			const sequence = wheelSequence;
+			pushLine(event.deltaY > 0 ? 'wheel-down near-bottom' : 'wheel-up near-bottom', {
+				deltaX: formatNumber(event.deltaX),
+				deltaY: formatNumber(event.deltaY),
+				deltaMode: event.deltaMode,
+				cancelable: event.cancelable,
+				defaultPrevented: event.defaultPrevented,
+				scroll: metrics,
+				bottomContent: getBottomContentDebugInfo(scrollElement)
+			});
+			logNearBottomWheelFrames(sequence);
+		};
+
+		const attachScrollDebug = () => {
+			const nextScrollElement = document.getElementById('messages-container') as HTMLElement | null;
+			if (!nextScrollElement || nextScrollElement === scrollElement) return;
+
+			if (scrollElement) {
+				scrollElement.removeEventListener('scroll', onScroll);
+				scrollElement.removeEventListener('wheel', onWheel);
+			}
+			scrollElement = nextScrollElement;
+			lastScrollTop = formatNumber(scrollElement.scrollTop);
+			scrollElement.addEventListener('scroll', onScroll, { passive: true });
+			scrollElement.addEventListener('wheel', onWheel, { passive: true });
+			pushLine(`attached scroll observer at ${lastScrollTop}`);
+		};
+
+		const resizeObserver = new ResizeObserver((entries) => {
+			for (const entry of entries) {
+				const previous = observedElements.get(entry.target);
+				if (!previous) continue;
+
+				const width = formatNumber(entry.contentRect.width);
+				const height = formatNumber(entry.contentRect.height);
+				const widthDelta = formatNumber(width - previous.width);
+				const heightDelta = formatNumber(height - previous.height);
+				if (Math.abs(widthDelta) < 1 && Math.abs(heightDelta) < 1) continue;
+
+				observedElements.set(entry.target, { ...previous, width, height });
+				flashElement(entry.target);
+				pushLine(
+					`resize ${previous.label}: ${previous.width}x${previous.height} -> ${width}x${height}`,
+					{
+					widthDelta,
+					heightDelta,
+					element: getElementDebugInfo(entry.target)
+				}
+			);
+		}
+	});
+
+		const mutationObserver = new MutationObserver((mutations) => {
+			const added: unknown[] = [];
+			const removed: unknown[] = [];
+			for (const mutation of mutations) {
+				mutation.addedNodes.forEach((node) => {
+					if (node instanceof Element && added.length < 8) {
+						if (
+							node.id?.startsWith('message-') ||
+							node.id === 'messages-container' ||
+							node.matches?.('pre, pre code, .markdown-prose, .chat-assistant, .chat-user')
+						) {
+							added.push(getElementDebugInfo(node));
+						}
+					}
+				});
+				mutation.removedNodes.forEach((node) => {
+					if (node instanceof Element && removed.length < 8) {
+						if (
+							node.id?.startsWith('message-') ||
+							node.id === 'messages-container' ||
+							node.matches?.('pre, pre code, .markdown-prose, .chat-assistant, .chat-user')
+						) {
+							removed.push({
+								label: getElementLabel(node),
+								path: getElementPath(node),
+								className: node.className?.toString?.() ?? '',
+								text: getTextSnippet(node)
+							});
+						}
+					}
+				});
+			}
+
+			if (added.length > 0 || removed.length > 0) {
+				pushLine(`mutation added:${added.length} removed:${removed.length}`, { added, removed });
+			}
+			scheduleRefreshObservedElements();
+			attachScrollDebug();
+		});
+
+		root.classList.add('neve-chat-render-debug');
+		style.id = 'neve-chat-render-debug-style';
+		style.textContent = `
+			html.neve-chat-render-debug #messages-container {
+				outline: 2px solid rgba(56, 189, 248, 0.95) !important;
+				outline-offset: -2px !important;
+			}
+			html.neve-chat-render-debug [id^="message-"] {
+				outline: 1px dashed rgba(245, 158, 11, 0.95) !important;
+				outline-offset: 2px !important;
+			}
+			html.neve-chat-render-debug .markdown-prose {
+				outline: 1px solid rgba(34, 197, 94, 0.75) !important;
+				outline-offset: 4px !important;
+			}
+			html.neve-chat-render-debug pre,
+			html.neve-chat-render-debug pre code,
+			html.neve-chat-render-debug [class*="language-"] {
+				outline: 2px solid rgba(236, 72, 153, 0.75) !important;
+				outline-offset: -2px !important;
+			}
+			html.neve-chat-render-debug .neve-chat-render-debug-flash {
+				box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.9) !important;
+			}
+			#neve-chat-render-debug-panel {
+				position: fixed;
+				right: 12px;
+				bottom: 12px;
+				z-index: 2147483647;
+				width: min(520px, calc(100vw - 24px));
+				height: min(42vh, 420px);
+				overflow: hidden;
+				padding: 10px 12px;
+				border-radius: 8px;
+				border: 1px solid rgba(255, 255, 255, 0.18);
+				background: rgba(10, 10, 10, 0.88);
+				color: #f8fafc;
+				font: 11px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace;
+				white-space: pre-wrap;
+				pointer-events: none;
+				box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+			}
+		`;
+		panel.id = 'neve-chat-render-debug-panel';
+		document.head.appendChild(style);
+		document.body.appendChild(panel);
+		(window as any).__NEVE_CHAT_RENDER_DEBUG_LOGS = reportLines;
+		(window as any).copyNeveChatRenderDebug = copyDebugReport;
+		(window as any).clearNeveChatRenderDebug = clearDebugReport;
+		(window as any).snapshotNeveChatRenderDebug = snapshotDebugReport;
+		(window as any).probeNeveChatBottomDebug = probeBottomDebugReport;
+		(window as any).captureNeveChatRenderDebug = startFrameCapture;
+		(window as any).stopNeveChatRenderDebugCapture = stopFrameCapture;
+
+		try {
+			originalScrollIntoView = (Element.prototype as any).scrollIntoView;
+			(Element.prototype as any).scrollIntoView = function (arg?: unknown) {
+				const element = this as Element;
+				if (
+					element.id === 'messages-container' ||
+					element.id?.startsWith('message-') ||
+					element.closest?.('#messages-container')
+				) {
+					pushLine('scrollIntoView called', {
+						arg,
+						target: getElementDebugInfo(element),
+						stack: new Error().stack?.split('\n').slice(1, 7)
+					});
+				}
+				return originalScrollIntoView.call(this, arg as any);
+			};
+		} catch (error) {
+			pushLine('scrollIntoView patch failed', error);
+		}
+
+		try {
+			originalScrollTo = (HTMLElement.prototype as any).scrollTo;
+			(HTMLElement.prototype as any).scrollTo = function (...args: unknown[]) {
+				const element = this as HTMLElement;
+				if (element.id === 'messages-container') {
+					pushLine('scrollTo called', {
+						args,
+						target: getElementDebugInfo(element),
+						stack: new Error().stack?.split('\n').slice(1, 7)
+					});
+				}
+				return originalScrollTo.apply(this, args as any);
+			};
+		} catch (error) {
+			pushLine('scrollTo patch failed', error);
+		}
+
+		mutationObserver.observe(document.body, { childList: true, subtree: true });
+		scheduleRefreshObservedElements();
+		attachScrollDebug();
+		scrollAttachTimer = setInterval(attachScrollDebug, 500);
+
+		try {
+			const PerformanceObserverConstructor = (window as any).PerformanceObserver;
+			if (PerformanceObserverConstructor?.supportedEntryTypes?.includes('layout-shift')) {
+				performanceObserver = new PerformanceObserverConstructor((list) => {
+					for (const entry of list.getEntries()) {
+						if (entry.hadRecentInput || entry.value < 0.001) continue;
+						const sources = (entry.sources ?? []).map((source) => {
+							const node =
+								source.node ??
+								elementFromRect(source.currentRect) ??
+								elementFromRect(source.previousRect);
+							return {
+								previousRect: formatRect(source.previousRect),
+								currentRect: formatRect(source.currentRect),
+								node: getElementDebugInfo(node),
+								probePrevious: getElementDebugInfo(elementFromRect(source.previousRect)),
+								probeCurrent: getElementDebugInfo(elementFromRect(source.currentRect))
+							};
+						});
+						pushLine(`layout-shift ${entry.value.toFixed(4)}`, {
+							value: entry.value,
+							sources,
+							snapshot: getDebugSnapshot()
+						});
+					}
+				});
+				performanceObserver.observe({ type: 'layout-shift', buffered: true });
+			}
+		} catch (error) {
+			console.warn(debugPrefix, 'layout-shift observer unavailable', error);
+		}
+
+		pushLine('debug started');
+		snapshotDebugReport();
+
+		return () => {
+			root.classList.remove('neve-chat-render-debug');
+			stopFrameCapture();
+			resizeObserver.disconnect();
+			mutationObserver.disconnect();
+			performanceObserver?.disconnect?.();
+			if (originalScrollIntoView) {
+				(Element.prototype as any).scrollIntoView = originalScrollIntoView;
+			}
+			if (originalScrollTo) {
+				(HTMLElement.prototype as any).scrollTo = originalScrollTo;
+			}
+			if (scrollElement) {
+				scrollElement.removeEventListener('scroll', onScroll);
+				scrollElement.removeEventListener('wheel', onWheel);
+			}
+			if (scrollAttachTimer) {
+				clearInterval(scrollAttachTimer);
+			}
+			if (refreshFrame) {
+				cancelAnimationFrame(refreshFrame);
+			}
+			if (scrollFrame) {
+				cancelAnimationFrame(scrollFrame);
+			}
+			style.remove();
+			panel.remove();
+			delete (window as any).__NEVE_CHAT_RENDER_DEBUG_LOGS;
+			delete (window as any).copyNeveChatRenderDebug;
+			delete (window as any).clearNeveChatRenderDebug;
+			delete (window as any).snapshotNeveChatRenderDebug;
+			delete (window as any).probeNeveChatBottomDebug;
+			delete (window as any).captureNeveChatRenderDebug;
+			delete (window as any).stopNeveChatRenderDebugCapture;
+			console.log(debugPrefix, 'debug stopped');
+		};
+	};
+
 	onMount(() => {
 		loading = true;
 		console.log('mounted');
+		stopChatRenderDebug = startChatRenderDebug();
 		window.addEventListener('message', onMessageHandler);
 		$socket?.on('events', chatEventHandler);
 
@@ -1133,11 +1835,18 @@
 					cancelAnimationFrame(generationSpacerRAF);
 					generationSpacerRAF = null;
 				}
+				cancelMessagesBottomWheelLock();
 				cancelGenerationAnchorRAF();
 				if (codeBlockScrollTimer) {
 					clearTimeout(codeBlockScrollTimer);
 					codeBlockScrollTimer = null;
 				}
+				if (scrollToBottomButtonSuppressTimer) {
+					clearTimeout(scrollToBottomButtonSuppressTimer);
+					scrollToBottomButtonSuppressTimer = null;
+				}
+				stopChatRenderDebug?.();
+				stopChatRenderDebug = null;
 			} catch (e) {
 				console.error(e);
 			}
@@ -1771,7 +2480,8 @@
 			const containerRect = messagesContainerElement.getBoundingClientRect();
 			const messageRect = activeMessageElement.getBoundingClientRect();
 			const hasHiddenContentBelow = messageRect.bottom > containerRect.bottom + 4;
-			showScrollToBottomButton = hasHiddenContentBelow;
+			showScrollToBottomButton =
+				hasHiddenContentBelow && Date.now() >= scrollToBottomButtonSuppressUntil;
 
 			if (updateAutoScroll) {
 				autoScroll = !hasHiddenContentBelow;
@@ -1780,7 +2490,7 @@
 		}
 
 		const atBottom = isMessagesContainerAtBottom();
-		showScrollToBottomButton = !atBottom;
+		showScrollToBottomButton = !atBottom && Date.now() >= scrollToBottomButtonSuppressUntil;
 
 		if (updateAutoScroll) {
 			autoScroll = atBottom;
@@ -1814,7 +2524,7 @@
 			Math.ceil(desiredScrollTop + messagesContainerElement.clientHeight - realScrollHeight)
 		);
 
-		if (Math.abs(nextSpacerHeight - generationBottomSpacerHeight) > 1) {
+		if (nextSpacerHeight > generationBottomSpacerHeight + 1) {
 			generationBottomSpacerHeight = nextSpacerHeight;
 			await tick();
 		}
@@ -1851,23 +2561,17 @@
 	const scrollToMessageTop = async (
 		messageId: string,
 		behavior = 'auto',
-		{ topOffset }: { topOffset?: number } = {}
+		{ topOffset, layoutFrames = 2 }: { topOffset?: number; layoutFrames?: number } = {}
 	) => {
 		if (!messageId) return;
-		await waitForLayout();
+		if (layoutFrames > 0) {
+			await waitForLayout(layoutFrames);
+		} else {
+			await tick();
+		}
 
 		const messageElement = document.getElementById(`message-${messageId}`);
 		if (!messageElement) return;
-
-		const nextScrollMarginTop = `${topOffset ?? 0}px`;
-		const previousScrollMarginTop = messageElement.style.scrollMarginTop;
-		messageElement.style.scrollMarginTop = nextScrollMarginTop;
-		messageElement.scrollIntoView({
-			behavior,
-			block: 'start',
-			inline: 'nearest'
-		});
-		messageElement.style.scrollMarginTop = previousScrollMarginTop;
 
 		if (!messagesContainerElement) {
 			return;
@@ -1878,11 +2582,44 @@
 		const scrollMarginTop =
 			topOffset ?? (parseFloat(getComputedStyle(messageElement).scrollMarginTop || '0') || 0);
 		const targetTop = messagesContainerElement.scrollTop + messageRect.top - containerRect.top - scrollMarginTop;
+		const nextTop = Math.max(0, targetTop);
 
-		messagesContainerElement.scrollTo({
-			top: Math.max(0, targetTop),
-			behavior
-		});
+		if (Math.abs(messagesContainerElement.scrollTop - nextTop) > 1) {
+			messagesContainerElement.scrollTo({
+				top: nextTop,
+				behavior
+			});
+		}
+	};
+
+	const prepareGenerationSpacerForMessageTop = async (
+		messageId: string,
+		topOffset = 0
+	) => {
+		if (!messagesContainerElement || !messageId) return;
+
+		await tick();
+		const messageElement = document.getElementById(`message-${messageId}`);
+		if (!messageElement) return;
+
+		const containerRect = messagesContainerElement.getBoundingClientRect();
+		const messageRect = messageElement.getBoundingClientRect();
+		const targetTop = messagesContainerElement.scrollTop + messageRect.top - containerRect.top - topOffset;
+		const maxScrollTop = Math.max(
+			0,
+			messagesContainerElement.scrollHeight -
+				generationBottomSpacerHeight -
+				messagesContainerElement.clientHeight
+		);
+		const requiredSpacerHeight = Math.max(
+			0,
+			Math.ceil(targetTop - maxScrollTop + getGenerationBottomReadingPadding())
+		);
+
+		if (requiredSpacerHeight > generationBottomSpacerHeight + 1) {
+			generationBottomSpacerHeight = requiredSpacerHeight;
+			await tick();
+		}
 	};
 
 	const cancelGenerationAnchorRAF = () => {
@@ -1890,6 +2627,20 @@
 			cancelAnimationFrame(frame);
 		}
 		generationAnchorRAF = [];
+	};
+
+	const primeGeneratingMessageAnchor = (trackedMessageId?: string | null) => {
+		if (!trackedMessageId) return;
+
+		anchoredGeneratingMessageId = trackedMessageId;
+		generationSpacerScrollLimit = null;
+		autoScroll = false;
+		cancelGenerationAnchorRAF();
+
+		if (generationSpacerRAF) {
+			cancelAnimationFrame(generationSpacerRAF);
+			generationSpacerRAF = null;
+		}
 	};
 
 	const stabilizeGeneratingAnchor = (
@@ -1923,10 +2674,12 @@
 		{ topOffset = 0 }: { topOffset?: number } = {}
 	) => {
 		anchoredGeneratingMessageId = trackedMessageId;
-		generationBottomSpacerHeight = messagesContainerElement?.clientHeight ?? 0;
+		generationBottomSpacerHeight = 0;
+		generationSpacerScrollLimit = null;
 		autoScroll = false;
 		await tick();
-		await scrollToMessageTop(scrollTargetMessageId, 'auto', { topOffset });
+		await prepareGenerationSpacerForMessageTop(scrollTargetMessageId, topOffset);
+		await scrollToMessageTop(scrollTargetMessageId, 'auto', { topOffset, layoutFrames: 0 });
 		await fitGenerationSpacerToViewport(messagesContainerElement?.scrollTop ?? 0);
 		autoScroll = false;
 		stabilizeGeneratingAnchor(scrollTargetMessageId, trackedMessageId, topOffset);
@@ -1936,6 +2689,7 @@
 	const anchorGeneratingMessageBottom = async (messageId: string) => {
 		anchoredGeneratingMessageId = messageId;
 		generationBottomSpacerHeight = messagesContainerElement?.clientHeight ?? 0;
+		generationSpacerScrollLimit = null;
 		autoScroll = false;
 		await tick();
 		await scrollToContentBottom('auto');
@@ -1945,6 +2699,13 @@
 
 	const releaseGeneratingMessageAnchor = (messageId?: string) => {
 		if (!messageId || anchoredGeneratingMessageId === messageId) {
+			if (
+				messagesContainerElement &&
+				generationBottomSpacerHeight > 0 &&
+				generationSpacerScrollLimit === null
+			) {
+				generationSpacerScrollLimit = messagesContainerElement.scrollTop;
+			}
 			anchoredGeneratingMessageId = null;
 			cancelGenerationAnchorRAF();
 			if (generationSpacerRAF) {
@@ -1967,8 +2728,100 @@
 
 		if (messagesContainerElement.scrollTop <= maxScrollWithoutSpacer + 5) {
 			generationBottomSpacerHeight = 0;
+			generationSpacerScrollLimit = null;
 			await tick();
 			updateScrollStateFromContainer({ updateAutoScroll: true });
+		} else {
+			generationSpacerScrollLimit = messagesContainerElement.scrollTop;
+		}
+	};
+
+	const clampIdleGenerationSpacerScroll = () => {
+		if (
+			!messagesContainerElement ||
+			anchoredGeneratingMessageId ||
+			generating ||
+			generationBottomSpacerHeight <= 0 ||
+			generationSpacerScrollLimit === null
+		) {
+			return false;
+		}
+
+		if (messagesContainerElement.scrollTop > generationSpacerScrollLimit + 1) {
+			messagesContainerElement.scrollTop = generationSpacerScrollLimit;
+			return true;
+		}
+
+		return false;
+	};
+
+	const getMessagesMaxScrollTop = () => {
+		if (!messagesContainerElement) return 0;
+		return Math.max(0, messagesContainerElement.scrollHeight - messagesContainerElement.clientHeight);
+	};
+
+	const cancelMessagesBottomWheelLock = () => {
+		messagesBottomWheelLockUntil = 0;
+		if (messagesBottomWheelLockRAF) {
+			cancelAnimationFrame(messagesBottomWheelLockRAF);
+			messagesBottomWheelLockRAF = null;
+		}
+	};
+
+	const clampMessagesBottomWheelJitter = () => {
+		if (!messagesContainerElement || Date.now() > messagesBottomWheelLockUntil) {
+			return false;
+		}
+
+		const maxScrollTop = getMessagesMaxScrollTop();
+		const bottomGap = maxScrollTop - messagesContainerElement.scrollTop;
+
+		if (bottomGap >= -2 && bottomGap <= 8) {
+			if (Math.abs(messagesContainerElement.scrollTop - maxScrollTop) > 0.1) {
+				messagesContainerElement.scrollTop = maxScrollTop;
+			}
+			showScrollToBottomButton = false;
+			autoScroll = true;
+			return true;
+		}
+
+		return false;
+	};
+
+	const scheduleMessagesBottomWheelLockClamp = () => {
+		if (messagesBottomWheelLockRAF) return;
+
+		const run = () => {
+			messagesBottomWheelLockRAF = null;
+			if (Date.now() > messagesBottomWheelLockUntil) {
+				return;
+			}
+
+			clampMessagesBottomWheelJitter();
+			messagesBottomWheelLockRAF = requestAnimationFrame(run);
+		};
+
+		messagesBottomWheelLockRAF = requestAnimationFrame(run);
+	};
+
+	const preventMessagesBottomWheelJitter = (event: WheelEvent) => {
+		if (!messagesContainerElement) return;
+
+		if (event.deltaY < 0) {
+			cancelMessagesBottomWheelLock();
+			return;
+		}
+
+		if (event.deltaY <= 0) return;
+
+		const maxScrollTop = getMessagesMaxScrollTop();
+		const bottomGap = maxScrollTop - messagesContainerElement.scrollTop;
+
+		if (bottomGap <= 8) {
+			event.preventDefault();
+			messagesBottomWheelLockUntil = Date.now() + 320;
+			clampMessagesBottomWheelJitter();
+			scheduleMessagesBottomWheelLockClamp();
 		}
 	};
 
@@ -1983,13 +2836,28 @@
 	};
 
 	const scrollToBottomFromInput = async () => {
-		await scrollToContentBottom('smooth');
+		const isAnchoredGeneration = Boolean(anchoredGeneratingMessageId);
+
+		scrollToBottomButtonSuppressUntil = Date.now() + (isAnchoredGeneration ? 120 : 350);
+		showScrollToBottomButton = false;
+		if (scrollToBottomButtonSuppressTimer) {
+			clearTimeout(scrollToBottomButtonSuppressTimer);
+		}
+		if (generationSpacerRAF) {
+			cancelAnimationFrame(generationSpacerRAF);
+			generationSpacerRAF = null;
+		}
+
+		await scrollToContentBottom(isAnchoredGeneration ? 'auto' : 'smooth');
 		if (!anchoredGeneratingMessageId) {
 			autoScroll = true;
 		}
-		requestAnimationFrame(() => {
+
+		scrollToBottomButtonSuppressTimer = setTimeout(() => {
+			scrollToBottomButtonSuppressTimer = null;
+			scrollToBottomButtonSuppressUntil = 0;
 			updateScrollStateFromContainer({ updateAutoScroll: !anchoredGeneratingMessageId });
-		});
+		}, isAnchoredGeneration ? 120 : 350);
 	};
 	const chatCompletedHandler = async (_chatId, modelId, responseMessageId, messages) => {
 		const res = await chatCompleted(localStorage.token, {
@@ -2896,6 +3764,7 @@
 					childrenIds: [],
 					role: 'assistant',
 					content: '',
+					done: false,
 					model: model.id,
 					modelName: model.name ?? model.id,
 					modelIdx: modelIdx ? modelIdx : _modelIdx,
@@ -2919,18 +3788,22 @@
 				responseMessageOrder.push(responseMessageId);
 			}
 		}
+
+		const initialResponseMessageId = responseMessageOrder[0] ?? null;
+		if (initialResponseMessageId) {
+			primeGeneratingMessageAnchor(initialResponseMessageId);
+		}
 		history = history;
+
+		if (initialResponseMessageId) {
+			await anchorGeneratingMessageTop(parentId, initialResponseMessageId, {
+				topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX
+			});
+		}
 
 		// Create new chat if newChat is true and first user message
 		if (newChat && _history.messages[_history.currentId].parentId === null) {
 			_chatId = await initChatHandler(_history);
-		}
-
-		await tick();
-		if (responseMessageOrder.length > 0) {
-			await anchorGeneratingMessageTop(parentId, responseMessageOrder[0], {
-				topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX
-			});
 		}
 
 		_history = structuredClone(history);
@@ -4079,7 +4952,14 @@
 								id="messages-container"
 								bind:this={messagesContainerElement}
 								style="overflow-anchor: none;"
+								on:wheel|nonpassive={preventMessagesBottomWheelJitter}
 								on:scroll={(e) => {
+									if (clampMessagesBottomWheelJitter()) {
+										return;
+									}
+									if (clampIdleGenerationSpacerScroll()) {
+										return;
+									}
 									updateScrollStateFromContainer();
 								}}
 							>

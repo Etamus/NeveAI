@@ -22,6 +22,7 @@
 	export let item: any = {};
 	export let index: number = -1;
 	export let value: string = '';
+	export let profileImageUrl: string = '';
 
 	export let unloadModelHandler: (modelValue: string) => void = () => {};
 	export let pinModelHandler: (modelId: string) => void = () => {};
@@ -86,10 +87,11 @@
 		<div class="flex items-center gap-2">
 			<div class="flex items-center min-w-fit relative group/pin">
 				<img
-					src={getModelProfileImageUrl(item.model, $i18n.language)}
+					src={profileImageUrl || getModelProfileImageUrl(item.model, $i18n.language)}
 					alt={$i18n.t('{{modelName}} profile image', { modelName: item.label })}
 					class="rounded-full size-5 flex items-center group-hover/pin:opacity-0 transition-opacity"
-					loading="lazy"
+					loading="eager"
+					decoding="async"
 				/>
 				<!-- svelte-ignore a11y-click-events-have-key-events -->
 				<!-- svelte-ignore a11y-no-static-element-interactions -->

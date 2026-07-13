@@ -82,6 +82,35 @@
 		return `${NEVEAI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
 	};
 
+	const MAX_MODEL_IMAGE_PRELOAD = 120;
+	const preloadedModelImageUrls = new Set<string>();
+	let modelProfileImageUrls = new Map<string, string>();
+
+	const preloadModelProfileImages = (sourceItems: any[] = [], lang = '') => {
+		if (typeof Image === 'undefined') return;
+
+		const selectedFirstItems = [
+			...sourceItems.filter((item) => item.value === value),
+			...sourceItems.filter((item) => item.value !== value)
+		];
+		const urls = [
+			...new Set(
+				selectedFirstItems
+					.filter((item) => item?.model?.id)
+					.map((item) => getModelProfileImageUrl(item.model, lang))
+			)
+		].slice(0, MAX_MODEL_IMAGE_PRELOAD);
+
+		for (const url of urls) {
+			if (preloadedModelImageUrls.has(url)) continue;
+			preloadedModelImageUrls.add(url);
+
+			const image = new Image();
+			image.decoding = 'async';
+			image.src = url;
+		}
+	};
+
 	let searchValue = '';
 
 	let selectedTag = '';
@@ -101,8 +130,10 @@
 			return _item;
 		}),
 		{
-			keys: ['value', 'tags', 'modelName'],
-			threshold: 0.4
+			keys: ['label', 'value', 'tags', 'modelName'],
+			threshold: 0.28,
+			ignoreLocation: true,
+			includeScore: true
 		}
 	);
 
@@ -122,58 +153,83 @@
 		}
 	};
 
+	const normalizeSearchText = (value: any = '') =>
+		`${value}`
+			.normalize('NFD')
+			.replace(/[\u0300-\u036f]/g, '')
+			.toLowerCase();
+
+	const getItemSearchText = (item: any) =>
+		normalizeSearchText(
+			[
+				item?.label,
+				item?.value,
+				item?.model?.id,
+				item?.model?.name,
+				(item?.model?.tags ?? []).map((tag) => tag.name).join(' ')
+			]
+				.filter(Boolean)
+				.join(' ')
+		);
+
+	const isDirectSearchMatch = (item: any, query: string) => {
+		const terms = normalizeSearchText(query).split(/\s+/).filter(Boolean);
+		if (terms.length === 0) return true;
+
+		const text = getItemSearchText(item);
+		return terms.every((term) => text.includes(term));
+	};
+
+	const getSearchedItems = (query: string) => {
+		const trimmedQuery = query.trim();
+		if (!trimmedQuery) return items;
+
+		const directMatches = items.filter((item) => isDirectSearchMatch(item, trimmedQuery));
+		if (directMatches.length > 0) return directMatches;
+
+		return fuse
+			.search(trimmedQuery)
+			.filter((result) => (result.score ?? 1) <= 0.25)
+			.map((result) => result.item);
+	};
+
+	const passesModelFilters = (item: any) => {
+		if (
+			selectedTag !== '' &&
+			!(item.model?.tags ?? [])
+				.map((tag) => tag.name.toLowerCase())
+				.includes(selectedTag.toLowerCase())
+		) {
+			return false;
+		}
+
+		if (selectedConnectionType === '') return true;
+		if (selectedConnectionType === 'local') return item.model?.connection_type === 'local';
+		if (selectedConnectionType === 'external') return item.model?.connection_type === 'external';
+		if (selectedConnectionType === 'direct') return item.model?.direct;
+		return true;
+	};
+
 	$: if (items) {
 		updateFuse();
 	}
 
-	$: filteredItems = (
-		searchValue
-			? fuse
-					.search(searchValue)
-					.map((e) => {
-						return e.item;
-					})
-					.filter((item) => {
-						if (selectedTag === '') {
-							return true;
-						}
+	$: if (items || $i18n.language) {
+		modelProfileImageUrls = new Map(
+			items
+				.filter((item) => item?.model?.id)
+				.map((item) => [item.value, getModelProfileImageUrl(item.model, $i18n.language)])
+		);
+		preloadModelProfileImages(items, $i18n.language);
+	}
 
-						return (item.model?.tags ?? [])
-							.map((tag) => tag.name.toLowerCase())
-							.includes(selectedTag.toLowerCase());
-					})
-					.filter((item) => {
-						if (selectedConnectionType === '') {
-							return true;
-						} else if (selectedConnectionType === 'local') {
-							return item.model?.connection_type === 'local';
-						} else if (selectedConnectionType === 'external') {
-							return item.model?.connection_type === 'external';
-						} else if (selectedConnectionType === 'direct') {
-							return item.model?.direct;
-						}
-					})
-			: items
-					.filter((item) => {
-						if (selectedTag === '') {
-							return true;
-						}
-						return (item.model?.tags ?? [])
-							.map((tag) => tag.name.toLowerCase())
-							.includes(selectedTag.toLowerCase());
-					})
-					.filter((item) => {
-						if (selectedConnectionType === '') {
-							return true;
-						} else if (selectedConnectionType === 'local') {
-							return item.model?.connection_type === 'local';
-						} else if (selectedConnectionType === 'external') {
-							return item.model?.connection_type === 'external';
-						} else if (selectedConnectionType === 'direct') {
-							return item.model?.direct;
-						}
-					})
-	).filter((item) => !(item.model?.info?.meta?.hidden ?? false));
+	$: filteredItems = (searchValue ? getSearchedItems(searchValue) : items)
+		.filter(passesModelFilters)
+		.filter((item) => !(item.model?.info?.meta?.hidden ?? false));
+
+	$: if (show && filteredItems) {
+		preloadModelProfileImages(filteredItems, $i18n.language);
+	}
 
 	$: if (
 		selectedTag !== undefined ||
@@ -536,6 +592,7 @@
 	onOpenChange={async () => {
 		searchValue = '';
 		listScrollTop = 0;
+		preloadModelProfileImages(items, $i18n.language);
 		window.setTimeout(() => document.getElementById('model-search-input')?.focus(), 0);
 
 		resetView();
@@ -569,10 +626,13 @@
 				{#if selectedModel}
 					<div class="relative size-5 shrink-0 group/pin">
 						<img
-							src={getModelProfileImageUrl(selectedModel.model, $i18n.language)}
+							src={modelProfileImageUrls.get(selectedModel.value) ??
+								getModelProfileImageUrl(selectedModel.model, $i18n.language)}
 							alt=""
 							class="rounded-full size-5 group-hover/pin:opacity-0 transition-opacity"
-							loading="lazy"
+							loading="eager"
+							decoding="async"
+							fetchpriority="high"
 						/>
 						<button
 							class="absolute inset-0 size-5 rounded-full flex items-center justify-center opacity-0 group-hover/pin:opacity-100 transition-opacity text-gray-500 dark:text-gray-400"
@@ -705,6 +765,7 @@
 								{item}
 								{index}
 								{value}
+								profileImageUrl={modelProfileImageUrls.get(item.value) ?? ''}
 								reorderEnabled={canReorderModels}
 								{pinModelHandler}
 								{unloadModelHandler}

@@ -1,3 +1,10 @@
+<script context="module" lang="ts">
+	const DEFAULT_MESSAGES_COUNT = 30;
+	const MESSAGE_LOAD_INCREMENT = 40;
+	const LOAD_MORE_COOLDOWN_MS = 220;
+	const chatMessagesCountCache = new Map<string, number>();
+</script>
+
 <script lang="ts">
 	import { v4 as uuidv4 } from 'uuid';
 	import {
@@ -58,19 +65,84 @@
 
 	export let onSelect = (e) => {};
 
-	export let messagesCount: number | null = 20;
+	export let messagesCount: number | null = DEFAULT_MESSAGES_COUNT;
 	let messagesLoading = false;
+	let messagesCountChatId = '';
+	let lastLoadMoreAt = 0;
+
+	const getMessagesContainer = () =>
+		document.getElementById('messages-container') as HTMLElement | null;
+
+	const getMessageElementId = (element: HTMLElement) => element.id.replace(/^message-/, '');
+
+	const getTopVisibleMessageAnchor = () => {
+		const element = getMessagesContainer();
+		if (!element) return null;
+
+		const containerRect = element.getBoundingClientRect();
+		const messageElements = Array.from(
+			element.querySelectorAll<HTMLElement>('[id^="message-"]')
+		).filter((messageElement) => history.messages?.[getMessageElementId(messageElement)]);
+
+		for (const messageElement of messageElements) {
+			const rect = messageElement.getBoundingClientRect();
+			if (rect.bottom >= containerRect.top + 1) {
+				return {
+					messageId: getMessageElementId(messageElement),
+					offsetTop: rect.top - containerRect.top,
+					scrollHeight: element.scrollHeight
+				};
+			}
+		}
+
+		return null;
+	};
+
+	const restoreTopVisibleMessageAnchor = (anchor) => {
+		const element = getMessagesContainer();
+		if (!element || !anchor) return;
+
+		const messageElement = document.getElementById(`message-${anchor.messageId}`);
+		if (!messageElement) {
+			element.scrollTop += element.scrollHeight - anchor.scrollHeight;
+			return;
+		}
+
+		const containerRect = element.getBoundingClientRect();
+		const messageRect = messageElement.getBoundingClientRect();
+		const nextScrollTop = element.scrollTop + messageRect.top - containerRect.top - anchor.offsetTop;
+
+		if (Math.abs(element.scrollTop - nextScrollTop) > 1) {
+			element.scrollTop = nextScrollTop;
+		}
+	};
+
+	$: if (chatId && chatId !== messagesCountChatId) {
+		messagesCountChatId = chatId;
+		messagesCount = chatMessagesCountCache.get(chatId) ?? DEFAULT_MESSAGES_COUNT;
+		messagesLoading = false;
+		lastLoadMoreAt = 0;
+	}
 
 	const loadMoreMessages = async () => {
-		// scroll slightly down to disable continuous loading
-		const element = document.getElementById('messages-container');
-		element.scrollTop = element.scrollTop + 100;
+		if (messagesLoading || messagesCount === null) return;
+
+		const now = Date.now();
+		if (now - lastLoadMoreAt < LOAD_MORE_COOLDOWN_MS) return;
+		lastLoadMoreAt = now;
 
 		messagesLoading = true;
-		messagesCount += 20;
+		const anchor = getTopVisibleMessageAnchor();
+		messagesCount += MESSAGE_LOAD_INCREMENT;
+		if (chatId) {
+			chatMessagesCountCache.set(chatId, messagesCount);
+		}
 		buildMessages();
 
 		await tick();
+		restoreTopVisibleMessageAnchor(anchor);
+		await new Promise((resolve) => requestAnimationFrame(resolve));
+		restoreTopVisibleMessageAnchor(anchor);
 
 		messagesLoading = false;
 	};
@@ -453,7 +525,6 @@
 					{#if messages.at(0)?.parentId !== null}
 						<Loader
 							on:visible={(e) => {
-								console.log('visible');
 								if (!messagesLoading) {
 									loadMoreMessages();
 								}
