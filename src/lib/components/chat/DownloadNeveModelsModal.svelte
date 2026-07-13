@@ -5,9 +5,15 @@
 		'neve-strata-x': {
 			name: 'Neve Strata'
 		},
+		'neve-muse': {
+			repo: 'NeveAI/Neve-Muse-3-26B-GGUF',
+			params: { temperature: 1, min_p: 0.1, dry_multiplier: 0.8 },
+			default_feature_ids: ['toggle_reasoning']
+		},
 		'neve-cascade-x': {
 			name: 'Neve Cascade',
-			repo: 'NeveAI/Neve-Cascade-3-1B-GGUF'
+			repo: 'NeveAI/Neve-Cascade-4-1.2B-GGUF',
+			params: { temperature: 0.1, min_p: 0.05, dry_multiplier: 0.05 }
 		}
 	};
 	const catalogModelOrder = new Map(
@@ -61,8 +67,8 @@
 		'neve-sense': ['12GB+', 'Q4_K_XL'],
 		'neve-strata-s': ['6GB+', 'Q4_K_XL'],
 		'neve-strata-x': ['16GB+', 'Q4_K_XL'],
-		'neve-cascade-x': ['CPU', 'Q3_K_XL'],
-		'neve-muse': ['12GB+', 'Q4_K_M']
+		'neve-cascade-x': ['CPU', 'Q4_K_XL'],
+		'neve-muse': ['12GB+', 'IQ4_XS']
 	};
 
 	const modelIconPaths: Record<string, string> = {

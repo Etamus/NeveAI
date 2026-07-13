@@ -751,7 +751,7 @@
 				{:else}
 					<!-- svelte-ignore a11y-no-static-element-interactions -->
 					<div
-						class="max-h-[273px] overflow-y-auto pr-2"
+						class="max-h-[275px] overflow-y-auto pr-2"
 						role="listbox"
 						aria-label={$i18n.t('Available models')}
 						bind:this={listContainer}
