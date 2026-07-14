@@ -141,6 +141,8 @@
 	let generationAnchorRAF: ReturnType<typeof requestAnimationFrame>[] = [];
 	let generationSpacerRAF: ReturnType<typeof requestAnimationFrame> | null = null;
 	let generationSpacerScrollLimit: number | null = null;
+	let activeGenerationScrollBase: number | null = null;
+	let activeGenerationSpacerHeightLimit: number | null = null;
 	let messagesBottomWheelLockUntil = 0;
 	let messagesBottomWheelLockRAF: ReturnType<typeof requestAnimationFrame> | null = null;
 	let processing = '';
@@ -2238,6 +2240,8 @@
 		anchoredGeneratingMessageId = null;
 		showScrollToBottomButton = false;
 		generationBottomSpacerHeight = 0;
+		activeGenerationScrollBase = null;
+		activeGenerationSpacerHeightLimit = null;
 
 		resetInput();
 		await chatId.set('');
@@ -2360,6 +2364,8 @@
 				anchoredGeneratingMessageId = null;
 				showScrollToBottomButton = false;
 				generationBottomSpacerHeight = 0;
+				activeGenerationScrollBase = null;
+				activeGenerationSpacerHeightLimit = null;
 
 				// Update artifact contents synchronously before tick() so that Artifacts.svelte
 				// mounts with the correct content (prevents stale preview from previous chat)
@@ -2423,7 +2429,12 @@
 				messagesContainerElement.scrollHeight - messagesContainerElement.clientHeight;
 
 			if (targetTop > maxScrollTop) {
-				generationBottomSpacerHeight += Math.ceil(targetTop - maxScrollTop) + 4;
+				const requestedSpacerHeight =
+					generationBottomSpacerHeight + Math.ceil(targetTop - maxScrollTop) + 4;
+				generationBottomSpacerHeight =
+					activeGenerationSpacerHeightLimit === null
+						? requestedSpacerHeight
+						: Math.min(requestedSpacerHeight, activeGenerationSpacerHeightLimit);
 				await tick();
 				containerRect = messagesContainerElement.getBoundingClientRect();
 				messageRect = activeMessageElement.getBoundingClientRect();
@@ -2510,6 +2521,42 @@
 		});
 	};
 
+	const getActiveGenerationScrollLimit = () => {
+		if (
+			!messagesContainerElement ||
+			!anchoredGeneratingMessageId ||
+			generationBottomSpacerHeight <= 0 ||
+			activeGenerationScrollBase === null
+		) {
+			return null;
+		}
+
+		const activeMessageElement = document.getElementById(
+			`message-${anchoredGeneratingMessageId}`
+		);
+		const maxScrollTop = Math.max(
+			0,
+			messagesContainerElement.scrollHeight - messagesContainerElement.clientHeight
+		);
+
+		if (!activeMessageElement) {
+			return Math.min(maxScrollTop, activeGenerationScrollBase);
+		}
+
+		const containerRect = messagesContainerElement.getBoundingClientRect();
+		const messageRect = activeMessageElement.getBoundingClientRect();
+		const contentReadingLimit =
+			messagesContainerElement.scrollTop +
+			messageRect.bottom -
+			containerRect.bottom +
+			getGenerationBottomReadingPadding();
+
+		return Math.min(
+			maxScrollTop,
+			Math.max(activeGenerationScrollBase, contentReadingLimit)
+		);
+	};
+
 	const fitGenerationSpacerToViewport = async (
 		desiredScrollTop = messagesContainerElement?.scrollTop ?? 0
 	) => {
@@ -2519,10 +2566,14 @@
 			messagesContainerElement.clientHeight,
 			messagesContainerElement.scrollHeight - generationBottomSpacerHeight
 		);
-		const nextSpacerHeight = Math.max(
+		const requestedSpacerHeight = Math.max(
 			0,
 			Math.ceil(desiredScrollTop + messagesContainerElement.clientHeight - realScrollHeight)
 		);
+		const nextSpacerHeight =
+			activeGenerationSpacerHeightLimit === null
+				? requestedSpacerHeight
+				: Math.min(requestedSpacerHeight, activeGenerationSpacerHeightLimit);
 
 		if (nextSpacerHeight > generationBottomSpacerHeight + 1) {
 			generationBottomSpacerHeight = nextSpacerHeight;
@@ -2634,6 +2685,8 @@
 
 		anchoredGeneratingMessageId = trackedMessageId;
 		generationSpacerScrollLimit = null;
+		activeGenerationScrollBase = null;
+		activeGenerationSpacerHeightLimit = null;
 		autoScroll = false;
 		cancelGenerationAnchorRAF();
 
@@ -2681,6 +2734,8 @@
 		await prepareGenerationSpacerForMessageTop(scrollTargetMessageId, topOffset);
 		await scrollToMessageTop(scrollTargetMessageId, 'auto', { topOffset, layoutFrames: 0 });
 		await fitGenerationSpacerToViewport(messagesContainerElement?.scrollTop ?? 0);
+		activeGenerationScrollBase = messagesContainerElement?.scrollTop ?? 0;
+		activeGenerationSpacerHeightLimit = generationBottomSpacerHeight;
 		autoScroll = false;
 		stabilizeGeneratingAnchor(scrollTargetMessageId, trackedMessageId, topOffset);
 		scheduleScrollStateUpdate({ updateAutoScroll: false });
@@ -2693,6 +2748,8 @@
 		autoScroll = false;
 		await tick();
 		await scrollToContentBottom('auto');
+		activeGenerationScrollBase = messagesContainerElement?.scrollTop ?? 0;
+		activeGenerationSpacerHeightLimit = generationBottomSpacerHeight;
 		autoScroll = false;
 		scheduleScrollStateUpdate({ updateAutoScroll: false });
 	};
@@ -2707,6 +2764,8 @@
 				generationSpacerScrollLimit = messagesContainerElement.scrollTop;
 			}
 			anchoredGeneratingMessageId = null;
+			activeGenerationScrollBase = null;
+			activeGenerationSpacerHeightLimit = null;
 			cancelGenerationAnchorRAF();
 			if (generationSpacerRAF) {
 				cancelAnimationFrame(generationSpacerRAF);
@@ -2813,6 +2872,35 @@
 		}
 
 		if (event.deltaY <= 0) return;
+
+		const activeGenerationScrollLimit = getActiveGenerationScrollLimit();
+		const idleGenerationScrollLimit =
+			!anchoredGeneratingMessageId &&
+			!generating &&
+			generationBottomSpacerHeight > 0 &&
+			generationSpacerScrollLimit !== null
+				? Math.min(getMessagesMaxScrollTop(), generationSpacerScrollLimit)
+				: null;
+		const generationScrollLimit = activeGenerationScrollLimit ?? idleGenerationScrollLimit;
+
+		if (generationScrollLimit !== null) {
+			cancelMessagesBottomWheelLock();
+			const wheelDeltaPixels =
+				event.deltaMode === 1
+					? event.deltaY * 16
+					: event.deltaMode === 2
+						? event.deltaY * messagesContainerElement.clientHeight
+						: event.deltaY;
+
+			if (messagesContainerElement.scrollTop + wheelDeltaPixels > generationScrollLimit) {
+				event.preventDefault();
+				if (messagesContainerElement.scrollTop < generationScrollLimit) {
+					messagesContainerElement.scrollTop = generationScrollLimit;
+				}
+				scheduleScrollStateUpdate({ updateAutoScroll: false });
+			}
+			return;
+		}
 
 		const maxScrollTop = getMessagesMaxScrollTop();
 		const bottomGap = maxScrollTop - messagesContainerElement.scrollTop;
