@@ -6,9 +6,9 @@
 			name: 'Neve Strata'
 		},
 		'neve-muse': {
-			repo: 'NeveAI/Neve-Muse-3-26B-GGUF',
-			params: { temperature: 1, min_p: 0.1, dry_multiplier: 0.8 },
-			default_feature_ids: ['toggle_reasoning']
+			repo: 'NeveAI/Neve-Muse-4-24B-GGUF',
+			params: { temperature: 0.8, min_p: 0.05, dry_multiplier: 0.8, dry_allowed_length: 3 },
+			default_feature_ids: []
 		},
 		'neve-cascade-x': {
 			name: 'Neve Cascade',
@@ -68,7 +68,7 @@
 		'neve-strata-s': ['6GB+', 'Q4_K_XL'],
 		'neve-strata-x': ['16GB+', 'Q4_K_XL'],
 		'neve-cascade-x': ['CPU', 'Q4_K_XL'],
-		'neve-muse': ['12GB+', 'IQ4_XS']
+		'neve-muse': ['12GB+', 'Q4_K_M']
 	};
 
 	const modelIconPaths: Record<string, string> = {

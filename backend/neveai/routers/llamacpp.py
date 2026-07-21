@@ -1746,18 +1746,19 @@ NEVE_CATALOG = [
     {
         "id": "neve-muse",
         "name": "Neve Muse",
-        "repo": "NeveAI/Neve-Muse-3-26B-GGUF",
+        "repo": "NeveAI/Neve-Muse-4-24B-GGUF",
         "hardware_label": "12 GB",
         "hardware_kind": "gpu",
         "size_label": "13.3 GB",
         "profile_image_url": "/static/logomuse.png",
         "description": "Modelo de conversação para simulação de interações humanas.",
         "params": {
-            "temperature": 1,
-            "min_p": 0.1,
+            "temperature": 0.8,
+            "min_p": 0.05,
             "dry_multiplier": 0.8,
+            "dry_allowed_length": 3,
         },
-        "default_feature_ids": ["toggle_reasoning"],
+        "default_feature_ids": [],
     },
     {
         "id": "neve-cascade-x",
