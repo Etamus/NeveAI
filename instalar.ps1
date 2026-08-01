@@ -212,7 +212,10 @@ if (-not (Test-Path $LOGO_PATH)) {
                     <TextBlock x:Name="LblHubBrand" Text="Neve AI" FontSize="15" FontWeight="SemiBold" Foreground="#111111" VerticalAlignment="Center"/>
                     <TextBlock x:Name="LblHubMode" Text="  ·  Hub" FontSize="13" Foreground="#71717A" VerticalAlignment="Center"/>
                 </StackPanel>
-                <Button x:Name="BtnClose" Grid.Column="2" Content="×" Style="{StaticResource WindowCloseBtn}" Margin="0,0,16,0"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
+                    <Button x:Name="BtnMinimize" Content="−" Style="{StaticResource WindowCloseBtn}" Margin="0,0,6,0"/>
+                    <Button x:Name="BtnClose" Content="×" Style="{StaticResource WindowCloseBtn}"/>
+                </StackPanel>
             </Grid>
 
             <Grid x:Name="HubHomePanel" Grid.Row="1" Grid.RowSpan="2" Margin="32,24,32,28">
@@ -278,6 +281,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="GPU detectada:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
@@ -312,7 +316,10 @@ if (-not (Test-Path $LOGO_PATH)) {
                             <TextBlock Grid.Row="3" Grid.Column="0" Text="Dependências:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
                             <CheckBox  Grid.Row="3" Grid.Column="1" x:Name="ChkInstallPython" Content="Instalar Python 3.11" FontSize="13" Margin="0,2,0,12"/>
 
-                            <Border Grid.Row="4" Grid.ColumnSpan="2" Background="#FAFAFA" CornerRadius="8" Padding="14,12" Margin="0,8,0,0">
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Atalho:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
+                            <CheckBox  Grid.Row="4" Grid.Column="1" x:Name="ChkDesktopShortcut" Content="Adicionar ícone à área de trabalho" FontSize="13" Margin="0,2,0,12"/>
+
+                            <Border Grid.Row="5" Grid.ColumnSpan="2" Background="#FAFAFA" CornerRadius="8" Padding="14,12" Margin="0,8,0,0">
                                 <StackPanel>
                                     <TextBlock Text="O que será instalado:" FontWeight="SemiBold" FontSize="13" Foreground="#111111" Margin="0,0,0,4"/>
                                     <TextBlock Text="• llama.cpp e stable-diffusion.cpp (binários mais recentes do GitHub)" FontSize="12" Foreground="#52525B"/>
@@ -399,7 +406,7 @@ $window.Tag = 'idle'
 
 # Atalhos para controles
 $ctl = @{}
-foreach ($name in 'LogoImg','BtnClose','LblGpu','CmbBackend','CmbVram','ChkInstallPython',
+foreach ($name in 'LogoImg','BtnMinimize','BtnClose','LblGpu','CmbBackend','CmbVram','ChkInstallPython','ChkDesktopShortcut',
                   'ConfigPanel','InstallPanel','DonePanel',
                   'LblStep','LblPhase','LblProgressTxt','Progress','LogBox','LogScroll',
                   'LblDoneTitle','LblDoneSub','LblSummary',
@@ -574,6 +581,9 @@ function Request-InstallCancel {
 }
 
 # Botoes basicos
+$ctl.BtnMinimize.Add_Click({
+    try { $window.WindowState = [System.Windows.WindowState]::Minimized } catch {}
+})
 $ctl.BtnClose.Add_Click({
     if ([string]$window.Tag -eq 'installing') { Request-InstallCancel; return }
     $window.Close()
@@ -807,6 +817,7 @@ if ($detected.Name) {
 $ctl.CmbBackend.SelectedIndex = $detected.Backend
 $ctl.CmbVram.SelectedIndex    = 0
 $ctl.ChkInstallPython.IsChecked = (-not $pyOk)
+$ctl.ChkDesktopShortcut.IsChecked = $true
 
 # Se faltar Python, o instalador ja deixa a instalacao automatica marcada.
 # Node.js pode ser baixado em modo portatil pelo instalador.
@@ -849,12 +860,49 @@ function ConvertTo-ProcessArgument([string]$arg) {
     return '"' + $escaped + '"'
 }
 
+function New-NeveDesktopShortcut([string]$RootPath, [string]$LogPath) {
+    try {
+        $targetPath = Join-Path $RootPath 'iniciar.bat'
+        if (-not (Test-Path -LiteralPath $targetPath)) { throw "iniciar.bat não encontrado em $RootPath" }
+
+        $iconPath = Join-Path $RootPath 'static\static\favicon.ico'
+        if (-not (Test-Path -LiteralPath $iconPath)) {
+            $iconPath = Join-Path $RootPath 'static\favicon.ico'
+        }
+
+        $desktopPath = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+        if ([string]::IsNullOrWhiteSpace($desktopPath)) {
+            $desktopPath = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop)
+        }
+        if ([string]::IsNullOrWhiteSpace($desktopPath) -or -not (Test-Path -LiteralPath $desktopPath)) {
+            throw 'Não foi possível localizar a área de trabalho do usuário.'
+        }
+
+        $shortcutPath = Join-Path $desktopPath 'NeveAI.lnk'
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath = $targetPath
+        $shortcut.WorkingDirectory = $RootPath
+        $shortcut.Description = 'Neve AI'
+        $shortcut.WindowStyle = 1
+        if (Test-Path -LiteralPath $iconPath) { $shortcut.IconLocation = $iconPath }
+        $shortcut.Save()
+
+        try { Add-Content -LiteralPath $LogPath -Value "[OK] Atalho criado na área de trabalho: $shortcutPath" -Encoding UTF8 } catch {}
+        return $shortcutPath
+    } catch {
+        try { Add-Content -LiteralPath $LogPath -Value "[!] Não foi possível criar o atalho na área de trabalho: $($_.Exception.Message)" -Encoding UTF8 } catch {}
+        return $null
+    }
+}
+
 # =============================================================================
 # Worker - executa em runspace separado
 # =============================================================================
 $ctl.BtnPrimary.Add_Click({
     if ($ctl.BtnPrimary.Tag -eq 'done') { $window.Close(); return }
     $installPython311 = [bool]$ctl.ChkInstallPython.IsChecked
+    $createDesktopShortcut = [bool]$ctl.ChkDesktopShortcut.IsChecked
     if ([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) {
         if ($installPython311) {
             $pythonLaunchRetry = Resolve-PythonLaunch
@@ -925,6 +973,10 @@ $ctl.BtnPrimary.Add_Click({
 
     if ($venvOk -and $torchOk -and $llamaOk -and $nodeModsOk -and $frontendOk -and $envOk -and -not $needsPython311Install) {
         $ctl.LogBox.AppendText("[OK] Tudo já está instalado. Nada a fazer.`r`n")
+        if ($createDesktopShortcut) {
+            $shortcutPath = New-NeveDesktopShortcut $ROOT $LOG
+            if ($shortcutPath) { $ctl.LogBox.AppendText("[OK] Atalho criado na área de trabalho.`r`n") }
+        }
         $ctl.Progress.Value      = 100
         $ctl.LblProgressTxt.Text = '100%'
         $ctl.LblPhase.Text       = 'Concluído'
@@ -963,7 +1015,7 @@ $ctl.BtnPrimary.Add_Click({
 
     # Worker em runspace separado, usando as funcoes UI-* via $window
     $worker = {
-        param($cfg, $installPython311, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG, $STATE_FILE, $PYTHON_EXE, $NODE_EXE, $NPM_EXE, $INSTALLER_REVISION, $SCRIPT_PATH, $INSTALL_CONTROL)
+        param($cfg, $installPython311, $createDesktopShortcut, $vramGb, $detected, $ROOT, $VENV_DIR, $VENV_PY, $BACKEND, $LOG, $STATE_FILE, $PYTHON_EXE, $NODE_EXE, $NPM_EXE, $INSTALLER_REVISION, $SCRIPT_PATH, $INSTALL_CONTROL)
 
         # Helpers (definidas dentro do runspace)
         function Log([string]$m, [string]$k='info') {
@@ -991,6 +1043,41 @@ $ctl.BtnPrimary.Add_Click({
         }
         function Set-InstallState([string]$state) {
             try { [System.IO.File]::WriteAllText($STATE_FILE, $state, [System.Text.UTF8Encoding]::new($false)) } catch {}
+        }
+        function New-NeveDesktopShortcut([string]$RootPath) {
+            try {
+                $targetPath = Join-Path $RootPath 'iniciar.bat'
+                if (-not (Test-Path -LiteralPath $targetPath)) { throw "iniciar.bat não encontrado em $RootPath" }
+
+                $iconPath = Join-Path $RootPath 'static\static\favicon.ico'
+                if (-not (Test-Path -LiteralPath $iconPath)) {
+                    $iconPath = Join-Path $RootPath 'static\favicon.ico'
+                }
+
+                $desktopPath = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
+                if ([string]::IsNullOrWhiteSpace($desktopPath)) {
+                    $desktopPath = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop)
+                }
+                if ([string]::IsNullOrWhiteSpace($desktopPath) -or -not (Test-Path -LiteralPath $desktopPath)) {
+                    throw 'Não foi possível localizar a área de trabalho do usuário.'
+                }
+
+                $shortcutPath = Join-Path $desktopPath 'NeveAI.lnk'
+                $shell = New-Object -ComObject WScript.Shell
+                $shortcut = $shell.CreateShortcut($shortcutPath)
+                $shortcut.TargetPath = $targetPath
+                $shortcut.WorkingDirectory = $RootPath
+                $shortcut.Description = 'Neve AI'
+                $shortcut.WindowStyle = 1
+                if (Test-Path -LiteralPath $iconPath) { $shortcut.IconLocation = $iconPath }
+                $shortcut.Save()
+
+                Log "[OK] Atalho criado na área de trabalho: $shortcutPath"
+                return $shortcutPath
+            } catch {
+                Log "[!] Não foi possível criar o atalho na área de trabalho: $($_.Exception.Message)" 'warn'
+                return $null
+            }
         }
         function Test-InstallCancelled {
             if ($INSTALL_CONTROL -and $INSTALL_CONTROL.CancelRequested) {
@@ -2017,6 +2104,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             # ---- Done
             Set-InstallState 'done'
             P 100 'Concluído'
+            if ($createDesktopShortcut) { [void](New-NeveDesktopShortcut $ROOT) }
 
             # Resumo
             $summary = @()
@@ -2083,7 +2171,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
 
     $ps = [PowerShell]::Create()
     $ps.Runspace = $runspace
-    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($installPython311).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($STATE_FILE).AddArgument($PYTHON_EXE).AddArgument($NODE_EXE).AddArgument($NPM_EXE).AddArgument($INSTALLER_REVISION).AddArgument($SCRIPT_PATH).AddArgument($script:InstallControl)
+    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($installPython311).AddArgument($createDesktopShortcut).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($STATE_FILE).AddArgument($PYTHON_EXE).AddArgument($NODE_EXE).AddArgument($NPM_EXE).AddArgument($INSTALLER_REVISION).AddArgument($SCRIPT_PATH).AddArgument($script:InstallControl)
     [void]$ps.add_InvocationStateChanged({
         param($sender, $eventArgs)
         if ($eventArgs.InvocationStateInfo.State -eq 'Failed') {

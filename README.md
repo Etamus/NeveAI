@@ -42,7 +42,7 @@ instalar.bat → Instalar
 ```
 
 <h1 align="center">
-<img width="780" alt="{85754D50-C041-4293-894E-C38B064643B3}" src="https://github.com/user-attachments/assets/950e4a6c-a95f-420d-a4f3-44c1f8ea80d7" />
+<img width="781" alt="{8463A164-33B1-463F-BD22-27ADD721B656}" src="https://github.com/user-attachments/assets/3ea357fd-032c-4eaa-a895-fc435e9b5a01" />
 </h1>
 
 O instalador realiza automaticamente as seguintes ações:
