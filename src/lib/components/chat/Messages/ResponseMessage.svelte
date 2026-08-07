@@ -47,6 +47,7 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import WebSearchResults from './ResponseMessage/WebSearchResults.svelte';
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
+	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 
 	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 
@@ -65,7 +66,14 @@
 		id: string;
 		model: string;
 		content: string;
-		files?: { type: string; url: string }[];
+		files?: {
+			id?: string;
+			type: string;
+			url: string;
+			name?: string;
+			content_type?: string;
+			size?: number;
+		}[];
 		timestamp: number;
 		role: string;
 		statusHistory?: {
@@ -597,7 +605,7 @@
 							</div>
 						{/if}
 
-						{#if message?.files && message.files?.filter((f) => f.type === 'image').length > 0}
+						{#if message?.files && message.files.some((file) => file.type === 'image' || file.type === 'audio' || (file?.content_type ?? '').startsWith('image/') || (file?.content_type ?? '').startsWith('audio/'))}
 							<div
 								class="my-1 w-full flex overflow-x-auto gap-2 flex-wrap"
 								dir={$settings?.chatDirection ?? 'auto'}
@@ -606,6 +614,19 @@
 									<div>
 										{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
 											<Image src={file.url} alt={message.content} />
+										{:else if file.type === 'audio' || (file?.content_type ?? '').startsWith('audio/')}
+											<div class="w-full min-w-[18rem] max-w-md rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 dark:border-gray-700/70 dark:bg-gray-800/50">
+												<div class="mb-2 flex min-w-0 items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+													<MusicNote className="size-4 shrink-0" strokeWidth="1.7" />
+													<span class="truncate">{file.name ?? 'Música gerada'}</span>
+												</div>
+												<audio
+													controls
+													preload="metadata"
+													src={file.url.startsWith('/') ? `${NEVEAI_BASE_URL}${file.url}` : file.url}
+													class="h-10 w-full"
+												></audio>
+											</div>
 										{:else}
 											<FileItem
 												item={file}

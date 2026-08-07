@@ -16,14 +16,12 @@
 	import SkillsSelector from '$lib/components/workspace/Models/SkillsSelector.svelte';
 	import FiltersSelector from '$lib/components/workspace/Models/FiltersSelector.svelte';
 	import ActionsSelector from '$lib/components/workspace/Models/ActionsSelector.svelte';
-	import Capabilities from '$lib/components/workspace/Models/Capabilities.svelte';
 	import Textarea from '$lib/components/common/Textarea.svelte';
 	import AccessControl from '../common/AccessControl.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import DefaultFiltersSelector from './DefaultFiltersSelector.svelte';
 	import DefaultFeatures from './DefaultFeatures.svelte';
-	import BuiltinTools from './BuiltinTools.svelte';
 	import PromptSuggestions from './PromptSuggestions.svelte';
 	import AccessControlModal from '../common/AccessControlModal.svelte';
 	import LockClosed from '$lib/components/icons/LockClosed.svelte';
@@ -828,7 +826,12 @@
 								{$i18n.t('Capacidades')}
 							</div>
 							<DefaultFeatures
-								availableFeatures={['web_search', 'code_interpreter', 'code_execution', 'toggle_reasoning']}
+								availableFeatures={[
+									'web_search',
+									'code_execution',
+									'deep_search',
+									'toggle_reasoning'
+								]}
 								bind:featureIds={defaultFeatureIds}
 								tooltipsEnabled={false}
 							/>

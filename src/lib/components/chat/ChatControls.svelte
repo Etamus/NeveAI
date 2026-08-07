@@ -30,7 +30,6 @@
 	import Artifacts from './Artifacts.svelte';
 	import Embeds from './ChatControls/Embeds.svelte';
 	import FileNav from './FileNav.svelte';
-	import PyodideFileNav from './PyodideFileNav.svelte';
 	const i18n = getContext('i18n');
 
 	export let history;
@@ -47,8 +46,6 @@
 	export let showMessage: Function;
 	export let files;
 	export let modelId;
-
-	export let codeInterpreterEnabled = false;
 
 	export let pane: Pane | null = null;
 
@@ -110,9 +107,7 @@
 		clampPaneSize(true);
 	};
 
-	$: showFilesTab =
-		!!$selectedTerminalId ||
-		(codeInterpreterEnabled && $config?.code?.interpreter_engine !== 'jupyter');
+	$: showFilesTab = !!$selectedTerminalId;
 
 	// Auto-close if nothing to show
 	$: if (!showFilesTab && !$showArtifacts && !$showEmbeds && !$showCallOverlay) {
@@ -340,8 +335,6 @@
 						<div class="flex-1 min-h-0">
 							{#if $selectedTerminalId}
 								<FileNav onAttach={handleTerminalAttach} />
-							{:else if codeInterpreterEnabled}
-								<PyodideFileNav />
 							{/if}
 						</div>
 					</div>
@@ -437,8 +430,6 @@
 							<div class="flex-1 min-h-0">
 								{#if $selectedTerminalId}
 									<FileNav onAttach={handleTerminalAttach} overlay={dragged} />
-								{:else if codeInterpreterEnabled}
-									<PyodideFileNav overlay={dragged} />
 								{/if}
 							</div>
 						</div>

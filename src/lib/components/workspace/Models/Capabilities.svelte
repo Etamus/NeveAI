@@ -56,7 +56,7 @@
 			description: $i18n.t('Show the Rápido/Raciocínio toggle in the message input bar')
 		},
 		stable_diffusion: {
-			label: $i18n.t('Geração de imagem'),
+			label: $i18n.t('Criar imagem'),
 			description: $i18n.t('Modelo pode gerar imagens usando Stable Diffusion local')
 		}
 	};

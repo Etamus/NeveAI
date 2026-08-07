@@ -235,6 +235,7 @@ class FeaturesPermissions(BaseModel):
     code_interpreter: bool = True
     memories: bool = True
     stable_diffusion: bool = True
+    music_generation: bool = True
 
 
 class SettingsPermissions(BaseModel):

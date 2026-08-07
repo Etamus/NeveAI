@@ -82,13 +82,14 @@
 	import GlobeAlt from '../icons/GlobeAlt.svelte';
 	import Atom02 from '../icons/Atom02.svelte';
 	import Photo from '../icons/Photo.svelte';
+	import ImageIcon from '../icons/Image.svelte';
+	import MusicNote from '../icons/MusicNote.svelte';
 	import Wrench from '../icons/Wrench.svelte';
 	import Sparkles from '../icons/Sparkles.svelte';
 
 	import InputVariablesModal from './MessageInput/InputVariablesModal.svelte';
 	import Voice from '../icons/Voice.svelte';
 	import Cloud from '../icons/Cloud.svelte';
-	import Terminal from '../icons/Terminal.svelte';
 	import Code from '../icons/Code.svelte';
 	import TerminalMenu from './MessageInput/TerminalMenu.svelte';
 	import Knobs from '../icons/Knobs.svelte';
@@ -138,9 +139,9 @@
 	export let imageGenerationEnabled = false;
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
-	export let codeInterpreterEnabled = false;
 	export let codeExecutionEnabled = false;
 	export let stableDiffusionEnabled = false;
+	export let musicGenerationEnabled = false;
 	export let thinkingEnabled = true;
 	export let thinkingExtendedEnabled = true;
 
@@ -178,9 +179,9 @@
 		imageGenerationEnabled,
 		webSearchEnabled,
 		deepSearchEnabled,
-		codeInterpreterEnabled,
 		codeExecutionEnabled,
 		stableDiffusionEnabled,
+		musicGenerationEnabled,
 		thinkingEnabled,
 		thinkingExtendedEnabled
 	});
@@ -192,9 +193,9 @@
 		!webSearchEnabled &&
 		!deepSearchEnabled &&
 		!imageGenerationEnabled &&
-		!codeInterpreterEnabled &&
 		!codeExecutionEnabled &&
 		!stableDiffusionEnabled &&
+		!musicGenerationEnabled &&
 		(selectedToolIds ?? []).length === 0 &&
 		(selectedFilterIds ?? []).length === 0 &&
 		!isInputMultiline;
@@ -605,14 +606,6 @@
 			$models.find((m) => m.id === model)?.info?.meta?.capabilities?.image_generation ?? true
 	);
 
-	let codeInterpreterCapableModels = [];
-	$: codeInterpreterCapableModels = (
-		atSelectedModel?.id ? [atSelectedModel.id] : selectedModels
-	).filter(
-		(model) =>
-			$models.find((m) => m.id === model)?.info?.meta?.capabilities?.code_interpreter ?? true
-	);
-
 	let toggleFilters = [];
 	$: toggleFilters = (atSelectedModel?.id ? [atSelectedModel.id] : selectedModels)
 		.map((id) => ($models.find((model) => model.id === id) || {})?.filters ?? [])
@@ -632,14 +625,6 @@
 		$config?.features?.enable_image_generation &&
 		($_user.role === 'admin' || $_user?.permissions?.features?.image_generation);
 
-	let showCodeInterpreterButton = false;
-	$: showCodeInterpreterButton =
-		!$selectedTerminalId &&
-		(atSelectedModel?.id ? [atSelectedModel.id] : selectedModels).length ===
-			codeInterpreterCapableModels.length &&
-		$config?.features?.enable_code_interpreter &&
-		($_user.role === 'admin' || $_user?.permissions?.features?.code_interpreter);
-
 	let showCodeExecutionButton = false;
 	$: showCodeExecutionButton =
 		($config?.features?.enable_code_execution !== false) &&
@@ -649,6 +634,11 @@
 	$: showStableDiffusionButton =
 		$config?.features?.enable_stable_diffusion &&
 		($_user.role === 'admin' || $_user?.permissions?.features?.stable_diffusion);
+
+	let showMusicGenerationButton = false;
+	$: showMusicGenerationButton =
+		$config?.features?.enable_music_generation &&
+		($_user.role === 'admin' || $_user?.permissions?.features?.music_generation);
 
 	let showThinkingButton = false;
 	let thinkingModeModelKey = '';
@@ -665,11 +655,6 @@
 		thinkingEnabled = true;
 		thinkingExtendedEnabled = true;
 		appliedThinkingModeKey = '';
-	}
-
-	// Disable code interpreter when terminal is active (mutually exclusive)
-	$: if ($selectedTerminalId && codeInterpreterEnabled) {
-		codeInterpreterEnabled = false;
 	}
 
 	const scrollToBottom = () => {
@@ -1590,17 +1575,17 @@
 								{toggleFilters}
 								{showWebSearchButton}
 								{showImageGenerationButton}
-								{showCodeInterpreterButton}
 								{showCodeExecutionButton}
 								{showStableDiffusionButton}
+								{showMusicGenerationButton}
 								bind:selectedToolIds
 								bind:selectedFilterIds
 								bind:webSearchEnabled
 								bind:deepSearchEnabled
 								bind:imageGenerationEnabled
-								bind:codeInterpreterEnabled
 								bind:codeExecutionEnabled
 								bind:stableDiffusionEnabled
+								bind:musicGenerationEnabled
 								onShowValves={(e) => {
 									const { type, id } = e;
 									selectedValvesType = type;
@@ -1777,13 +1762,13 @@
 															console.log('Escape');
 															atSelectedModel = undefined;
 															selectedToolIds = [];
-															selectedFilterIds = [];
+																	selectedFilterIds = [];
 
-															webSearchEnabled = false;
-															imageGenerationEnabled = false;
-															codeInterpreterEnabled = false;
-															stableDiffusionEnabled = false;
-														}
+																	webSearchEnabled = false;
+																	imageGenerationEnabled = false;
+																		stableDiffusionEnabled = false;
+																		musicGenerationEnabled = false;
+																}
 													}}
 													on:paste={async (e) => {
 														e = e.detail.event;
@@ -1843,16 +1828,16 @@
 												{#if thinkingExtendedEnabled}
 													<span class="text-gray-500 dark:text-gray-500">Aprimorado</span>
 												{/if}
-												<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform {showThinkingDropdown ? 'rotate-180' : ''}">
+												<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform {showThinkingDropdown ? '' : 'rotate-180'}">
 													<path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
 												</svg>
 											</button>
 
 											{#if showThinkingDropdown}
 												<div
-													class="absolute bottom-full mb-1.5 right-0 z-50 w-[15.5rem] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
+											class="absolute top-full mt-1.5 right-0 z-50 w-[15.5rem] rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
 													style="font-family: 'Segoe UI', sans-serif;"
-													transition:fly={{ y: 5, duration: 150 }}
+													transition:fly={{ y: -5, duration: 150 }}
 													on:click|stopPropagation
 												>
 													<button
@@ -1883,7 +1868,7 @@
 													<div class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200">
 														<div class="flex-1 text-left">
 															<div>Aprimorado</div>
-															<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Permite pensamento mais amplo</div>
+															<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Aumenta esforço do pensamento</div>
 														</div>
 														<Switch
 															bind:state={thinkingExtendedEnabled}
@@ -1967,17 +1952,17 @@
 									{toggleFilters}
 									{showWebSearchButton}
 									{showImageGenerationButton}
-									{showCodeInterpreterButton}
 									{showCodeExecutionButton}
 									{showStableDiffusionButton}
+									{showMusicGenerationButton}
 									bind:selectedToolIds
 									bind:selectedFilterIds
 									bind:webSearchEnabled
 									bind:deepSearchEnabled
 									bind:imageGenerationEnabled
-									bind:codeInterpreterEnabled
 									bind:codeExecutionEnabled
 									bind:stableDiffusionEnabled
+									bind:musicGenerationEnabled
 									onShowValves={(e) => {
 										const { type, id } = e;
 										selectedValvesType = type;
@@ -2120,26 +2105,6 @@
 											</button>
 										{/if}
 
-										{#if codeInterpreterEnabled}
-											<button
-												aria-label={codeInterpreterEnabled ? $i18n.t('Disable Code Interpreter') : $i18n.t('Enable Code Interpreter')}
-												aria-pressed={codeInterpreterEnabled}
-												on:click|preventDefault={() => (codeInterpreterEnabled = !codeInterpreterEnabled)}
-												type="button"
-												class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] transition-colors duration-300 max-w-full overflow-hidden text-amber-500 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-700/10 {($settings?.highContrastMode ?? false) ? 'm-1' : 'focus:outline-hidden rounded-full'}"
-											>
-												<div class="relative size-4 shrink-0 flex items-center justify-center">
-													<span class="group-hover:hidden flex items-center justify-center">
-														<Terminal className="size-4" strokeWidth="1.75" />
-													</span>
-													<span class="hidden group-hover:flex items-center justify-center">
-														<XMark className="size-4" strokeWidth="1.75" />
-													</span>
-												</div>
-												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Ambiente</span>
-											</button>
-										{/if}
-
 										{#if codeExecutionEnabled}
 											<button
 												aria-label={codeExecutionEnabled ? $i18n.t('Disable Code Execution') : $i18n.t('Enable Code Execution')}
@@ -2168,13 +2133,31 @@
 											>
 												<div class="relative size-4 shrink-0 flex items-center justify-center">
 													<span class="group-hover:hidden flex items-center justify-center">
-														<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-4"><path fill-rule="evenodd" d="M1 5.25A2.25 2.25 0 013.25 3h13.5A2.25 2.25 0 0119 5.25v9.5A2.25 2.25 0 0116.75 17H3.25A2.25 2.25 0 011 14.75v-9.5zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 00.75-.75v-2.69l-2.22-2.219a.75.75 0 00-1.06 0l-1.91 1.909.47.47a.75.75 0 11-1.06 1.06L6.53 8.091a.75.75 0 00-1.06 0l-3.97 3.97zM12 7a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd" /></svg>
+														<ImageIcon className="size-4" strokeWidth="1.75" />
 													</span>
 													<span class="hidden group-hover:flex items-center justify-center">
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
 												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Imagem</span>
+											</button>
+										{/if}
+
+										{#if musicGenerationEnabled}
+											<button
+												on:click|preventDefault={() => (musicGenerationEnabled = !musicGenerationEnabled)}
+												type="button"
+												class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-violet-500 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-700/10"
+											>
+												<div class="relative size-4 shrink-0 flex items-center justify-center">
+													<span class="group-hover:hidden flex items-center justify-center">
+														<MusicNote className="size-4" strokeWidth="1.75" />
+													</span>
+													<span class="hidden group-hover:flex items-center justify-center">
+														<XMark className="size-4" strokeWidth="1.75" />
+													</span>
+												</div>
+												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Música</span>
 											</button>
 										{/if}
 
@@ -2222,16 +2205,29 @@
 													{#if thinkingExtendedEnabled}
 														<span class="text-gray-500 dark:text-gray-500">Aprimorado</span>
 													{/if}
-													<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform {showThinkingDropdown ? 'rotate-180' : ''}">
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														viewBox="0 0 20 20"
+														fill="currentColor"
+														class="size-3.5 transition-transform {history?.currentId
+															? showThinkingDropdown
+																? 'rotate-180'
+																: ''
+															: showThinkingDropdown
+																? ''
+																: 'rotate-180'}"
+													>
 														<path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
 													</svg>
 												</button>
 
 												{#if showThinkingDropdown}
 													<div
-														class="absolute bottom-full mb-1.5 right-0 z-50 w-[15.5rem] rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
+														class="absolute {history?.currentId
+															? 'bottom-full mb-1.5'
+													: 'top-full mt-1.5'} right-0 z-50 w-[15.5rem] rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
 														style="font-family: 'Segoe UI', sans-serif;"
-														transition:fly={{ y: 5, duration: 150 }}
+														transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
 														on:click|stopPropagation
 													>
 														<button
@@ -2262,7 +2258,7 @@
 														<div class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200">
 															<div class="flex-1 text-left">
 																<div>Aprimorado</div>
-																<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Permite pensamento mais amplo</div>
+																<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Aumenta esforço do pensamento</div>
 															</div>
 															<Switch
 																bind:state={thinkingExtendedEnabled}

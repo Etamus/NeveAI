@@ -99,6 +99,7 @@ from neveai.routers import (
     scim,
     terminals,
     stable_diffusion,
+    music_generation,
 )
 
 from neveai.routers.retrieval import (
@@ -190,6 +191,7 @@ from neveai.config import (
     IMAGES_EDIT_COMFYUI_WORKFLOW_NODES,
     # Stable Diffusion Local
     ENABLE_STABLE_DIFFUSION,
+    ENABLE_MUSIC_GENERATION,
     STABLE_DIFFUSION_MODEL,
     STABLE_DIFFUSION_HF_TOKEN,
     STABLE_DIFFUSION_WIDTH,
@@ -1298,6 +1300,7 @@ app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW_NODES = IMAGES_EDIT_COMFYUI_WORKFL
 ########################################
 
 app.state.config.ENABLE_STABLE_DIFFUSION = ENABLE_STABLE_DIFFUSION
+app.state.config.ENABLE_MUSIC_GENERATION = ENABLE_MUSIC_GENERATION
 app.state.config.STABLE_DIFFUSION_MODEL = STABLE_DIFFUSION_MODEL
 app.state.config.STABLE_DIFFUSION_HF_TOKEN = STABLE_DIFFUSION_HF_TOKEN
 app.state.config.STABLE_DIFFUSION_WIDTH = STABLE_DIFFUSION_WIDTH
@@ -1582,6 +1585,7 @@ app.include_router(pipelines.router, prefix="/api/v1/pipelines", tags=["pipeline
 app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
 app.include_router(images.router, prefix="/api/v1/images", tags=["images"])
 app.include_router(stable_diffusion.router, prefix="/api/v1/stable-diffusion", tags=["stable-diffusion"])
+app.include_router(music_generation.router, prefix="/api/v1/music-generation", tags=["music-generation"])
 
 app.include_router(audio.router, prefix="/api/v1/audio", tags=["audio"])
 app.include_router(retrieval.router, prefix="/api/v1/retrieval", tags=["retrieval"])
@@ -2161,6 +2165,7 @@ async def get_app_config(request: Request):
                     "enable_code_interpreter": app.state.config.ENABLE_CODE_INTERPRETER,
                     "enable_image_generation": app.state.config.ENABLE_IMAGE_GENERATION,
                     "enable_stable_diffusion": app.state.config.ENABLE_STABLE_DIFFUSION,
+                    "enable_music_generation": app.state.config.ENABLE_MUSIC_GENERATION,
                     "enable_autocomplete_generation": app.state.config.ENABLE_AUTOCOMPLETE_GENERATION,
                     "enable_community_sharing": app.state.config.ENABLE_COMMUNITY_SHARING,
                     "enable_message_rating": app.state.config.ENABLE_MESSAGE_RATING,
@@ -2420,17 +2425,17 @@ async def get_github_latest_release_tag(session, repo: str):
 def launch_installer_update_page():
     import subprocess
 
-    installer_path = BASE_DIR / "instalar.bat"
+    installer_path = BASE_DIR / "launchers" / "instalar.vbs"
     if not installer_path.exists():
-        raise FileNotFoundError(f"instalar.bat não encontrado em {installer_path}")
+        raise FileNotFoundError(f"instalar.vbs não encontrado em {installer_path}")
 
     command = [
-        "cmd.exe",
-        "/c",
-        "start",
-        "",
-        "/D",
-        str(BASE_DIR),
+        os.path.join(
+            os.environ.get("SystemRoot", r"C:\Windows"),
+            "System32",
+            "wscript.exe",
+        ),
+        "//nologo",
         str(installer_path),
         "--page",
         "update",

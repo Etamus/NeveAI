@@ -1,4 +1,4 @@
-# Neve AI minimal runtime dependencies used by instalar.ps1.
+# Neve AI minimal runtime dependencies used by launchers/instalar.ps1.
 # Keep backend/requirements.txt as the complete optional/integration reference.
 
 # Core web server
@@ -30,6 +30,7 @@ aiofiles
 starlette-compress==1.7.0
 Brotli==1.1.0
 httpx[socks,http2,zstd,cli,brotli]==0.28.1
+uv>=0.8,<1
 starsessions[redis]==2.2.1
 python-mimeparse==2.0.0
 validators==0.35.0

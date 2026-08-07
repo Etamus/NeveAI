@@ -25,7 +25,8 @@ Add-Type -AssemblyName System.Windows.Forms
 # Caminhos globais
 # =============================================================================
 $SCRIPT_PATH = if ($PSCommandPath) { $PSCommandPath } elseif ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path } else { throw 'Não foi possível determinar o caminho do instalador.' }
-$ROOT        = (Resolve-Path -LiteralPath (Split-Path -Parent $SCRIPT_PATH)).ProviderPath
+$LAUNCHER_DIR = (Resolve-Path -LiteralPath (Split-Path -Parent $SCRIPT_PATH)).ProviderPath
+$ROOT         = (Resolve-Path -LiteralPath (Join-Path $LAUNCHER_DIR '..')).ProviderPath
 Set-Location -LiteralPath $ROOT
 $VENV_DIR = Join-Path $ROOT 'backend\neveai\venv'
 $VENV_PY  = Join-Path $VENV_DIR 'Scripts\python.exe'
@@ -34,7 +35,7 @@ $LOG_DIR  = Join-Path $ROOT 'logs'
 if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
 $LOG = Join-Path $LOG_DIR 'install.log'
 $STATE_FILE = Join-Path $LOG_DIR 'install-state.txt'
-$INSTALLER_REVISION = '2026-06-28-update-layout-polish-v6'
+$INSTALLER_REVISION = '2026-08-07-music-runtime-v1'
 '' | Set-Content $LOG
 Add-Content -LiteralPath $LOG -Value ("[INSTALLER] revision={0}; script={1}; root={2}" -f $INSTALLER_REVISION, $SCRIPT_PATH, $ROOT) -Encoding UTF8
 [System.IO.File]::WriteAllText($STATE_FILE, 'idle', [System.Text.UTF8Encoding]::new($false))
@@ -324,6 +325,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                                     <TextBlock Text="O que será instalado:" FontWeight="SemiBold" FontSize="13" Foreground="#111111" Margin="0,0,0,4"/>
                                     <TextBlock Text="• llama.cpp e stable-diffusion.cpp (binários mais recentes do GitHub)" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="• Python 3.11 e venv com PyTorch + diffusers + dependências do backend" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="• Criar música: ambiente isolado preparado no primeiro uso" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="• Pacotes npm e build do frontend" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="• Estrutura de pastas (logs, models, mmproj, data) e .env padrão" FontSize="12" Foreground="#52525B"/>
                                 </StackPanel>
@@ -862,8 +864,8 @@ function ConvertTo-ProcessArgument([string]$arg) {
 
 function New-NeveDesktopShortcut([string]$RootPath, [string]$LogPath) {
     try {
-        $targetPath = Join-Path $RootPath 'iniciar.bat'
-        if (-not (Test-Path -LiteralPath $targetPath)) { throw "iniciar.bat não encontrado em $RootPath" }
+        $launcherPath = Join-Path $RootPath 'launchers\iniciar.vbs'
+        if (-not (Test-Path -LiteralPath $launcherPath)) { throw "launchers\iniciar.vbs não encontrado em $RootPath" }
 
         $iconPath = Join-Path $RootPath 'static\static\favicon.ico'
         if (-not (Test-Path -LiteralPath $iconPath)) {
@@ -881,7 +883,8 @@ function New-NeveDesktopShortcut([string]$RootPath, [string]$LogPath) {
         $shortcutPath = Join-Path $desktopPath 'NeveAI.lnk'
         $shell = New-Object -ComObject WScript.Shell
         $shortcut = $shell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath = $targetPath
+        $shortcut.TargetPath = $launcherPath
+        $shortcut.Arguments = ''
         $shortcut.WorkingDirectory = $RootPath
         $shortcut.Description = 'Neve AI'
         $shortcut.WindowStyle = 1
@@ -1046,8 +1049,8 @@ $ctl.BtnPrimary.Add_Click({
         }
         function New-NeveDesktopShortcut([string]$RootPath) {
             try {
-                $targetPath = Join-Path $RootPath 'iniciar.bat'
-                if (-not (Test-Path -LiteralPath $targetPath)) { throw "iniciar.bat não encontrado em $RootPath" }
+                $launcherPath = Join-Path $RootPath 'launchers\iniciar.vbs'
+                if (-not (Test-Path -LiteralPath $launcherPath)) { throw "launchers\iniciar.vbs não encontrado em $RootPath" }
 
                 $iconPath = Join-Path $RootPath 'static\static\favicon.ico'
                 if (-not (Test-Path -LiteralPath $iconPath)) {
@@ -1065,7 +1068,8 @@ $ctl.BtnPrimary.Add_Click({
                 $shortcutPath = Join-Path $desktopPath 'NeveAI.lnk'
                 $shell = New-Object -ComObject WScript.Shell
                 $shortcut = $shell.CreateShortcut($shortcutPath)
-                $shortcut.TargetPath = $targetPath
+                $shortcut.TargetPath = $launcherPath
+                $shortcut.Arguments = ''
                 $shortcut.WorkingDirectory = $RootPath
                 $shortcut.Description = 'Neve AI'
                 $shortcut.WindowStyle = 1
@@ -1191,6 +1195,33 @@ $ctl.BtnPrimary.Add_Click({
         function Run([string]$exe, [string[]]$argv, [string]$desc) {
             return Run-NoPipe $exe $argv $desc
         }
+        function Save-RemoteFile([string]$Url, [string]$Destination, [int]$TimeoutSec = 300) {
+            Test-InstallCancelled
+            $curl = Get-Command curl.exe -EA SilentlyContinue | Select-Object -First 1
+            if ($curl) {
+                try {
+                    if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force -EA SilentlyContinue }
+                    $rc = Run-NoPipe $curl.Source @(
+                        '-L', '--fail', '--silent', '--show-error', '--compressed',
+                        '--retry', '3', '--retry-delay', '2', '--connect-timeout', '30',
+                        '--max-time', [string]$TimeoutSec,
+                        '--output', $Destination, $Url
+                    ) "baixar $Url"
+                    if ($rc -eq 0 -and (Test-Path -LiteralPath $Destination) -and (Get-Item -LiteralPath $Destination).Length -gt 0) {
+                        return
+                    }
+                    Log "[!] curl não concluiu o download (exit $rc); usando fallback do PowerShell." 'warn'
+                } catch {
+                    Log "[!] curl falhou: $($_.Exception.Message); usando fallback do PowerShell." 'warn'
+                }
+            }
+
+            if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force -EA SilentlyContinue }
+            Invoke-WebRequest $Url -OutFile $Destination -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec $TimeoutSec
+            if (-not (Test-Path -LiteralPath $Destination) -or (Get-Item -LiteralPath $Destination).Length -le 0) {
+                throw "Download vazio ou ausente: $Url"
+            }
+        }
         function Test-InstallerPythonLaunch([string]$exe, [string[]]$prefixArgs = @()) {
             try {
                 if ([string]::IsNullOrWhiteSpace($exe) -or -not (Test-Path -LiteralPath $exe)) { return $null }
@@ -1300,7 +1331,7 @@ $ctl.BtnPrimary.Add_Click({
             try {
                 if (Test-Path -LiteralPath $installerPath) { Remove-Item -LiteralPath $installerPath -Force -EA SilentlyContinue }
                 Log "==> Baixando Python 3.11.9 oficial: $installerUrl"
-                Invoke-WebRequest $installerUrl -OutFile $installerPath -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 300
+                Save-RemoteFile $installerUrl $installerPath 300
                 if (-not (Test-Path -LiteralPath $installerPath)) { throw 'O instalador do Python não foi baixado.' }
 
                 $targetParent = Split-Path -Parent $targetDir
@@ -1432,7 +1463,7 @@ $ctl.BtnPrimary.Add_Click({
                 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue }
                 New-Item -ItemType Directory -Path $stageParent -Force | Out-Null
                 Log "==> Baixando $url"
-                Invoke-WebRequest $url -OutFile $zipPath -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 300
+                Save-RemoteFile $url $zipPath 300
                 Expand-Archive $zipPath -DestinationPath $stageParent -Force
                 $extracted = Get-ChildItem -LiteralPath $stageParent -Directory | Select-Object -First 1
                 if (-not $extracted) { throw 'Arquivo do Node.js não extraiu a pasta esperada.' }
@@ -1524,7 +1555,7 @@ $ctl.BtnPrimary.Add_Click({
             P 8 'Criando estrutura de pastas'
             foreach ($d in @('logs','logs\webview2','logs\browser-app','models','mmproj',
                              'backend\data','backend\data\uploads','backend\data\vector_db',
-                             'backend\data\cache','backend\data\tools',
+                             'backend\data\cache','backend\data\cache\music_generation','backend\data\tools',
                              'backend\neveai\frontend')) {
                 $p = Join-Path $ROOT $d
                 if (-not (Test-Path $p)) { New-Item $p -ItemType Directory -Force | Out-Null }
@@ -1535,6 +1566,7 @@ $ctl.BtnPrimary.Add_Click({
                 'package.json',
                 'backend\requirements-runtime.txt',
                 'backend\neveai\main.py',
+                'backend\neveai\routers\music_generation.py',
                 'backend\neveai\models\users.py',
                 'backend\neveai\models\models.py',
                 'backend\neveai\utils\auth.py'
@@ -1615,7 +1647,7 @@ USER_AGENT=Neve AI
                         Log "==> Baixando $binName ($sizeMB MB)"
                         $tmpBin = Join-Path $env:TEMP "neve_llama_bin_$([guid]::NewGuid().ToString('N')).zip"
                         $tmpFiles += $tmpBin
-                        Invoke-WebRequest $binObj.browser_download_url -OutFile $tmpBin -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 300
+                        Save-RemoteFile $binObj.browser_download_url $tmpBin 300
                         Expand-Archive $tmpBin -DestinationPath $stageDir -Force
 
                         if ($assetName -match '^cuda-') {
@@ -1627,7 +1659,7 @@ USER_AGENT=Neve AI
                             Log "==> Baixando $dllName ($sizeMB MB)"
                             $tmpDll = Join-Path $env:TEMP "neve_cudart_$([guid]::NewGuid().ToString('N')).zip"
                             $tmpFiles += $tmpDll
-                            Invoke-WebRequest $dllObj.browser_download_url -OutFile $tmpDll -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 300
+                            Save-RemoteFile $dllObj.browser_download_url $tmpDll 300
                             Expand-Archive $tmpDll -DestinationPath $stageDir -Force
                         }
 
@@ -1755,7 +1787,9 @@ USER_AGENT=Neve AI
                     $failures += ("{0}: exit {1}" -f $attempt.Desc, $rc)
                     if ($rc -eq 3) {
                         Log "[!] pip retornou exit 3 em '$($attempt.Desc)'. Tentando outra rota do pip no mesmo venv." 'warn'
+                        continue
                     }
+                    break
                 }
 
                 $script:LastPipFailures = $failures
@@ -1880,7 +1914,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                         $tmpFiles += $zipPath
                         $sizeMB = [math]::Round($asset.size / 1MB, 0)
                         Log "==> Baixando $($asset.name) ($sizeMB MB)"
-                        Invoke-WebRequest $asset.browser_download_url -OutFile $zipPath -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 600
+                        Save-RemoteFile $asset.browser_download_url $zipPath 600
                         Expand-Archive $zipPath -DestinationPath $stageDir -Force
                     }
 
@@ -1903,33 +1937,31 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 }
             }
 
-            P 31 'Preparando pip do venv'
-            Set-InstallState 'ensurepip_upgrade'
-            $rc = Run $VENV_PY @('-I','-m','ensurepip','--upgrade','--default-pip') 'ensurepip --upgrade'
-            if ($rc -ne 0) {
-                Log "[!] ensurepip falhou (exit $rc). Tentando reparar pip com get-pip.py oficial." 'warn'
-                $rc = Repair-PipBootstrap
-                if ($rc -ne 0) { throw "Falha ao preparar pip do venv (ensurepip/get-pip exit $rc). Veja logs\pip-install.log." }
-            }
-
-            P 32 'Validando pip do venv'
+            P 31 'Validando pip do venv'
             Set-InstallState 'verifying_pip'
             $rc = Invoke-PipCommand -PipArgs @('--version') -Desc 'pip --version'
             if ($rc -ne 0) {
-                Log "[!] pip do venv não respondeu (exit $rc). Reparando com get-pip.py oficial." 'warn'
-                $repairRc = Repair-PipBootstrap
-                if ($repairRc -eq 0) { $rc = Invoke-PipCommand -PipArgs @('--version') -Desc 'pip --version pós-reparo' }
-                if ($rc -ne 0) { throw "pip do venv não respondeu após múltiplas rotas e reparo (exit $rc). Tentativas: $($script:LastPipFailures -join '; '). Veja logs\pip-install.log." }
+                Set-InstallState 'ensurepip_bootstrap'
+                Log "[!] pip não respondeu; preparando pelo ensurepip do Python." 'warn'
+                $rc = Run $VENV_PY @('-I','-m','ensurepip','--default-pip') 'ensurepip'
+                if ($rc -ne 0) {
+                    Log "[!] ensurepip falhou (exit $rc). Tentando reparar pip com get-pip.py oficial." 'warn'
+                    $rc = Repair-PipBootstrap
+                }
+                if ($rc -eq 0) { $rc = Invoke-PipCommand -PipArgs @('--version') -Desc 'pip --version pós-bootstrap' }
+                if ($rc -ne 0) { throw "pip do venv não respondeu após bootstrap e reparo (exit $rc). Tentativas: $($script:LastPipFailures -join '; '). Veja logs\pip-install.log." }
+            } else {
+                Log '[OK] pip existente preservado; bootstrap redundante ignorado'
             }
 
-            P 33 'Atualizando pip, setuptools e wheel'
-            Set-InstallState 'pip_upgrade'
-            $rc = Invoke-PipInstall -InstallArgs @('--upgrade','pip','setuptools','wheel') -Desc 'pip/setuptools/wheel upgrade'
+            P 33 'Preparando ferramentas de instalação'
+            Set-InstallState 'pip_tooling'
+            $rc = Invoke-PipInstall -InstallArgs @('pip','setuptools','wheel') -Desc 'pip/setuptools/wheel'
             if ($rc -ne 0) {
-                Log "[!] Upgrade de pip/setuptools/wheel falhou (exit $rc). Reparando pip e tentando novamente." 'warn'
+                Log "[!] Preparação de pip/setuptools/wheel falhou (exit $rc). Reparando pip e tentando novamente." 'warn'
                 $repairRc = Repair-PipBootstrap
-                if ($repairRc -eq 0) { $rc = Invoke-PipInstall -InstallArgs @('--upgrade','pip','setuptools','wheel') -Desc 'pip/setuptools/wheel upgrade pós-reparo' }
-                if ($rc -ne 0) { throw "Falha ao atualizar pip/setuptools/wheel após múltiplas rotas (exit $rc). Tentativas: $($script:LastPipFailures -join '; '). Veja logs\pip-install.log." }
+                if ($repairRc -eq 0) { $rc = Invoke-PipInstall -InstallArgs @('pip','setuptools','wheel') -Desc 'pip/setuptools/wheel pós-reparo' }
+                if ($rc -ne 0) { throw "Falha ao preparar pip/setuptools/wheel após múltiplas rotas (exit $rc). Tentativas: $($script:LastPipFailures -join '; '). Veja logs\pip-install.log." }
             }
             [void](Refresh-InstalledPackageCache)
 
@@ -1966,9 +1998,14 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             Log "[OK] PyTorch instalado"
 
             # ---- 7. stable-diffusion.cpp (Z-Image-Turbo)
-            P 55 'Preparando geração de imagem local'
-            Set-InstallState 'installing_stable_diffusion_cpp'
-            [void](Install-StableDiffusionCpp)
+            if ($cfg.vendor -eq 'NVIDIA') {
+                P 55 'Preparando geração de imagem local'
+                Set-InstallState 'installing_stable_diffusion_cpp'
+                [void](Install-StableDiffusionCpp)
+            } else {
+                P 55 'Otimizando instalação para o hardware'
+                Log "[OK] stable-diffusion.cpp CUDA ignorado para $($cfg.vendor); esse binário não é utilizável neste backend."
+            }
 
             # ---- 8. requirements do backend
             P 60 'Instalando dependências do backend (~5-15 min)'
@@ -1991,10 +2028,17 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             $reqEntries = @(Get-RequirementEntries $req)
             $reqCount = $reqEntries.Count
             Log "[OK] $reqName encontrado: $reqCount entradas"
-            Log "==> Instalando $reqName pacote por pacote; pacotes já instalados serão pulados"
             $failedRequirements = @()
             $pythonDependencyFailures = @()
-            for ($i = 0; $i -lt $reqEntries.Count; $i++) {
+            Log "==> Instalando $reqName em lote para compartilhar resolução e downloads"
+            Set-InstallState 'installing_backend_requirements_batch'
+            $batchRc = Invoke-PipInstall -InstallArgs @('-r', $req) -Desc "$reqName em lote"
+            if ($batchRc -eq 0) {
+                Log "[OK] $reqName instalado em uma única resolução pip"
+            } else {
+                Log "[!] Instalação em lote falhou (exit $batchRc). Ativando recuperação incremental apenas para os pacotes pendentes." 'warn'
+                [void](Refresh-InstalledPackageCache)
+                for ($i = 0; $i -lt $reqEntries.Count; $i++) {
                 $entry = $reqEntries[$i]
                 $index = $i + 1
                 $percent = 60 + [math]::Floor(($index / [math]::Max(1, $reqCount)) * 17)
@@ -2028,6 +2072,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                     continue
                 }
                 if ($entry.Package) { Mark-PythonPackageInstalled $entry.Package }
+                }
             }
 
             if ($failedRequirements.Count -gt 0) {
@@ -2083,8 +2128,15 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             $script:FrontendNodeDir = $frontendNode.NodeDir
             Log "[OK] Node.js do frontend: $($frontendNode.NodeVersion) / npm $($frontendNode.NpmVersion) em $($frontendNode.NodeDir)"
 
-            $rc = Run $NPM_EXE @('install','--no-audit','--no-fund') 'npm install'
-            if ($rc -ne 0) { throw "Falha em npm install (exit $rc)" }
+            $packageLockPath = Join-Path $ROOT 'package-lock.json'
+            $nodeModulesPath = Join-Path $ROOT 'node_modules'
+            if ((Test-Path -LiteralPath $packageLockPath) -and -not (Test-Path -LiteralPath $nodeModulesPath)) {
+                $rc = Run $NPM_EXE @('ci','--no-audit','--no-fund','--prefer-offline','--progress=false') 'npm ci'
+                if ($rc -ne 0) { throw "Falha em npm ci (exit $rc)" }
+            } else {
+                $rc = Run $NPM_EXE @('install','--no-audit','--no-fund','--prefer-offline','--progress=false') 'npm install incremental'
+                if ($rc -ne 0) { throw "Falha em npm install (exit $rc)" }
+            }
             Log "[OK] Pacotes npm instalados"
 
             # ---- 11. npm run build
@@ -2115,7 +2167,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 if ($tOut) { $summary += "PyTorch:     $tOut" }
             } catch {}
             $summary += "llama.cpp:   $($cfg.llamaAsset)"
-            $summary += "sd.cpp:      Z-Image-Turbo CUDA 12"
+            if (Test-StableDiffusionCppReady) { $summary += "sd.cpp:      Z-Image-Turbo CUDA 12" }
             if ($vramGb -gt 0) { $summary += "VRAM:        ${vramGb} GB ($($detected.Name))" }
             if ($pythonDependencyFailures.Count -gt 0) {
                 $summary += "Pendências:  $($pythonDependencyFailures.Count) dependência(s) Python; rode instalar.bat novamente para tentar só o que faltou."
@@ -2230,7 +2282,8 @@ Add-Type -AssemblyName System.Windows.Forms
 # Caminhos globais
 # =============================================================================
 $SCRIPT_PATH = if ($PSCommandPath) { $PSCommandPath } elseif ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path } else { throw 'Não foi possível determinar o caminho do atualizador.' }
-$ROOT        = (Resolve-Path -LiteralPath (Split-Path -Parent $SCRIPT_PATH)).ProviderPath
+$LAUNCHER_DIR = (Resolve-Path -LiteralPath (Split-Path -Parent $SCRIPT_PATH)).ProviderPath
+$ROOT         = (Resolve-Path -LiteralPath (Join-Path $LAUNCHER_DIR '..')).ProviderPath
 Set-Location -LiteralPath $ROOT
 $VENV_PY     = Join-Path $ROOT 'backend\neveai\venv\Scripts\python.exe'
 $VERSION_FILE= Join-Path $ROOT 'version.txt'
@@ -2692,9 +2745,13 @@ function Set-Progress([int]$pct, [string]$phase) {
 function Test-NeveAppIntegrity([string]$root) {
     $required = @(
         @{ Path = 'instalar.bat'; Label = 'instalar.bat' },
-        @{ Path = 'instalar.ps1'; Label = 'instalar.ps1' },
+        @{ Path = 'launchers\instalar.ps1'; Label = 'launchers\instalar.ps1' },
+        @{ Path = 'launchers\instalar.vbs'; Label = 'launchers\instalar.vbs' },
+        @{ Path = 'launchers\iniciar.ps1'; Label = 'launchers\iniciar.ps1' },
+        @{ Path = 'launchers\iniciar.vbs'; Label = 'launchers\iniciar.vbs' },
         @{ Path = 'backend\neveai\__init__.py'; Label = 'pacote backend' },
         @{ Path = 'backend\neveai\main.py'; Label = 'backend main.py' },
+        @{ Path = 'backend\neveai\routers\music_generation.py'; Label = 'geração musical' },
         @{ Path = 'backend\neveai\models\users.py'; Label = 'backend\neveai\models\users.py' },
         @{ Path = 'backend\neveai\models\models.py'; Label = 'backend\neveai\models\models.py' },
         @{ Path = 'backend\neveai\models\auths.py'; Label = 'backend\neveai\models\auths.py' },
@@ -3608,9 +3665,13 @@ $ctl.BtnPrimary.Add_Click({
         function Test-NeveAppIntegrity([string]$root) {
             $required = @(
                 @{ Path = 'instalar.bat'; Label = 'instalar.bat' },
-                @{ Path = 'instalar.ps1'; Label = 'instalar.ps1' },
+                @{ Path = 'launchers\instalar.ps1'; Label = 'launchers\instalar.ps1' },
+                @{ Path = 'launchers\instalar.vbs'; Label = 'launchers\instalar.vbs' },
+                @{ Path = 'launchers\iniciar.ps1'; Label = 'launchers\iniciar.ps1' },
+                @{ Path = 'launchers\iniciar.vbs'; Label = 'launchers\iniciar.vbs' },
                 @{ Path = 'backend\neveai\__init__.py'; Label = 'pacote backend' },
                 @{ Path = 'backend\neveai\main.py'; Label = 'backend main.py' },
+                @{ Path = 'backend\neveai\routers\music_generation.py'; Label = 'geração musical' },
                 @{ Path = 'backend\neveai\models\users.py'; Label = 'backend\neveai\models\users.py' },
                 @{ Path = 'backend\neveai\models\models.py'; Label = 'backend\neveai\models\models.py' },
                 @{ Path = 'backend\neveai\models\auths.py'; Label = 'backend\neveai\models\auths.py' },
@@ -3625,13 +3686,25 @@ $ctl.BtnPrimary.Add_Click({
             [pscustomobject]@{ Ok = $missing.Count -eq 0; Missing = $missing }
         }
         function Copy-ReleaseInstallerFiles([string]$sourceRoot, [string]$destinationRoot) {
-            foreach ($fileName in @('instalar.bat','instalar.ps1')) {
+            foreach ($fileName in @('instalar.bat')) {
                 $sourceFile = Join-Path $sourceRoot $fileName
                 if (-not (Test-Path -LiteralPath $sourceFile)) {
                     throw "Release do GitHub não contém $fileName; atualização abortada para evitar instalador antigo."
                 }
                 Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $destinationRoot $fileName) -Force
                 L "[OK] $fileName atualizado a partir do release do GitHub"
+            }
+
+            $sourceLauncherDir = Join-Path $sourceRoot 'launchers'
+            $destinationLauncherDir = Join-Path $destinationRoot 'launchers'
+            New-Item -ItemType Directory -Force -Path $destinationLauncherDir | Out-Null
+            foreach ($fileName in @('instalar.ps1','instalar.vbs','iniciar.ps1','iniciar.vbs')) {
+                $sourceFile = Join-Path $sourceLauncherDir $fileName
+                if (-not (Test-Path -LiteralPath $sourceFile)) {
+                    throw "Release do GitHub não contém launchers\$fileName; atualização abortada para evitar launcher incompleto."
+                }
+                Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $destinationLauncherDir $fileName) -Force
+                L "[OK] launchers\$fileName atualizado a partir do release do GitHub"
             }
         }
         function Get-RelativePath([string]$basePath, [string]$path) {
@@ -4137,7 +4210,8 @@ Add-Type -AssemblyName System.Windows.Forms
 # Caminhos globais
 # =============================================================================
 $SCRIPT_PATH = if ($PSCommandPath) { $PSCommandPath } elseif ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path } else { throw 'NÃ£o foi possÃ­vel determinar o caminho do build.' }
-$ROOT = (Resolve-Path -LiteralPath (Split-Path -Parent $SCRIPT_PATH)).ProviderPath
+$LAUNCHER_DIR = (Resolve-Path -LiteralPath (Split-Path -Parent $SCRIPT_PATH)).ProviderPath
+$ROOT = (Resolve-Path -LiteralPath (Join-Path $LAUNCHER_DIR '..')).ProviderPath
 Set-Location -LiteralPath $ROOT
 $BUILD_DIR = Join-Path $ROOT 'build'
 $DEPLOY_DIR = Join-Path $ROOT 'backend\neveai\frontend'
@@ -4807,6 +4881,7 @@ function Convert-LegacyScriptToHubModule([string]$source, [string]$mode) {
 	$sharedHelpers = @'
 $script:NeveAppCloseRequested = $false
 function Stop-HubNeveProcessTree([int]$ProcessId) {
+	if ($ProcessId -eq $PID) { return }
 	try {
 		$children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$ProcessId" -EA SilentlyContinue)
 		foreach ($child in $children) { Stop-HubNeveProcessTree ([int]$child.ProcessId) }

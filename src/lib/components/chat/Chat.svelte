@@ -143,6 +143,8 @@
 	let generationSpacerScrollLimit: number | null = null;
 	let generationSpacerScrollAllowance: number | null = null;
 	let activeGenerationSpacerHeightLimit: number | null = null;
+	let lastMessagesScrollTop = 0;
+	let generationSpacerUpwardScrollIntentUntil = 0;
 	let messagesBottomWheelLockUntil = 0;
 	let messagesBottomWheelLockRAF: ReturnType<typeof requestAnimationFrame> | null = null;
 	let processing = '';
@@ -174,10 +176,10 @@
 	let imageGenerationEnabled = false;
 	let webSearchEnabled = false;
 	let deepSearchEnabled = false;
-	let codeInterpreterEnabled = false;
 	let codeExecutionEnabled = false;
 	let stableDiffusionEnabled = false;
-	let previousStableDiffusionEnabled = stableDiffusionEnabled;
+	let musicGenerationEnabled = false;
+	let previousMediaGenerationEnabled = stableDiffusionEnabled || musicGenerationEnabled;
 	let stableDiffusionStandbyModel: LocalModel | null = null;
 	let restoringStableDiffusionStandbyModel = false;
 	let thinkingEnabled = true;
@@ -364,7 +366,7 @@
 
 	const restoreStableDiffusionStandbyModel = async () => {
 		if (restoringStableDiffusionStandbyModel || !stableDiffusionStandbyModel) return;
-		if (stableDiffusionEnabled || hasActiveChatResponse()) return;
+		if (stableDiffusionEnabled || musicGenerationEnabled || hasActiveChatResponse()) return;
 
 		const standbyModel = stableDiffusionStandbyModel;
 		restoringStableDiffusionStandbyModel = true;
@@ -427,13 +429,12 @@
 		}
 	};
 
-	$: if (previousStableDiffusionEnabled !== stableDiffusionEnabled) {
-		const wasStableDiffusionEnabled = previousStableDiffusionEnabled;
-		previousStableDiffusionEnabled = stableDiffusionEnabled;
-
-		if (wasStableDiffusionEnabled && !stableDiffusionEnabled) {
+	$: {
+		const mediaGenerationEnabled = stableDiffusionEnabled || musicGenerationEnabled;
+		if (previousMediaGenerationEnabled && !mediaGenerationEnabled) {
 			void restoreStableDiffusionStandbyModel();
 		}
+		previousMediaGenerationEnabled = mediaGenerationEnabled;
 	}
 
 	function openVisionModal(modelName: string): Promise<boolean> {
@@ -486,6 +487,7 @@
 		deepSearchEnabled = false;
 		imageGenerationEnabled = false;
 		stableDiffusionEnabled = false;
+		musicGenerationEnabled = false;
 
 		const storageChatInput = sessionStorage.getItem(
 			`chat-input${chatIdProp ? `-${chatIdProp}` : ''}`
@@ -537,9 +539,10 @@
 						webSearchEnabled = input.webSearchEnabled;
 						deepSearchEnabled = input.deepSearchEnabled ?? false;
 						imageGenerationEnabled = input.imageGenerationEnabled;
-						codeInterpreterEnabled = input.codeInterpreterEnabled;
 						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
 						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
+						musicGenerationEnabled = input.musicGenerationEnabled ?? false;
+						normalizeExclusiveFeatureToggles();
 						thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
 					}
 				} catch (e) {}
@@ -603,9 +606,9 @@
 		webSearchEnabled = false;
 		deepSearchEnabled = false;
 		imageGenerationEnabled = false;
-		codeInterpreterEnabled = false;
 		codeExecutionEnabled = false;
 		stableDiffusionEnabled = false;
+		musicGenerationEnabled = false;
 		params = {};
 
 		if (selectedModelIds.filter((id) => id).length > 0) {
@@ -613,18 +616,48 @@
 		}
 	};
 
-	const normalizeExclusiveFeatureToggles = () => {
-		const hasOtherIntegrationEnabled =
-			webSearchEnabled ||
-			imageGenerationEnabled ||
-			codeInterpreterEnabled ||
-			codeExecutionEnabled ||
-			stableDiffusionEnabled ||
-			selectedToolIds.length > 0 ||
-			selectedFilterIds.length > 0;
+	type ChatIntegrationId =
+		| 'web_search'
+		| 'deep_search'
+		| 'image_generation'
+		| 'code_execution'
+		| 'stable_diffusion'
+		| 'music_generation';
 
-		if (deepSearchEnabled && hasOtherIntegrationEnabled) {
-			deepSearchEnabled = false;
+	const normalizeExclusiveFeatureToggles = (preferred?: ChatIntegrationId) => {
+		const enabledIntegrations: ChatIntegrationId[] = [
+			webSearchEnabled ? 'web_search' : null,
+			deepSearchEnabled ? 'deep_search' : null,
+			imageGenerationEnabled ? 'image_generation' : null,
+			codeExecutionEnabled ? 'code_execution' : null,
+			stableDiffusionEnabled ? 'stable_diffusion' : null,
+			musicGenerationEnabled ? 'music_generation' : null
+		].filter(Boolean) as ChatIntegrationId[];
+
+		if (enabledIntegrations.length > 0) {
+			const keep = preferred && enabledIntegrations.includes(preferred)
+				? preferred
+				: enabledIntegrations.at(-1);
+
+			webSearchEnabled = keep === 'web_search';
+			deepSearchEnabled = keep === 'deep_search';
+			imageGenerationEnabled = keep === 'image_generation';
+			codeExecutionEnabled = keep === 'code_execution';
+			stableDiffusionEnabled = keep === 'stable_diffusion';
+			musicGenerationEnabled = keep === 'music_generation';
+			selectedToolIds = [];
+			selectedFilterIds = [];
+			return;
+		}
+
+		if (selectedFilterIds.length > 0) {
+			selectedFilterIds = [selectedFilterIds.at(-1)];
+			selectedToolIds = [];
+			return;
+		}
+
+		if (selectedToolIds.length > 1) {
+			selectedToolIds = [selectedToolIds.at(-1)];
 		}
 	};
 
@@ -683,14 +716,6 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.web_search)
 				) {
 					webSearchEnabled = model.info.meta.defaultFeatureIds.includes('web_search');
-				}
-
-				if (
-					model.info?.meta?.capabilities?.['code_interpreter'] &&
-					$config?.features?.enable_code_interpreter &&
-					($user?.role === 'admin' || $user?.permissions?.features?.code_interpreter)
-				) {
-					codeInterpreterEnabled = model.info.meta.defaultFeatureIds.includes('code_interpreter');
 				}
 
 				if ($config?.features?.enable_code_execution) {
@@ -1786,9 +1811,9 @@
 				webSearchEnabled = false;
 				deepSearchEnabled = false;
 				imageGenerationEnabled = false;
-				codeInterpreterEnabled = false;
 				codeExecutionEnabled = false;
 				stableDiffusionEnabled = false;
+				musicGenerationEnabled = false;
 
 				try {
 					const input = JSON.parse(storageChatInput);
@@ -1801,9 +1826,10 @@
 						webSearchEnabled = input.webSearchEnabled;
 						deepSearchEnabled = input.deepSearchEnabled ?? false;
 						imageGenerationEnabled = input.imageGenerationEnabled;
-						codeInterpreterEnabled = input.codeInterpreterEnabled;
 						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
 						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
+						musicGenerationEnabled = input.musicGenerationEnabled ?? false;
+						normalizeExclusiveFeatureToggles();
 						thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
 					}
 				} catch (e) {}
@@ -2243,6 +2269,8 @@
 		generationSpacerScrollLimit = null;
 		generationSpacerScrollAllowance = null;
 		activeGenerationSpacerHeightLimit = null;
+		lastMessagesScrollTop = 0;
+		generationSpacerUpwardScrollIntentUntil = 0;
 
 		resetInput();
 		await chatId.set('');
@@ -2273,10 +2301,6 @@
 
 		if ($page.url.searchParams.get('image-generation') === 'true') {
 			imageGenerationEnabled = true;
-		}
-
-		if ($page.url.searchParams.get('code-interpreter') === 'true') {
-			codeInterpreterEnabled = true;
 		}
 
 		if ($page.url.searchParams.get('tools')) {
@@ -2368,6 +2392,8 @@
 				generationSpacerScrollLimit = null;
 				generationSpacerScrollAllowance = null;
 				activeGenerationSpacerHeightLimit = null;
+				lastMessagesScrollTop = 0;
+				generationSpacerUpwardScrollIntentUntil = 0;
 
 				// Update artifact contents synchronously before tick() so that Artifacts.svelte
 				// mounts with the correct content (prevents stale preview from previous chat)
@@ -2546,10 +2572,6 @@
 			generationBottomSpacerHeight = nextSpacerHeight;
 			await tick();
 		}
-
-		if (spacerHeightChanged && messagesContainerElement) {
-			messagesContainerElement.scrollTop = desiredScrollTop;
-		}
 		scheduleScrollStateUpdate({ updateAutoScroll: !anchoredGeneratingMessageId });
 	};
 
@@ -2562,10 +2584,9 @@
 			cancelAnimationFrame(generationSpacerRAF);
 		}
 
-		const desiredScrollTop = messagesContainerElement.scrollTop;
 		generationSpacerRAF = requestAnimationFrame(() => {
 			generationSpacerRAF = null;
-			fitGenerationSpacerToViewport(desiredScrollTop);
+			fitGenerationSpacerToViewport();
 		});
 	};
 
@@ -2654,6 +2675,7 @@
 		generationSpacerScrollLimit = null;
 		generationSpacerScrollAllowance = null;
 		activeGenerationSpacerHeightLimit = null;
+		generationSpacerUpwardScrollIntentUntil = 0;
 		autoScroll = false;
 		cancelGenerationAnchorRAF();
 
@@ -2678,7 +2700,7 @@
 			}
 
 			attempts += 1;
-			scrollToMessageTop(scrollTargetMessageId, 'auto', { topOffset }).then(() => {
+			scrollToMessageTop(scrollTargetMessageId, 'auto', { topOffset, layoutFrames: 0 }).then(() => {
 				const frame = requestAnimationFrame(run);
 				generationAnchorRAF = [frame];
 			});
@@ -2691,7 +2713,10 @@
 	const anchorGeneratingMessageTop = async (
 		scrollTargetMessageId: string,
 		trackedMessageId = scrollTargetMessageId,
-		{ topOffset = 0 }: { topOffset?: number } = {}
+		{
+			topOffset = 0,
+			stabilizeAcrossFrames = true
+		}: { topOffset?: number; stabilizeAcrossFrames?: boolean } = {}
 	) => {
 		anchoredGeneratingMessageId = trackedMessageId;
 		generationBottomSpacerHeight = 0;
@@ -2703,8 +2728,12 @@
 		await scrollToMessageTop(scrollTargetMessageId, 'auto', { topOffset, layoutFrames: 0 });
 		await fitGenerationSpacerToViewport(messagesContainerElement?.scrollTop ?? 0);
 		activeGenerationSpacerHeightLimit = generationBottomSpacerHeight;
+		lastMessagesScrollTop = messagesContainerElement?.scrollTop ?? 0;
+		generationSpacerUpwardScrollIntentUntil = 0;
 		autoScroll = false;
-		stabilizeGeneratingAnchor(scrollTargetMessageId, trackedMessageId, topOffset);
+		if (stabilizeAcrossFrames) {
+			stabilizeGeneratingAnchor(scrollTargetMessageId, trackedMessageId, topOffset);
+		}
 		scheduleScrollStateUpdate({ updateAutoScroll: false });
 	};
 
@@ -2717,6 +2746,8 @@
 		await tick();
 		await scrollToContentBottom('auto');
 		activeGenerationSpacerHeightLimit = generationBottomSpacerHeight;
+		lastMessagesScrollTop = messagesContainerElement?.scrollTop ?? 0;
+		generationSpacerUpwardScrollIntentUntil = 0;
 		autoScroll = false;
 		scheduleScrollStateUpdate({ updateAutoScroll: false });
 	};
@@ -2772,6 +2803,7 @@
 			}
 			anchoredGeneratingMessageId = null;
 			activeGenerationSpacerHeightLimit = null;
+			generationSpacerUpwardScrollIntentUntil = 0;
 			cancelGenerationAnchorRAF();
 			if (generationSpacerRAF) {
 				cancelAnimationFrame(generationSpacerRAF);
@@ -2791,7 +2823,7 @@
 				messagesContainerElement.clientHeight
 		);
 
-		if (messagesContainerElement.scrollTop <= maxScrollWithoutSpacer + 5) {
+		if (messagesContainerElement.scrollTop <= maxScrollWithoutSpacer + 0.5) {
 			generationBottomSpacerHeight = 0;
 			generationSpacerScrollLimit = null;
 			generationSpacerScrollAllowance = null;
@@ -2828,6 +2860,63 @@
 	const getMessagesMaxScrollTop = () => {
 		if (!messagesContainerElement) return 0;
 		return Math.max(0, messagesContainerElement.scrollHeight - messagesContainerElement.clientHeight);
+	};
+
+	const consumeGenerationSpacerFromUpwardScroll = () => {
+		if (!messagesContainerElement) return;
+
+		const currentScrollTop = messagesContainerElement.scrollTop;
+		const upwardDistance = lastMessagesScrollTop - currentScrollTop;
+		lastMessagesScrollTop = currentScrollTop;
+
+		if (
+			generationBottomSpacerHeight <= 0 ||
+			upwardDistance <= 0 ||
+			performance.now() > generationSpacerUpwardScrollIntentUntil
+		) {
+			return;
+		}
+
+		const maxScrollWithoutSpacer = getMaxScrollWithoutGenerationSpacer();
+		const nextSpacerHeight = Math.max(0, generationBottomSpacerHeight - upwardDistance);
+		if (generationBottomSpacerHeight - nextSpacerHeight < 0.5) return;
+
+		if (currentScrollTop <= maxScrollWithoutSpacer + 0.5) {
+			generationBottomSpacerHeight = 0;
+			generationSpacerScrollLimit = null;
+			generationSpacerScrollAllowance = null;
+			if (anchoredGeneratingMessageId) {
+				activeGenerationSpacerHeightLimit = 0;
+			}
+			return;
+		}
+
+		generationBottomSpacerHeight = nextSpacerHeight;
+		if (anchoredGeneratingMessageId) {
+			activeGenerationSpacerHeightLimit = nextSpacerHeight;
+		} else if (generationSpacerScrollLimit !== null) {
+			const remainingAllowance = Math.min(
+				nextSpacerHeight,
+				Math.max(0, currentScrollTop - maxScrollWithoutSpacer)
+			);
+			generationSpacerScrollAllowance = remainingAllowance;
+			generationSpacerScrollLimit = maxScrollWithoutSpacer + remainingAllowance;
+		}
+	};
+
+	const beginGenerationSpacerPointerScroll = () => {
+		if (!messagesContainerElement) return;
+		cancelGenerationAnchorRAF();
+		lastMessagesScrollTop = messagesContainerElement.scrollTop;
+		if (generationBottomSpacerHeight > 0) {
+			generationSpacerUpwardScrollIntentUntil = Number.POSITIVE_INFINITY;
+		}
+	};
+
+	const endGenerationSpacerPointerScroll = () => {
+		if (generationSpacerUpwardScrollIntentUntil === Number.POSITIVE_INFINITY) {
+			generationSpacerUpwardScrollIntentUntil = 0;
+		}
 	};
 
 	const cancelMessagesBottomWheelLock = () => {
@@ -2876,13 +2965,20 @@
 
 	const preventMessagesBottomWheelJitter = (event: WheelEvent) => {
 		if (!messagesContainerElement) return;
+		if (anchoredGeneratingMessageId) {
+			cancelGenerationAnchorRAF();
+		}
 
 		if (event.deltaY < 0) {
+			if (generationBottomSpacerHeight > 0) {
+				generationSpacerUpwardScrollIntentUntil = performance.now() + 180;
+			}
 			cancelMessagesBottomWheelLock();
 			return;
 		}
 
 		if (event.deltaY <= 0) return;
+		generationSpacerUpwardScrollIntentUntil = 0;
 
 		const idleGenerationScrollLimit =
 			!anchoredGeneratingMessageId &&
@@ -3050,7 +3146,7 @@
 
 		taskIds = null;
 
-		if (!stableDiffusionEnabled) {
+		if (!stableDiffusionEnabled && !musicGenerationEnabled) {
 			await restoreStableDiffusionStandbyModel();
 		}
 
@@ -3582,7 +3678,7 @@
 				const loadedModels = await getLoadedLocalModels(localStorage.token);
 				const loadedModel = loadedModels.find((lm) => lm.id === modelId) ?? null;
 
-				if (stableDiffusionEnabled) {
+				if (stableDiffusionEnabled || musicGenerationEnabled) {
 					stableDiffusionStandbyModel = loadedModel ?? loadedModels[0] ?? stableDiffusionStandbyModel;
 					continue;
 				}
@@ -3680,7 +3776,7 @@
 					const loadedModels = await getLoadedLocalModels(localStorage.token);
 					const loadedModel = loadedModels.find((lm) => lm.id === modelId) ?? null;
 
-					if (stableDiffusionEnabled) {
+					if (stableDiffusionEnabled || musicGenerationEnabled) {
 						stableDiffusionStandbyModel = loadedModel ?? loadedModels[0] ?? stableDiffusionStandbyModel;
 						continue;
 					}
@@ -3929,7 +4025,8 @@
 
 		if (initialResponseMessageId) {
 			await anchorGeneratingMessageTop(parentId, initialResponseMessageId, {
-				topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX
+				topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX,
+				stabilizeAcrossFrames: false
 			});
 		}
 
@@ -3998,9 +4095,9 @@
 			deepSearchEnabled &&
 			!webSearchEnabled &&
 			!imageGenerationEnabled &&
-			!codeInterpreterEnabled &&
 			!codeExecutionEnabled &&
 			!stableDiffusionEnabled &&
+			!musicGenerationEnabled &&
 			selectedToolIds.length === 0 &&
 			selectedFilterIds.length === 0;
 
@@ -4013,11 +4110,6 @@
 					$config?.features?.enable_image_generation &&
 					($user?.role === 'admin' || $user?.permissions?.features?.image_generation)
 						? imageGenerationEnabled
-						: false,
-				code_interpreter:
-					$config?.features?.enable_code_interpreter &&
-					($user?.role === 'admin' || $user?.permissions?.features?.code_interpreter)
-						? codeInterpreterEnabled
 						: false,
 				web_search:
 					$config?.features?.enable_web_search &&
@@ -4037,6 +4129,11 @@
 					$config?.features?.enable_stable_diffusion &&
 					($user?.role === 'admin' || $user?.permissions?.features?.stable_diffusion)
 						? stableDiffusionEnabled
+						: false,
+				music_generation:
+					$config?.features?.enable_music_generation &&
+					($user?.role === 'admin' || $user?.permissions?.features?.music_generation)
+						? musicGenerationEnabled
 						: false
 			};
 
@@ -4519,6 +4616,16 @@
 		}
 		_contentBuffers.clear();
 
+		if (musicGenerationEnabled) {
+			void fetch(`${NEVEAI_API_BASE_URL}/music-generation/cancel`, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					...(localStorage.token && { Authorization: `Bearer ${localStorage.token}` })
+				}
+			}).catch(() => null);
+		}
+
 		if (taskIds) {
 			for (const taskId of taskIds) {
 				const res = await stopTask(localStorage.token, taskId).catch((error) => {
@@ -4629,7 +4736,8 @@
 
 				await tick();
 				await anchorGeneratingMessageTop(userMessage.id, message.id, {
-					topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX
+					topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX,
+					stabilizeAcrossFrames: false
 				});
 				await saveChatHandler($chatId, history);
 
@@ -4802,7 +4910,7 @@
 		let _chatId = $chatId;
 
 		if (!$temporaryChatEnabled) {
-			const initialTitle = stableDiffusionEnabled
+			const initialTitle = stableDiffusionEnabled || musicGenerationEnabled
 				? getInitialImageChatTitle(history) || $i18n.t('New Chat')
 				: $i18n.t('New Chat');
 
@@ -5083,9 +5191,14 @@
 								class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden"
 								id="messages-container"
 								bind:this={messagesContainerElement}
-								style="overflow-anchor: none;"
+								style="overflow-anchor: none; scrollbar-gutter: stable both-edges;"
 								on:wheel|nonpassive={preventMessagesBottomWheelJitter}
+								on:pointerdown={beginGenerationSpacerPointerScroll}
+								on:pointerup={endGenerationSpacerPointerScroll}
+								on:pointercancel={endGenerationSpacerPointerScroll}
+								on:pointerleave={endGenerationSpacerPointerScroll}
 								on:scroll={(e) => {
+									consumeGenerationSpacerFromUpwardScroll();
 									if (clampMessagesBottomWheelJitter()) {
 										return;
 									}
@@ -5136,11 +5249,11 @@
 									bind:selectedToolIds
 									bind:selectedFilterIds
 									bind:imageGenerationEnabled
-									bind:codeInterpreterEnabled
 									bind:codeExecutionEnabled
 									bind:webSearchEnabled
 									bind:deepSearchEnabled
 									bind:stableDiffusionEnabled
+									bind:musicGenerationEnabled
 									bind:thinkingEnabled
 									bind:thinkingExtendedEnabled
 									bind:atSelectedModel
@@ -5213,11 +5326,11 @@
 									bind:selectedToolIds
 									bind:selectedFilterIds
 									bind:imageGenerationEnabled
-									bind:codeInterpreterEnabled
 									bind:codeExecutionEnabled
 									bind:webSearchEnabled
 									bind:deepSearchEnabled
 									bind:stableDiffusionEnabled
+									bind:musicGenerationEnabled
 									bind:thinkingEnabled
 									bind:thinkingExtendedEnabled
 									bind:atSelectedModel
@@ -5274,7 +5387,6 @@
 					{stopResponse}
 					{showMessage}
 					{eventTarget}
-					{codeInterpreterEnabled}
 				/>
 			</PaneGroup>
 		</div>

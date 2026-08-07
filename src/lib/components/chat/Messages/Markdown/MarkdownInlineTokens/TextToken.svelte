@@ -11,9 +11,9 @@
 {#if done}
 	{token?.raw}
 {:else}
-	{#each texts as text}
-		<span class="" transition:fade={{ duration: 100 }}>
-			{text}{' '}
+	{#each texts as text, index}
+		<span class="" in:fade={{ duration: 100 }}>
+			{text}{index < texts.length - 1 ? ' ' : ''}
 		</span>
 	{/each}
 {/if}

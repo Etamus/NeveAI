@@ -60,7 +60,9 @@ export const DEFAULT_PERMISSIONS = {
 		web_search: true,
 		image_generation: true,
 		code_interpreter: true,
-		memories: true
+		memories: true,
+		stable_diffusion: true,
+		music_generation: true
 	},
 	settings: {
 		interface: true

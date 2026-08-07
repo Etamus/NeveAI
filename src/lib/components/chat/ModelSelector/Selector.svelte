@@ -695,7 +695,7 @@
 		transition={flyAndScale}
 		side={$mobile ? 'bottom' : 'bottom-start'}
 		sideOffset={6}
-		alignOffset={-1}
+		alignOffset={$mobile ? -1 : 18}
 	>
 		<slot>
 			{#if searchEnabled}

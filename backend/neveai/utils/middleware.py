@@ -16,13 +16,14 @@ import inspect
 import re
 import ast
 import unicodedata
+import io
 from urllib.parse import unquote
 
 from uuid import uuid4
 from concurrent.futures import ThreadPoolExecutor
 
 
-from fastapi import Request, HTTPException
+from fastapi import Request, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 from starlette.responses import Response, StreamingResponse, JSONResponse
 
@@ -66,6 +67,7 @@ from neveai.utils.files import (
     get_image_base64_from_url,
     get_image_url_from_base64,
 )
+from neveai.routers.files import upload_file_handler
 
 
 from neveai.models.users import UserModel
@@ -104,7 +106,7 @@ from neveai.utils.tools import (
     get_updated_tool_function,
     get_terminal_tools,
 )
-from neveai.utils.access_control import has_connection_access
+from neveai.utils.access_control import has_connection_access, has_permission
 from neveai.utils.plugin import load_function_module_by_id
 from neveai.utils.filter import (
     get_sorted_filter_ids,
@@ -1807,6 +1809,163 @@ def _collect_stable_diffusion_prompt(
     return _get_all_text_from_message(last_user_message)
 
 
+_EXPLICIT_MUSIC_LYRICS_PATTERN = re.compile(
+    r"(?is)\b(?:"
+    r"com\s+(?:esse|este|esta|essa|o\s+seguinte|a\s+seguinte)\s+(?:texto|letra)"
+    r"|(?:use|utilize|cante)\s+(?:exatamente\s+)?(?:esse|este|esta|essa|o\s+seguinte|a\s+seguinte)\s+(?:texto|letra)"
+    r"|(?:texto|letra)(?:\s+(?:abaixo|a\s+seguir))?"
+    r")\s*:\s*"
+)
+
+
+def _strip_music_lyrics_fence(value: str) -> str:
+    lyrics = value.strip()
+    if not lyrics.startswith("```"):
+        return lyrics
+    first_newline = lyrics.find("\n")
+    if first_newline < 0:
+        return lyrics.strip("`").strip()
+    lyrics = lyrics[first_newline + 1 :]
+    if lyrics.rstrip().endswith("```"):
+        lyrics = lyrics.rstrip()[:-3]
+    return lyrics.strip()
+
+
+def _split_music_request(prompt: str) -> tuple[str, Optional[str]]:
+    match = _EXPLICIT_MUSIC_LYRICS_PATTERN.search(prompt)
+    if not match:
+        return prompt.strip(), None
+
+    style_request = prompt[: match.start()].strip(" \t\r\n,.;-")
+    explicit_lyrics = _strip_music_lyrics_fence(prompt[match.end() :])
+    return style_request or "Crie uma música fiel ao estilo solicitado.", explicit_lyrics or None
+
+
+def _fallback_music_caption(style_request: str) -> str:
+    normalized = unicodedata.normalize("NFKD", style_request).encode("ascii", "ignore").decode().lower()
+    style_hints = []
+    if "medieval" in normalized:
+        style_hints.append(
+            "authentic medieval folk music, lute, harp, hurdy-gurdy, wooden flutes, frame drums, modal melody, historical atmosphere"
+        )
+    if "rock" in normalized:
+        style_hints.append("rock music with electric guitars, bass and live drums")
+    if "sertanejo" in normalized:
+        style_hints.append("Brazilian sertanejo music")
+    if "pop" in normalized:
+        style_hints.append("pop music")
+    if "calm" in normalized or "calma" in normalized:
+        style_hints.append("calm and gentle mood")
+    if "alegr" in normalized:
+        style_hints.append("joyful mood")
+
+    translated_hints = ", ".join(style_hints)
+    prefix = f"{translated_hints}. " if translated_hints else ""
+    return (
+        f"{prefix}Strictly follow this original music request without changing its genre, era, "
+        f"mood or instruments: {style_request}"
+    )[:2000]
+
+
+async def _prepare_music_generation_plan(
+    request: Request, form_data: dict, user, prompt: str
+) -> dict:
+    style_request, explicit_lyrics = _split_music_request(prompt)
+    instrumental_hint = bool(
+        re.search(
+            r"(?i)\b(?:instrumental|sem\s+(?:voz|vocais|letra)|apenas\s+instrumentos?)\b",
+            style_request,
+        )
+    ) and explicit_lyrics is None
+
+    if explicit_lyrics is not None:
+        instruction = (
+            "Converta o pedido musical abaixo em uma descrição técnica curta e detalhada, "
+            "em inglês, otimizada para um modelo text-to-music. Preserve rigorosamente gênero, "
+            "época, clima, instrumentos, ritmo e tipo de voz; não substitua o estilo e não "
+            "invente outro. Responda somente em JSON válido no formato {\"caption\":\"...\"}."
+        )
+        max_tokens = 320
+    else:
+        instruction = (
+            "Prepare uma entrada fiel para um modelo text-to-music. Responda somente em JSON "
+            "válido com caption, lyrics e instrumental. caption deve ser uma descrição técnica "
+            "em inglês que preserve rigorosamente gênero, época, clima, instrumentos, ritmo, "
+            "tema e tipo de voz pedidos. Se for instrumental, use instrumental=true e lyrics=\"\". "
+            "Caso tenha voz, use instrumental=false e escreva uma letra completa somente em "
+            "português do Brasil, sem palavras em outros idiomas e sem trocar o assunto pedido."
+        )
+        max_tokens = 1400
+
+    caption = ""
+    generated_lyrics = ""
+    generated_instrumental = instrumental_hint
+    model_id = form_data.get("model")
+    models = request.app.state.MODELS
+    if model_id in models:
+        task_model_id = get_task_model_id(
+            model_id,
+            request.app.state.config.TASK_MODEL,
+            request.app.state.config.TASK_MODEL_EXTERNAL,
+            models,
+        )
+        encoder_payload = {
+            "model": task_model_id,
+            "stream": False,
+            "no_think": True,
+            "temperature": 0.1,
+            "max_tokens": max_tokens,
+            "messages": [
+                {"role": "system", "content": instruction},
+                {"role": "user", "content": style_request},
+            ],
+            "metadata": {"task": "music_prompt_generation"},
+        }
+        try:
+            encoder_response = await generate_chat_completion(
+                request,
+                form_data=encoder_payload,
+                user=user,
+                bypass_system_prompt=True,
+            )
+            if isinstance(encoder_response, dict):
+                choices = encoder_response.get("choices") or []
+                encoder_content = str(
+                    (choices[0].get("message") or {}).get("content") or ""
+                ).strip() if choices else ""
+                json_start = encoder_content.find("{")
+                json_end = encoder_content.rfind("}")
+                if json_start >= 0 and json_end > json_start:
+                    encoded = json.loads(encoder_content[json_start : json_end + 1])
+                    caption = str(encoded.get("caption") or "").strip()
+                    generated_lyrics = str(encoded.get("lyrics") or "").strip()
+                    raw_instrumental = encoded.get("instrumental", instrumental_hint)
+                    generated_instrumental = raw_instrumental is True or str(
+                        raw_instrumental
+                    ).strip().lower() in {"true", "1", "sim", "yes"}
+        except Exception as exc:
+            log.warning("Music handler: prompt encoder failed: %s", exc)
+
+    caption = caption[:2000] if caption else _fallback_music_caption(style_request)
+    if explicit_lyrics is not None:
+        return {
+            "caption": caption,
+            "lyrics": explicit_lyrics[:4095],
+            "instrumental": False,
+        }
+    if generated_instrumental or instrumental_hint:
+        return {"caption": caption, "lyrics": "", "instrumental": True}
+    if not generated_lyrics:
+        raise RuntimeError(
+            "Não foi possível preparar uma letra fiel ao pedido. Tente descrevê-la novamente."
+        )
+    return {
+        "caption": caption,
+        "lyrics": generated_lyrics[:4095],
+        "instrumental": False,
+    }
+
+
 def _is_chat_image_file(file_item: Any) -> bool:
     if not isinstance(file_item, dict):
         return False
@@ -1980,6 +2139,170 @@ async def chat_stable_diffusion_handler(
                     "done": True,
                     "content": "",
                 },
+            }
+        )
+
+    return form_data
+
+
+async def chat_music_generation_handler(
+    request: Request, form_data: dict, extra_params: dict, user
+):
+    """Generate and persist a local ACE-Step music result from the chat prompt."""
+    metadata = extra_params.get("__metadata__", {})
+    __event_emitter__ = extra_params.get("__event_emitter__")
+    if not __event_emitter__:
+        return form_data
+
+    prompt = _collect_stable_diffusion_prompt(
+        form_data.get("messages", []),
+        metadata.get("parent_message"),
+    )
+    last_status = ""
+
+    async def emit_progress(description: str) -> None:
+        nonlocal last_status
+        description = str(description or "Gerando música...").strip()
+        if not description or description == last_status:
+            return
+        last_status = description
+        await __event_emitter__(
+            {
+                "type": "status",
+                "data": {
+                    "action": "music_generation",
+                    "description": description,
+                    "done": False,
+                },
+            }
+        )
+
+    await emit_progress("Preparando a geração de música...")
+
+    try:
+        if not request.app.state.config.ENABLE_MUSIC_GENERATION:
+            raise RuntimeError("A geração de música está desativada.")
+        if not has_permission(
+            user.id,
+            "features.music_generation",
+            request.app.state.config.USER_PERMISSIONS,
+        ):
+            raise RuntimeError("Você não tem permissão para gerar músicas.")
+
+        from neveai.routers.llamacpp import model_manager
+        from neveai.routers.music_generation import ace_step_runtime
+
+        await emit_progress("Interpretando o pedido...")
+        music_plan = await _prepare_music_generation_plan(
+            request, form_data, user, prompt
+        )
+
+        llm_standby_info = None
+        try:
+            llm_standby_info = await model_manager.standby()
+        except Exception as exc:
+            log.warning("Music handler: failed to put LLM in standby: %s", exc)
+
+        try:
+            generated = await ace_step_runtime.generate(
+                prompt, emit_progress, music_plan=music_plan
+            )
+            audio_data = generated["audio"]
+            content_type = generated.get("content_type") or "audio/mpeg"
+            extension = {
+                "audio/mpeg": "mp3",
+                "audio/mp3": "mp3",
+                "audio/wav": "wav",
+                "audio/x-wav": "wav",
+                "audio/flac": "flac",
+                "audio/ogg": "ogg",
+            }.get(content_type, "mp3")
+            filename = f"musica-neve-{uuid4().hex[:8]}.{extension}"
+            upload = UploadFile(
+                file=io.BytesIO(audio_data),
+                filename=filename,
+                headers={"content-type": content_type},
+            )
+            file_item = upload_file_handler(
+                request,
+                file=upload,
+                metadata={
+                    "source": "ace-step-1.5-turbo",
+                    "prompt": generated.get("prompt") or prompt,
+                    "lyrics": generated.get("lyrics") or "",
+                    "music": generated.get("metadata") or {},
+                },
+                process=False,
+                user=user,
+            )
+            audio_url = str(
+                request.app.url_path_for("get_file_content_by_id", id=file_item.id)
+            )
+
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {
+                        "action": "music_generation",
+                        "description": "Música criada",
+                        "done": True,
+                    },
+                }
+            )
+            await __event_emitter__(
+                {
+                    "type": "files",
+                    "data": {
+                        "files": [
+                            {
+                                "id": file_item.id,
+                                "type": "audio",
+                                "url": audio_url,
+                                "name": filename,
+                                "content_type": content_type,
+                                "size": len(audio_data),
+                            }
+                        ]
+                    },
+                }
+            )
+            await __event_emitter__(
+                {
+                    "type": "chat:completion",
+                    "data": {"done": True, "content": ""},
+                }
+            )
+            metadata["skip_llm"] = True
+        finally:
+            if llm_standby_info:
+                log.info("LLM mantido em standby após geração de música.")
+
+    except asyncio.CancelledError:
+        metadata["skip_llm"] = True
+        raise
+    except Exception as exc:
+        log.exception("Music generation failed")
+        metadata["skip_llm"] = True
+        error_message = (
+            str(exc).splitlines()[0]
+            if str(exc).strip()
+            else "Não foi possível concluir a geração. Tente novamente."
+        )
+        await __event_emitter__(
+            {
+                "type": "status",
+                "data": {
+                    "action": "music_generation",
+                    "description": f"Falha ao criar música: {error_message}",
+                    "done": True,
+                    "error": True,
+                },
+            }
+        )
+        await __event_emitter__(
+            {
+                "type": "chat:completion",
+                "data": {"done": True, "content": ""},
             }
         )
 
@@ -3016,6 +3339,11 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 form_data = await chat_stable_diffusion_handler(
                     request, form_data, extra_params, user
                 )
+
+        if "music_generation" in features and features["music_generation"]:
+            form_data = await chat_music_generation_handler(
+                request, form_data, extra_params, user
+            )
 
         if "code_interpreter" in features and features["code_interpreter"]:
             # Skip XML-tag prompt injection when native FC is enabled â€”

@@ -25,8 +25,9 @@
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
 	import Atom02 from '$lib/components/icons/Atom02.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
-	import Terminal from '$lib/components/icons/Terminal.svelte';
-	import Switch from '$lib/components/common/Switch.svelte';
+	import ImageIcon from '$lib/components/icons/Image.svelte';
+	import MusicNote from '$lib/components/icons/MusicNote.svelte';
+	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Notes from './InputMenu/Notes.svelte';
 
@@ -48,7 +49,7 @@
 	export let onUpload: Function;
 	export let onClose: Function;
 
-	// Integration props (merged from IntegrationsMenu)
+	// Integration props
 	export let selectedToolIds: string[] = [];
 	export let toggleFilters: { id: string; name: string; description?: string; icon?: string }[] = [];
 	export let selectedFilterIds: string[] = [];
@@ -57,12 +58,12 @@
 	export let deepSearchEnabled = false;
 	export let showImageGenerationButton = false;
 	export let imageGenerationEnabled = false;
-	export let showCodeInterpreterButton = false;
-	export let codeInterpreterEnabled = false;
 	export let showCodeExecutionButton = false;
 	export let codeExecutionEnabled = false;
 	export let showStableDiffusionButton = false;
 	export let stableDiffusionEnabled = false;
+	export let showMusicGenerationButton = false;
+	export let musicGenerationEnabled = false;
 	export let onShowValves: Function = () => {};
 
 	let show = false;
@@ -103,41 +104,110 @@
 		selectedToolIds = selectedToolIds.filter((id) => tools && Object.keys(tools).includes(id));
 	};
 
-	const disabledToggleClass = (disabled: boolean) =>
-		disabled ? 'opacity-40 pointer-events-none' : '';
+	type IntegrationId =
+		| 'web_search'
+		| 'deep_search'
+		| 'image_generation'
+		| 'code_execution'
+		| 'stable_diffusion'
+		| 'music_generation';
 
-	$: hasToolOrFilterEnabled = selectedToolIds.length > 0 || selectedFilterIds.length > 0;
-	$: webSearchBlocked =
-		!webSearchEnabled &&
-		(deepSearchEnabled || stableDiffusionEnabled || codeInterpreterEnabled || imageGenerationEnabled);
-	$: deepSearchBlocked =
-		!deepSearchEnabled &&
-		(webSearchEnabled ||
-			imageGenerationEnabled ||
-			codeInterpreterEnabled ||
-			codeExecutionEnabled ||
-			stableDiffusionEnabled ||
-			hasToolOrFilterEnabled);
-	$: imageGenerationBlocked =
-		!imageGenerationEnabled &&
-		(deepSearchEnabled ||
-			stableDiffusionEnabled ||
-			webSearchEnabled ||
-			codeInterpreterEnabled ||
-			codeExecutionEnabled);
-	$: codeInterpreterBlocked =
-		!codeInterpreterEnabled &&
-		(deepSearchEnabled || stableDiffusionEnabled || webSearchEnabled || imageGenerationEnabled);
-	$: codeExecutionBlocked =
-		!codeExecutionEnabled && (deepSearchEnabled || stableDiffusionEnabled || imageGenerationEnabled);
-	$: stableDiffusionBlocked =
-		!stableDiffusionEnabled &&
-		(deepSearchEnabled ||
-			webSearchEnabled ||
-			imageGenerationEnabled ||
-			codeInterpreterEnabled ||
-			codeExecutionEnabled);
-	$: toolsAndFiltersBlocked = deepSearchEnabled;
+	const clearNativeIntegrations = () => {
+		webSearchEnabled = false;
+		deepSearchEnabled = false;
+		imageGenerationEnabled = false;
+		codeExecutionEnabled = false;
+		stableDiffusionEnabled = false;
+		musicGenerationEnabled = false;
+	};
+
+	const closeIntegrationsMenu = () => {
+		tab = '';
+		show = false;
+	};
+
+	const integrationOptionClass = (enabled: boolean) =>
+		enabled
+			? 'bg-gray-100 hover:bg-gray-100 dark:bg-gray-800/70 dark:hover:bg-gray-800/70'
+			: 'hover:bg-gray-50 dark:hover:bg-gray-800/50';
+
+	const isNativeIntegrationEnabled = (integration: IntegrationId) => {
+		switch (integration) {
+			case 'web_search':
+				return webSearchEnabled;
+			case 'deep_search':
+				return deepSearchEnabled;
+			case 'image_generation':
+				return imageGenerationEnabled;
+			case 'code_execution':
+				return codeExecutionEnabled;
+			case 'stable_diffusion':
+				return stableDiffusionEnabled;
+			case 'music_generation':
+				return musicGenerationEnabled;
+		}
+	};
+
+	const toggleNativeIntegration = (integration: IntegrationId) => {
+		const enable = !isNativeIntegrationEnabled(integration);
+		clearNativeIntegrations();
+		selectedToolIds = [];
+		selectedFilterIds = [];
+
+		if (!enable) {
+			closeIntegrationsMenu();
+			return;
+		}
+
+		switch (integration) {
+			case 'web_search':
+				webSearchEnabled = true;
+				break;
+			case 'deep_search':
+				deepSearchEnabled = true;
+				break;
+			case 'image_generation':
+				imageGenerationEnabled = true;
+				break;
+			case 'code_execution':
+				codeExecutionEnabled = true;
+				break;
+			case 'stable_diffusion':
+				stableDiffusionEnabled = true;
+				break;
+			case 'music_generation':
+				musicGenerationEnabled = true;
+				break;
+		}
+
+		closeIntegrationsMenu();
+	};
+
+	const selectFilter = (filterId: string) => {
+		if (selectedFilterIds.includes(filterId)) {
+			selectedFilterIds = [];
+			closeIntegrationsMenu();
+			return;
+		}
+
+		clearNativeIntegrations();
+		selectedToolIds = [];
+		selectedFilterIds = [filterId];
+		closeIntegrationsMenu();
+	};
+
+	const selectTool = (toolId: string) => {
+		if (selectedToolIds.includes(toolId)) {
+			selectedToolIds = [];
+			closeIntegrationsMenu();
+			return;
+		}
+
+		clearNativeIntegrations();
+		selectedFilterIds = [];
+		selectedToolIds = [toolId];
+		closeIntegrationsMenu();
+	};
 
 	let fileUploadEnabled = true;
 	$: fileUploadEnabled =
@@ -186,10 +256,10 @@
 
 	<div slot="content">
 		<DropdownMenu.Content
-			class="w-full max-w-70 rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-md max-h-72 overflow-y-auto overflow-x-hidden scrollbar-thin"
+			class="w-full max-w-[255px] rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-md max-h-72 overflow-y-auto overflow-x-hidden scrollbar-thin"
 			style="font-family: 'Segoe UI', sans-serif;"
 			sideOffset={4}
-			alignOffset={-6}
+			alignOffset={8}
 			side="bottom"
 			align="start"
 			transition={(e) => fade(e, { duration: 100 })}
@@ -398,15 +468,15 @@
 						{/if}
 					{/if}
 
-					{#if showWebSearchButton || showImageGenerationButton || showCodeInterpreterButton || showCodeExecutionButton || showStableDiffusionButton || (toggleFilters && toggleFilters.length > 0) || (tools && Object.keys(tools).length > 0)}
+					{#if showWebSearchButton || showImageGenerationButton || showCodeExecutionButton || showStableDiffusionButton || showMusicGenerationButton || (toggleFilters && toggleFilters.length > 0) || (tools && Object.keys(tools).length > 0)}
 						<hr class="my-1 border-gray-200 dark:border-gray-700 mx-auto w-[90%]" />
 					{/if}
 
 					{#if tools}
 						{#if Object.keys(tools).length > 0}
 							<button
-								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(toolsAndFiltersBlocked)}"
-								on:click={() => { if (toolsAndFiltersBlocked) return; tab = 'tools'; }}
+								class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50"
+								on:click={() => { tab = 'tools'; }}
 							>
 								<Wrench />
 								<div class="flex items-center w-full justify-between">
@@ -426,15 +496,9 @@
 						{#each toggleFilters.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })) as filter (filter.id)}
 							<Tooltip content={filter?.description} placement="top-start">
 								<button
-									class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(toolsAndFiltersBlocked)}"
+									class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(selectedFilterIds.includes(filter.id))}"
 									on:click={() => {
-										if (toolsAndFiltersBlocked) return;
-										if (selectedFilterIds.includes(filter.id)) {
-											selectedFilterIds = selectedFilterIds.filter((id) => id !== filter.id);
-										} else {
-											deepSearchEnabled = false;
-											selectedFilterIds = [...selectedFilterIds, filter.id];
-										}
+										selectFilter(filter.id);
 									}}
 								>
 									<div class="flex-1 truncate">
@@ -460,8 +524,8 @@
 											</Tooltip>
 										</div>
 									{/if}
-									<div class=" shrink-0">
-										<Switch state={selectedFilterIds.includes(filter.id)} on:change={async (e) => { const state = e.detail; await tick(); }} />
+									<div class="size-4 shrink-0">
+										{#if selectedFilterIds.includes(filter.id)}<CheckCircle strokeWidth="1.7" />{/if}
 									</div>
 								</button>
 							</Tooltip>
@@ -470,49 +534,49 @@
 
 					{#if showWebSearchButton}
 						<Tooltip content="" placement="top-start">
-							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(webSearchBlocked)}" on:click={() => { if (webSearchBlocked) return; webSearchEnabled = !webSearchEnabled; if (webSearchEnabled) { deepSearchEnabled = false; codeInterpreterEnabled = false; imageGenerationEnabled = false; stableDiffusionEnabled = false; } }}>
+							<button class="my-px flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(webSearchEnabled)}" aria-pressed={webSearchEnabled} on:click={() => toggleNativeIntegration('web_search')}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0"><GlobeAlt /></div>
 										<div class=" truncate">{$i18n.t('Web Search')}</div>
 									</div>
 								</div>
-								<div class=" shrink-0"><Switch state={webSearchEnabled} on:change={async (e) => { const state = e.detail; await tick(); }} /></div>
+								<div class="size-4 shrink-0">{#if webSearchEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
 							</button>
 						</Tooltip>
 					{/if}
 
 					{#if showImageGenerationButton}
 						<Tooltip content="" placement="top-start">
-							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(imageGenerationBlocked)}" on:click={() => { if (imageGenerationBlocked) return; imageGenerationEnabled = !imageGenerationEnabled; if (imageGenerationEnabled) { webSearchEnabled = false; deepSearchEnabled = false; codeInterpreterEnabled = false; codeExecutionEnabled = false; stableDiffusionEnabled = false; selectedToolIds = []; selectedFilterIds = []; } }}>
+							<button class="my-px flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(imageGenerationEnabled)}" aria-pressed={imageGenerationEnabled} on:click={() => toggleNativeIntegration('image_generation')}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0"><Photo className="size-4" strokeWidth="1.5" /></div>
 										<div class=" truncate">{$i18n.t('Image')}</div>
 									</div>
 								</div>
-								<div class=" shrink-0"><Switch state={imageGenerationEnabled} on:change={async (e) => { const state = e.detail; await tick(); }} /></div>
+								<div class="size-4 shrink-0">{#if imageGenerationEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
 							</button>
 						</Tooltip>
 					{/if}
 
-					{#if showCodeInterpreterButton}
+					{#if showWebSearchButton}
 						<Tooltip content="" placement="top-start">
-							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(codeInterpreterBlocked)}" aria-pressed={codeInterpreterEnabled} on:click={() => { if (codeInterpreterBlocked) return; codeInterpreterEnabled = !codeInterpreterEnabled; if (codeInterpreterEnabled) { webSearchEnabled = false; deepSearchEnabled = false; imageGenerationEnabled = false; stableDiffusionEnabled = false; } }}>
+							<button class="my-px flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(deepSearchEnabled)}" aria-pressed={deepSearchEnabled} on:click={() => toggleNativeIntegration('deep_search')}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
-										<div class="shrink-0"><Terminal className="size-3.5" strokeWidth="1.75" /></div>
-										<div class=" truncate">{$i18n.t('Code Interpreter')}</div>
+										<div class="shrink-0"><Atom02 /></div>
+										<div class=" truncate">{$i18n.t('Deep Search')}</div>
 									</div>
 								</div>
-								<div class=" shrink-0"><Switch state={codeInterpreterEnabled} on:change={async (e) => { const state = e.detail; await tick(); }} /></div>
+								<div class="size-4 shrink-0">{#if deepSearchEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
 							</button>
 						</Tooltip>
 					{/if}
 
 					{#if showCodeExecutionButton}
 						<Tooltip content="" placement="top-start">
-							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(codeExecutionBlocked)}" aria-pressed={codeExecutionEnabled} on:click={() => { if (codeExecutionBlocked) return; codeExecutionEnabled = !codeExecutionEnabled; if (codeExecutionEnabled) { deepSearchEnabled = false; imageGenerationEnabled = false; stableDiffusionEnabled = false; } }}>
+							<button class="my-px flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(codeExecutionEnabled)}" aria-pressed={codeExecutionEnabled} on:click={() => toggleNativeIntegration('code_execution')}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0">
@@ -523,51 +587,43 @@
 										<div class=" truncate">{$i18n.t('Code Execution')}</div>
 									</div>
 								</div>
-								<div class=" shrink-0"><Switch state={codeExecutionEnabled} on:change={async (e) => { const state = e.detail; await tick(); }} /></div>
-							</button>
-						</Tooltip>
-					{/if}
-
-					{#if showWebSearchButton}
-						<Tooltip content="" placement="top-start">
-							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(deepSearchBlocked)}" on:click={() => { if (deepSearchBlocked) return; deepSearchEnabled = !deepSearchEnabled; if (deepSearchEnabled) { webSearchEnabled = false; imageGenerationEnabled = false; codeInterpreterEnabled = false; codeExecutionEnabled = false; stableDiffusionEnabled = false; selectedToolIds = []; selectedFilterIds = []; } }}>
-								<div class="flex-1 truncate">
-									<div class="flex flex-1 gap-2 items-center">
-										<div class="shrink-0"><Atom02 /></div>
-										<div class=" truncate">{$i18n.t('Deep Search')}</div>
-									</div>
-								</div>
-								<div class=" shrink-0"><Switch state={deepSearchEnabled} on:change={async (e) => { const state = e.detail; await tick(); }} /></div>
+								<div class="size-4 shrink-0">{#if codeExecutionEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
 							</button>
 						</Tooltip>
 					{/if}
 
 					{#if showStableDiffusionButton}
+						<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[90%]" />
+					{/if}
+
+					{#if showStableDiffusionButton}
 						<Tooltip content="" placement="top-start">
-							<button class="flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(stableDiffusionBlocked)}" on:click={() => {
-							if (stableDiffusionBlocked) return;
-							stableDiffusionEnabled = !stableDiffusionEnabled;
-							if (stableDiffusionEnabled) {
-								webSearchEnabled = false;
-								deepSearchEnabled = false;
-								imageGenerationEnabled = false;
-								codeInterpreterEnabled = false;
-								codeExecutionEnabled = false;
-								selectedToolIds = [];
-								selectedFilterIds = [];
-							}
-						}}>
+							<button class="my-px flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(stableDiffusionEnabled)}" aria-pressed={stableDiffusionEnabled} on:click={() => toggleNativeIntegration('stable_diffusion')}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0">
-											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-4">
-												<path fill-rule="evenodd" d="M1 5.25A2.25 2.25 0 013.25 3h13.5A2.25 2.25 0 0119 5.25v9.5A2.25 2.25 0 0116.75 17H3.25A2.25 2.25 0 011 14.75v-9.5zm1.5 5.81v3.69c0 .414.336.75.75.75h13.5a.75.75 0 00.75-.75v-2.69l-2.22-2.219a.75.75 0 00-1.06 0l-1.91 1.909.47.47a.75.75 0 11-1.06 1.06L6.53 8.091a.75.75 0 00-1.06 0l-3.97 3.97zM12 7a1 1 0 11-2 0 1 1 0 012 0z" clip-rule="evenodd" />
-											</svg>
+											<ImageIcon className="size-4" strokeWidth="1.5" />
 										</div>
-										<div class=" truncate">{$i18n.t('Geração de imagem')}</div>
+										<div class=" truncate">{$i18n.t('Criar imagem')}</div>
 									</div>
 								</div>
-								<div class=" shrink-0"><Switch state={stableDiffusionEnabled} on:change={async (e) => { const state = e.detail; await tick(); }} /></div>
+								<div class="size-4 shrink-0">{#if stableDiffusionEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
+							</button>
+						</Tooltip>
+					{/if}
+
+					{#if showMusicGenerationButton}
+						<Tooltip content="" placement="top-start">
+							<button class="my-px flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(musicGenerationEnabled)}" aria-pressed={musicGenerationEnabled} on:click={() => toggleNativeIntegration('music_generation')}>
+								<div class="flex-1 truncate">
+									<div class="flex flex-1 gap-2 items-center">
+										<div class="shrink-0">
+											<MusicNote className="size-4" strokeWidth="1.5" />
+										</div>
+										<div class="truncate">{$i18n.t('Criar música')}</div>
+									</div>
+								</div>
+								<div class="size-4 shrink-0">{#if musicGenerationEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
 							</button>
 						</Tooltip>
 					{/if}
@@ -585,9 +641,8 @@
 					</button>
 					{#each Object.keys(tools) as toolId}
 						<button
-							class="relative flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm hover:bg-gray-50 dark:hover:bg-gray-800/50 {disabledToggleClass(toolsAndFiltersBlocked)}"
+							class="relative flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(selectedToolIds.includes(toolId))}"
 							on:click={async (e) => {
-								if (toolsAndFiltersBlocked) return;
 								if (!(tools[toolId]?.authenticated ?? true)) {
 									e.preventDefault();
 									let parts = toolId.split(':');
@@ -595,15 +650,8 @@
 									const authUrl = getOAuthClientAuthorizationUrl(serverId, 'mcp');
 									window.open(authUrl, '_self', 'noopener');
 								} else {
-									tools[toolId].enabled = !tools[toolId].enabled;
-									const state = tools[toolId].enabled;
+									selectTool(toolId);
 									await tick();
-									if (state) {
-										deepSearchEnabled = false;
-										selectedToolIds = [...selectedToolIds, toolId];
-									} else {
-										selectedToolIds = selectedToolIds.filter((id) => id !== toolId);
-									}
 								}
 							}}
 						>
@@ -629,7 +677,9 @@
 									</Tooltip>
 								</div>
 							{/if}
-							<div class=" shrink-0"><Switch state={tools[toolId].enabled} /></div>
+							<div class="size-4 shrink-0">
+								{#if selectedToolIds.includes(toolId)}<CheckCircle strokeWidth="1.7" />{/if}
+							</div>
 						</button>
 					{/each}
 				</div>

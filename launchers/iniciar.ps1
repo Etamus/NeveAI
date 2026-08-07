@@ -1,10 +1,12 @@
 param(
-	[switch]$ValidateOnly
+	[switch]$ValidateOnly,
+	[switch]$DebugConsole
 )
 
 $ErrorActionPreference = 'Stop'
 
-$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$LauncherDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Root = Split-Path -Parent $LauncherDir
 $Backend = Join-Path $Root 'backend'
 $VenvPy = Join-Path $Root 'backend\neveai\venv\Scripts\python.exe'
 $VenvPyw = Join-Path $Root 'backend\neveai\venv\Scripts\pythonw.exe'
@@ -187,13 +189,34 @@ try {
 	}
 
 	Set-SplashProgress 'Iniciando backend...' 40
-	$backendQ = Quote-PsLiteral $Backend
-	$venvPyQ = Quote-PsLiteral $VenvPy
-	$backendCommand = "`$env:PYTHONIOENCODING='utf-8'; `$env:PYTHONPATH='$backendQ'; Set-Location -LiteralPath '$backendQ'; & '$venvPyQ' -m uvicorn neveai.main:app --host 0.0.0.0 --port 8080"
-	$cmdStartCommand = 'start "Neve AI - Backend" /min /D "' + $Backend + '" powershell -NoProfile -ExecutionPolicy Bypass -Command "' + $backendCommand.Replace('"', '\"') + '"'
-	Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', $cmdStartCommand) -WindowStyle Hidden -WorkingDirectory $Root | Out-Null
-
-	Write-StartLog 'backend powershell started through cmd start /min'
+	if ($DebugConsole) {
+		$backendQ = Quote-PsLiteral $Backend
+		$venvPyQ = Quote-PsLiteral $VenvPy
+		$backendCommand = "`$env:PYTHONIOENCODING='utf-8'; `$env:PYTHONPATH='$backendQ'; Set-Location -LiteralPath '$backendQ'; & '$venvPyQ' -m uvicorn neveai.main:app --host 0.0.0.0 --port 8080"
+		$cmdStartCommand = 'start "Neve AI - Backend" /min /D "' + $Backend + '" powershell -NoProfile -ExecutionPolicy Bypass -Command "' + $backendCommand.Replace('"', '\"') + '"'
+		Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', $cmdStartCommand) -WindowStyle Hidden -WorkingDirectory $Root | Out-Null
+		Write-StartLog 'backend debug console started through cmd start /min'
+	} else {
+		$backendOutLog = Join-Path $LogDir 'backend.log'
+		$backendErrorLog = Join-Path $LogDir 'backend-error.log'
+		$previousPythonEncoding = $env:PYTHONIOENCODING
+		$previousPythonPath = $env:PYTHONPATH
+		try {
+			$env:PYTHONIOENCODING = 'utf-8'
+			$env:PYTHONPATH = $Backend
+			$backendProcess = Start-Process -FilePath $VenvPy `
+				-ArgumentList @('-m', 'uvicorn', 'neveai.main:app', '--host', '0.0.0.0', '--port', '8080') `
+				-WorkingDirectory $Backend `
+				-WindowStyle Hidden `
+				-RedirectStandardOutput $backendOutLog `
+				-RedirectStandardError $backendErrorLog `
+				-PassThru
+			Write-StartLog "backend started without console; pid=$($backendProcess.Id); stdout=$backendOutLog; stderr=$backendErrorLog"
+		} finally {
+			$env:PYTHONIOENCODING = $previousPythonEncoding
+			$env:PYTHONPATH = $previousPythonPath
+		}
+	}
 
 	Set-SplashProgress 'Aguardando backend...' 52
 	$start = [DateTime]::UtcNow

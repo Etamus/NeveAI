@@ -30,6 +30,11 @@
 
 	export let onClick: () => void = () => {};
 
+	$: modelDescription =
+		typeof item?.model?.info?.meta?.description === 'string'
+			? item.model.info.meta.description.trim()
+			: '';
+
 	const getModelImageVersion = (model: any) =>
 		model?.updated_at ?? model?.info?.updated_at ?? model?.meta?.updated_at ?? '';
 	const getModelProfileImageUrl = (model: any, lang = '') => {
@@ -108,11 +113,20 @@
 			</div>
 
 			<div class="flex items-center">
-				<Tooltip content={item.model?.info?.meta?.description ? `${marked.parse(sanitizeResponseContent(item.model?.info?.meta?.description).replaceAll('\n', '<br>'))}` : `${item.label} (${item.value.replace(/^local\//, '')})`} placement="top-start">
+				{#if modelDescription}
+					<Tooltip
+						content={`${marked.parse(sanitizeResponseContent(modelDescription).replaceAll('\n', '<br>'))}`}
+						placement="top-start"
+					>
+						<div class="line-clamp-1">
+							{item.label}
+						</div>
+					</Tooltip>
+				{:else}
 					<div class="line-clamp-1">
 						{item.label}
 					</div>
-				</Tooltip>
+				{/if}
 			</div>
 
 			<div class=" shrink-0 flex items-center gap-2">

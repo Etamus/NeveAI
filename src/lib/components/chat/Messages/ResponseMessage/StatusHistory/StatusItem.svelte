@@ -6,6 +6,7 @@
 	import Atom02 from '$lib/components/icons/Atom02.svelte';
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
+	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 	import { t } from 'i18next';
 
 	export let status = null;
@@ -22,6 +23,10 @@
 		statusAction.includes('stable_diffusion') ||
 		statusDescription.includes('image') ||
 		statusDescription.includes('imagem');
+	$: isMusicStatus =
+		statusAction.includes('music_generation') ||
+		statusDescription.includes('música') ||
+		statusDescription.includes('musica');
 </script>
 
 {#if !status?.hidden}
@@ -51,7 +56,9 @@
 						<span
 							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
 						>
-							{#if isImageStatus}
+							{#if isMusicStatus}
+								<MusicNote className="size-3.5" strokeWidth="1.6" />
+							{:else if isImageStatus}
 								<Photo className="size-3.5" strokeWidth="1.6" />
 							{:else if isDeepSearchStatus}
 								<Atom02 className="size-3.5" />
@@ -106,7 +113,9 @@
 						<span
 							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
 						>
-							{#if isImageStatus}
+							{#if isMusicStatus}
+								<MusicNote className="size-3.5" strokeWidth="1.6" />
+							{:else if isImageStatus}
 								<Photo className="size-3.5" strokeWidth="1.6" />
 							{:else if isDeepSearchStatus}
 								<Atom02 className="size-3.5" />
@@ -204,7 +213,9 @@
 						<span
 							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
 						>
-							{#if isImageStatus}
+							{#if isMusicStatus}
+								<MusicNote className="size-3.5" strokeWidth="1.6" />
+							{:else if isImageStatus}
 								<Photo className="size-3.5" strokeWidth="1.6" />
 							{:else if isDeepSearchStatus}
 								<Atom02 className="size-3.5" />

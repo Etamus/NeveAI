@@ -15,12 +15,8 @@
 			description: $i18n.t('Modelo pode buscar informações na web')
 		},
 		image_generation: {
-			label: $i18n.t('Geração de imagem'),
+			label: $i18n.t('Criar imagem'),
 			description: $i18n.t('Modelo inicia com geração de imagem por padrão')
-		},
-		code_interpreter: {
-			label: $i18n.t('Ambiente de execução'),
-			description: $i18n.t('Modelo pode executar código e cálculos')
 		},
 		code_execution: {
 			label: $i18n.t('Artefatos'),
@@ -35,14 +31,13 @@
 			description: $i18n.t('Show the Rápido/Raciocínio toggle in the message input bar')
 		},
 		stable_diffusion: {
-			label: $i18n.t('Geração de imagem'),
+			label: $i18n.t('Criar imagem'),
 			description: $i18n.t('Modelo pode gerar imagens usando Stable Diffusion local')
 		}
 	};
 
 	export let availableFeatures = [
 		'web_search',
-		'code_interpreter',
 		'code_execution',
 		'deep_search',
 		'image_generation',
@@ -53,6 +48,10 @@
 
 	let activeFeatureIds: string[] = [];
 	let featureViewState: Record<string, { enabled: boolean; disabled: boolean }> = {};
+	const independentFeatures = new Set(['toggle_reasoning']);
+
+	const isExclusiveFeature = (feature: string) =>
+		availableFeatures.includes(feature) && !independentFeatures.has(feature);
 
 	const getFeatureLabel = (feature: string) =>
 		featureLabels[feature as keyof typeof featureLabels] ?? {
@@ -60,38 +59,26 @@
 			description: feature
 		};
 
-	const exclusiveFeatures = new Map([
-		['web_search', 'code_interpreter'],
-		['code_interpreter', 'web_search']
-	]);
-
 	const normalizeFeatureIds = (ids: string[]) => {
-		if (!ids.includes('web_search') || !ids.includes('code_interpreter')) {
-			return ids;
-		}
+		const supportedIds = ids.filter((id) => id !== 'code_interpreter');
+		const selectedExclusiveFeature = [...supportedIds]
+			.reverse()
+			.find((id) => isExclusiveFeature(id));
 
-		const keepFeature =
-			ids.lastIndexOf('code_interpreter') > ids.lastIndexOf('web_search')
-				? 'code_interpreter'
-				: 'web_search';
-		const removeFeature = exclusiveFeatures.get(keepFeature);
-
-		return ids.filter((id) => id !== removeFeature);
+		return supportedIds.filter(
+			(id) => !isExclusiveFeature(id) || id === selectedExclusiveFeature
+		);
 	};
 
 	const setFeatureState = (feature: string, enabled: boolean) => {
-		const lockedByFeature = exclusiveFeatures.get(feature);
-		if (lockedByFeature && activeFeatureIds.includes(lockedByFeature)) return;
-
 		if (enabled) {
-			const exclusiveFeature = exclusiveFeatures.get(feature);
-			const nextFeatureIds = exclusiveFeature
-				? activeFeatureIds.filter((id) => id !== exclusiveFeature)
-				: activeFeatureIds;
-
-			featureIds = nextFeatureIds.includes(feature)
-				? nextFeatureIds
-				: [...nextFeatureIds, feature];
+			if (
+				isExclusiveFeature(feature) &&
+				activeFeatureIds.some((id) => isExclusiveFeature(id) && id !== feature)
+			) return;
+			featureIds = activeFeatureIds.includes(feature)
+				? activeFeatureIds
+				: [...activeFeatureIds, feature];
 		} else {
 			featureIds = activeFeatureIds.filter((id) => id !== feature);
 		}
@@ -99,12 +86,14 @@
 
 	$: {
 		const normalizedFeatureIds = normalizeFeatureIds(featureIds);
+		const selectedExclusiveFeature = normalizedFeatureIds.find((id) => isExclusiveFeature(id));
 		activeFeatureIds = normalizedFeatureIds;
 		featureViewState = Object.fromEntries(
 			availableFeatures.map((feature) => {
-				const exclusiveFeature = exclusiveFeatures.get(feature);
 				const disabled = Boolean(
-					exclusiveFeature && normalizedFeatureIds.includes(exclusiveFeature)
+					isExclusiveFeature(feature) &&
+					selectedExclusiveFeature &&
+					selectedExclusiveFeature !== feature
 				);
 
 				return [

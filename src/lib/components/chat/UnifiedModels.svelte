@@ -848,7 +848,7 @@
 			? 'Execute o instalador para baixar o llama.cpp antes de carregar modelos locais.'
 			: searchValue
 				? 'Tente ajustar sua pesquisa para encontrar o modelo que está procurando.'
-				: 'Clique em "Baixar" para instalar um modelo ou coloque arquivos .gguf na pasta models.';
+				: 'Clique em "Baixar modelos" para instalar um modelo ou coloque arquivos .gguf na pasta models.';
 	$: if (hasHighlightedLoadedModel && searchValue) {
 		searchValue = '';
 	}
@@ -1381,9 +1381,8 @@
 			</div>
 		{:else}
 			<div class="rounded-xl border border-dashed border-gray-200/80 dark:border-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
-				<div class="flex items-center justify-between gap-3">
+				<div class="flex items-center gap-3">
 					<span class="font-medium text-gray-700 dark:text-gray-200">VRAM</span>
-					<span>Indisponível</span>
 				</div>
 				<div class="mt-1">
 					Use modelos CPU ou instale drivers compatíveis.

@@ -134,12 +134,9 @@ O backend auto-detecta o mmproj compatível pelo prefixo do nome do modelo (ex: 
 
 ```
 Neve AI/
-├── instalar.bat              # Instalador único — detecta GPU, baixa llama.cpp,
-├── instalar.ps1              #   cria venv, instala deps, compila frontend
-├── atualizar.bat             # Atualizador — checa última release no GitHub,
-├── atualizar.ps1             #   baixa, aplica overlay, refaz build e deploy
-├── buildar.bat               # Build e deploy do frontend com interface grafica
-├── buildar.ps1               #   limpa build, compila, publica e valida hash
+├── instalar.bat              # Abre o Neve Hub para instalar, atualizar ou buildar
+├── depurar.bat               # Inicia o Neve AI mantendo o console de diagnóstico
+├── launchers/                # Scripts PowerShell e VBS usados pelos launchers
 ├── version.txt               # Versão (tag) atualmente instalada
 ├── iniciar.bat               # Inicia o backend e abre a janela de app
 ├── neve_window.py            # Abre o Neve AI em janela Chromium isolada
@@ -157,6 +154,7 @@ Neve AI/
 │           └── common/       # Componentes reutilizáveis
 │
 ├── backend/
+│   ├── data/                 # Caches de runtime
 │   └── neveai/
 │       ├── main.py           # Entry point FastAPI
 │       ├── config.py         # Configuração global
@@ -208,6 +206,7 @@ Neve AI/
 - **Busca na web** via SearXNG (sem chave de API)
 - **Execução de código Python** via Pyodide (WebAssembly, no browser)
 - **Geração de imagens** via Neve-Image-Turbo local em Q4_0 com Encoder, stable-diffusion.cpp e 8 steps
+- **Geração de músicas** via Neve-Step 1.5 Turbo local, com orientação de estilo e letras em português
 - **MCP (Model Context Protocol)** v1.26 para ferramentas externas
 
 ---

@@ -49,11 +49,11 @@
 	export let showCommands = false;
 
 	export let imageGenerationEnabled = false;
-	export let codeInterpreterEnabled = false;
 	export let codeExecutionEnabled = false;
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
 	export let stableDiffusionEnabled = false;
+	export let musicGenerationEnabled = false;
 	export let thinkingEnabled = true;
 	export let thinkingExtendedEnabled = true;
 
@@ -131,11 +131,11 @@
 					bind:selectedToolIds
 					bind:selectedFilterIds
 					bind:imageGenerationEnabled
-					bind:codeInterpreterEnabled
 					bind:codeExecutionEnabled
 					bind:webSearchEnabled
 					bind:deepSearchEnabled
 					bind:stableDiffusionEnabled
+					bind:musicGenerationEnabled
 					bind:thinkingEnabled
 					bind:thinkingExtendedEnabled
 					bind:atSelectedModel

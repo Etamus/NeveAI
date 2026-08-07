@@ -321,7 +321,12 @@
 													{$i18n.t('Model Capabilities')}
 												</div>
 												<DefaultFeatures
-													availableFeatures={['web_search', 'code_interpreter', 'code_execution', 'toggle_reasoning']}
+													availableFeatures={[
+														'web_search',
+														'code_execution',
+														'deep_search',
+														'toggle_reasoning'
+													]}
 													bind:featureIds={defaultFeatureIds}
 													tooltipsEnabled={false}
 												/>

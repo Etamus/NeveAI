@@ -104,7 +104,6 @@ export const DEFAULT_CAPABILITIES = {
 	file_upload: true,
 	web_search: true,
 	image_generation: true,
-	code_interpreter: true,
 	citations: true,
 	status_updates: true,
 	usage: undefined,
