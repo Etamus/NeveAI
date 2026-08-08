@@ -158,7 +158,7 @@
 		);
 		if (rows.length === 0) return;
 
-		const lastVisibleRow = rows[Math.min(3, rows.length - 1)];
+		const lastVisibleRow = rows[Math.min(4, rows.length - 1)];
 		const viewportTop = advancedParamsWindowElement.getBoundingClientRect().top;
 		const lastRowBottom = lastVisibleRow.getBoundingClientRect().bottom;
 		const nextHeight = `${Math.ceil(

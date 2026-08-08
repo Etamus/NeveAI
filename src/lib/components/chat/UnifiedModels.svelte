@@ -1656,7 +1656,7 @@
 
 	{:else}
 		<!-- ─── Model Editor ──────────────────────────────────────────────── -->
-		<div style="height: 560px; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
+		<div style="height: 610px; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
 			<ModelEditor
 				edit
 				model={adminModels?.find((m) => m.id === selectedModelId)}

@@ -722,7 +722,7 @@
 		</div><!-- end overflow-y-auto wrapper -->
 		</div><!-- end h-full wrapper -->
 	{:else}
-		<div style="height: 560px; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
+		<div style="height: 610px; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
 			{#if selectedModel}
 			<ModelEditor
 				edit
