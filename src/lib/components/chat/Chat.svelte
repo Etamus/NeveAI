@@ -3,7 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { PaneGroup, Pane, PaneResizer } from 'paneforge';
 
-	import { getContext, onDestroy, onMount, tick } from 'svelte';
+	import { flushSync, getContext, onDestroy, onMount, tick } from 'svelte';
 	import { fade } from 'svelte/transition';
 	const i18n: Writable<i18nType> = getContext('i18n');
 
@@ -2597,18 +2597,11 @@
 		}
 	};
 
-	const scrollToMessageTop = async (
+	const positionMessageAtTop = (
 		messageId: string,
 		behavior = 'auto',
-		{ topOffset, layoutFrames = 2 }: { topOffset?: number; layoutFrames?: number } = {}
+		topOffset?: number
 	) => {
-		if (!messageId) return;
-		if (layoutFrames > 0) {
-			await waitForLayout(layoutFrames);
-		} else {
-			await tick();
-		}
-
 		const messageElement = document.getElementById(`message-${messageId}`);
 		if (!messageElement) return;
 
@@ -2631,13 +2624,27 @@
 		}
 	};
 
-	const prepareGenerationSpacerForMessageTop = async (
+	const scrollToMessageTop = async (
+		messageId: string,
+		behavior = 'auto',
+		{ topOffset, layoutFrames = 2 }: { topOffset?: number; layoutFrames?: number } = {}
+	) => {
+		if (!messageId) return;
+		if (layoutFrames > 0) {
+			await waitForLayout(layoutFrames);
+		} else {
+			await tick();
+		}
+
+		positionMessageAtTop(messageId, behavior, topOffset);
+	};
+
+	const prepareGenerationSpacerForMessageTop = (
 		messageId: string,
 		topOffset = 0
 	) => {
 		if (!messagesContainerElement || !messageId) return;
 
-		await tick();
 		const messageElement = document.getElementById(`message-${messageId}`);
 		if (!messageElement) return;
 
@@ -2655,9 +2662,9 @@
 			Math.ceil(targetTop - maxScrollTop + getGenerationBottomReadingPadding())
 		);
 
-		if (requiredSpacerHeight > generationBottomSpacerHeight + 1) {
+		if (Math.abs(requiredSpacerHeight - generationBottomSpacerHeight) > 1) {
 			generationBottomSpacerHeight = requiredSpacerHeight;
-			await tick();
+			flushSync();
 		}
 	};
 
@@ -2719,13 +2726,12 @@
 		}: { topOffset?: number; stabilizeAcrossFrames?: boolean } = {}
 	) => {
 		anchoredGeneratingMessageId = trackedMessageId;
-		generationBottomSpacerHeight = 0;
 		generationSpacerScrollLimit = null;
 		generationSpacerScrollAllowance = null;
 		autoScroll = false;
-		await tick();
-		await prepareGenerationSpacerForMessageTop(scrollTargetMessageId, topOffset);
-		await scrollToMessageTop(scrollTargetMessageId, 'auto', { topOffset, layoutFrames: 0 });
+		flushSync();
+		prepareGenerationSpacerForMessageTop(scrollTargetMessageId, topOffset);
+		positionMessageAtTop(scrollTargetMessageId, 'auto', topOffset);
 		await fitGenerationSpacerToViewport(messagesContainerElement?.scrollTop ?? 0);
 		activeGenerationSpacerHeightLimit = generationBottomSpacerHeight;
 		lastMessagesScrollTop = messagesContainerElement?.scrollTop ?? 0;
