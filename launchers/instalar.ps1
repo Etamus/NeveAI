@@ -35,7 +35,7 @@ $LOG_DIR  = Join-Path $ROOT 'logs'
 if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
 $LOG = Join-Path $LOG_DIR 'install.log'
 $STATE_FILE = Join-Path $LOG_DIR 'install-state.txt'
-$INSTALLER_REVISION = '2026-08-07-music-runtime-v1'
+$INSTALLER_REVISION = '2026-08-14-update-stream-drain-v1'
 '' | Set-Content $LOG
 Add-Content -LiteralPath $LOG -Value ("[INSTALLER] revision={0}; script={1}; root={2}" -f $INSTALLER_REVISION, $SCRIPT_PATH, $ROOT) -Encoding UTF8
 [System.IO.File]::WriteAllText($STATE_FILE, 'idle', [System.Text.UTF8Encoding]::new($false))
@@ -3527,17 +3527,55 @@ $ctl.BtnPrimary.Add_Click({
                 throw "Falha ao iniciar '$exe' para '$desc': $($_.Exception.Message)"
             }
             if ($null -eq $p) { throw "Falha ao iniciar '$exe' para '$desc': Process.Start retornou nulo." }
-            while (-not $p.HasExited) {
-                while (-not $p.StandardOutput.EndOfStream) {
-                    $line = $p.StandardOutput.ReadLine()
-                    if ($line) { L "    $line" }
+
+            # stdout e stderr precisam ser drenados ao mesmo tempo. Vite/Svelte escreve
+            # muitos avisos em stderr durante "transforming..." e enche o pipe se apenas
+            # stdout for lido, bloqueando tanto o build quanto o atualizador.
+            $stdoutDone = $false
+            $stderrDone = $false
+            $stdoutTask = $p.StandardOutput.ReadLineAsync()
+            $stderrTask = $p.StandardError.ReadLineAsync()
+            $lastActivity = Get-Date
+
+            while (-not ($stdoutDone -and $stderrDone)) {
+                $readLine = $false
+
+                if (-not $stdoutDone -and $stdoutTask.IsCompleted) {
+                    $line = $stdoutTask.GetAwaiter().GetResult()
+                    if ($null -eq $line) {
+                        $stdoutDone = $true
+                        $stdoutTask = $null
+                    } else {
+                        if (-not [string]::IsNullOrWhiteSpace($line)) { L "    $line" }
+                        $lastActivity = Get-Date
+                        $stdoutTask = $p.StandardOutput.ReadLineAsync()
+                    }
+                    $readLine = $true
                 }
-                Start-Sleep -Milliseconds 80
+
+                if (-not $stderrDone -and $stderrTask.IsCompleted) {
+                    $line = $stderrTask.GetAwaiter().GetResult()
+                    if ($null -eq $line) {
+                        $stderrDone = $true
+                        $stderrTask = $null
+                    } else {
+                        if (-not [string]::IsNullOrWhiteSpace($line)) { L "    $line" 'warn' }
+                        $lastActivity = Get-Date
+                        $stderrTask = $p.StandardError.ReadLineAsync()
+                    }
+                    $readLine = $true
+                }
+
+                $now = Get-Date
+                if (-not $p.HasExited -and ($now - $lastActivity).TotalSeconds -ge 10) {
+                    L "    ... $desc ainda em andamento."
+                    $lastActivity = $now
+                }
+
+                if (-not $readLine) { Start-Sleep -Milliseconds 25 }
             }
-            $rest = $p.StandardOutput.ReadToEnd()
-            if ($rest) { foreach ($l in $rest -split "`r?`n") { if ($l) { L "    $l" } } }
-            $err  = $p.StandardError.ReadToEnd()
-            if ($err)  { foreach ($l in $err  -split "`r?`n") { if ($l) { L "    $l" 'warn' } } }
+
+            $p.WaitForExit()
             $exitCode = $p.ExitCode
             $p.Dispose()
             return $exitCode
