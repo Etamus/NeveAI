@@ -18,6 +18,7 @@
 		getPinnedChatList,
 		importChats
 	} from '$lib/apis/chats';
+	import { deleteAllFiles } from '$lib/apis/files';
 	import { getImportOrigin, convertOpenAIChats } from '$lib/utils';
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -34,6 +35,7 @@
 	let importFiles;
 
 	let showDeleteConfirmDialog = false;
+	let showDeleteFilesConfirmDialog = false;
 	let showSharedChatsModal = false;
 	let showFilesModal = false;
 
@@ -114,6 +116,18 @@
 		await chats.set(await getChatList(localStorage.token, $currentChatPage));
 		scrollPaginationEnabled.set(true);
 	};
+
+	const deleteAllFilesHandler = async () => {
+		const res = await deleteAllFiles(localStorage.token).catch((error) => {
+			toast.error(`${error}`);
+			return null;
+		});
+
+		if (res) {
+			showFilesModal = false;
+			toast.success($i18n.t('All files deleted successfully.'));
+		}
+	};
 </script>
 
 <SharedChatsModal bind:show={showSharedChatsModal} />
@@ -126,6 +140,16 @@
 	on:confirm={deleteAllChatsHandler}
 	on:cancel={() => {
 		showDeleteConfirmDialog = false;
+	}}
+/>
+
+<ConfirmDialog
+	title={$i18n.t('Delete All Files')}
+	message={$i18n.t('Are you sure you want to delete all files? This action cannot be undone.')}
+	bind:show={showDeleteFilesConfirmDialog}
+	on:confirm={deleteAllFilesHandler}
+	on:cancel={() => {
+		showDeleteFilesConfirmDialog = false;
 	}}
 />
 
@@ -189,6 +213,7 @@
 					</button>
 				</div>
 			</div>
+
 		</div>
 
 		<div>
@@ -205,6 +230,21 @@
 						type="button"
 					>
 						<span class="self-center">{$i18n.t('Manage')}</span>
+					</button>
+				</div>
+			</div>
+
+			<div>
+				<div class="py-0.5 flex w-full justify-between">
+					<div class="self-center text-sm">{$i18n.t('Delete All Files')}</div>
+					<button
+						class="p-1 px-3 text-sm flex rounded-sm transition"
+						on:click={() => {
+							showDeleteFilesConfirmDialog = true;
+						}}
+						type="button"
+					>
+						<span class="self-center">{$i18n.t('Delete All')}</span>
 					</button>
 				</div>
 			</div>

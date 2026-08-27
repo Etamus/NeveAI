@@ -105,16 +105,31 @@
 		}
 	});
 
+	// Keep repository chips as complete URLs in the message sent to the backend.
+	turndownService.addRule('githubRepositories', {
+		filter: (node: HTMLElement) =>
+			node.nodeName === 'SPAN' && node.hasAttribute('data-github-repository-url'),
+		replacement: (_content: string, node: HTMLElement) =>
+			node.getAttribute('data-github-repository-url') ?? ''
+	});
+
 	import { onMount, onDestroy, tick, getContext } from 'svelte';
 	import { createEventDispatcher } from 'svelte';
 
 	const i18n = getContext('i18n');
 	const eventDispatch = createEventDispatcher();
 
-	import { Fragment, DOMParser } from 'prosemirror-model';
+	import { Fragment, DOMParser, Slice } from 'prosemirror-model';
 	import { EditorState, Plugin, PluginKey, TextSelection, Selection } from 'prosemirror-state';
 	import { Decoration, DecorationSet } from 'prosemirror-view';
-	import { Editor, Extension, markInputRule, mergeAttributes } from '@tiptap/core';
+	import {
+		Editor,
+		Extension,
+		getTextBetween,
+		getTextSerializersFromSchema,
+		markInputRule,
+		mergeAttributes
+	} from '@tiptap/core';
 
 	import { AIAutocompletion } from './RichTextInput/AutoCompletion.js';
 
@@ -130,6 +145,7 @@
 	import { Placeholder, CharacterCount } from '@tiptap/extensions';
 
 	import Image from './RichTextInput/Image/index.js';
+	import GitHubRepository from './RichTextInput/GitHubRepository';
 	// import TiptapImage from '@tiptap/extension-image';
 
 	import FileHandler from '@tiptap/extension-file-handler';
@@ -163,6 +179,7 @@
 	import hljs from 'highlight.js';
 
 	import type { SocketIOCollaborationProvider } from './RichTextInput/Collaboration';
+	import { findGitHubRepositoryLinks } from '$lib/utils/github';
 
 	export let oncompositionstart = (e) => {};
 	export let oncompositionend = (e) => {};
@@ -733,6 +750,7 @@
 				...(dragHandle ? [ListItemDragHandle] : []),
 				Placeholder.configure({ placeholder: () => _placeholder, showOnlyWhenEditable: false }),
 				SelectionDecoration,
+				...(messageInput ? [GitHubRepository] : []),
 
 				...(richText
 					? [
@@ -894,6 +912,53 @@
 			editorProps: {
 				attributes: { id, spellcheck: 'false' },
 				handlePaste: (view, event) => {
+					const pastedText = (event.clipboardData?.getData('text/plain') ?? '').replace(
+						/\r\n/g,
+						'\n'
+					);
+					const pastedRepositories = messageInput ? findGitHubRepositoryLinks(pastedText) : [];
+					if (pastedRepositories.length > 0) {
+						event.preventDefault();
+						const { state, dispatch } = view;
+						const nodes = [];
+						let cursor = 0;
+						const appendText = (text: string) => {
+							text.split('\n').forEach((line, index) => {
+								if (index > 0) nodes.push(state.schema.nodes.hardBreak.create());
+								if (line) nodes.push(state.schema.text(line));
+							});
+						};
+
+						for (const repository of pastedRepositories) {
+							appendText(pastedText.slice(cursor, repository.start));
+							nodes.push(
+								state.schema.nodes.githubRepository.create({
+									url: repository.reference.url,
+									label: repository.reference.label
+								})
+							);
+							cursor = repository.end;
+						}
+						appendText(pastedText.slice(cursor));
+						if (pastedRepositories.at(-1)?.end === pastedText.length) {
+							nodes.push(state.schema.text(' '));
+						}
+
+						const fragment = Fragment.fromArray(nodes);
+						const insertionStart = state.selection.from;
+						const transaction = state.tr.replaceSelection(new Slice(fragment, 0, 0));
+						const cursorPosition = Math.min(
+							insertionStart + fragment.size,
+							transaction.doc.content.size
+						);
+						transaction.setSelection(
+							TextSelection.near(transaction.doc.resolve(cursorPosition), 1)
+						);
+						dispatch(transaction.scrollIntoView());
+
+						return true;
+					}
+
 					// Force plain-text pasting when richText === false
 					if (!richText) {
 						// swallow HTML completely
@@ -973,9 +1038,11 @@
 						// doesn't stay visually highlighted after clicking outside.
 						const { state, dispatch } = view;
 						if (!state.selection.empty) {
-							dispatch(state.tr.setSelection(
-								state.selection.constructor.near(state.doc.resolve(state.selection.anchor))
-							));
+							dispatch(
+								state.tr.setSelection(
+									state.selection.constructor.near(state.doc.resolve(state.selection.anchor))
+								)
+							);
 						}
 						return false;
 					},
@@ -1159,7 +1226,14 @@
 						const { from, to } = state.selection;
 
 						// Only take the selected text & HTML, not the full doc
-						const plain = state.doc.textBetween(from, to, '\n');
+						const plain = getTextBetween(
+							state.doc,
+							{ from, to },
+							{
+								blockSeparator: '\n',
+								textSerializers: getTextSerializersFromSchema(state.schema)
+							}
+						);
 						const slice = state.doc.cut(from, to);
 						const html = editor.schema ? editor.getHTML(slice) : editor.getHTML(); // depending on your editor API
 
@@ -1266,3 +1340,54 @@
 	dir="auto"
 	class="relative w-full min-w-full {className} {!editable ? 'cursor-not-allowed' : ''}"
 />
+
+<style>
+	:global(.github-repository-input-link) {
+		display: inline-block;
+		box-sizing: border-box;
+		font-family: inherit;
+		font-size: inherit;
+		line-height: inherit;
+		margin-right: 0.125rem;
+		vertical-align: baseline;
+		white-space: nowrap;
+		user-select: all;
+		-webkit-user-select: all;
+		border-radius: 0.375rem;
+		background-color: rgb(0 0 0 / 0.05);
+		box-decoration-break: clone;
+		-webkit-box-decoration-break: clone;
+		padding: 0 0.375rem;
+		text-decoration: underline;
+		text-decoration-color: rgb(156 163 175 / 0.7);
+		text-underline-offset: 2px;
+	}
+
+	:global(.github-repository-input-link.ProseMirror-selectednode) {
+		background-color: rgb(0 0 0 / 0.12);
+		outline: 1px solid rgb(107 114 128 / 0.45);
+	}
+
+	:global(.github-repository-input-link::before) {
+		content: '';
+		display: inline-block;
+		width: 0.875rem;
+		height: 0.875rem;
+		margin-right: 0.375rem;
+		vertical-align: -0.125rem;
+		background-color: currentColor;
+		mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12.006 2a9.847 9.847 0 0 0-6.484 2.44 10.32 10.32 0 0 0-3.393 6.17 10.48 10.48 0 0 0 1.317 6.955 10.045 10.045 0 0 0 5.4 4.418c.504.095.683-.223.683-.494 0-.245-.01-1.052-.014-1.908-2.78.62-3.366-1.21-3.366-1.21a2.711 2.711 0 0 0-1.11-1.5c-.907-.637.07-.621.07-.621.317.044.62.163.885.346.266.183.487.426.647.71.135.253.318.476.538.655a2.079 2.079 0 0 0 2.37.196c.045-.52.27-1.006.635-1.37-2.219-.259-4.554-1.138-4.554-5.07a4.022 4.022 0 0 1 1.031-2.75 3.77 3.77 0 0 1 .096-2.713s.839-.275 2.749 1.05a9.26 9.26 0 0 1 5.004 0c1.906-1.325 2.74-1.05 2.74-1.05.37.858.406 1.828.101 2.713a4.017 4.017 0 0 1 1.029 2.75c0 3.939-2.339 4.805-4.564 5.058a2.471 2.471 0 0 1 .679 1.897c0 1.372-.012 2.477-.012 2.814 0 .272.18.592.687.492a10.05 10.05 0 0 0 5.388-4.421 10.473 10.473 0 0 0 1.313-6.948 10.32 10.32 0 0 0-3.39-6.165A9.847 9.847 0 0 0 12.007 2Z'/%3E%3C/svg%3E")
+			center / contain no-repeat;
+		-webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12.006 2a9.847 9.847 0 0 0-6.484 2.44 10.32 10.32 0 0 0-3.393 6.17 10.48 10.48 0 0 0 1.317 6.955 10.045 10.045 0 0 0 5.4 4.418c.504.095.683-.223.683-.494 0-.245-.01-1.052-.014-1.908-2.78.62-3.366-1.21-3.366-1.21a2.711 2.711 0 0 0-1.11-1.5c-.907-.637.07-.621.07-.621.317.044.62.163.885.346.266.183.487.426.647.71.135.253.318.476.538.655a2.079 2.079 0 0 0 2.37.196c.045-.52.27-1.006.635-1.37-2.219-.259-4.554-1.138-4.554-5.07a4.022 4.022 0 0 1 1.031-2.75 3.77 3.77 0 0 1 .096-2.713s.839-.275 2.749 1.05a9.26 9.26 0 0 1 5.004 0c1.906-1.325 2.74-1.05 2.74-1.05.37.858.406 1.828.101 2.713a4.017 4.017 0 0 1 1.029 2.75c0 3.939-2.339 4.805-4.564 5.058a2.471 2.471 0 0 1 .679 1.897c0 1.372-.012 2.477-.012 2.814 0 .272.18.592.687.492a10.05 10.05 0 0 0 5.388-4.421 10.473 10.473 0 0 0 1.313-6.948 10.32 10.32 0 0 0-3.39-6.165A9.847 9.847 0 0 0 12.007 2Z'/%3E%3C/svg%3E")
+			center / contain no-repeat;
+	}
+
+	:global(.dark .github-repository-input-link) {
+		background-color: rgb(255 255 255 / 0.1);
+		text-decoration-color: rgb(107 114 128);
+	}
+
+	:global(.dark .github-repository-input-link.ProseMirror-selectednode) {
+		background-color: rgb(255 255 255 / 0.18);
+	}
+</style>

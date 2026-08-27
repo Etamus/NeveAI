@@ -255,6 +255,11 @@
 	let collapseAnimationTimer: ReturnType<typeof setTimeout> | null = null;
 	let destroyed = false;
 	let openingActionRefreshInProgress = false;
+	let unifiedRefreshInFlight: Promise<LocalModel[] | null> | null = null;
+	let unifiedRefreshRequested = false;
+	let unifiedRefreshRequestedInitial = false;
+	let realtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+	let lastAdminRefreshAt = 0;
 
 	const perPage = 30;
 	const MODEL_ROW_HEIGHT_PX = 72;
@@ -363,6 +368,7 @@
 					: state.visualUnload.filter((f) => f !== filename),
 			actions: { ...state.actions, [filename]: action }
 		}));
+		scheduleRealtimeRefresh();
 	};
 	const clearLocalModelUnloadPin = (filename: string) => {
 		localModelProcessingStore.update((state) => ({
@@ -691,7 +697,7 @@
 		localLoading = false;
 	};
 
-	$: if (preload?.loaded) {
+	$: if (preload?.loaded && !preloadApplied) {
 		applyPreload(preload);
 		preloadApplied = true;
 	}
@@ -788,6 +794,7 @@
 			disableCollapseAnimation();
 			currentPage = 1;
 			modelsBelowLoadedCollapsed = Boolean(activeHighlightedModelKey);
+			void refreshUnifiedModelData(false);
 			void refreshLocalActionsAfterOpen();
 		} else if (closingModal) {
 			pinUnsettledUnloadsBeforeClose();
@@ -919,6 +926,33 @@
 		);
 	};
 
+	const reconcileLocalActionAfterError = async (
+		model: LocalModel,
+		action: LocalModelAction
+	): Promise<boolean> => {
+		const refreshedModels = await refreshUnifiedModelData(false);
+		if (!refreshedModels) return false;
+
+		const refreshedModel = refreshedModels.find((entry) => isSameLocalModel(entry, model));
+		if (action === 'load' && refreshedModel?.is_loaded) {
+			localError = '';
+			localSuccess = `${model.filename} carregado com sucesso!`;
+			void refreshGlobalModelsStore();
+			return true;
+		}
+
+		if (action === 'unload' && (!refreshedModel || !refreshedModel.is_loaded)) {
+			localError = '';
+			localSuccess = `${model.filename} descarregado.`;
+			setLocalModelUnloadSettling(model.filename);
+			clearSettledLocalModelActions(refreshedModels);
+			void refreshGlobalModelsStore();
+			return true;
+		}
+
+		return false;
+	};
+
 	async function handleLoad(model: LocalModel) {
 		setLocalModelAction(model.filename, 'load');
 		localError = '';
@@ -942,7 +976,10 @@
 			await refreshUntilLocalActionSettles(model.filename);
 			void refreshGlobalModelsStore();
 		} catch (e: any) {
-			localError = normalizeLlamaCppErrorMessage(e, 'Erro ao carregar modelo');
+			completed = await reconcileLocalActionAfterError(model, 'load');
+			if (!completed) {
+				localError = normalizeLlamaCppErrorMessage(e, 'Erro ao carregar modelo');
+			}
 		} finally {
 			if (!completed) {
 				clearLocalModelProcessing(model.filename);
@@ -1041,7 +1078,10 @@
 			await refreshUntilLocalActionSettles(model.filename);
 			void refreshGlobalModelsStore();
 		} catch (e: any) {
-			localError = normalizeLlamaCppErrorMessage(e, 'Erro ao carregar modelo');
+			completed = await reconcileLocalActionAfterError(model, 'load');
+			if (!completed) {
+				localError = normalizeLlamaCppErrorMessage(e, 'Erro ao carregar modelo');
+			}
 		} finally {
 			if (!completed) {
 				clearLocalModelProcessing(model.filename);
@@ -1063,7 +1103,10 @@
 			await refreshUntilLocalActionSettles(model.filename);
 			void refreshGlobalModelsStore();
 		} catch (e: any) {
-			localError = normalizeLlamaCppErrorMessage(e, 'Erro ao descarregar modelo');
+			completed = await reconcileLocalActionAfterError(model, 'unload');
+			if (!completed) {
+				localError = normalizeLlamaCppErrorMessage(e, 'Erro ao descarregar modelo');
+			}
 		} finally {
 			if (!completed) {
 				clearLocalModelProcessing(model.filename);
@@ -1088,7 +1131,7 @@
 		}
 	};
 
-	async function refreshUnifiedModelData(initial = true): Promise<LocalModel[] | null> {
+	async function performUnifiedModelRefresh(initial: boolean): Promise<LocalModel[] | null> {
 		if (initial) localLoading = true;
 		try {
 			const [newLocalModels, newMmProjFiles, newLlamaCppStatus] = await Promise.all([
@@ -1096,7 +1139,15 @@
 				getMmProjFiles(localStorage.token),
 				getLlamaCppStatus(localStorage.token).catch(() => null)
 			]);
-			await initAdmin(newLocalModels);
+			if (destroyed) return null;
+			const localCatalogChanged =
+				getLocalModelsCatalogSignature(newLocalModels) !==
+				getLocalModelsCatalogSignature(localModels);
+			if (initial || localCatalogChanged || Date.now() - lastAdminRefreshAt >= 3000) {
+				await initAdmin(newLocalModels);
+				lastAdminRefreshAt = Date.now();
+			}
+			if (destroyed) return null;
 			localError = '';
 			if (JSON.stringify(newLocalModels) !== JSON.stringify(localModels)) localModels = newLocalModels;
 			if (JSON.stringify(newMmProjFiles) !== JSON.stringify(mmProjFiles)) mmProjFiles = newMmProjFiles;
@@ -1109,10 +1160,90 @@
 			}
 			return null;
 		} finally {
-			await refreshLocalVram();
+			if (!destroyed) await refreshLocalVram();
 			if (initial) localLoading = false;
 		}
 	}
+
+	async function refreshUnifiedModelData(initial = true): Promise<LocalModel[] | null> {
+		if (unifiedRefreshInFlight) {
+			unifiedRefreshRequested = true;
+			unifiedRefreshRequestedInitial = unifiedRefreshRequestedInitial || initial;
+			return unifiedRefreshInFlight;
+		}
+
+		const refreshPromise = performUnifiedModelRefresh(initial);
+		unifiedRefreshInFlight = refreshPromise;
+		let result: LocalModel[] | null = null;
+		try {
+			result = await refreshPromise;
+		} finally {
+			if (unifiedRefreshInFlight === refreshPromise) {
+				unifiedRefreshInFlight = null;
+			}
+		}
+
+		if (unifiedRefreshRequested && !destroyed) {
+			const followUpInitial = unifiedRefreshRequestedInitial;
+			unifiedRefreshRequested = false;
+			unifiedRefreshRequestedInitial = false;
+			return refreshUnifiedModelData(followUpInitial);
+		}
+
+		return result;
+	}
+
+	const getLocalModelsRuntimeSignature = (models: LocalModel[]) =>
+		JSON.stringify(
+			models.map((model) => ({
+				id: model.id,
+				filename: model.filename,
+				is_loaded: model.is_loaded,
+				loaded_at: model.loaded_at,
+				n_gpu_layers: model.n_gpu_layers,
+				n_ctx: model.n_ctx,
+				mmproj_filename: model.mmproj_filename,
+				cache_type: model.cache_type,
+				speculative_decoding: model.speculative_decoding,
+				token_prediction: model.token_prediction,
+				context_shift: model.context_shift
+			}))
+		);
+	const getLocalModelsCatalogSignature = (models: LocalModel[]) =>
+		JSON.stringify(
+			models.map((model) => ({
+				id: model.id,
+				filename: model.filename,
+				file_size: model.file_size
+			}))
+		);
+
+	const scheduleRealtimeRefresh = () => {
+		if (destroyed) return;
+		if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer);
+
+		const hasActiveAction = Object.keys(getStoreValue(localModelProcessingStore).actions).length > 0;
+		const delay = hasActiveAction ? 700 : show ? 1000 : 2500;
+		realtimeRefreshTimer = setTimeout(async () => {
+			realtimeRefreshTimer = null;
+			if (destroyed) return;
+
+			const previousSignature = getLocalModelsRuntimeSignature(localModels);
+			const refreshedModels = await refreshUnifiedModelData(false);
+			if (
+				refreshedModels &&
+				getLocalModelsRuntimeSignature(refreshedModels) !== previousSignature
+			) {
+				await refreshGlobalModelsStore();
+			}
+			scheduleRealtimeRefresh();
+		}, delay);
+	};
+
+	const refreshAfterCatalogChange = async () => {
+		await refreshUnifiedModelData(false);
+		await refreshGlobalModelsStore();
+	};
 
 	const upsertModelHandler = async (model: any, showToast = true) => {
 		if ((workspaceModels ?? []).find((m) => m.id === model.id)) {
@@ -1209,32 +1340,21 @@
 		cancelOrphanedLocalActionTimers();
 
 		void (async () => {
-			if (!preloadApplied) {
-				await refreshUnifiedModelData();
-			} else if (vramInfo === null) {
-				refreshLocalVram();
-			}
-			if (preloadApplied) {
-				llamacppStatus = await getLlamaCppStatus(localStorage.token).catch(() => null);
-			}
+			await refreshUnifiedModelData(!preloadApplied);
 			await refreshLocalActionsAfterOpen();
+			scheduleRealtimeRefresh();
 		})();
 
-		const pollInterval = setInterval(async () => {
-			if (loadingModels.size > 0 || settlingUnloadModels.size > 0) return;
-
-			const prevIds = new Set(localModels.map((m) => m.id).filter(Boolean));
-			await refreshUnifiedModelData(false);
-			const currIds = new Set(localModels.map((m) => m.id).filter(Boolean));
-			// If models changed (added/removed), also refresh the global models store
-			const changed = prevIds.size !== currIds.size ||
-				[...prevIds].some((id) => !currIds.has(id)) ||
-				[...currIds].some((id) => !prevIds.has(id));
-			if (changed) {
-				await refreshGlobalModelsStore();
-				await initAdmin(localModels);
-			}
-		}, 3000);
+		const refreshOnFocus = () => {
+			if (destroyed) return;
+			void refreshUnifiedModelData(false);
+			scheduleRealtimeRefresh();
+		};
+		const refreshOnVisibility = () => {
+			if (document.visibilityState === 'visible') refreshOnFocus();
+		};
+		window.addEventListener('focus', refreshOnFocus);
+		document.addEventListener('visibilitychange', refreshOnVisibility);
 
 		void (async () => {
 			const id = $page.url.searchParams.get('id') || $showSettingsModelId;
@@ -1245,12 +1365,23 @@
 		})();
 
 		return () => {
-			clearInterval(pollInterval);
+			if (realtimeRefreshTimer) {
+				clearTimeout(realtimeRefreshTimer);
+				realtimeRefreshTimer = null;
+			}
+			window.removeEventListener('focus', refreshOnFocus);
+			document.removeEventListener('visibilitychange', refreshOnVisibility);
 		};
 	});
 
 	onDestroy(() => {
 		destroyed = true;
+		unifiedRefreshRequested = false;
+		unifiedRefreshRequestedInitial = false;
+		if (realtimeRefreshTimer) {
+			clearTimeout(realtimeRefreshTimer);
+			realtimeRefreshTimer = null;
+		}
 		disableCollapseAnimation();
 		cancelAllLocalActionTimers();
 		unsubscribeLocalModelProcessing();
@@ -1310,7 +1441,10 @@
 
 <ModelSettingsModal bind:show={showConfigModal} initHandler={initAdmin} />
 <ManageModelsModal bind:show={showManageModal} />
-<DownloadNeveModelsModal bind:show={showDownloadModal} />
+<DownloadNeveModelsModal
+	bind:show={showDownloadModal}
+	on:modelsChanged={refreshAfterCatalogChange}
+/>
 
 {#snippet searchBar()}
 	<div class="px-3.5 flex shrink-0 items-center w-full space-x-2 py-0.5 pb-2">

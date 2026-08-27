@@ -44,8 +44,13 @@ from neveai.routers.tasks import (
     generate_image_prompt,
 )
 from neveai.routers.retrieval import (
+    index_github_repository,
     process_web_search,
     SearchForm,
+)
+from neveai.retrieval.github import (
+    extract_github_repository_urls,
+    normalize_github_repository_url,
 )
 from neveai.utils.tools import get_builtin_tools
 from neveai.routers.images import (
@@ -2825,6 +2830,10 @@ async def chat_completion_files_handler(
     sources = []
 
     if files := body.get("metadata", {}).get("files", None):
+        github_repositories_only = all(
+            item.get("source_type") == "github_repository" for item in files
+        )
+
         # Check if all files are in full context mode
         all_full_context = all(item.get("context") == "full" for item in files)
 
@@ -2876,17 +2885,18 @@ async def chat_completion_files_handler(
                 3 if deep_search_enabled else 2,
             )
 
-            await __event_emitter__(
-                {
-                    "type": "status",
-                    "data": {
-                        "action": "queries_generated",
-                        "deep_search": deep_search_enabled,
-                        "queries": queries,
-                        "done": False,
-                    },
-                }
-            )
+            if not github_repositories_only:
+                await __event_emitter__(
+                    {
+                        "type": "status",
+                        "data": {
+                            "action": "queries_generated",
+                            "deep_search": deep_search_enabled,
+                            "queries": queries,
+                            "done": False,
+                        },
+                    }
+                )
 
         if len(queries) == 0:
             queries = filter_web_search_queries(
@@ -2950,12 +2960,97 @@ async def chat_completion_files_handler(
                     "action": "sources_retrieved",
                     "deep_search": deep_search_enabled,
                     "count": sources_count,
+                    **(
+                        {"source_type": "github_repository"}
+                        if github_repositories_only
+                        else {}
+                    ),
                     "done": True,
                 },
             }
         )
 
     return body, {"sources": sources}
+
+
+async def attach_github_repositories(
+    request: Request,
+    messages: list[dict],
+    event_emitter,
+    user: UserModel,
+) -> list[dict]:
+    repository_files = []
+
+    for url in extract_github_repository_urls(messages):
+        reference = normalize_github_repository_url(url)
+        await event_emitter(
+            {
+                "type": "status",
+                "data": {
+                    "action": "github_repository",
+                    "description": f"Analisando {reference.label}...",
+                    "done": False,
+                },
+            }
+        )
+
+        try:
+            result = await index_github_repository(request, reference.url, user)
+            repository_item = {
+                "name": result["filename"],
+                "url": result["url"],
+                "source_type": "github_repository",
+                "context": "rag",
+            }
+            if result.get("collection_name"):
+                repository_item.update(
+                    {
+                        "type": "text",
+                        "collection_name": result["collection_name"],
+                    }
+                )
+            else:
+                repository_item.update(
+                    {
+                        "type": "github_repository",
+                        "docs": result.get("docs", []),
+                    }
+                )
+            repository_files.append(repository_item)
+
+            await event_emitter(
+                {
+                    "type": "status",
+                    "data": {
+                        "action": "github_repository",
+                        "description": (
+                            f"{reference.label} disponível para consulta "
+                            f"({result.get('file_count', 0)} arquivos)."
+                        ),
+                        "done": True,
+                    },
+                }
+            )
+        except Exception as exc:
+            log.exception("Failed to attach GitHub repository %s", reference.url)
+            description = (
+                str(exc)
+                if isinstance(exc, ValueError)
+                else "Não foi possível analisar o repositório GitHub."
+            )
+            await event_emitter(
+                {
+                    "type": "status",
+                    "data": {
+                        "action": "github_repository",
+                        "description": description,
+                        "error": True,
+                        "done": True,
+                    },
+                }
+            )
+
+    return repository_files
 
 
 def apply_params_to_form_data(form_data, model):
@@ -3370,6 +3465,14 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     tool_ids = form_data.pop("tool_ids", None)
     terminal_id = form_data.pop("terminal_id", None)
     files = form_data.pop("files", None)
+    github_repository_files = await attach_github_repositories(
+        request,
+        form_data.get("messages", []),
+        event_emitter,
+        user,
+    )
+    if github_repository_files:
+        files = [*(files or []), *github_repository_files]
 
     # Caller-provided OpenAI-style tools take precedence over server-side
     # tool resolution (tool_ids, MCP servers, builtin tools).

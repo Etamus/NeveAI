@@ -73,7 +73,11 @@ DEFAULT_CFG_SCALE = 1.0
 DEFAULT_IMG2IMG_STRENGTH = 0.55
 MAX_INIT_IMAGE_BYTES = 30 * 1024 * 1024
 IMAGE_PROMPT_TRANSLATION_TIMEOUT_SECONDS = 20.0
-IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS = 4500
+IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS = 1600
+IMAGE_PROMPT_TRANSLATION_MIN_CHUNK_CHARS = 280
+IMAGE_PROMPT_TRANSLATION_MAX_SPLIT_DEPTH = 2
+IMAGE_PROMPT_TRANSLATION_MAX_CONSECUTIVE_FAILURES = 6
+IMAGE_PROMPT_TRANSLATION_MIN_LENGTH_RATIO = 0.65
 
 _PORTUGUESE_MARKERS = {
     "quero", "gere", "gerar", "crie", "criar", "desenhe", "faça", "faca",
@@ -252,9 +256,13 @@ def _short_log_prompt(prompt: str, limit: int = 500) -> str:
     return prompt if len(prompt) <= limit else f"{prompt[:limit]}..."
 
 
-def _split_prompt_for_translation(prompt: str) -> list[str]:
+def _split_prompt_for_translation(
+    prompt: str,
+    max_chars: int = IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS,
+) -> list[str]:
     prompt = _normalize_image_prompt_text(prompt)
-    if len(prompt) <= IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS:
+    max_chars = max(1, int(max_chars))
+    if len(prompt) <= max_chars:
         return [prompt]
 
     chunks: list[str] = []
@@ -266,17 +274,25 @@ def _split_prompt_for_translation(prompt: str) -> list[str]:
         if not sentence:
             continue
 
-        if len(sentence) > IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS:
+        if len(sentence) > max_chars:
             if current:
                 chunks.append(" ".join(current).strip())
                 current = []
                 current_len = 0
-            for start in range(0, len(sentence), IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS):
-                chunks.append(sentence[start : start + IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS].strip())
+
+            remaining = sentence
+            while len(remaining) > max_chars:
+                split_at = remaining.rfind(" ", max_chars // 2, max_chars + 1)
+                if split_at <= 0:
+                    split_at = max_chars
+                chunks.append(remaining[:split_at].strip())
+                remaining = remaining[split_at:].strip()
+            if remaining:
+                chunks.append(remaining)
             continue
 
         next_len = current_len + len(sentence) + (1 if current else 0)
-        if current and next_len > IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS:
+        if current and next_len > max_chars:
             chunks.append(" ".join(current).strip())
             current = [sentence]
             current_len = len(sentence)
@@ -443,19 +459,93 @@ def _translate_image_prompt_sync(prompt: str) -> str:
     try:
         from deep_translator import GoogleTranslator
     except Exception as e:
-        raise RuntimeError(f"deep-translator nao carregou: {e}") from e
+        log.warning(
+            "deep-translator nao carregou; usando o prompt de imagem original: %s",
+            e,
+        )
+        return prompt
 
-    try:
-        source_language = "pt" if _looks_portuguese(prompt) else "auto"
-        translator = GoogleTranslator(source=source_language, target="en")
-        translated_chunks = []
-        for chunk in _split_prompt_for_translation(prompt):
-            translated = translator.translate(chunk)
-            translated = _normalize_image_prompt_text(str(translated or ""))
-            if translated:
-                translated_chunks.append(translated)
-    except Exception as e:
-        raise RuntimeError(f"falha ao traduzir prompt de imagem: {e}") from e
+    source_language = "pt" if _looks_portuguese(prompt) else "auto"
+    consecutive_failures = 0
+    translation_disabled = False
+
+    def translate_chunk(chunk: str, depth: int = 0) -> tuple[str, bool]:
+        nonlocal consecutive_failures, translation_disabled
+
+        if _looks_english(chunk):
+            return chunk, True
+        if translation_disabled:
+            return chunk, False
+
+        source_attempts = [source_language]
+        if (
+            source_language != "auto"
+            and (
+                depth >= IMAGE_PROMPT_TRANSLATION_MAX_SPLIT_DEPTH
+                or len(chunk) <= IMAGE_PROMPT_TRANSLATION_MIN_CHUNK_CHARS * 2
+            )
+        ):
+            source_attempts.append("auto")
+
+        for source in source_attempts:
+            try:
+                translated = GoogleTranslator(source=source, target="en").translate(
+                    chunk
+                )
+                translated = _normalize_image_prompt_text(str(translated or ""))
+                preserves_content = (
+                    len(chunk) < 120
+                    or len(translated)
+                    >= len(chunk) * IMAGE_PROMPT_TRANSLATION_MIN_LENGTH_RATIO
+                )
+                if (
+                    translated
+                    and preserves_content
+                    and (translated != chunk or not _looks_portuguese(chunk))
+                ):
+                    consecutive_failures = 0
+                    return translated, True
+            except Exception:
+                pass
+
+            consecutive_failures += 1
+            if consecutive_failures >= IMAGE_PROMPT_TRANSLATION_MAX_CONSECUTIVE_FAILURES:
+                translation_disabled = True
+                break
+
+        if (
+            depth < IMAGE_PROMPT_TRANSLATION_MAX_SPLIT_DEPTH
+            and len(chunk) > IMAGE_PROMPT_TRANSLATION_MIN_CHUNK_CHARS * 2
+        ):
+            next_max_chars = max(
+                IMAGE_PROMPT_TRANSLATION_MIN_CHUNK_CHARS,
+                min(IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS // 2, len(chunk) // 2),
+            )
+            subchunks = _split_prompt_for_translation(chunk, next_max_chars)
+            if len(subchunks) > 1:
+                translated_parts: list[str] = []
+                translated_all = True
+                for subchunk in subchunks:
+                    translated_part, translated_ok = translate_chunk(subchunk, depth + 1)
+                    translated_parts.append(translated_part)
+                    translated_all = translated_all and translated_ok
+                return " ".join(translated_parts), translated_all
+
+        return chunk, False
+
+    translated_chunks: list[str] = []
+    translated_all = True
+    for chunk in _split_prompt_for_translation(prompt):
+        translated, translated_ok = translate_chunk(chunk)
+        translated_chunks.append(translated)
+        translated_all = translated_all and translated_ok
+
+    if not translated_all:
+        log.warning(
+            "A traducao integral do prompt de imagem nao estava disponivel; "
+            "usando o prompt original completo"
+        )
+        return prompt
 
     return _polish_translated_image_prompt(" ".join(translated_chunks), prompt) or prompt
 
@@ -478,26 +568,32 @@ async def _prepare_image_prompt(prompt: str) -> str:
             loop.run_in_executor(None, _translate_image_prompt_sync, prompt),
             timeout=IMAGE_PROMPT_TRANSLATION_TIMEOUT_SECONDS,
         )
+    except asyncio.TimeoutError:
+        log.warning(
+            "Traducao do prompt de imagem excedeu %.0fs; usando o prompt original",
+            IMAGE_PROMPT_TRANSLATION_TIMEOUT_SECONDS,
+        )
+        return prompt
     except Exception as e:
-        if _looks_english(prompt) and not _looks_portuguese(prompt):
-            log.warning("Traducao de prompt em ingles falhou; usando original: %s", e)
-            return prompt
-        raise RuntimeError(
-            "Nao foi possivel traduzir o prompt de imagem para ingles. "
-            "Verifique a conexao do deep-translator e tente novamente."
-        ) from e
+        log.warning("Traducao do prompt de imagem falhou; usando o original: %s", e)
+        return prompt
 
     translated = _normalize_image_prompt_text(translated)
     if not translated:
-        raise RuntimeError("Traducao do prompt de imagem retornou vazia")
+        log.warning("Traducao do prompt de imagem retornou vazia; usando o original")
+        return prompt
 
     if translated != prompt:
         log.info(
             "Prompt de imagem traduzido para ingles antes da geracao: %s",
             _short_log_prompt(translated),
         )
-    else:
+    elif _looks_english(prompt):
         log.info("Prompt de imagem confirmado em ingles antes da geracao")
+    else:
+        log.warning(
+            "Prompt de imagem mantido no idioma original porque a traducao nao estava disponivel"
+        )
     return translated
 
 

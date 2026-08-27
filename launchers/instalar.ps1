@@ -1620,7 +1620,20 @@ USER_AGENT=Neve AI
             $llamaVersionPath = Join-Path (Split-Path $llamaDir -Parent) 'version.txt'
             $llamaInstalled = $false
             try {
-                $rel = Invoke-RestMethod 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest' -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 60
+                $attempts = @($cfg.llamaAsset, 'cpu') | Where-Object { $_ } | Select-Object -Unique
+                $releases = @((Invoke-RestMethod 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30' -Headers @{ 'User-Agent' = 'Neve-Installer/3.0'; 'Accept' = 'application/vnd.github+json' } -TimeoutSec 60))
+                $rel = $releases | Where-Object {
+                    if ($_.draft -or -not $_.tag_name) { return $false }
+                    $releaseTag = [regex]::Escape([string]$_.tag_name)
+                    foreach ($backendName in $attempts) {
+                        $backendEsc = [regex]::Escape([string]$backendName)
+                        if ($_.assets | Where-Object { $_.name -match "^llama-$releaseTag-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1) {
+                            return $true
+                        }
+                    }
+                    return $false
+                } | Select-Object -First 1
+                if (-not $rel) { throw 'Nenhuma release recente do llama.cpp contém binários Windows compatíveis.' }
                 $tag = $rel.tag_name
                 if (-not $tag) { throw 'Release do llama.cpp sem tag_name.' }
 
@@ -1632,7 +1645,7 @@ USER_AGENT=Neve AI
                     }
                 }
 
-                $attempts = if ($llamaInstalled) { @() } else { @($cfg.llamaAsset, 'cpu') | Where-Object { $_ } | Select-Object -Unique }
+                $attempts = if ($llamaInstalled) { @() } else { $attempts }
                 foreach ($assetName in $attempts) {
                     $tmpFiles = @(); $stageDir = $null; $backupDir = $null
                     try {
@@ -2295,7 +2308,7 @@ $LOG = Join-Path $LOG_DIR 'update.log'
 $REPO_OWNER  = 'Etamus'
 $REPO_NAME   = 'NeveAI'
 $API_LATEST  = "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest"
-$LLAMA_API_LATEST = 'https://api.github.com/repos/ggml-org/llama.cpp/releases/latest'
+$LLAMA_API_RELEASES = 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30'
 $UA          = 'Neve-Updater/1.0'
 
 function Normalize-ReleaseTag([string]$tag) {
@@ -2396,6 +2409,94 @@ function Get-GitHubLatestRelease([string]$owner, [string]$repo) {
         }
         throw (Get-FriendlyGitHubError $apiError)
     }
+}
+
+function New-LlamaReleaseAssetReference([string]$tag, [string]$name) {
+    [pscustomobject]@{
+        name = $name
+        size = 0
+        browser_download_url = "https://github.com/ggml-org/llama.cpp/releases/download/$([uri]::EscapeDataString($tag))/$([uri]::EscapeDataString($name))"
+    }
+}
+
+function Test-LlamaReleaseAssetReference([string]$url) {
+    try {
+        $request = [System.Net.HttpWebRequest]::Create($url)
+        $request.Method = 'HEAD'
+        $request.AllowAutoRedirect = $true
+        $request.UserAgent = $UA
+        $request.Timeout = 15000
+        $response = $request.GetResponse()
+        try {
+            $statusCode = [int]$response.StatusCode
+            return ($statusCode -ge 200 -and $statusCode -lt 400)
+        } finally {
+            $response.Close()
+        }
+    } catch {
+        return $false
+    }
+}
+
+function Get-GitHubLatestLlamaRelease([string[]]$backends = @()) {
+    $supportedBackends = @('cpu', 'cuda-12.4', 'cuda-13.3', 'cuda-cu12.4', 'cuda-cu13.3', 'vulkan')
+    $wantedBackends = @($backends | Where-Object { $_ })
+    if ($wantedBackends.Count -eq 0) { $wantedBackends = $supportedBackends }
+    if ($wantedBackends -contains 'cuda-cu12.4') { $wantedBackends += 'cuda-12.4' }
+    if ($wantedBackends -contains 'cuda-cu13.3') { $wantedBackends += 'cuda-13.3' }
+    if ($wantedBackends -contains 'cuda-12.4') { $wantedBackends += 'cuda-cu12.4' }
+    if ($wantedBackends -contains 'cuda-13.3') { $wantedBackends += 'cuda-cu13.3' }
+    $wantedBackends = @($wantedBackends | Select-Object -Unique)
+
+    $apiError = $null
+    try {
+        $releases = @((Invoke-RestMethod $LLAMA_API_RELEASES -Headers @{ 'User-Agent' = $UA; 'Accept' = 'application/vnd.github+json' } -TimeoutSec 30))
+        foreach ($release in $releases) {
+            if ($release.draft -or -not $release.tag_name) { continue }
+            $tagEsc = [regex]::Escape([string]$release.tag_name)
+            foreach ($backend in $wantedBackends) {
+                $backendEsc = [regex]::Escape([string]$backend)
+                $asset = $release.assets | Where-Object { $_.name -match "^llama-$tagEsc-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
+                if ($asset) { return $release }
+            }
+        }
+        throw 'Nenhuma release recente do llama.cpp contém binários Windows compatíveis.'
+    } catch {
+        $apiError = $_
+    }
+
+    try {
+        $feed = Invoke-WebRequest 'https://github.com/ggml-org/llama.cpp/releases.atom' -Headers @{ 'User-Agent' = $UA } -UseBasicParsing -TimeoutSec 30
+        $seenTags = @{}
+        foreach ($match in [regex]::Matches([string]$feed.Content, '/releases/tag/([^"<]+)')) {
+            $tag = [uri]::UnescapeDataString($match.Groups[1].Value).Trim()
+            if (-not $tag -or $seenTags.ContainsKey($tag)) { continue }
+            $seenTags[$tag] = $true
+
+            foreach ($backend in $wantedBackends) {
+                $mainName = "llama-$tag-bin-win-$backend-x64.zip"
+                $mainAsset = New-LlamaReleaseAssetReference $tag $mainName
+                if (-not (Test-LlamaReleaseAssetReference $mainAsset.browser_download_url)) { continue }
+
+                $assets = @($mainAsset)
+                if ($backend -match '^cuda') {
+                    $runtimeName = "cudart-llama-bin-win-$backend-x64.zip"
+                    $runtimeAsset = New-LlamaReleaseAssetReference $tag $runtimeName
+                    if (Test-LlamaReleaseAssetReference $runtimeAsset.browser_download_url) { $assets += $runtimeAsset }
+                }
+
+                return [pscustomobject]@{
+                    tag_name = $tag
+                    assets = $assets
+                    prerelease = $true
+                    draft = $false
+                    is_fallback = $true
+                }
+            }
+        }
+    } catch {}
+
+    throw (Get-FriendlyGitHubError $apiError)
 }
 
 # Logo (favicon do projeto)
@@ -2810,11 +2911,11 @@ $ctl.BtnLlama.Add_Click({
 
     $argRoot      = $ROOT
     $argLog       = $LOG
-    $argLlamaApi  = $LLAMA_API_LATEST
+    $argLlamaApi  = $LLAMA_API_RELEASES
     $argUa        = $UA
 
     $worker = {
-        param($ROOT, $LOG, $LLAMA_API_LATEST, $UA)
+        param($ROOT, $LOG, $LLAMA_API_RELEASES, $UA)
 
         Set-Location -LiteralPath $ROOT
 
@@ -2834,47 +2935,49 @@ $ctl.BtnLlama.Add_Click({
                 if ($phase) { $script:Ctl.LblPhase.Text = $phase; $script:Ctl.LblStep.Text = $phase }
             })
         }
-        function Get-LatestLlamaTagFromRedirect {
-            $url = 'https://github.com/ggml-org/llama.cpp/releases/latest'
-            foreach ($method in @('HEAD', 'GET')) {
-                try {
-                    $request = [System.Net.HttpWebRequest]::Create($url)
-                    $request.Method = $method
-                    $request.AllowAutoRedirect = $false
-                    $request.UserAgent = $UA
-                    $request.Timeout = 20000
-                    $response = $request.GetResponse()
-                    try {
-                        $location = [string]$response.Headers['Location']
-                        if ($location -match '/releases/tag/([^/?#]+)') { return [uri]::UnescapeDataString($matches[1]) }
-                    } finally {
-                        $response.Close()
-                    }
-                } catch [System.Net.WebException] {
-                    $response = $_.Exception.Response
-                    try {
-                        if ($response) {
-                            $location = [string]$response.Headers['Location']
-                            if ($location -match '/releases/tag/([^/?#]+)') { return [uri]::UnescapeDataString($matches[1]) }
-                        }
-                    } finally {
-                        if ($response) { $response.Close() }
-                    }
-                } catch {}
-            }
-            return $null
-        }
-        function Get-LatestLlamaRelease {
+        function Get-LatestLlamaRelease([string[]]$backends) {
+            $apiError = $null
             try {
-                return Invoke-RestMethod $LLAMA_API_LATEST -Headers @{ 'User-Agent' = $UA } -TimeoutSec 30
-            } catch {
-                $tag = Get-LatestLlamaTagFromRedirect
-                if ($tag) {
-                    L '[!] GitHub API limitada; usando fallback por página de release.' 'warn'
-                    return [pscustomobject]@{ tag_name = $tag; assets = @(); is_fallback = $true }
+                $releases = @((Invoke-RestMethod $LLAMA_API_RELEASES -Headers @{ 'User-Agent' = $UA; 'Accept' = 'application/vnd.github+json' } -TimeoutSec 30))
+                foreach ($release in $releases) {
+                    if ($release.draft -or -not $release.tag_name) { continue }
+                    $tagEsc = [regex]::Escape([string]$release.tag_name)
+                    foreach ($backend in $backends) {
+                        $backendEsc = [regex]::Escape([string]$backend)
+                        $asset = $release.assets | Where-Object { $_.name -match "^llama-$tagEsc-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
+                        if ($asset) { return $release }
+                    }
                 }
-                throw 'Limite temporário do GitHub atingido. Aguarde alguns minutos e tente novamente.'
+                throw 'Nenhuma release recente do llama.cpp contém os binários Windows necessários.'
+            } catch {
+                $apiError = $_
             }
+
+            try {
+                $feed = Invoke-WebRequest 'https://github.com/ggml-org/llama.cpp/releases.atom' -Headers @{ 'User-Agent' = $UA } -UseBasicParsing -TimeoutSec 30
+                $seenTags = @{}
+                foreach ($match in [regex]::Matches([string]$feed.Content, '/releases/tag/([^"<]+)')) {
+                    $tag = [uri]::UnescapeDataString($match.Groups[1].Value).Trim()
+                    if (-not $tag -or $seenTags.ContainsKey($tag)) { continue }
+                    $seenTags[$tag] = $true
+
+                    foreach ($backend in $backends) {
+                        $mainAsset = New-LlamaReleaseAsset $tag "llama-$tag-bin-win-$backend-x64.zip"
+                        if (-not (Test-ReleaseAssetUrl $mainAsset.browser_download_url)) { continue }
+
+                        $assets = @($mainAsset)
+                        if ($backend -match '^cuda') {
+                            $runtimeAsset = New-LlamaReleaseAsset $tag "cudart-llama-bin-win-$backend-x64.zip"
+                            if (Test-ReleaseAssetUrl $runtimeAsset.browser_download_url) { $assets += $runtimeAsset }
+                        }
+
+                        L '[!] GitHub API limitada; usando o feed de releases compatíveis.' 'warn'
+                        return [pscustomobject]@{ tag_name = $tag; assets = $assets; prerelease = $true; draft = $false; is_fallback = $true }
+                    }
+                }
+            } catch {}
+
+            throw "Não foi possível localizar uma release compatível do llama.cpp: $apiError"
         }
         function New-LlamaReleaseAsset([string]$tag, [string]$name) {
             [pscustomobject]@{
@@ -2988,9 +3091,6 @@ $ctl.BtnLlama.Add_Click({
                 $asset = New-LlamaReleaseAsset $tag "llama-$tag-bin-win-$backend-x64.zip"
                 if (Test-ReleaseAssetUrl $asset.browser_download_url) { return $asset }
             }
-            foreach ($backend in $backends) {
-                return (New-LlamaReleaseAsset $tag "llama-$tag-bin-win-$backend-x64.zip")
-            }
             return $null
         }
         function Find-CudaRuntimeAsset($assets, [string]$tag, [string[]]$backends) {
@@ -3002,9 +3102,6 @@ $ctl.BtnLlama.Add_Click({
             foreach ($backend in $backends) {
                 $asset = New-LlamaReleaseAsset $tag "cudart-llama-bin-win-$backend-x64.zip"
                 if (Test-ReleaseAssetUrl $asset.browser_download_url) { return $asset }
-            }
-            foreach ($backend in $backends) {
-                return (New-LlamaReleaseAsset $tag "cudart-llama-bin-win-$backend-x64.zip")
             }
             return $null
         }
@@ -3030,11 +3127,17 @@ $ctl.BtnLlama.Add_Click({
         $stageDir = $null
         $backupDir = $null
         try {
-            P 5 'Consultando release do llama.cpp'
-            $rel = Get-LatestLlamaRelease
+            P 5 'Detectando hardware'
+            $target = Get-LlamaHardwareTarget
+            L "[OK] Alvo selecionado: $($target.Label)"
+            if ($target.Name) { L "    Hardware: $($target.Name)" }
+            if ($target.Reason) { L "    $($target.Reason)" }
+
+            P 10 'Consultando releases do llama.cpp'
+            $rel = Get-LatestLlamaRelease ([string[]]$target.Backends)
             $tag = $rel.tag_name
             if (-not $tag) { throw 'Release do llama.cpp sem tag_name.' }
-            L "[OK] Último release: $tag"
+            L "[OK] Última release compatível: $tag"
 
             $installed = Get-InstalledLlamaInfo $ROOT
             if ($installed.Tag -and $installed.Tag -eq $tag) {
@@ -3060,12 +3163,6 @@ $ctl.BtnLlama.Add_Click({
                 })
                 return
             }
-
-            P 15 'Detectando hardware'
-            $target = Get-LlamaHardwareTarget
-            L "[OK] Alvo selecionado: $($target.Label)"
-            if ($target.Name) { L "    Hardware: $($target.Name)" }
-            if ($target.Reason) { L "    $($target.Reason)" }
 
             $mainAsset = Find-LlamaBinAsset $rel.assets $tag ([string[]]$target.Backends)
             if (-not $mainAsset) {
@@ -3253,7 +3350,13 @@ try {
     $checkError = Get-FriendlyGitHubError $_
 }
 try {
-    $llamaReleaseObj = Get-GitHubLatestRelease 'ggml-org' 'llama.cpp'
+    $llamaPreferredBackends = @()
+    if ($llamaInstalledAsset -match '-bin-win-(.+)-x64\.zip$') {
+        $llamaPreferredBackends = @($matches[1])
+    } elseif ($llamaInstalledBackend -in @('cpu', 'cuda-12.4', 'cuda-13.3', 'cuda-cu12.4', 'cuda-cu13.3', 'vulkan')) {
+        $llamaPreferredBackends = @($llamaInstalledBackend)
+    }
+    $llamaReleaseObj = Get-GitHubLatestLlamaRelease ([string[]]$llamaPreferredBackends)
     $llamaLatestTag  = $llamaReleaseObj.tag_name
 } catch {
     $llamaCheckError = Get-FriendlyGitHubError $_
@@ -3382,11 +3485,11 @@ $ctl.BtnPrimary.Add_Click({
     $argLog          = $LOG
     $argVersionFile  = $VERSION_FILE
     $argCurrent      = $currentVersion
-    $argLlamaApi     = $LLAMA_API_LATEST
+    $argLlamaApi     = $LLAMA_API_RELEASES
     $argUa           = $UA
 
     $worker = {
-        param($updateNeve, $updateLlama, $latestTag, $zipUrl, $ROOT, $LOG, $VERSION_FILE, $currentVersion, $LLAMA_API_LATEST, $UA)
+        param($updateNeve, $updateLlama, $latestTag, $zipUrl, $ROOT, $LOG, $VERSION_FILE, $currentVersion, $LLAMA_API_RELEASES, $UA)
 
         Set-Location -LiteralPath $ROOT
 
@@ -3414,47 +3517,49 @@ $ctl.BtnPrimary.Add_Click({
         function PL([int]$v, [string]$phase) {
             if ($updateNeve) { P (70 + [int][math]::Round($v * 0.30)) $phase } else { P $v $phase }
         }
-        function Get-LatestLlamaTagFromRedirect {
-            $url = 'https://github.com/ggml-org/llama.cpp/releases/latest'
-            foreach ($method in @('HEAD', 'GET')) {
-                try {
-                    $request = [System.Net.HttpWebRequest]::Create($url)
-                    $request.Method = $method
-                    $request.AllowAutoRedirect = $false
-                    $request.UserAgent = $UA
-                    $request.Timeout = 20000
-                    $response = $request.GetResponse()
-                    try {
-                        $location = [string]$response.Headers['Location']
-                        if ($location -match '/releases/tag/([^/?#]+)') { return [uri]::UnescapeDataString($matches[1]) }
-                    } finally {
-                        $response.Close()
-                    }
-                } catch [System.Net.WebException] {
-                    $response = $_.Exception.Response
-                    try {
-                        if ($response) {
-                            $location = [string]$response.Headers['Location']
-                            if ($location -match '/releases/tag/([^/?#]+)') { return [uri]::UnescapeDataString($matches[1]) }
-                        }
-                    } finally {
-                        if ($response) { $response.Close() }
-                    }
-                } catch {}
-            }
-            return $null
-        }
-        function Get-LatestLlamaRelease {
+        function Get-LatestLlamaRelease([string[]]$backends) {
+            $apiError = $null
             try {
-                return Invoke-RestMethod $LLAMA_API_LATEST -Headers @{ 'User-Agent' = $UA } -TimeoutSec 30
-            } catch {
-                $tag = Get-LatestLlamaTagFromRedirect
-                if ($tag) {
-                    L '[!] GitHub API limitada; usando fallback por página de release.' 'warn'
-                    return [pscustomobject]@{ tag_name = $tag; assets = @(); is_fallback = $true }
+                $releases = @((Invoke-RestMethod $LLAMA_API_RELEASES -Headers @{ 'User-Agent' = $UA; 'Accept' = 'application/vnd.github+json' } -TimeoutSec 30))
+                foreach ($release in $releases) {
+                    if ($release.draft -or -not $release.tag_name) { continue }
+                    $tagEsc = [regex]::Escape([string]$release.tag_name)
+                    foreach ($backend in $backends) {
+                        $backendEsc = [regex]::Escape([string]$backend)
+                        $asset = $release.assets | Where-Object { $_.name -match "^llama-$tagEsc-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
+                        if ($asset) { return $release }
+                    }
                 }
-                throw 'Limite temporário do GitHub atingido. Aguarde alguns minutos e tente novamente.'
+                throw 'Nenhuma release recente do llama.cpp contém os binários Windows necessários.'
+            } catch {
+                $apiError = $_
             }
+
+            try {
+                $feed = Invoke-WebRequest 'https://github.com/ggml-org/llama.cpp/releases.atom' -Headers @{ 'User-Agent' = $UA } -UseBasicParsing -TimeoutSec 30
+                $seenTags = @{}
+                foreach ($match in [regex]::Matches([string]$feed.Content, '/releases/tag/([^"<]+)')) {
+                    $tag = [uri]::UnescapeDataString($match.Groups[1].Value).Trim()
+                    if (-not $tag -or $seenTags.ContainsKey($tag)) { continue }
+                    $seenTags[$tag] = $true
+
+                    foreach ($backend in $backends) {
+                        $mainAsset = New-LlamaReleaseAsset $tag "llama-$tag-bin-win-$backend-x64.zip"
+                        if (-not (Test-ReleaseAssetUrl $mainAsset.browser_download_url)) { continue }
+
+                        $assets = @($mainAsset)
+                        if ($backend -match '^cuda') {
+                            $runtimeAsset = New-LlamaReleaseAsset $tag "cudart-llama-bin-win-$backend-x64.zip"
+                            if (Test-ReleaseAssetUrl $runtimeAsset.browser_download_url) { $assets += $runtimeAsset }
+                        }
+
+                        L '[!] GitHub API limitada; usando o feed de releases compatíveis.' 'warn'
+                        return [pscustomobject]@{ tag_name = $tag; assets = $assets; prerelease = $true; draft = $false; is_fallback = $true }
+                    }
+                }
+            } catch {}
+
+            throw "Não foi possível localizar uma release compatível do llama.cpp: $apiError"
         }
         function New-LlamaReleaseAsset([string]$tag, [string]$name) {
             [pscustomobject]@{
@@ -3959,9 +4064,6 @@ $ctl.BtnPrimary.Add_Click({
                 $asset = New-LlamaReleaseAsset $tag "llama-$tag-bin-win-$backend-x64.zip"
                 if (Test-ReleaseAssetUrl $asset.browser_download_url) { return $asset }
             }
-            foreach ($backend in $backends) {
-                return (New-LlamaReleaseAsset $tag "llama-$tag-bin-win-$backend-x64.zip")
-            }
             return $null
         }
         function Find-CudaRuntimeAsset($assets, [string]$tag, [string[]]$backends) {
@@ -3973,9 +4075,6 @@ $ctl.BtnPrimary.Add_Click({
             foreach ($backend in $backends) {
                 $asset = New-LlamaReleaseAsset $tag "cudart-llama-bin-win-$backend-x64.zip"
                 if (Test-ReleaseAssetUrl $asset.browser_download_url) { return $asset }
-            }
-            foreach ($backend in $backends) {
-                return (New-LlamaReleaseAsset $tag "cudart-llama-bin-win-$backend-x64.zip")
             }
             return $null
         }
@@ -4083,8 +4182,13 @@ $ctl.BtnPrimary.Add_Click({
         function Update-LlamaCpp {
             $tmpFiles = @(); $stageDir = $null; $backupDir = $null
             try {
-                PL 5 'Consultando release do llama.cpp'
-                $rel = Get-LatestLlamaRelease
+                PL 5 'Detectando hardware para llama.cpp'
+                $target = Get-LlamaHardwareTarget
+                L "[OK] Alvo llama.cpp: $($target.Label)"
+                if ($target.Name) { L "    Hardware: $($target.Name)" }
+
+                PL 10 'Consultando releases do llama.cpp'
+                $rel = Get-LatestLlamaRelease ([string[]]$target.Backends)
                 $tag = $rel.tag_name
                 if (-not $tag) { throw 'Release do llama.cpp sem tag_name.' }
                 $installed = Get-InstalledLlamaInfo $ROOT
@@ -4092,11 +4196,6 @@ $ctl.BtnPrimary.Add_Click({
                     L "[OK] llama.cpp já está na última release ($tag). Nenhum download necessário."
                     return "llama.cpp: já atualizado ($tag)"
                 }
-
-                PL 15 'Detectando hardware para llama.cpp'
-                $target = Get-LlamaHardwareTarget
-                L "[OK] Alvo llama.cpp: $($target.Label)"
-                if ($target.Name) { L "    Hardware: $($target.Name)" }
 
                 $mainAsset = Find-LlamaBinAsset $rel.assets $tag ([string[]]$target.Backends)
                 if (-not $mainAsset) { throw "O release $tag não contém um asset Windows x64 para $($target.Label). Nada foi instalado." }

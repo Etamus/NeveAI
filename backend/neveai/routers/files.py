@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import uuid
 import json
 from pathlib import Path
@@ -58,6 +59,23 @@ router = APIRouter()
 
 
 from neveai.utils.access_control.files import has_access_to_file
+
+
+def _clear_directory_contents(directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    for item in directory.iterdir():
+        if item.is_dir() and not item.is_symlink():
+            shutil.rmtree(item)
+        else:
+            item.unlink(missing_ok=True)
+
+
+def _clear_generated_media_cache() -> None:
+    from neveai.routers.music_generation import ACE_STEP_TEMP_DIR
+    from neveai.routers.stable_diffusion import IMAGE_INPUT_DIR, IMAGE_OUTPUT_DIR
+
+    for directory in (IMAGE_OUTPUT_DIR, IMAGE_INPUT_DIR, ACE_STEP_TEMP_DIR):
+        _clear_directory_contents(directory)
 
 ############################
 # Upload File
@@ -410,6 +428,7 @@ async def delete_all_files(
         try:
             Storage.delete_all_files()
             VECTOR_DB_CLIENT.reset()
+            await asyncio.to_thread(_clear_generated_media_cache)
         except Exception as e:
             log.exception(e)
             log.error("Error deleting files")

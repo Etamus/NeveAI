@@ -2422,6 +2422,73 @@ async def get_github_latest_release_tag(session, repo: str):
     raise api_error
 
 
+LLAMACPP_WINDOWS_BACKENDS = (
+    "cpu",
+    "cuda-12.4",
+    "cuda-13.3",
+    "cuda-cu12.4",
+    "cuda-cu13.3",
+    "vulkan",
+)
+
+
+def is_compatible_llamacpp_release(release: dict):
+    if not isinstance(release, dict) or release.get("draft"):
+        return False
+
+    tag = (release.get("tag_name") or "").strip()
+    if not tag:
+        return False
+
+    asset_pattern = re.compile(
+        rf"^llama-{re.escape(tag)}-bin-win-"
+        rf"(?:{'|'.join(re.escape(value) for value in LLAMACPP_WINDOWS_BACKENDS)})"
+        r"-x64\.zip$",
+        re.IGNORECASE,
+    )
+    return any(
+        asset_pattern.match((asset.get("name") or "").strip())
+        for asset in release.get("assets") or []
+        if isinstance(asset, dict)
+    )
+
+
+async def get_github_latest_compatible_llamacpp_release_tag(session):
+    api_error = None
+    try:
+        async with session.get(
+            "https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30",
+            ssl=AIOHTTP_CLIENT_SESSION_SSL,
+        ) as response:
+            response.raise_for_status()
+            releases = await response.json()
+            for release in releases if isinstance(releases, list) else []:
+                if is_compatible_llamacpp_release(release):
+                    return (release.get("tag_name") or "").strip()
+            raise RuntimeError(
+                "Nenhuma release recente do llama.cpp contém binários Windows compatíveis."
+            )
+    except Exception as e:
+        api_error = e
+
+    # The Atom feed includes pre-releases and remains useful when the API is rate-limited.
+    try:
+        async with session.get(
+            "https://github.com/ggml-org/llama.cpp/releases.atom",
+            ssl=AIOHTTP_CLIENT_SESSION_SSL,
+        ) as response:
+            response.raise_for_status()
+            feed = await response.text()
+            for encoded_tag in re.findall(r"/releases/tag/([^\"<]+)", feed):
+                tag = unquote(encoded_tag).strip()
+                if re.fullmatch(r"b\d+", tag, re.IGNORECASE):
+                    return tag
+    except Exception:
+        pass
+
+    raise api_error
+
+
 def launch_installer_update_page():
     import subprocess
 
@@ -2527,7 +2594,7 @@ async def get_app_latest_release_version(user=Depends(get_verified_user)):
             },
         }
 
-    timeout = aiohttp.ClientTimeout(total=5)
+    timeout = aiohttp.ClientTimeout(total=8)
     try:
         async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
             try:
@@ -2540,8 +2607,8 @@ async def get_app_latest_release_version(user=Depends(get_verified_user)):
                 latest_version = current_version
 
             try:
-                latest_llama_tag = await get_github_latest_release_tag(
-                    session, "ggml-org/llama.cpp"
+                latest_llama_tag = (
+                    await get_github_latest_compatible_llamacpp_release_tag(session)
                 )
                 llama_update_available = is_project_update_available(
                     llama_cpp["current_tag"], latest_llama_tag

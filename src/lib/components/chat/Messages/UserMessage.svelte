@@ -13,6 +13,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import Markdown from './Markdown.svelte';
+	import GitHubRepositoryContent from './GitHubRepositoryContent.svelte';
 	import Image from '$lib/components/common/Image.svelte';
 	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 
@@ -323,7 +324,9 @@
 										bind:this={contentElement}
 										class="whitespace-pre-wrap break-words chat-user-content transition-all duration-200"
 										style={!expanded && contentOverflows ? 'max-height: 7.5rem; overflow: hidden;' : ''}
-									>{message.content}</div>
+									>
+										<GitHubRepositoryContent content={message.content} />
+									</div>
 
 									{#if !expanded && contentOverflows}
 										<div class="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-gray-50 dark:from-gray-850 to-transparent pointer-events-none"></div>

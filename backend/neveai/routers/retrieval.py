@@ -51,6 +51,14 @@ from sqlalchemy.orm import Session
 
 
 from neveai.retrieval.vector.factory import VECTOR_DB_CLIENT
+from neveai.retrieval.github import (
+    load_github_repository,
+    load_repository_manifest,
+    normalize_github_repository_url,
+    refresh_repository_manifest,
+    repository_manifest_is_fresh,
+    save_repository_manifest,
+)
 
 # Document loaders
 from neveai.retrieval.loaders.main import Loader
@@ -1894,6 +1902,116 @@ async def process_text(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=ERROR_MESSAGES.DEFAULT(),
         )
+
+
+_GITHUB_REPOSITORY_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+async def index_github_repository(request: Request, url: str, user=None) -> dict:
+    reference = normalize_github_repository_url(url)
+    manifest = load_repository_manifest(reference)
+    collection_exists = VECTOR_DB_CLIENT.has_collection(
+        collection_name=reference.collection_name
+    )
+
+    if collection_exists and repository_manifest_is_fresh(manifest):
+        return {
+            "status": True,
+            "cached": True,
+            "collection_name": reference.collection_name,
+            "filename": reference.label,
+            "url": reference.url,
+            "file_count": manifest.get("file_count", 0),
+        }
+
+    lock = _GITHUB_REPOSITORY_LOCKS.setdefault(reference.collection_name, asyncio.Lock())
+    async with lock:
+        manifest = load_repository_manifest(reference)
+        collection_exists = VECTOR_DB_CLIENT.has_collection(
+            collection_name=reference.collection_name
+        )
+        if collection_exists and repository_manifest_is_fresh(manifest):
+            return {
+                "status": True,
+                "cached": True,
+                "collection_name": reference.collection_name,
+                "filename": reference.label,
+                "url": reference.url,
+                "file_count": manifest.get("file_count", 0),
+            }
+
+        snapshot = await run_in_threadpool(load_github_repository, reference.url)
+        if (
+            collection_exists
+            and manifest
+            and manifest.get("archive_sha256") == snapshot.archive_sha256
+        ):
+            refresh_repository_manifest(reference, manifest)
+            return {
+                "status": True,
+                "cached": True,
+                "collection_name": reference.collection_name,
+                "filename": reference.label,
+                "url": reference.url,
+                "file_count": manifest.get("file_count", snapshot.file_count),
+            }
+
+        if request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:
+            return {
+                "status": True,
+                "cached": False,
+                "collection_name": None,
+                "filename": reference.label,
+                "url": reference.url,
+                "file_count": snapshot.file_count,
+                "docs": [
+                    {"content": doc.page_content, "metadata": doc.metadata}
+                    for doc in snapshot.documents
+                ],
+            }
+
+        await run_in_threadpool(
+            save_docs_to_vector_db,
+            request,
+            snapshot.documents,
+            reference.collection_name,
+            metadata={
+                "repository": reference.label,
+                "repository_url": reference.url,
+                "archive_sha256": snapshot.archive_sha256,
+            },
+            overwrite=True,
+            split=False,
+            user=user,
+        )
+        save_repository_manifest(snapshot)
+
+        return {
+            "status": True,
+            "cached": False,
+            "collection_name": reference.collection_name,
+            "filename": reference.label,
+            "url": reference.url,
+            "file_count": snapshot.file_count,
+        }
+
+
+@router.post("/process/github")
+async def process_github_repository(
+    request: Request,
+    form_data: ProcessUrlForm,
+    user=Depends(get_verified_user),
+):
+    try:
+        return await index_github_repository(request, form_data.url, user)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except Exception as exc:
+        log.exception("GitHub repository processing failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Não foi possível analisar o repositório GitHub.",
+        ) from exc
 
 
 @router.post("/process/youtube")

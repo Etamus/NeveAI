@@ -15,8 +15,12 @@ export const buildUnifiedAdminModels = (
 	baseModels: any[] = [],
 	workspaceModels: any[] = []
 ) => {
-	const baseIds = new Set(baseModels.map((model: any) => model.id));
 	const localIds = new Set(localModels.map((model) => model.id).filter(Boolean));
+	const currentBaseModels = baseModels.filter((model: any) => {
+		const isLocalLlamaCppModel = model?.owned_by === 'llamacpp' || Boolean(model?.llamacpp);
+		return !isLocalLlamaCppModel || localIds.has(model.id);
+	});
+	const baseIds = new Set(currentBaseModels.map((model: any) => model.id));
 	const validIds = new Set([
 		...baseIds,
 		...workspaceModels
@@ -26,7 +30,7 @@ export const buildUnifiedAdminModels = (
 
 	let adminModels = [...validIds]
 		.map((id: string) => {
-			const base = baseModels.find((model: any) => model.id === id);
+			const base = currentBaseModels.find((model: any) => model.id === id);
 			const workspace = workspaceModels.find((model: any) => model.id === id);
 			if (base && workspace) return { ...base, ...workspace };
 			if (workspace) return { ...workspace };

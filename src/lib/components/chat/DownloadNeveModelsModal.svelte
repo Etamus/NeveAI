@@ -84,7 +84,7 @@
 </script>
 
 <script lang="ts">
-	import { getContext, onDestroy, onMount } from 'svelte';
+	import { createEventDispatcher, getContext, onDestroy, onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import Modal from '$lib/components/common/Modal.svelte';
@@ -109,6 +109,7 @@
 	} from '$lib/apis/llamacpp';
 
 	const i18n = getContext('i18n');
+	const dispatch = createEventDispatcher<{ modelsChanged: void }>();
 	const downloadProgressToastId = 'neveai-download-model-progress';
 
 	export let show = false;
@@ -378,6 +379,7 @@
 
 				await loadCatalog();
 				models.set(await getModels(localStorage.token, null, false, true));
+				dispatch('modelsChanged');
 				await startNextQueuedDownload();
 			},
 			(err: any) => {
@@ -550,6 +552,7 @@
 			removeSelection(item.id);
 			await loadCatalog();
 			models.set(await getModels(localStorage.token, null, false, true));
+			dispatch('modelsChanged');
 			toast.success(`${item.name} desinstalado`);
 		} catch (e: any) {
 			toast.error(normalizeLlamaCppErrorMessage(e, 'Falha ao desinstalar modelo'));
