@@ -411,3 +411,18 @@
 		{/if}
 	</div>
 {/if}
+
+<style>
+	.reasoning-text {
+		font-size: 0.875rem !important;
+	}
+
+	.reasoning-text :global(*) {
+		font-size: inherit !important;
+	}
+
+	.reasoning-text :global(sup),
+	.reasoning-text :global(sub) {
+		font-size: 0.75em !important;
+	}
+</style>

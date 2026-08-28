@@ -29,6 +29,7 @@
 	let allFilesLoaded = false;
 	let filesLoading = false;
 	let searchDebounceTimer: ReturnType<typeof setTimeout>;
+	let searchRequestId = 0;
 
 	let selectedFileId: string | null = null;
 	let showDeleteConfirmDialog = false;
@@ -61,31 +62,47 @@
 	const searchHandler = async () => {
 		if (!show) return;
 
+		const requestId = ++searchRequestId;
 		page = 0;
-		files = null;
 		allFilesLoaded = false;
 
 		try {
 			const pattern = query ? `*${query}*` : '*';
 			const newFiles = await searchFiles(localStorage.token, pattern, 0, PAGE_SIZE);
+			if (requestId !== searchRequestId) return;
 			files = sortFiles(newFiles);
 			allFilesLoaded = newFiles.length < PAGE_SIZE;
 		} catch (error) {
+			if (requestId !== searchRequestId) return;
 			// Handle 404 or other errors - show empty state instead of spinner
 			files = [];
 			allFilesLoaded = true;
 		}
 	};
 
+	export const clearFiles = () => {
+		clearTimeout(searchDebounceTimer);
+		searchRequestId += 1;
+		files = [];
+		page = 0;
+		allFilesLoaded = true;
+		filesLoading = false;
+		selectedFileId = null;
+		selectedFile = null;
+		showFileItemModal = false;
+	};
+
 	const loadMoreFiles = async () => {
 		if (filesLoading || allFilesLoaded) return;
 
+		const requestId = searchRequestId;
 		filesLoading = true;
 		page += 1;
 
 		try {
 			const pattern = query ? `*${query}*` : '*';
 			const newFiles = await searchFiles(localStorage.token, pattern, page * PAGE_SIZE, PAGE_SIZE);
+			if (requestId !== searchRequestId) return;
 
 			allFilesLoaded = newFiles.length < PAGE_SIZE;
 
@@ -93,11 +110,15 @@
 				files = sortFiles([...(files || []), ...newFiles]);
 			}
 		} catch (error) {
-			// Handle errors silently for load more
-			allFilesLoaded = true;
+			if (requestId === searchRequestId) {
+				// Handle errors silently for load more
+				allFilesLoaded = true;
+			}
+		} finally {
+			if (requestId === searchRequestId) {
+				filesLoading = false;
+			}
 		}
-
-		filesLoading = false;
 	};
 
 	const sortFiles = (fileList: any[]): any[] => {

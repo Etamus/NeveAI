@@ -38,6 +38,7 @@
 	let showDeleteFilesConfirmDialog = false;
 	let showSharedChatsModal = false;
 	let showFilesModal = false;
+	let filesModal: any = null;
 
 	let chatImportInputElement: HTMLInputElement;
 
@@ -124,6 +125,7 @@
 		});
 
 		if (res) {
+			filesModal?.clearFiles();
 			showFilesModal = false;
 			toast.success($i18n.t('All files deleted successfully.'));
 		}
@@ -131,7 +133,7 @@
 </script>
 
 <SharedChatsModal bind:show={showSharedChatsModal} />
-<FilesModal bind:show={showFilesModal} />
+<FilesModal bind:this={filesModal} bind:show={showFilesModal} />
 
 <ConfirmDialog
 	title={$i18n.t('Delete All Chats')}

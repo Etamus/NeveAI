@@ -78,6 +78,7 @@ from neveai.routers.files import upload_file_handler
 from neveai.models.users import UserModel
 from neveai.models.functions import Functions
 from neveai.models.models import Models
+from neveai.models.files import Files
 
 from neveai.retrieval.utils import get_sources_from_items
 
@@ -2817,6 +2818,168 @@ async def chat_image_generation_handler(
     return form_data
 
 
+FILE_DIRECT_CONTEXT_MAX_CHARS = 18_000
+FILE_RETRIEVAL_FALLBACK_MAX_CHARS = 12_000
+FILE_RETRIEVAL_FALLBACK_CHUNK_CHARS = 3_000
+FILE_QUERY_GENERATION_TIMEOUT_SECONDS = 12
+FILE_RETRIEVAL_TIMEOUT_SECONDS = 30
+
+
+def _get_accessible_file_content(
+    item: dict, user: UserModel
+) -> Optional[tuple[str, str, dict]]:
+    if item.get("type") != "file":
+        return None
+
+    inline_file = item.get("file") or {}
+    inline_data = inline_file.get("data") or {}
+    content = inline_data.get("content")
+    name = item.get("name") or inline_file.get("filename")
+    metadata = inline_data.get("metadata") or {}
+
+    if not isinstance(content, str) or not content.strip():
+        file_id = item.get("id")
+        if not file_id:
+            return None
+
+        file_object = Files.get_file_by_id(file_id)
+        if not file_object or (
+            user.role != "admin" and file_object.user_id != user.id
+        ):
+            return None
+
+        file_data = file_object.data or {}
+        content = file_data.get("content")
+        name = name or file_object.filename
+        metadata = file_data.get("metadata") or file_object.meta or {}
+
+    if not isinstance(content, str) or not content.strip():
+        return None
+
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    return content.strip(), name or "Arquivo", metadata
+
+
+def _build_file_source(
+    item: dict, content: list[str], name: str, metadata: dict
+) -> dict:
+    source_item = {
+        key: value for key, value in item.items() if key not in {"data", "file"}
+    }
+    source_item["name"] = name
+
+    source_metadata = {
+        "file_id": item.get("id"),
+        "name": name,
+        "source": name,
+        **metadata,
+    }
+    return {
+        "source": source_item,
+        "document": content,
+        "metadata": [dict(source_metadata) for _ in content],
+    }
+
+
+def _get_small_file_sources(
+    items: list[dict], user: UserModel
+) -> Optional[list[dict]]:
+    if not items or any(item.get("type") != "file" for item in items):
+        return None
+
+    payloads = []
+    total_chars = 0
+    for item in items:
+        payload = _get_accessible_file_content(item, user)
+        if payload is None:
+            return None
+        total_chars += len(payload[0])
+        if total_chars > FILE_DIRECT_CONTEXT_MAX_CHARS:
+            return None
+        payloads.append((item, *payload))
+
+    return [
+        _build_file_source(item, [content], name, metadata)
+        for item, content, name, metadata in payloads
+    ]
+
+
+def _split_file_content(content: str) -> list[str]:
+    if len(content) <= FILE_RETRIEVAL_FALLBACK_CHUNK_CHARS:
+        return [content]
+
+    chunks = []
+    start = 0
+    overlap = 200
+    while start < len(content):
+        end = min(start + FILE_RETRIEVAL_FALLBACK_CHUNK_CHARS, len(content))
+        if end < len(content):
+            boundary = content.rfind("\n", start + 1, end)
+            if boundary > start + FILE_RETRIEVAL_FALLBACK_CHUNK_CHARS // 2:
+                end = boundary
+        chunks.append(content[start:end].strip())
+        if end >= len(content):
+            break
+        start = max(end - overlap, start + 1)
+    return [chunk for chunk in chunks if chunk]
+
+
+def _build_file_fallback_sources(
+    items: list[dict], queries: list[str], user: UserModel, max_chunks: int
+) -> list[dict]:
+    payloads = []
+    for item in items:
+        payload = _get_accessible_file_content(item, user)
+        if payload is not None:
+            payloads.append((item, *payload))
+
+    if not payloads:
+        return []
+
+    query_terms = {
+        term
+        for term in re.findall(r"[\wÀ-ÿ]{3,}", " ".join(queries).casefold())
+        if term
+    }
+    budget_per_file = max(
+        1_500, FILE_RETRIEVAL_FALLBACK_MAX_CHARS // len(payloads)
+    )
+    chunks_per_file = max(1, max_chunks // len(payloads))
+    sources = []
+
+    for item, content, name, metadata in payloads:
+        chunks = _split_file_content(content)
+        ranked_chunks = sorted(
+            enumerate(chunks),
+            key=lambda pair: (
+                sum(pair[1].casefold().count(term) for term in query_terms),
+                -pair[0],
+            ),
+            reverse=True,
+        )
+
+        selected = []
+        selected_chars = 0
+        for index, chunk in ranked_chunks:
+            if len(selected) >= chunks_per_file:
+                break
+            remaining = budget_per_file - selected_chars
+            if remaining <= 0:
+                break
+            selected.append((index, chunk[:remaining]))
+            selected_chars += min(len(chunk), remaining)
+
+        selected_content = [chunk for _, chunk in sorted(selected)]
+        if selected_content:
+            sources.append(
+                _build_file_source(item, selected_content, name, metadata)
+            )
+
+    return sources
+
+
 async def chat_completion_files_handler(
     request: Request, body: dict, extra_params: dict, user: UserModel
 ) -> tuple[dict, dict[str, list]]:
@@ -2833,6 +2996,27 @@ async def chat_completion_files_handler(
         github_repositories_only = all(
             item.get("source_type") == "github_repository" for item in files
         )
+        regular_files_only = all(item.get("type") == "file" for item in files)
+
+        direct_sources = _get_small_file_sources(files, user)
+        if direct_sources is not None:
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {
+                        "action": "sources_retrieved",
+                        "deep_search": deep_search_enabled,
+                        "count": len(get_unique_source_ids(direct_sources)),
+                        "source_type": "file",
+                        "done": True,
+                    },
+                }
+            )
+            log.info(
+                "Using direct context for %d short document attachment(s)",
+                len(files),
+            )
+            return body, {"sources": direct_sources}
 
         # Check if all files are in full context mode
         all_full_context = all(item.get("context") == "full" for item in files)
@@ -2844,19 +3028,22 @@ async def chat_completion_files_handler(
             cached_queries = getattr(request.state, "cached_queries", None)
             if cached_queries:
                 queries = cached_queries
-            elif deep_search_enabled:
+            elif deep_search_enabled or regular_files_only:
                 queries = [primary_query]
             else:
                 try:
-                    queries_response = await generate_queries(
-                        request,
-                        {
-                            "model": body["model"],
-                            "messages": body["messages"],
-                            "type": "retrieval",
-                            "chat_id": body.get("metadata", {}).get("chat_id"),
-                        },
-                        user,
+                    queries_response = await asyncio.wait_for(
+                        generate_queries(
+                            request,
+                            {
+                                "model": body["model"],
+                                "messages": body["messages"],
+                                "type": "retrieval",
+                                "chat_id": body.get("metadata", {}).get("chat_id"),
+                            },
+                            user,
+                        ),
+                        timeout=FILE_QUERY_GENERATION_TIMEOUT_SECONDS,
                     )
                     if isinstance(queries_response, list):
                         queries = queries_response
@@ -2876,8 +3063,16 @@ async def chat_completion_files_handler(
                             queries_response = {"queries": [queries_response]}
 
                         queries = queries_response.get("queries", [])
-                except Exception:
-                    pass
+                except asyncio.TimeoutError:
+                    log.warning(
+                        "Retrieval query generation timed out after %ss; using the user query",
+                        FILE_QUERY_GENERATION_TIMEOUT_SECONDS,
+                    )
+                except Exception as e:
+                    log.warning(
+                        "Retrieval query generation failed; using the user query: %s",
+                        e,
+                    )
 
             queries = filter_web_search_queries(
                 sanitize_generated_search_queries(queries, primary_query),
@@ -2916,39 +3111,67 @@ async def chat_completion_files_handler(
 
         try:
             # Directly await async get_sources_from_items (no thread needed - fully async now)
-            sources = await get_sources_from_items(
-                request=request,
-                items=files,
-                queries=queries,
-                embedding_function=lambda query, prefix: request.app.state.EMBEDDING_FUNCTION(
-                    query, prefix=prefix, user=user
-                ),
-                k=retrieval_k,
-                reranking_function=(
-                    (
-                        lambda query, documents: request.app.state.RERANKING_FUNCTION(
-                            query, documents, user=user
+            sources = await asyncio.wait_for(
+                get_sources_from_items(
+                    request=request,
+                    items=files,
+                    queries=queries,
+                    embedding_function=lambda query, prefix: request.app.state.EMBEDDING_FUNCTION(
+                        query, prefix=prefix, user=user
+                    ),
+                    k=retrieval_k,
+                    reranking_function=(
+                        (
+                            lambda query, documents: request.app.state.RERANKING_FUNCTION(
+                                query, documents, user=user
+                            )
                         )
-                    )
-                    if request.app.state.RERANKING_FUNCTION
-                    else None
+                        if request.app.state.RERANKING_FUNCTION
+                        else None
+                    ),
+                    k_reranker=retrieval_k_reranker,
+                    r=request.app.state.config.RELEVANCE_THRESHOLD,
+                    hybrid_bm25_weight=request.app.state.config.HYBRID_BM25_WEIGHT,
+                    hybrid_search=request.app.state.config.ENABLE_RAG_HYBRID_SEARCH,
+                    full_context=all_full_context
+                    or request.app.state.config.RAG_FULL_CONTEXT,
+                    user=user,
                 ),
-                k_reranker=retrieval_k_reranker,
-                r=request.app.state.config.RELEVANCE_THRESHOLD,
-                hybrid_bm25_weight=request.app.state.config.HYBRID_BM25_WEIGHT,
-                hybrid_search=request.app.state.config.ENABLE_RAG_HYBRID_SEARCH,
-                full_context=all_full_context
-                or request.app.state.config.RAG_FULL_CONTEXT,
-                user=user,
+                timeout=FILE_RETRIEVAL_TIMEOUT_SECONDS,
             )
+            if not sources and regular_files_only:
+                sources = _build_file_fallback_sources(
+                    files,
+                    queries,
+                    user,
+                    max(retrieval_k or 1, 1),
+                )
             if deep_search_enabled:
                 sources = add_deep_search_source_floor(
                     files,
                     sources,
                     deep_search_context_count,
                 )
+        except asyncio.TimeoutError:
+            log.warning(
+                "Document retrieval timed out after %ss; using local file content fallback",
+                FILE_RETRIEVAL_TIMEOUT_SECONDS,
+            )
+            sources = _build_file_fallback_sources(
+                files,
+                queries,
+                user,
+                max(retrieval_k or 1, 1),
+            )
         except Exception as e:
             log.exception(e)
+            if regular_files_only:
+                sources = _build_file_fallback_sources(
+                    files,
+                    queries,
+                    user,
+                    max(retrieval_k or 1, 1),
+                )
 
         log.debug(f"rag_contexts:sources: {sources}")
 
@@ -2963,7 +3186,7 @@ async def chat_completion_files_handler(
                     **(
                         {"source_type": "github_repository"}
                         if github_repositories_only
-                        else {}
+                        else {"source_type": "file"}
                     ),
                     "done": True,
                 },

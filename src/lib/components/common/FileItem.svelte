@@ -8,8 +8,8 @@
 	import FileItemModal from './FileItemModal.svelte';
 	import GarbageBin from '../icons/GarbageBin.svelte';
 	import Spinner from './Spinner.svelte';
-	import Tooltip from './Tooltip.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
+	import AttachmentFile from '$lib/components/icons/AttachmentFile.svelte';
 
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
@@ -32,7 +32,6 @@
 	export let type: string;
 	export let size: number;
 
-	import DocumentPage from '../icons/DocumentPage.svelte';
 	import Database from '../icons/Database.svelte';
 	import PageEdit from '../icons/PageEdit.svelte';
 	import ChatBubble from '../icons/ChatBubble.svelte';
@@ -46,6 +45,13 @@
 			return str;
 		}
 	};
+
+	$: contentType =
+		item?.content_type ??
+		item?.meta?.content_type ??
+		item?.file?.meta?.content_type ??
+		item?.file?.content_type ??
+		(type?.includes('/') ? type : '');
 </script>
 
 {#if item}
@@ -58,7 +64,7 @@
 		? 'bg-gray-100/90 dark:bg-gray-800/80 border border-gray-200/70 dark:border-gray-700/50 text-gray-700 dark:text-gray-200 hover:bg-gray-200/80 dark:hover:bg-gray-700/70'
 		: colorClassName} {small
 		? inputChip
-			? 'rounded-lg px-1.5 py-1'
+			? 'h-8 min-h-8 max-h-8 rounded-lg px-1.5 py-1'
 			: 'rounded-lg p-1.5'
 		: 'rounded-xl p-1.5'} text-left"
 	type="button"
@@ -84,25 +90,10 @@
 >
 	{#if !small}
 		<div
-			class="size-10 shrink-0 flex justify-center items-center bg-black/20 dark:bg-white/10 text-white rounded-lg"
+			class="size-10 shrink-0 flex justify-center items-center bg-gray-100 dark:bg-gray-800 rounded-lg"
 		>
 			{#if !loading}
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					viewBox="0 0 24 24"
-					fill="currentColor"
-					aria-hidden="true"
-					class=" size-4.5"
-				>
-					<path
-						fill-rule="evenodd"
-						d="M5.625 1.5c-1.036 0-1.875.84-1.875 1.875v17.25c0 1.035.84 1.875 1.875 1.875h12.75c1.035 0 1.875-.84 1.875-1.875V12.75A3.75 3.75 0 0 0 16.5 9h-1.875a1.875 1.875 0 0 1-1.875-1.875V5.25A3.75 3.75 0 0 0 9 1.5H5.625ZM7.5 15a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5A.75.75 0 0 1 7.5 15Zm.75 2.25a.75.75 0 0 0 0 1.5H12a.75.75 0 0 0 0-1.5H8.25Z"
-						clip-rule="evenodd"
-					/>
-					<path
-						d="M12.971 1.816A5.23 5.23 0 0 1 14.25 5.25v1.875c0 .207.168.375.375.375H16.5a5.23 5.23 0 0 1 3.434 1.279 9.768 9.768 0 0 0-6.963-6.963Z"
-					/>
-				</svg>
+				<AttachmentFile {name} {contentType} className="size-5" />
 			{:else}
 				<Spinner />
 			{/if}
@@ -110,23 +101,11 @@
 	{:else}
 		<div class="pl-1 shrink-0">
 			{#if !loading}
-				<Tooltip
-					content={type === 'collection'
-						? $i18n.t('Collection')
-						: type === 'note'
-							? $i18n.t('Note')
-							: type === 'chat'
-								? $i18n.t('Chat')
-								: type === 'file'
-									? $i18n.t('File')
-									: $i18n.t('Document')}
-					placement="top"
-				>
-					{#if type === 'collection'}
-						<Database />
-					{:else if type === 'note'}
-						<PageEdit />
-					{:else if type === 'chat'}
+				{#if type === 'collection'}
+					<Database />
+				{:else if type === 'note'}
+					<PageEdit />
+				{:else if type === 'chat'}
 						{#if inputChip}
 							<svg
 								aria-hidden="true"
@@ -146,37 +125,13 @@
 						{:else}
 							<ChatBubble />
 						{/if}
-					{:else if type === 'folder'}
-						<Folder />
-					{:else}
-						{#if inputChip}
-							<svg
-								aria-hidden="true"
-								xmlns="http://www.w3.org/2000/svg"
-								fill="none"
-								viewBox="0 0 24 24"
-								stroke-width="1.7"
-								stroke="currentColor"
-								class="size-3.5"
-							>
-								<path
-									d="M6.75 3.25h7.35c.36 0 .71.14.96.4l3.29 3.29c.26.25.4.6.4.96v11.35c0 .83-.67 1.5-1.5 1.5H6.75c-.83 0-1.5-.67-1.5-1.5V4.75c0-.83.67-1.5 1.5-1.5Z"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								/>
-								<path
-									d="M14.25 3.5v3.25c0 .55.45 1 1 1h3.25"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								/>
-							</svg>
-						{:else}
-							<DocumentPage />
-						{/if}
-					{/if}
-				</Tooltip>
+				{:else if type === 'folder'}
+					<Folder />
+				{:else}
+					<AttachmentFile {name} {contentType} className={inputChip ? 'size-3.5' : 'size-4'} />
+				{/if}
 			{:else}
-				<Spinner />
+				<Spinner className={inputChip ? 'size-3.5' : 'size-4'} />
 			{/if}
 		</div>
 	{/if}
@@ -209,7 +164,7 @@
 			</div>
 		</div>
 	{:else}
-		<Tooltip content={decodeString(name)} className="flex flex-col w-full min-w-0" placement="top-start">
+		<div class="flex flex-col w-full min-w-0">
 			<div class="flex flex-col justify-center w-full min-w-0 {inputChip ? 'px-0.5' : 'px-1'}">
 				<div class="dark:text-gray-100 text-xs flex justify-between items-center gap-1">
 					<div class="line-clamp-1 flex-1 min-w-0">{decodeString(name)}</div>
@@ -234,7 +189,7 @@
 					{/if}
 				</div>
 			</div>
-		</Tooltip>
+		</div>
 	{/if}
 
 </button>

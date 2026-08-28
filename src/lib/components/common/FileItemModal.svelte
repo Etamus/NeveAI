@@ -273,9 +273,13 @@
 	});
 </script>
 
-<Modal bind:show size="md">
-	<div class="font-primary px-4.5 py-3.5 w-full flex flex-col justify-center dark:text-gray-400">
-		<div class=" pb-2">
+<Modal
+	bind:show
+	size="md"
+	className="h-[min(30rem,calc(100dvh-2rem))] overflow-hidden bg-white dark:bg-gray-900 rounded-xl"
+>
+	<div class="font-primary px-4.5 py-3.5 w-full h-full min-h-0 flex flex-col dark:text-gray-400">
+		<div class="pb-2 shrink-0">
 			<div class="flex items-start justify-between">
 				<div>
 					<div class=" font-medium text-lg dark:text-gray-100">
@@ -350,9 +354,6 @@
 								{/if}
 							</div>
 
-							<div class="flex items-center gap-1 shrink-0">
-								• {$i18n.t('Formatting may be inconsistent from source.')}
-							</div>
 						{/if}
 
 						{#if item?.knowledge}
@@ -393,23 +394,11 @@
 			</div>
 		</div>
 
-		<div class="max-h-[75vh] overflow-auto">
+		<div class="flex-1 min-h-0 flex flex-col overflow-hidden">
 			{#if !loading}
-				{#if item?.type === 'collection'}
-					<div>
-						{#each item?.files as file}
-							<div class="flex items-center gap-2 mb-2">
-								<div class="flex-shrink-0 text-xs">
-									{file?.meta?.name}
-								</div>
-							</div>
-						{/each}
-					</div>
-				{/if}
-
 				{#if isAudio || isPDF || isExcel || isCode || isMarkdown || isDocx || isPptx}
 					<div
-						class="flex mb-2.5 scrollbar-none overflow-x-auto w-full border-b border-gray-50 dark:border-gray-850/30 text-center text-sm font-medium bg-transparent dark:text-gray-200"
+						class="shrink-0 flex mb-2.5 scrollbar-none overflow-x-auto w-full border-b border-gray-50 dark:border-gray-850/30 text-center text-sm font-medium bg-transparent dark:text-gray-200"
 					>
 						<button
 							class="min-w-fit py-1.5 px-4 border-b {selectedTab === ''
@@ -433,8 +422,25 @@
 					</div>
 				{/if}
 
+				<div
+					class="flex-1 min-h-0 {selectedTab === 'preview' && isPDF
+						? 'overflow-hidden'
+						: 'overflow-auto'}"
+				>
+					{#if item?.type === 'collection'}
+						<div>
+							{#each item?.files as file}
+								<div class="flex items-center gap-2 mb-2">
+									<div class="flex-shrink-0 text-xs">
+										{file?.meta?.name}
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+
 				{#if isImage}
-					<div class="relative w-full max-h-[70vh] overflow-hidden">
+					<div class="relative w-full overflow-hidden">
 						<div class="absolute top-2 right-2 z-10">
 							<Tooltip content={$i18n.t('Reset view')}>
 								<button
@@ -464,7 +470,7 @@
 							!expandedContent}
 						{#if $settings?.renderMarkdownInPreviews ?? true}
 							<div
-								class="max-h-96 overflow-scroll scrollbar-hidden text-sm prose dark:prose-invert max-w-full"
+								class="text-sm prose dark:prose-invert max-w-full"
 							>
 								<Markdown
 									content={isTruncated ? rawContent.slice(0, CONTENT_PREVIEW_LIMIT) : rawContent}
@@ -484,7 +490,7 @@
 								</button>
 							{/if}
 						{:else}
-							<div class="max-h-96 overflow-scroll scrollbar-hidden text-xs whitespace-pre-wrap">
+							<div class="text-xs whitespace-pre-wrap">
 								{rawContent}
 							</div>
 						{/if}
@@ -496,7 +502,7 @@
 							!expandedContent}
 						{#if $settings?.renderMarkdownInPreviews ?? true}
 							<div
-								class="max-h-96 overflow-scroll scrollbar-hidden text-sm prose dark:prose-invert max-w-full"
+								class="text-sm prose dark:prose-invert max-w-full"
 							>
 								<Markdown
 									content={isTruncated ? rawContent.slice(0, CONTENT_PREVIEW_LIMIT) : rawContent}
@@ -516,7 +522,7 @@
 								</button>
 							{/if}
 						{:else}
-							<div class="max-h-96 overflow-scroll scrollbar-hidden text-xs whitespace-pre-wrap">
+							<div class="text-xs whitespace-pre-wrap">
 								{rawContent}
 							</div>
 						{/if}
@@ -532,7 +538,7 @@
 					{:else if isPDF}
 						<PDFViewer
 							url={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
-							className="w-full h-[70vh] border-0 rounded-lg"
+							className="w-full h-full border-0 rounded-lg"
 						/>
 					{:else if isExcel}
 						{#if excelError}
@@ -559,7 +565,7 @@
 							{/if}
 
 							{#if excelHtml}
-								<div class="office-preview overflow-auto max-h-[60vh]">
+								<div class="office-preview">
 									{@html excelHtml}
 								</div>
 							{:else}
@@ -567,7 +573,7 @@
 							{/if}
 						{/if}
 					{:else if isCode}
-						<div class="max-h-[60vh] overflow-scroll scrollbar-hidden text-sm relative">
+						<div class="text-sm relative">
 							<CodeBlock
 								code={item.file.data.content}
 								lang={item.name.split('.').pop()}
@@ -579,7 +585,7 @@
 						</div>
 					{:else if isMarkdown}
 						<div
-							class="max-h-[60vh] overflow-scroll scrollbar-hidden text-sm prose dark:prose-invert max-w-full"
+							class="text-sm prose dark:prose-invert max-w-full"
 						>
 							<Markdown content={item.file.data.content} id="markdown-viewer" />
 						</div>
@@ -588,7 +594,7 @@
 							<div class="text-red-500 text-sm p-4">{docxError}</div>
 						{:else if docxHtml}
 							<div
-								class="office-preview max-h-[60vh] overflow-auto p-4 prose dark:prose-invert max-w-full text-sm"
+								class="office-preview p-4 prose dark:prose-invert max-w-full text-sm"
 							>
 								{@html docxHtml}
 							</div>
@@ -599,7 +605,7 @@
 						{#if pptxError}
 							<div class="text-red-500 text-sm p-4">{pptxError}</div>
 						{:else if pptxSlides.length > 0}
-							<div class="max-h-[60vh] overflow-auto">
+							<div>
 								<div class="flex justify-center p-4">
 									<img
 										src={pptxSlides[pptxCurrentSlide]}
@@ -655,11 +661,12 @@
 						<div class="text-gray-500 text-sm p-4">Sem conteúdo</div>
 					{/if}
 				{:else}
-					<div class="max-h-96 overflow-scroll scrollbar-hidden text-xs whitespace-pre-wrap">
+					<div class="text-xs whitespace-pre-wrap">
 						{(item?.file?.data?.content ?? '').trim() || 'Sem conteúdo'}
 						</div>
 					{/if}
 				{/if}
+				</div>
 			{:else}
 				<div class="flex items-center justify-center py-6">
 					<Spinner className="size-5" />

@@ -36,6 +36,8 @@
 	export let editCodeBlock = false;
 	export let topPadding = false;
 
+	$: artifactsPreviewEnabled = preview && $chatCodeExecutionEnabled;
+
 	export let onSave = (e) => {};
 	export let onSourceClick = (e) => {};
 	export let onTaskClick = (e) => {};
@@ -170,7 +172,7 @@
 		{content}
 		{model}
 		{save}
-		{preview}
+		preview={artifactsPreviewEnabled}
 		{done}
 		{editCodeBlock}
 		{topPadding}
@@ -197,7 +199,8 @@
 			}
 		}}
 		onPreview={async (value) => {
-			console.log('Preview', value);
+			if (!$chatCodeExecutionEnabled) return;
+
 			await artifactCode.set(value);
 			await showControls.set(true);
 			await showArtifacts.set(true);

@@ -429,7 +429,7 @@
 			<div
 				bind:this={presetMenuElement}
 				class="absolute z-[60] w-56 rounded-md border border-gray-100 bg-white p-1 text-sm text-gray-700 shadow-md outline-hidden dark:border-gray-800 dark:bg-gray-850 dark:text-gray-200"
-				style="left: calc(100% - 0.80rem); top: 0.5rem; font-family: 'Segoe UI', sans-serif;"
+				style="left: calc(100% - 0.55rem); top: 0.5rem; font-family: 'Segoe UI', sans-serif;"
 				transition={flyAndScale}
 				on:pointerdown|stopPropagation
 			>

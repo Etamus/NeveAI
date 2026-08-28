@@ -6,7 +6,6 @@ import requests
 import aiohttp
 import asyncio
 import hashlib
-from concurrent.futures import ThreadPoolExecutor
 import re
 
 from urllib.parse import quote
@@ -455,15 +454,15 @@ async def query_collection(
         f"query_collection: processing {len(queries)} queries across {len(collection_names)} collections"
     )
 
-    with ThreadPoolExecutor() as executor:
-        future_results = []
-        for query_embedding in query_embeddings:
-            for collection_name in collection_names:
-                result = executor.submit(
-                    process_query_collection, collection_name, query_embedding
-                )
-                future_results.append(result)
-        task_results = [future.result() for future in future_results]
+    task_results = await asyncio.gather(
+        *[
+            asyncio.to_thread(
+                process_query_collection, collection_name, query_embedding
+            )
+            for query_embedding in query_embeddings
+            for collection_name in collection_names
+        ]
+    )
 
     for result, err in task_results:
         if err is not None:
@@ -498,8 +497,9 @@ async def query_collection_with_hybrid_search(
             log.debug(
                 f"query_collection_with_hybrid_search:VECTOR_DB_CLIENT.get:collection {collection_name}"
             )
-            collection_results[collection_name] = VECTOR_DB_CLIENT.get(
-                collection_name=collection_name
+            collection_results[collection_name] = await asyncio.to_thread(
+                VECTOR_DB_CLIENT.get,
+                collection_name=collection_name,
             )
         except Exception as e:
             log.exception(f"Failed to fetch collection {collection_name}: {e}")
@@ -1025,7 +1025,9 @@ async def get_sources_from_items(
 
             try:
                 if full_context:
-                    query_result = get_all_items_from_collections(collection_names)
+                    query_result = await asyncio.to_thread(
+                        get_all_items_from_collections, collection_names
+                    )
                 else:
                     query_result = None  # Initialize to None
                     if hybrid_search:
@@ -1047,7 +1049,7 @@ async def get_sources_from_items(
                             )
 
                     # fallback to non-hybrid search
-                    if not hybrid_search and query_result is None:
+                    if query_result is None:
                         query_result = await query_collection(
                             collection_names=collection_names,
                             queries=queries,

@@ -27,7 +27,6 @@
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 	import { getSuggestionRenderer } from '../common/RichTextInput/suggestions';
-	import CommandSuggestionList from '../chat/MessageInput/CommandSuggestionList.svelte';
 
 	import InputMenu from './MessageInput/InputMenu.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
@@ -311,7 +310,6 @@
 	let command = '';
 
 	export let showCommands = false;
-	$: showCommands = ['/'].includes(command?.charAt(0));
 	let suggestions = null;
 
 	const screenCaptureHandler = async () => {
@@ -589,40 +587,7 @@
 							})
 						}
 					]
-				: []),
-			{
-				char: '/',
-				render: getSuggestionRenderer(CommandSuggestionList, {
-					i18n,
-					onSelect: (e) => {
-						const { type, data } = e;
-
-						if (type === 'model') {
-							console.log('Selected model:', data);
-						}
-
-						document.getElementById('chat-input')?.focus();
-					},
-
-					insertTextHandler: insertTextAtCursor,
-					onUpload: (e) => {
-						const { type, data } = e;
-
-						if (type === 'file') {
-							if (files.find((f) => f.id === data.id)) {
-								return;
-							}
-							files = [
-								...files,
-								{
-									...data,
-									status: 'processed'
-								}
-							];
-						}
-					}
-				})
-			}
+				: [])
 		];
 		loaded = true;
 

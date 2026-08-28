@@ -916,6 +916,12 @@
 						/\r\n/g,
 						'\n'
 					);
+					if (largeTextAsFile && pastedText.length > PASTED_TEXT_CHARACTER_LIMIT) {
+						event.preventDefault();
+						eventDispatch('paste', { event });
+						return true;
+					}
+
 					const pastedRepositories = messageInput ? findGitHubRepositoryLinks(pastedText) : [];
 					if (pastedRepositories.length > 0) {
 						event.preventDefault();

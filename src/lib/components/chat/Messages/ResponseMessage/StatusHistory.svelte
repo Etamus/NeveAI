@@ -16,10 +16,25 @@
 
 	let history = [];
 	let status = null;
+	let visibleHistory = [];
 
-	$: if (history && history.length > 0) {
-		status = history.at(-1);
-	}
+	const isQueryingStatus = (item) => {
+		const action = String(item?.action ?? '')
+			.trim()
+			.toLowerCase();
+		const description = String(item?.description ?? '')
+			.trim()
+			.toLowerCase();
+
+		return (
+			action === 'queries_generated' || description === 'querying' || description === 'consultando'
+		);
+	};
+
+	$: visibleHistory = (history ?? []).filter(
+		(item) => item?.hidden !== true && !isQueryingStatus(item)
+	);
+	$: status = visibleHistory.at(-1) ?? null;
 
 	$: if (
 		statusHistory.length !== history.length ||
@@ -29,7 +44,7 @@
 	}
 </script>
 
-{#if history && history.length > 0}
+{#if visibleHistory.length > 0 && status}
 	{#if status?.hidden !== true}
 		<div class="flex flex-col w-full">
 			<button
@@ -47,9 +62,9 @@
 
 			{#if showHistory}
 				<div class="flex flex-row">
-					{#if history.length > 1}
+					{#if visibleHistory.length > 1}
 						<div class="w-full">
-							{#each history as status, idx}
+							{#each visibleHistory as status, idx}
 								<div class="flex items-stretch gap-2 mb-1">
 									<div class=" ">
 										<div class="pt-3 px-1 mb-1.5">
@@ -59,7 +74,7 @@
 												></span>
 											</span>
 										</div>
-										{#if idx !== history.length - 1}
+										{#if idx !== visibleHistory.length - 1}
 											<div
 												class="w-[0.5px] ml-[6.5px] h-[calc(100%-14px)] bg-gray-300 dark:bg-gray-700"
 											/>

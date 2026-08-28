@@ -9,7 +9,8 @@
 	import { toast } from 'svelte-sonner';
 	import { getVersionUpdates, startAppUpdater } from '$lib/apis';
 	import Github from '$lib/components/icons/Github.svelte';
-	import Document from '$lib/components/icons/Document.svelte';
+	import HuggingFace from '$lib/components/icons/HuggingFace.svelte';
+	import Scale from '$lib/components/icons/Scale.svelte';
 	import { NEVEAI_VERSION, user } from '$lib/stores';
 	import { compareVersion } from '$lib/utils';
 	import bundledProjectVersion from '../../../../../version.txt?raw';
@@ -200,7 +201,7 @@
 				rel="noreferrer"
 				on:click|preventDefault={() => openExternalUrl(huggingFaceUrl)}
 			>
-				<Document className="size-4" />
+				<HuggingFace className="size-4" />
 				<span>Hugging Face</span>
 			</a>
 		</div>
@@ -215,7 +216,7 @@
 			rel="noreferrer"
 			on:click|preventDefault={() => openExternalUrl(licenseUrl)}
 		>
-			<Document className="size-4" />
+			<Scale className="size-4" strokeWidth="1.6" />
 			<span>Licença</span>
 		</a>
 	</section>

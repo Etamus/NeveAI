@@ -1,5 +1,4 @@
 <script lang="ts">
-	import Prompts from './Commands/Prompts.svelte';
 	import Knowledge from './Commands/Knowledge.svelte';
 	import Models from './Commands/Models.svelte';
 	import Skills from './Commands/Skills.svelte';
@@ -58,20 +57,7 @@
 	id="suggestions-container"
 >
 	<div class="overflow-y-auto scrollbar-thin max-h-60">
-		{#if char === '/'}
-			<Prompts
-				bind:this={suggestionElement}
-				{query}
-				bind:filteredItems
-				onSelect={(e) => {
-					const { type, data } = e;
-
-					if (type === 'prompt') {
-						insertTextHandler(data.content);
-					}
-				}}
-			/>
-		{:else if char === '#'}
+		{#if char === '#'}
 			<Knowledge
 				bind:this={suggestionElement}
 				{query}

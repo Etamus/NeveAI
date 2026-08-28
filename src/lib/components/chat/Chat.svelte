@@ -187,6 +187,9 @@
 
 	// Sincronizar toggle do chat com a store — controla auto-show de artifacts
 	$: chatCodeExecutionEnabled.set(codeExecutionEnabled);
+	$: if (!codeExecutionEnabled && $showArtifacts) {
+		showArtifacts.set(false);
+	}
 
 	let showCommands = false;
 
@@ -282,17 +285,74 @@
 		}
 	};
 
+	const CONTEXT_SIZE_ERROR_MESSAGE =
+		'A solicitação excede a quantidade de tokens disponíveis. Aumente e tente novamente.';
+
+	const stringifyError = (error: unknown) => {
+		if (typeof error === 'string') return error;
+		try {
+			return JSON.stringify(error);
+		} catch {
+			return `${error ?? ''}`;
+		}
+	};
+
 	const normalizeContextSizeErrorMessage = (message: unknown) => {
-		const text = `${message ?? ''}`;
+		const text = stringifyError(message);
 		const lower = text.toLowerCase();
 		if (
+			text.includes(CONTEXT_SIZE_ERROR_MESSAGE) ||
 			lower.includes('exceed_context_size_error') ||
 			lower.includes('exceeds the available context size') ||
 			(lower.includes('n_prompt_tokens') && lower.includes('n_ctx'))
 		) {
-			return 'A solicitação excede a quantidade de tokens disponíveis. Aumente e tente novamente.';
+			return CONTEXT_SIZE_ERROR_MESSAGE;
 		}
 		return text;
+	};
+
+	const isContextSizeError = (error: unknown) =>
+		normalizeContextSizeErrorMessage(error) === CONTEXT_SIZE_ERROR_MESSAGE;
+
+	const discardFailedContextTurn = () => {
+		const failedResponse = history?.currentId ? history.messages[history.currentId] : null;
+		if (
+			!failedResponse ||
+			failedResponse.role !== 'assistant' ||
+			failedResponse.content ||
+			!failedResponse.error ||
+			!isContextSizeError(failedResponse.error)
+		) {
+			return false;
+		}
+
+		const failedUserMessage = failedResponse.parentId
+			? history.messages[failedResponse.parentId]
+			: null;
+		if (!failedUserMessage || failedUserMessage.role !== 'user') {
+			return false;
+		}
+
+		failedUserMessage.childrenIds = (failedUserMessage.childrenIds ?? []).filter(
+			(messageId) => messageId !== failedResponse.id
+		);
+		delete history.messages[failedResponse.id];
+
+		if (failedUserMessage.childrenIds.length > 0) {
+			history.currentId = failedUserMessage.childrenIds.at(-1);
+		} else {
+			const previousMessageId = failedUserMessage.parentId ?? null;
+			if (previousMessageId && history.messages[previousMessageId]) {
+				history.messages[previousMessageId].childrenIds = (
+					history.messages[previousMessageId].childrenIds ?? []
+				).filter((messageId) => messageId !== failedUserMessage.id);
+			}
+			delete history.messages[failedUserMessage.id];
+			history.currentId = previousMessageId;
+		}
+
+		history = history;
+		return true;
 	};
 
 	let chat = null;
@@ -2068,7 +2128,15 @@
 	let contentsDebounceTimer = null;
 	let lastContentsFingerprint = '';
 
-	const onHistoryChange = (history) => {
+	const onHistoryChange = (history, artifactsEnabled) => {
+		if (!artifactsEnabled) {
+			clearTimeout(contentsDebounceTimer);
+			contentsDebounceTimer = null;
+			lastContentsFingerprint = '';
+			artifactContents.set([]);
+			return;
+		}
+
 		if (history) {
 			// Skip entirely while streaming — artifacts will be updated
 			// directly by chatCompletionEventHandler when generation completes
@@ -2092,9 +2160,14 @@
 		}
 	};
 
-	$: onHistoryChange(history);
+	$: onHistoryChange(history, codeExecutionEnabled);
 
 	const getContents = () => {
+		if (!codeExecutionEnabled) {
+			artifactContents.set([]);
+			return;
+		}
+
 		const messages = history ? createMessagesList(history, history.currentId) : [];
 		let contents = [];
 		messages.forEach((message) => {
@@ -3525,8 +3598,10 @@
 				scrollToBottom();
 			}
 
-			// Update artifacts now that generation is complete
-			getContents();
+			// Update artifacts only when the integration is active.
+			if (codeExecutionEnabled) {
+				getContents();
+			}
 
 			// Auto-open artifacts panel if HTML/SVG content was detected
 			const artContents = get(artifactContents);
@@ -3900,9 +3975,11 @@
 			const lastMessage = history.messages[history.currentId];
 
 			if (lastMessage.error && !lastMessage.content) {
-				// Error in response
-				toast.error($i18n.t(`Oops! There was an error in the previous response.`));
-				return;
+				if (!discardFailedContextTurn()) {
+					// Preserve the existing behavior for non-context errors.
+					toast.error($i18n.t(`Oops! There was an error in the previous response.`));
+					return;
+				}
 			}
 		}
 

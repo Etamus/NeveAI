@@ -501,7 +501,7 @@
 	let command = '';
 	export let showCommands = false;
 	$: showCommands =
-		['/', '#', '@', '$'].includes(command?.charAt(0)) || '\\#' === command?.slice(0, 2);
+		['#', '@', '$'].includes(command?.charAt(0)) || '\\#' === command?.slice(0, 2);
 	let suggestions = null;
 
 	let showTools = false;
@@ -725,6 +725,7 @@
 			collection_name: '',
 			status: 'uploading',
 			size: file.size,
+			content_type: file.type,
 			error: '',
 			itemId: tempItemId,
 			...itemData
@@ -924,6 +925,45 @@
 		});
 	};
 
+	const handleChatInputPaste = async (eventDetail: CustomEvent<{ event: ClipboardEvent }>) => {
+		const event: ClipboardEvent = eventDetail.detail.event;
+		const clipboardData = event.clipboardData;
+		const pastedText = clipboardData?.getData('text/plain') ?? '';
+
+		if (!shiftKey && pastedText.length > PASTED_TEXT_CHARACTER_LIMIT) {
+			event.preventDefault();
+			const file = new File(
+				[new Blob([pastedText], { type: 'text/plain' })],
+				'Texto colado.txt',
+				{ type: 'text/plain' }
+			);
+			await uploadFileHandler(file, true, { context: 'full', name: 'Texto colado' });
+			return;
+		}
+
+		for (const item of Array.from(clipboardData?.items ?? [])) {
+			if (item.type === 'text/plain') continue;
+			const file = item.getAsFile();
+			if (file) {
+				await inputFilesHandler([file]);
+				event.preventDefault();
+			}
+		}
+	};
+
+	const handleAttachmentsWheel = (event: WheelEvent) => {
+		const container = event.currentTarget as HTMLDivElement;
+		if (container.scrollWidth <= container.clientWidth) return;
+
+		const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+		if (delta === 0) return;
+
+		const maxScrollLeft = Math.max(0, container.scrollWidth - container.clientWidth);
+		container.scrollLeft = Math.min(maxScrollLeft, Math.max(0, container.scrollLeft + delta));
+		event.preventDefault();
+		event.stopPropagation();
+	};
+
 	const createNote = async () => {
 		if (inputContent?.md.trim() === '' && inputContent?.html.trim() === '') {
 			toast.error($i18n.t('Cannot create an empty note.'));
@@ -1065,41 +1105,6 @@
 		suggestions = [
 			{
 				char: '@',
-				render: getSuggestionRenderer(CommandSuggestionList, {
-					i18n,
-					onSelect: (e) => {
-						const { type, data } = e;
-
-						if (type === 'model') {
-							atSelectedModel = data;
-						}
-
-						document.getElementById('chat-input')?.focus();
-					},
-
-					insertTextHandler: insertTextAtCursor,
-					onUpload: (e) => {
-						const { type, data } = e;
-
-						if (type === 'file') {
-							if (files.find((f) => f.id === data.id)) {
-								return;
-							}
-							files = [
-								...files,
-								{
-									...data,
-									status: 'processed'
-								}
-							];
-						} else {
-							onUpload(e);
-						}
-					}
-				})
-			},
-			{
-				char: '/',
 				render: getSuggestionRenderer(CommandSuggestionList, {
 					i18n,
 					onSelect: (e) => {
@@ -1425,9 +1430,10 @@
 							{/if}
 
 							{#if files.length > 0}
-								<div
-									class="mx-2 mt-2.5 pb-1.5 flex items-center flex-wrap gap-2"
-									dir={$settings?.chatDirection ?? 'auto'}
+				<div
+					class="scrollbar-hidden attachment-strip mx-2 mt-2.5 mb-1 h-[52px] min-h-[52px] max-h-[52px] pb-1 flex min-w-0 max-w-full items-start flex-nowrap gap-2 overflow-x-auto overflow-y-hidden"
+					dir={$settings?.chatDirection ?? 'auto'}
+					on:wheel|nonpassive={handleAttachmentsWheel}
 								>
 									{#each files as file, fileIdx}
 										{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
@@ -1669,7 +1675,7 @@
 															navigator.msMaxTouchPoints > 0
 														)}
 													placeholder={placeholder ? placeholder : $i18n.t('Send a Message')}
-													largeTextAsFile={($settings?.largeTextAsFile ?? false) && !shiftKey}
+													largeTextAsFile={!shiftKey}
 													autocomplete={$config?.features?.enable_autocomplete_generation &&
 														($settings?.promptAutocomplete ?? false)}
 													generateAutoCompletion={async (text) => {
@@ -1770,42 +1776,7 @@
 																		musicGenerationEnabled = false;
 																}
 													}}
-													on:paste={async (e) => {
-														e = e.detail.event;
-														console.log(e);
-
-														const clipboardData = e.clipboardData || window.clipboardData;
-
-														if (clipboardData && clipboardData.items) {
-															for (const item of clipboardData.items) {
-																if (item.type === 'text/plain') {
-																	if (($settings?.largeTextAsFile ?? false) && !shiftKey) {
-																		const text = clipboardData.getData('text/plain');
-
-																		if (text.length > PASTED_TEXT_CHARACTER_LIMIT) {
-																			e.preventDefault();
-																			const blob = new Blob([text], { type: 'text/plain' });
-																			const file = new File(
-																				[blob],
-																				`Pasted_Text_${Date.now()}.txt`,
-																				{
-																					type: 'text/plain'
-																				}
-																			);
-
-																			await uploadFileHandler(file, true, { context: 'full' });
-																		}
-																	}
-																} else {
-																	const file = item.getAsFile();
-																	if (file) {
-																		await inputFilesHandler([file]);
-																		e.preventDefault();
-																	}
-																}
-															}
-														}
-													}}
+													on:paste={handleChatInputPaste}
 												/>
 											{/key}
 										{/key}
@@ -2364,3 +2335,18 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	.attachment-strip {
+		overscroll-behavior-x: contain;
+		scrollbar-color: transparent transparent;
+	}
+
+	.attachment-strip:hover {
+		scrollbar-color: auto;
+	}
+
+	.attachment-strip:not(:hover)::-webkit-scrollbar-thumb {
+		visibility: hidden !important;
+	}
+</style>

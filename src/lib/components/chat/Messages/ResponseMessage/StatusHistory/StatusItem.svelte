@@ -8,6 +8,7 @@
 	import Search from '$lib/components/icons/Search.svelte';
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 	import Github from '$lib/components/icons/Github.svelte';
+	import DocumentPage from '$lib/components/icons/DocumentPage.svelte';
 	import { t } from 'i18next';
 
 	export let status = null;
@@ -17,6 +18,7 @@
 	$: statusDescription = String(status?.description ?? '').toLowerCase();
 	$: isGitHubStatus =
 		statusAction.includes('github_repository') || status?.source_type === 'github_repository';
+	$: isFileSourceStatus = status?.source_type === 'file';
 	$: isDeepSearchStatus = Boolean(status?.deep_search) || statusAction.includes('deep_search');
 	$: searchedCount =
 		status?.searched_count ??
@@ -196,6 +198,8 @@
 						>
 							{#if isGitHubStatus}
 								<Github className="size-3.5" />
+							{:else if isFileSourceStatus}
+								<DocumentPage className="size-3.5" strokeWidth="1.6" />
 							{:else if isDeepSearchStatus}
 								<Atom02 className="size-3.5" />
 							{:else}
@@ -238,6 +242,8 @@
 						>
 							{#if isGitHubStatus}
 								<Github className="size-3.5" />
+							{:else if isFileSourceStatus}
+								<DocumentPage className="size-3.5" strokeWidth="1.6" />
 							{:else if isMusicStatus}
 								<MusicNote className="size-3.5" strokeWidth="1.6" />
 							{:else if isImageStatus}

@@ -1946,11 +1946,11 @@ async def chat_completion(
             finally:
                 raise  # re-raise to ensure proper task cancellation handling
         except Exception as e:
-            log.debug(f"Error processing chat payload: {e}")
+            log.exception(f"Error processing chat payload: {e}")
             if metadata.get("chat_id") and metadata.get("message_id"):
                 # Update the chat message with the error
-                try:
-                    if not metadata["chat_id"].startswith("local:"):
+                if not metadata["chat_id"].startswith("local:"):
+                    try:
                         Chats.upsert_message_to_chat_by_id_and_message_id(
                             metadata["chat_id"],
                             metadata["message_id"],
@@ -1959,7 +1959,10 @@ async def chat_completion(
                                 "error": {"content": str(e)},
                             },
                         )
+                    except Exception as db_error:
+                        log.debug(f"Error saving chat failure: {db_error}")
 
+                try:
                     event_emitter = get_event_emitter(metadata)
                     await event_emitter(
                         {
@@ -1970,9 +1973,8 @@ async def chat_completion(
                     await event_emitter(
                         {"type": "chat:tasks:cancel"},
                     )
-
-                except Exception:
-                    pass
+                except Exception as emit_error:
+                    log.debug(f"Error emitting chat failure: {emit_error}")
         finally:
             try:
                 if mcp_clients := metadata.get("mcp_clients"):
