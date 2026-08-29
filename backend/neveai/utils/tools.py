@@ -56,6 +56,7 @@ from neveai.tools.builtin import (
     fetch_url,
     generate_image,
     edit_image,
+    create_downloadable_file,
     execute_code,
     search_memories,
     add_memory,
@@ -404,7 +405,7 @@ def get_builtin_tools(
     request: Request, extra_params: dict, features: dict = None, model: dict = None
 ) -> dict[str, dict]:
     """
-    Get built-in tools for native function calling.
+    Get built-in tools available to native or server-orchestrated function calling.
     Only returns tools when BOTH the global config is enabled AND the model capability allows it.
     """
     tools_dict = {}
@@ -499,6 +500,9 @@ def get_builtin_tools(
         and features.get("image_generation")
     ):
         builtin_functions.append(edit_image)
+
+    if features.get("file_generation"):
+        builtin_functions.append(create_downloadable_file)
 
     # Add code interpreter tool if builtin category enabled AND enabled globally AND model has code_interpreter capability
     if (

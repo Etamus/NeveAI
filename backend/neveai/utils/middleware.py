@@ -1509,7 +1509,12 @@ async def terminal_event_handler(
 
 
 async def chat_completion_tools_handler(
-    request: Request, body: dict, extra_params: dict, user: UserModel, models, tools
+    request: Request,
+    body: dict,
+    extra_params: dict,
+    user: UserModel,
+    models,
+    tools,
 ) -> tuple[dict, dict]:
     async def get_content_from_response(response) -> Optional[str]:
         content = None
@@ -1532,7 +1537,20 @@ async def chat_completion_tools_handler(
             # Remove the last user message to avoid duplication
             messages = messages[:-1]
 
-        recent_messages = messages[-4:] if len(messages) > 4 else messages
+        if "create_downloadable_file" in tools:
+            system_messages = [
+                message for message in messages if message.get("role") == "system"
+            ]
+            recent_messages = [
+                *system_messages,
+                *[
+                    message
+                    for message in messages
+                    if message.get("role") != "system"
+                ][-3:],
+            ]
+        else:
+            recent_messages = messages[-4:] if len(messages) > 4 else messages
         chat_history = "\n".join(
             f"{message['role'].upper()}: \"\"\"{get_content_from_message(message)}\"\"\""
             for message in recent_messages
@@ -3285,9 +3303,12 @@ def apply_params_to_form_data(form_data, model):
     if _no_think:
         form_data["no_think"] = True
 
-    _reasoning_extended = params.pop("reasoning_extended", True)
-    if _reasoning_extended is False or str(_reasoning_extended).lower() == "false":
-        form_data["reasoning_extended"] = False
+    if "reasoning_extended" in params:
+        _reasoning_extended = params.pop("reasoning_extended")
+        form_data["reasoning_extended"] = not (
+            _reasoning_extended is False
+            or str(_reasoning_extended).lower() == "false"
+        )
 
     neveai_params = {
         "stream_response": bool,
@@ -3420,6 +3441,31 @@ def process_messages_with_output(messages: list[dict]) -> list[dict]:
         processed.append(clean_message)
 
     return processed
+
+
+async def publish_pending_generated_files(metadata, event_emitter=None):
+    pending_files = metadata.pop("pending_generated_files", [])
+    if not pending_files:
+        return []
+
+    message_files = Chats.add_message_files_by_id_and_message_id(
+        metadata["chat_id"],
+        metadata["message_id"],
+        pending_files,
+    )
+    if message_files is None:
+        metadata["pending_generated_files"] = pending_files
+        raise RuntimeError("Unable to attach generated files to the chat")
+
+    if event_emitter:
+        await event_emitter(
+            {
+                "type": "chat:message:files",
+                "data": {"files": message_files},
+            }
+        )
+
+    return message_files
 
 
 async def process_chat_payload(request, form_data, user, metadata, model):
@@ -3772,10 +3818,13 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         "files": files,
     }
     form_data["metadata"] = metadata
+    extra_params["__metadata__"] = metadata
+    metadata["user_prompt"] = prompt
 
     # When the caller provides an explicit OpenAI-style `tools` array in the
     # request body, skip all server-side tool resolution and pass the caller's
     # tools through to the model unchanged.
+    deferred_file_generation_tools = {}
     if not payload_tools:
         # Server side tools
         tool_ids = metadata.get("tool_ids", None)
@@ -3984,15 +4033,18 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         builtin_tools_enabled = (
             model.get("info", {}).get("meta", {}).get("capabilities") or {}
         ).get("builtin_tools", True)
-        if (
+        native_function_calling = (
             metadata.get("params", {}).get("function_calling") == "native"
-            and builtin_tools_enabled
+        )
+        if (builtin_tools_enabled and native_function_calling) or features.get(
+            "file_generation"
         ):
-            # Add file context to user messages
-            chat_id = metadata.get("chat_id")
-            form_data["messages"] = add_file_context(
-                form_data.get("messages", []), chat_id, user
-            )
+            if native_function_calling:
+                # Native tools need file references in the model-visible messages.
+                chat_id = metadata.get("chat_id")
+                form_data["messages"] = add_file_context(
+                    form_data.get("messages", []), chat_id, user
+                )
             builtin_tools = get_builtin_tools(
                 request,
                 {
@@ -4005,6 +4057,22 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 features,
                 model,
             )
+            if not builtin_tools_enabled:
+                builtin_tools = {
+                    name: tool
+                    for name, tool in builtin_tools.items()
+                    if name == "create_downloadable_file"
+                }
+            if (
+                features.get("file_generation")
+                and "create_downloadable_file" in builtin_tools
+                and not native_function_calling
+            ):
+                deferred_file_generation_tools = {
+                    "create_downloadable_file": builtin_tools.pop(
+                        "create_downloadable_file"
+                    )
+                }
             for name, tool_dict in builtin_tools.items():
                 if name not in tools_dict:
                     tools_dict[name] = tool_dict
@@ -4036,6 +4104,30 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         try:
             form_data, flags = await chat_completion_files_handler(
                 request, form_data, extra_params, user
+            )
+            sources.extend(flags.get("sources", []))
+        except Exception as e:
+            log.exception(e)
+
+    # For default function calling, let the regular tool-selection flow decide
+    # whether a downloadable file is needed after attachment context is available.
+    if deferred_file_generation_tools:
+        try:
+            file_tool_form_data = copy.deepcopy(form_data)
+            if sources and prompt:
+                file_tool_form_data["messages"] = apply_source_context_to_messages(
+                    request,
+                    file_tool_form_data["messages"],
+                    sources,
+                    prompt,
+                )
+            _, flags = await chat_completion_tools_handler(
+                request,
+                file_tool_form_data,
+                extra_params,
+                user,
+                models,
+                deferred_file_generation_tools,
             )
             sources.extend(flags.get("sources", []))
         except Exception as e:
@@ -4442,18 +4534,6 @@ async def non_streaming_chat_response_handler(response, ctx):
                         }
                     ]
 
-                await event_emitter(
-                    {
-                        "type": "chat:completion",
-                        "data": {
-                            "done": True,
-                            "content": content,
-                            "output": response_output,
-                            "title": title,
-                        },
-                    }
-                )
-
                 # Save message in the database
                 usage = normalize_usage(response_data.get("usage", {}) or {})
 
@@ -4466,6 +4546,23 @@ async def non_streaming_chat_response_handler(response, ctx):
                         "output": response_output,
                         **({"usage": usage} if usage else {}),
                     },
+                )
+
+                try:
+                    await publish_pending_generated_files(metadata, event_emitter)
+                except Exception as e:
+                    log.exception(e)
+
+                await event_emitter(
+                    {
+                        "type": "chat:completion",
+                        "data": {
+                            "done": True,
+                            "content": content,
+                            "output": response_output,
+                            "title": title,
+                        },
+                    }
                 )
 
                 # Send a webhook notification if the user is not active
@@ -6059,6 +6156,11 @@ async def streaming_chat_response_handler(response, ctx):
                                 "url": f"{request.app.state.config.NEVEAI_URL}/c/{metadata['chat_id']}",
                             },
                         )
+
+                try:
+                    await publish_pending_generated_files(metadata, event_emitter)
+                except Exception as e:
+                    log.exception(e)
 
                 await event_emitter(
                     {

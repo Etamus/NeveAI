@@ -42,11 +42,14 @@
 		getLlamaCppStatus,
 		getMmProjFiles,
 		getLocalVramInfo,
+		getLatestLocalModelRuntimeEvent,
 		loadLocalModel,
+		LOCAL_MODEL_RUNTIME_EVENT,
 		normalizeLlamaCppErrorMessage,
 		unloadLocalModel,
 		type LlamaCppStatus,
 		type LocalModel,
+		type LocalModelRuntimeEventDetail,
 		type LocalVramInfo
 	} from '$lib/apis/llamacpp';
 
@@ -260,6 +263,7 @@
 	let unifiedRefreshRequestedInitial = false;
 	let realtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastAdminRefreshAt = 0;
+	const ignoredRuntimeOperationIds = new Set<string>();
 
 	const perPage = 30;
 	const MODEL_ROW_HEIGHT_PX = 72;
@@ -508,7 +512,9 @@
 				return;
 			}
 			if (!show) {
-				queueReleaseCheck(200);
+				localActionReleaseTimers.delete(filename);
+				localActionReleasePending.delete(filename);
+				clearLocalModelProcessing(filename);
 				return;
 			}
 			if (expectedAction === 'unload' && getStoreValue(localModelProcessingStore).pinnedUnload.includes(filename)) {
@@ -527,7 +533,9 @@
 			if ((localActionReleaseTokens.get(filename) ?? 0) !== token) return;
 			if (destroyed) return;
 			if (!show) {
-				queueReleaseCheck(200);
+				localActionReleaseTimers.delete(filename);
+				localActionReleasePending.delete(filename);
+				clearLocalModelProcessing(filename);
 				return;
 			}
 			if (expectedAction === 'unload' && getStoreValue(localModelProcessingStore).pinnedUnload.includes(filename)) {
@@ -557,16 +565,26 @@
 		localActionReleaseTimers.set(filename, timer);
 	};
 	const clearSettledLocalModelActions = (refreshedLocalModels: LocalModel[]) => {
-		const { actions } = getStoreValue(localModelProcessingStore);
+		const processingState = getStoreValue(localModelProcessingStore);
+		const { actions } = processingState;
 		Object.entries(actions).forEach(([filename, action]) => {
 			const refreshedModel = refreshedLocalModels.find((model) => model.filename === filename);
 			if (action === 'load' && refreshedModel?.is_loaded) {
-				scheduleLocalActionVisualRelease(filename, action);
+				if (show) {
+					scheduleLocalActionVisualRelease(filename, action);
+				} else {
+					clearLocalModelProcessing(filename);
+				}
 			}
 			if (action === 'unload' && (!refreshedModel || !refreshedModel.is_loaded)) {
-				if (show && getStoreValue(localModelProcessingStore).pinnedUnload.includes(filename)) {
+				const requestFinished =
+					processingState.settlingUnload.includes(filename) &&
+					!processingState.loading.includes(filename);
+				if (!show && requestFinished) {
+					clearLocalModelProcessing(filename);
+				} else if (show && processingState.pinnedUnload.includes(filename)) {
 					void releasePinnedSettledUnloadsAfterOpen();
-				} else {
+				} else if (requestFinished) {
 					scheduleLocalActionVisualRelease(filename, action);
 				}
 			}
@@ -793,11 +811,13 @@
 			guardReopenedUnloadVisuals();
 			disableCollapseAnimation();
 			currentPage = 1;
-			modelsBelowLoadedCollapsed = Boolean(activeHighlightedModelKey);
+			modelsBelowLoadedCollapsed = true;
 			void refreshUnifiedModelData(false);
 			void refreshLocalActionsAfterOpen();
 		} else if (closingModal) {
 			pinUnsettledUnloadsBeforeClose();
+			disableCollapseAnimation();
+			modelsBelowLoadedCollapsed = true;
 			selectedModelId = null;
 		}
 	}
@@ -926,6 +946,107 @@
 		);
 	};
 
+	const markLocalModelUnloaded = (filename: string, modelId?: string) => {
+		localModels = localModels.map((localModel) =>
+			localModel.filename === filename || (modelId && localModel.id === modelId)
+				? {
+						...localModel,
+						is_loaded: false,
+						loaded_at: null,
+						n_gpu_layers: null,
+						n_ctx: null,
+						mmproj_filename: null,
+						cache_type: null,
+						speculative_decoding: null,
+						token_prediction: null,
+						context_shift: null
+					}
+				: localModel
+		);
+	};
+
+	const synchronizeExternalLocalModelRuntime = async (
+		detail: LocalModelRuntimeEventDetail
+	) => {
+		let filename =
+			detail.filename ??
+			detail.result?.filename ??
+			localModels.find((model) => model.id === (detail.modelId ?? detail.result?.id))?.filename;
+
+		if (!filename) {
+			const refreshedModels = await refreshUnifiedModelData(false);
+			filename = refreshedModels?.find(
+				(model) => model.id === (detail.modelId ?? detail.result?.id)
+			)?.filename;
+		}
+		if (!filename || destroyed) return;
+
+		if (!getStoreValue(localModelProcessingStore).actions[filename]) {
+			setLocalModelAction(filename, detail.action);
+		}
+
+		if (detail.phase === 'success') {
+			let runtimeStatePatched = false;
+			if (detail.action === 'load') {
+				const model = localModels.find(
+					(localModel) =>
+						localModel.filename === filename ||
+						localModel.id === (detail.modelId ?? detail.result?.id)
+				);
+				if (model) {
+					markLocalModelLoaded(model, detail.result);
+					runtimeStatePatched = true;
+				}
+			} else {
+				setLocalModelUnloadSettling(filename);
+				markLocalModelUnloaded(filename, detail.modelId ?? detail.result?.id);
+				runtimeStatePatched = true;
+			}
+
+			if (!show && runtimeStatePatched) clearLocalModelProcessing(filename);
+			await refreshUnifiedModelData(false);
+			void refreshGlobalModelsStore();
+			return;
+		}
+
+		const refreshedModels = await refreshUnifiedModelData(false);
+		if (!refreshedModels) return;
+		const refreshedModel = refreshedModels.find(
+			(model) => model.filename === filename || model.id === detail.modelId
+		);
+		const actionStillTracked =
+			getStoreValue(localModelProcessingStore).actions[filename] === detail.action;
+		const actionDidNotComplete =
+			detail.action === 'load'
+				? !refreshedModel?.is_loaded
+				: Boolean(refreshedModel?.is_loaded);
+		if (actionStillTracked && actionDidNotComplete) {
+			clearLocalModelProcessing(filename);
+		}
+	};
+
+	const handleLocalModelRuntimeEvent = (detail: LocalModelRuntimeEventDetail | null) => {
+		if (!detail || destroyed) return;
+		const filename =
+			detail.filename ??
+			detail.result?.filename ??
+			localModels.find((model) => model.id === (detail.modelId ?? detail.result?.id))?.filename;
+
+		if (detail.phase === 'start') {
+			if (!filename) return;
+			const currentAction = getStoreValue(localModelProcessingStore).actions[filename];
+			if (currentAction === detail.action) {
+				ignoredRuntimeOperationIds.add(detail.operationId);
+				return;
+			}
+			setLocalModelAction(filename, detail.action);
+			return;
+		}
+
+		if (ignoredRuntimeOperationIds.delete(detail.operationId)) return;
+		void synchronizeExternalLocalModelRuntime(detail);
+	};
+
 	const reconcileLocalActionAfterError = async (
 		model: LocalModel,
 		action: LocalModelAction
@@ -954,6 +1075,7 @@
 	};
 
 	async function handleLoad(model: LocalModel) {
+		if (localModelActionInProgress) return;
 		setLocalModelAction(model.filename, 'load');
 		localError = '';
 		localSuccess = '';
@@ -988,6 +1110,7 @@
 	}
 
 	function startLoadWithContextModal(model: LocalModel) {
+		if (localModelActionInProgress) return;
 		const preferences = getLocalModelLoadPreferences();
 		if (preferences.context !== 'ask') {
 			contextSize = preferences.context;
@@ -1053,6 +1176,7 @@
 	}
 
 	async function handleLoadWithMmproj(model: LocalModel, mmprojFile: string) {
+		if (localModelActionInProgress) return;
 		loadModalModel = null;
 		loadModalMmprojFile = '';
 		loadModalFromContext = false;
@@ -1338,6 +1462,20 @@
 	onMount(() => {
 		destroyed = false;
 		cancelOrphanedLocalActionTimers();
+		const runtimeEventHandler = (event: Event) => {
+			handleLocalModelRuntimeEvent(
+				(event as CustomEvent<LocalModelRuntimeEventDetail>).detail
+			);
+		};
+		window.addEventListener(LOCAL_MODEL_RUNTIME_EVENT, runtimeEventHandler);
+
+		const latestRuntimeEvent = getLatestLocalModelRuntimeEvent();
+		if (
+			latestRuntimeEvent &&
+			Date.now() - latestRuntimeEvent.timestamp <= 30_000
+		) {
+			handleLocalModelRuntimeEvent(latestRuntimeEvent);
+		}
 
 		void (async () => {
 			await refreshUnifiedModelData(!preloadApplied);
@@ -1370,6 +1508,7 @@
 				realtimeRefreshTimer = null;
 			}
 			window.removeEventListener('focus', refreshOnFocus);
+			window.removeEventListener(LOCAL_MODEL_RUNTIME_EVENT, runtimeEventHandler);
 			document.removeEventListener('visibilitychange', refreshOnVisibility);
 		};
 	});
@@ -1384,6 +1523,7 @@
 		}
 		disableCollapseAnimation();
 		cancelAllLocalActionTimers();
+		ignoredRuntimeOperationIds.clear();
 		unsubscribeLocalModelProcessing();
 	});
 </script>
@@ -1646,12 +1786,17 @@
 					{:else}
 						<Tooltip content="Carregar">
 							<button
-								class="flex items-center justify-center p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-500 dark:text-gray-400"
+								class="flex items-center justify-center p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-500 dark:text-gray-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+								disabled={localModelActionInProgress}
 								on:mouseenter={() => showVramPreview(gm)}
 								on:mouseleave={() => clearVramPreview(gm)}
 								on:focus={() => showVramPreview(gm)}
 								on:blur={() => clearVramPreview(gm)}
-								on:click={() => { clearVramPreview(gm); startLoadWithContextModal(gm); }}
+								on:click={() => {
+									if (localModelActionInProgress) return;
+									clearVramPreview(gm);
+									startLoadWithContextModal(gm);
+								}}
 							>
 								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
 									<path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm14.024-.983a1.125 1.125 0 0 1 0 1.966l-5.603 3.113A1.125 1.125 0 0 1 9 15.113V8.887c0-.857.921-1.4 1.671-.983l5.603 3.113Z" clip-rule="evenodd" />

@@ -10,9 +10,12 @@ import json
 import logging
 import time
 import asyncio
+import io
+import re
+from pathlib import Path
 from typing import Optional
 
-from fastapi import Request
+from fastapi import Request, UploadFile
 
 from neveai.models.users import UserModel
 from neveai.routers.retrieval import search_web as _search_web
@@ -39,6 +42,12 @@ from neveai.models.groups import Groups
 from neveai.models.memories import Memories
 from neveai.retrieval.vector.factory import VECTOR_DB_CLIENT
 from neveai.utils.sanitize import sanitize_code
+from neveai.utils.generated_files import (
+    FORMAT_ALIASES,
+    MIME_TYPES,
+    GeneratedFileError,
+    build_generated_file,
+)
 
 log = logging.getLogger(__name__)
 
@@ -352,6 +361,205 @@ async def edit_image(
     except Exception as e:
         log.exception(f"edit_image error: {e}")
         return json.dumps({"error": str(e)})
+
+
+# =============================================================================
+# DOWNLOADABLE FILE TOOLS
+# =============================================================================
+
+
+_DOTTED_ONLY_GENERATED_FORMATS = {"c", "h"}
+_PLAIN_GENERATED_FORMATS = set(MIME_TYPES) - _DOTTED_ONLY_GENERATED_FORMATS
+GENERATED_FILE_FORMAT_PATTERN = re.compile(
+    rf"(?<![\w])(?:\.(?P<dotted>{'|'.join(sorted(_DOTTED_ONLY_GENERATED_FORMATS))})|\.?(?P<plain>{'|'.join(sorted(_PLAIN_GENERATED_FORMATS, key=len, reverse=True))}))(?![\w])",
+    re.IGNORECASE,
+)
+
+
+def _get_requested_generated_file_format(prompt: str) -> str:
+    prompt = str(prompt or "").casefold()
+    aliases = (
+        ("docx", r"\b(?:word|documento\s+do\s+word)\b"),
+        ("xlsx", r"\b(?:excel|spreadsheet|planilha\s+do\s+excel)\b"),
+        ("pptx", r"\b(?:powerpoint|apresenta[cç][aã]o\s+do\s+powerpoint)\b"),
+        ("md", r"\bmarkdown\b"),
+        ("js", r"\bjavascript\b"),
+        ("ts", r"\btypescript\b"),
+        ("py", r"\bpython\b"),
+        ("cpp", r"(?<!\w)c\+\+(?!\w)"),
+        ("c", r"\barquivo\s+c\b"),
+        ("sh", r"\b(?:shell\s+script|script\s+shell)\b"),
+    )
+    for file_format, pattern in aliases:
+        if re.search(pattern, prompt, re.IGNORECASE):
+            return file_format
+
+    match = GENERATED_FILE_FORMAT_PATTERN.search(prompt)
+    return ((match.group("dotted") or match.group("plain")) if match else "").lower()
+
+
+def _get_attached_generated_file_format(metadata: dict) -> str:
+    formats = set()
+    for item in (metadata or {}).get("files") or []:
+        if not isinstance(item, dict) or item.get("source_type") == "github_repository":
+            continue
+        inline_file = item.get("file") or {}
+        name = (
+            item.get("name")
+            or item.get("filename")
+            or inline_file.get("filename")
+            or (item.get("meta") or {}).get("name")
+        )
+        suffix = Path(str(name or "")).suffix.lower().lstrip(".")
+        suffix = FORMAT_ALIASES.get(suffix, suffix)
+        if suffix:
+            formats.add(suffix)
+
+    if len(formats) == 1:
+        source_format = next(iter(formats))
+        if source_format in MIME_TYPES:
+            return source_format
+    return ""
+
+
+def _resolve_generated_file_format(
+    filename: str, file_format: str, metadata: dict
+) -> tuple[str, str]:
+    requested_format = _get_requested_generated_file_format(
+        (metadata or {}).get("user_prompt", "")
+    )
+    resolved_format = requested_format or _get_attached_generated_file_format(metadata)
+    if not resolved_format:
+        return filename, file_format
+
+    raw_name = Path(str(filename or "arquivo")).name
+    stem = Path(raw_name).stem if Path(raw_name).suffix else raw_name
+    return f"{stem or 'arquivo'}.{resolved_format}", resolved_format
+
+
+async def create_downloadable_file(
+    filename: str,
+    content: str,
+    file_format: str = "",
+    __request__: Request = None,
+    __user__: dict = None,
+    __event_emitter__: callable = None,
+    __metadata__: dict = None,
+    __chat_id__: str = None,
+    __message_id__: str = None,
+) -> str:
+    """
+    Create a real downloadable file and attach it to the assistant response.
+    Use this only when the user asks to create, export, save, assemble, or download a
+    deliverable file. Do not use it for ordinary answers that should remain chat text.
+    Supported formats are txt, md, csv, json, html, css, js, ts, py, java, c, cpp,
+    h, sh, yaml, yml, xml, sql, rtf, docx, xlsx, pdf, pptx, and zip.
+
+    For xlsx, content should be JSON such as
+    {"sheets":[{"name":"Dados","rows":[["Nome","Valor"],["A",1]]}]}.
+    For pptx, content should be JSON such as
+    {"slides":[{"title":"Título","content":["Item 1","Item 2"]}]}.
+    For zip, content should be JSON such as
+    {"files":[{"path":"src/app.py","content":"print('ok')"}]}.
+    For docx and pdf, use readable Markdown or plain text. For all text and code
+    formats, provide the complete final file content. Call the tool once per requested
+    file, or create a zip when the deliverable contains a related folder structure.
+    Always honor a format explicitly requested by the user. When no format is requested,
+    preserve the common format of compatible source files whenever every attachment uses
+    the same supported format. For example, combining files of any supported format should
+    keep that format instead of defaulting to Markdown.
+
+    :param filename: Final filename, including a suitable extension
+    :param content: Complete file content or the structured JSON described above
+    :param file_format: Optional output format when it is not clear from filename
+    :return: JSON confirming that the downloadable file is ready for publication
+    """
+    if __request__ is None:
+        return json.dumps({"error": "Request context not available"})
+    if not __user__:
+        return json.dumps({"error": "User context not available"})
+    if not __chat_id__ or not __message_id__:
+        return json.dumps({"error": "Chat context not available"})
+
+    try:
+        from neveai.routers.files import upload_file_handler
+
+        filename, file_format = _resolve_generated_file_format(
+            filename, file_format, __metadata__ or {}
+        )
+        safe_name, file_bytes, content_type = await asyncio.to_thread(
+            build_generated_file,
+            filename,
+            content,
+            file_format,
+        )
+        user = UserModel(**__user__)
+        upload = UploadFile(
+            file=io.BytesIO(file_bytes),
+            filename=safe_name,
+            headers={"content-type": content_type},
+        )
+        file_item = upload_file_handler(
+            request=__request__,
+            file=upload,
+            metadata={"generated": True, "source": "file_generation"},
+            process=False,
+            process_in_background=False,
+            user=user,
+        )
+
+        generated_file = {
+            "id": file_item.id,
+            "type": "file",
+            "name": file_item.meta.get("name", safe_name),
+            "url": file_item.id,
+            "content_type": file_item.meta.get("content_type", content_type),
+            "size": file_item.meta.get("size", len(file_bytes)),
+            "meta": file_item.meta,
+            "generated": True,
+        }
+        if isinstance(__metadata__, dict):
+            __metadata__.setdefault("pending_generated_files", []).append(
+                generated_file
+            )
+        else:
+            message_files = Chats.add_message_files_by_id_and_message_id(
+                __chat_id__,
+                __message_id__,
+                [generated_file],
+            )
+            if message_files is None:
+                raise RuntimeError("Unable to attach the generated file to the chat")
+
+            if __event_emitter__:
+                await __event_emitter__(
+                    {
+                        "type": "chat:message:files",
+                        "data": {"files": message_files},
+                    }
+                )
+
+        return json.dumps(
+            {
+                "status": "success",
+                "message": (
+                    "The requested file was created successfully and will be displayed as "
+                    "a downloadable card after the assistant response is complete."
+                ),
+                "file": {
+                    "id": file_item.id,
+                    "name": safe_name,
+                    "content_type": content_type,
+                    "size": len(file_bytes),
+                },
+            },
+            ensure_ascii=False,
+        )
+    except GeneratedFileError as e:
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
+    except Exception as e:
+        log.exception(f"create_downloadable_file error: {e}")
+        return json.dumps({"error": str(e)}, ensure_ascii=False)
 
 
 # =============================================================================

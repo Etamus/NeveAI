@@ -9,6 +9,7 @@
 	import { getTools } from '$lib/apis/tools';
 
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
+	import Switch from '$lib/components/common/Switch.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import DocumentArrowUp from '$lib/components/icons/DocumentArrowUp.svelte';
 	import Note from '$lib/components/icons/Note.svelte';
@@ -60,6 +61,8 @@
 	export let imageGenerationEnabled = false;
 	export let showCodeExecutionButton = false;
 	export let codeExecutionEnabled = false;
+	export let showFileGenerationButton = true;
+	export let fileGenerationEnabled = false;
 	export let showStableDiffusionButton = false;
 	export let stableDiffusionEnabled = false;
 	export let showMusicGenerationButton = false;
@@ -69,6 +72,12 @@
 	let show = false;
 	let tab = '';
 	let tools = null;
+	$: fileGenerationBlocked =
+		deepSearchEnabled ||
+		imageGenerationEnabled ||
+		stableDiffusionEnabled ||
+		musicGenerationEnabled;
+	$: effectiveFileGenerationEnabled = fileGenerationEnabled && !fileGenerationBlocked;
 
 	$: if (show) {
 		initTools();
@@ -468,7 +477,7 @@
 						{/if}
 					{/if}
 
-					{#if showWebSearchButton || showImageGenerationButton || showCodeExecutionButton || showStableDiffusionButton || showMusicGenerationButton || (toggleFilters && toggleFilters.length > 0) || (tools && Object.keys(tools).length > 0)}
+					{#if showWebSearchButton || showImageGenerationButton || showCodeExecutionButton || showFileGenerationButton || showStableDiffusionButton || showMusicGenerationButton || (toggleFilters && toggleFilters.length > 0) || (tools && Object.keys(tools).length > 0)}
 						<hr class="my-1 border-gray-200 dark:border-gray-700 mx-auto w-[90%]" />
 					{/if}
 
@@ -624,6 +633,51 @@
 									</div>
 								</div>
 								<div class="size-4 shrink-0">{#if musicGenerationEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
+							</button>
+						</Tooltip>
+					{/if}
+
+					{#if showFileGenerationButton}
+						<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[90%]" />
+						<Tooltip content="" placement="top-start">
+							<button
+								type="button"
+								class="my-px flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm rounded-sm transition {fileGenerationBlocked
+									? 'cursor-not-allowed text-gray-400 dark:text-gray-600'
+									: 'cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50'}"
+								aria-pressed={effectiveFileGenerationEnabled}
+								aria-disabled={fileGenerationBlocked}
+								disabled={fileGenerationBlocked}
+								on:click|stopPropagation={() => {
+									fileGenerationEnabled = !fileGenerationEnabled;
+								}}
+							>
+								<div class="flex min-w-0 flex-1 items-center gap-2">
+									<div class="shrink-0">
+										<svg
+											aria-hidden="true"
+											xmlns="http://www.w3.org/2000/svg"
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											class="size-4"
+										>
+											<rect width="18" height="18" x="3" y="3" rx="2" />
+											<path d="M3 9h18" />
+											<path d="M9 21V9" />
+										</svg>
+									</div>
+									<div class="truncate">Ferramentas</div>
+								</div>
+								<div class="pointer-events-none shrink-0">
+									<Switch
+										state={effectiveFileGenerationEnabled}
+										disabled={fileGenerationBlocked}
+									/>
+								</div>
 							</button>
 						</Tooltip>
 					{/if}

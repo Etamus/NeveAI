@@ -828,8 +828,8 @@
 							<DefaultFeatures
 								availableFeatures={[
 									'web_search',
-									'code_execution',
 									'deep_search',
+									'code_execution',
 									'toggle_reasoning'
 								]}
 								bind:featureIds={defaultFeatureIds}

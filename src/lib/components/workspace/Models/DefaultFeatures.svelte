@@ -27,7 +27,7 @@
 			description: $i18n.t('Modelo inicia com pesquisa profunda por padrão')
 		},
 		toggle_reasoning: {
-			label: $i18n.t('Alternar raciocínio'),
+			label: $i18n.t('Ajustar raciocínio'),
 			description: $i18n.t('Show the Rápido/Raciocínio toggle in the message input bar')
 		},
 		stable_diffusion: {
@@ -38,8 +38,8 @@
 
 	export let availableFeatures = [
 		'web_search',
-		'code_execution',
 		'deep_search',
+		'code_execution',
 		'image_generation',
 		'toggle_reasoning'
 	];
@@ -115,6 +115,9 @@
 <div>
 	<div class="flex flex-col mt-2 gap-2">
 		{#each availableFeatures as feature}
+			{#if feature === 'toggle_reasoning' && availableFeatures.includes('deep_search')}
+				<div class="ml-1 mr-auto my-0.5 w-[92%] border-t border-gray-200/80 dark:border-gray-700/50"></div>
+			{/if}
 			{@const featureLabel = getFeatureLabel(feature)}
 			{@const featureState = featureViewState[feature] ?? { enabled: false, disabled: false }}
 			<div

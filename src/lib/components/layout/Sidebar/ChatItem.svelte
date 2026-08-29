@@ -36,8 +36,6 @@
 	import GarbageBin from '$lib/components/icons/GarbageBin.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import DragGhost from '$lib/components/common/DragGhost.svelte';
-	import Check from '$lib/components/icons/Check.svelte';
-	import XMark from '$lib/components/icons/XMark.svelte';
 	import Document from '$lib/components/icons/Document.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 
@@ -175,9 +173,6 @@
 
 	let generating = false;
 
-	let ignoreBlur = false;
-	let doubleClicked = false;
-
 	let dragged = false;
 	let x = 0;
 	let y = 0;
@@ -220,16 +215,21 @@
 		onDragEnd(event);
 	};
 
+	const finishRenaming = async () => {
+		if (!confirmEdit) return;
+
+		const nextTitle = chatTitle;
+		confirmEdit = false;
+		chatTitle = '';
+
+		if (nextTitle !== title) {
+			await editChatTitle(id, nextTitle);
+		}
+	};
+
 	const onClickOutside = (event) => {
 		if (!itemElement.contains(event.target)) {
-			if (confirmEdit) {
-				if (chatTitle !== title) {
-					editChatTitle(id, chatTitle);
-				}
-
-				confirmEdit = false;
-				chatTitle = '';
-			}
+			void finishRenaming();
 		}
 	};
 
@@ -261,10 +261,7 @@
 	const chatTitleInputKeydownHandler = (e) => {
 		if (e.key === 'Enter') {
 			e.preventDefault();
-			setTimeout(() => {
-				const input = document.getElementById(`chat-title-input-${id}`);
-				if (input) input.blur();
-			}, 0);
+			e.currentTarget.blur();
 		} else if (e.key === 'Escape') {
 			e.preventDefault();
 			confirmEdit = false;
@@ -337,24 +334,12 @@
 			<input
 				id="chat-title-input-{id}"
 				bind:value={chatTitle}
-				class=" bg-transparent w-full outline-hidden mr-10"
+				class="bg-transparent w-full outline-hidden"
 				placeholder={generating ? $i18n.t('Generating...') : ''}
 				disabled={generating}
 				on:keydown={chatTitleInputKeydownHandler}
-				on:blur={async (e) => {
-					if (doubleClicked) {
-						e.preventDefault();
-						e.stopPropagation();
-
-						await tick();
-						setTimeout(() => {
-							const input = document.getElementById(`chat-title-input-${id}`);
-							if (input) input.focus();
-						}, 0);
-
-						doubleClicked = false;
-						return;
-					}
+				on:blur={async () => {
+					await finishRenaming();
 				}}
 			/>
 		</div>
@@ -383,7 +368,6 @@
 				e.preventDefault();
 				e.stopPropagation();
 
-				doubleClicked = true;
 				renameHandler();
 			}}
 			on:mouseenter={(e) => {
@@ -405,11 +389,12 @@
 		</a>
 	{/if}
 
-	<!-- svelte-ignore a11y-no-static-element-interactions -->
-	<div
+	{#if !confirmEdit}
+		<!-- svelte-ignore a11y-no-static-element-interactions -->
+		<div
 		id="sidebar-chat-item-menu"
 		class="
-        {id === $chatId || confirmEdit
+        {id === $chatId
 			? 'from-gray-100 dark:from-gray-800 selected'
 			: selected
 				? 'from-gray-100 dark:from-gray-800 selected'
@@ -429,35 +414,7 @@
 			mouseOver = false;
 		}}
 	>
-		{#if confirmEdit}
-			<div
-				class="flex self-center items-center space-x-1.5 z-10 translate-y-[0.5px] -translate-x-[0.5px]"
-			>
-				<Tooltip content={$i18n.t('Confirm')}>
-					<button
-						class="self-center dark:hover:text-white transition"
-						on:click={() => {
-							editChatTitle(id, chatTitle);
-							confirmEdit = false;
-							chatTitle = '';
-						}}
-					>
-						<Check className="size-3.5" strokeWidth="2.5" />
-					</button>
-				</Tooltip>
-				<Tooltip content={$i18n.t('Cancel')}>
-					<button
-						class="self-center dark:hover:text-white transition"
-						on:click={() => {
-							confirmEdit = false;
-							chatTitle = '';
-						}}
-					>
-						<XMark className="size-3.5" strokeWidth="2.5" />
-					</button>
-				</Tooltip>
-			</div>
-		{:else if shiftKey && mouseOver}
+		{#if shiftKey && mouseOver}
 			<div class=" flex items-center self-center space-x-1.5">
 				<Tooltip content={$i18n.t('Delete')}>
 					<button
@@ -545,5 +502,6 @@
 			</div>
 			{/if}
 		{/if}
-	</div>
+		</div>
+	{/if}
 </div>

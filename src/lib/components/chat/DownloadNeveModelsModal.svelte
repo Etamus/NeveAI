@@ -590,7 +590,6 @@
 	size="w-[min(40rem,calc(100vw-1rem))]"
 	containerClassName="p-2 sm:p-3"
 	className="bg-white dark:bg-gray-900 rounded-xl max-h-[calc(100dvh-1rem)] overflow-hidden"
-	keepMounted
 >
 	<div class="flex max-h-[calc(100dvh-1rem)] flex-col">
 		<div

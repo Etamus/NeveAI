@@ -38,7 +38,16 @@
 					{$i18n.t('Memory')}
 				</div>
 
-				<div class="">
+				<div class="flex items-center gap-1">
+					<button
+						class="p-1 px-3 text-sm flex rounded-sm transition"
+						on:click={() => {
+							showManageModal = true;
+						}}
+						type="button"
+					>
+						<span class="self-center">{$i18n.t('Manage')}</span>
+					</button>
 					<Switch
 						bind:state={enableMemory}
 						on:change={async () => {
@@ -65,20 +74,6 @@
 				<div>- “Where did we leave off on my last project?”</div>
 			</div> -->
 		</div>
-
-		<div class="mt-3 mb-1 ml-1">
-			<button
-				type="button"
-				class="text-xs px-4 py-1.5 font-medium bg-transparent border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition rounded-lg"
-				on:click={() => {
-					showManageModal = true;
-				}}
-			>
-				{$i18n.t('Manage')}
-			</button>
-		</div>
-
-
 
 	</div>
 

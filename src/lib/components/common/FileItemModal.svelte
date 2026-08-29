@@ -42,6 +42,7 @@
 	let isExcel = false;
 	let isDocx = false;
 	let isPptx = false;
+	let isPlainText = false;
 
 	let selectedTab = '';
 	let excelWorkbook: WorkBook | null = null;
@@ -84,6 +85,12 @@
 	$: isMarkdown =
 		item?.meta?.content_type === 'text/markdown' ||
 		(item?.name && item?.name.toLowerCase().endsWith('.md'));
+
+	$: isPlainText =
+		(item?.meta?.content_type ?? '').startsWith('text/plain') ||
+		item?.meta?.content_type === 'application/rtf' ||
+		(item?.name &&
+			(item.name.toLowerCase().endsWith('.txt') || item.name.toLowerCase().endsWith('.rtf')));
 
 	$: isCode =
 		item?.name &&
@@ -213,8 +220,30 @@
 		}
 	};
 
+	const loadTextFileContent = async () => {
+		if (item?.file?.data?.content || (!isMarkdown && !isCode && !isPlainText)) return;
+
+		try {
+			const arrayBuffer = await getFileContentById(item.id);
+			if (!arrayBuffer) return;
+
+			item = {
+				...item,
+				file: {
+					...(item?.file ?? {}),
+					data: {
+						...(item?.file?.data ?? {}),
+						content: new TextDecoder('utf-8').decode(arrayBuffer)
+					}
+				}
+			};
+		} catch (error) {
+			console.error('Error loading text file:', error);
+		}
+	};
+
 	const loadContent = async () => {
-		selectedTab = '';
+		selectedTab = item?.generated ? 'preview' : '';
 		expandedContent = false;
 		if (item?.type === 'collection') {
 			loading = true;
@@ -239,6 +268,8 @@
 			if (file) {
 				item.file = file || {};
 			}
+
+			await loadTextFileContent();
 
 			// Load Excel content if it's an Excel file
 			if (isExcel) {
@@ -338,7 +369,7 @@
 
 						{#if item.size}
 							<div class="capitalize shrink-0">{formatFileSize(item.size)}</div>
-							•
+							{#if !item?.generated}•{/if}
 						{/if}
 
 						{#if item?.file?.data?.content}
@@ -353,7 +384,6 @@
 									})}
 								{/if}
 							</div>
-
 						{/if}
 
 						{#if item?.knowledge}
@@ -396,7 +426,7 @@
 
 		<div class="flex-1 min-h-0 flex flex-col overflow-hidden">
 			{#if !loading}
-				{#if isAudio || isPDF || isExcel || isCode || isMarkdown || isDocx || isPptx}
+				{#if !item?.generated && (isAudio || isPDF || isExcel || isCode || isMarkdown || isDocx || isPptx)}
 					<div
 						class="shrink-0 flex mb-2.5 scrollbar-none overflow-x-auto w-full border-b border-gray-50 dark:border-gray-850/30 text-center text-sm font-medium bg-transparent dark:text-gray-200"
 					>
@@ -439,233 +469,228 @@
 						</div>
 					{/if}
 
-				{#if isImage}
-					<div class="relative w-full overflow-hidden">
-						<div class="absolute top-2 right-2 z-10">
-							<Tooltip content={$i18n.t('Reset view')}>
-								<button
-									class="p-1.5 rounded-lg bg-white/80 dark:bg-gray-850/80 backdrop-blur-sm shadow-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-500 dark:text-gray-400"
-									on:click={resetImageView}
-								>
-									<Reset className="size-4" />
-								</button>
-							</Tooltip>
-						</div>
-						<div use:initImagePanzoom>
-							<img
-								src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
-								alt={item?.name ?? 'Image'}
-								class="w-full object-contain rounded-lg"
-								loading="lazy"
-								draggable="false"
-							/>
-						</div>
-					</div>
-				{:else if selectedTab === ''}
-					{#if item?.file?.data}
-						{@const rawContent = (item?.file?.data?.content ?? '').trim() || 'Sem conteúdo'}
-						{@const isTruncated =
-							($settings?.renderMarkdownInPreviews ?? true) &&
-							rawContent.length > CONTENT_PREVIEW_LIMIT &&
-							!expandedContent}
-						{#if $settings?.renderMarkdownInPreviews ?? true}
-							<div
-								class="text-sm prose dark:prose-invert max-w-full"
-							>
-								<Markdown
-									content={isTruncated ? rawContent.slice(0, CONTENT_PREVIEW_LIMIT) : rawContent}
-									id="file-preview"
+					{#if isImage}
+						<div class="relative w-full overflow-hidden">
+							<div class="absolute top-2 right-2 z-10">
+								<Tooltip content={$i18n.t('Reset view')}>
+									<button
+										class="p-1.5 rounded-lg bg-white/80 dark:bg-gray-850/80 backdrop-blur-sm shadow-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-500 dark:text-gray-400"
+										on:click={resetImageView}
+									>
+										<Reset className="size-4" />
+									</button>
+								</Tooltip>
+							</div>
+							<div use:initImagePanzoom>
+								<img
+									src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
+									alt={item?.name ?? 'Image'}
+									class="w-full object-contain rounded-lg"
+									loading="lazy"
+									draggable="false"
 								/>
 							</div>
-							{#if isTruncated}
-								<button
-									class="mt-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition"
-									on:click={() => {
-										expandedContent = true;
-									}}
-								>
-									{$i18n.t('Show all ({{COUNT}} characters)', {
-										COUNT: rawContent.length.toLocaleString()
-									})}
-								</button>
-							{/if}
-						{:else}
-							<div class="text-xs whitespace-pre-wrap">
-								{rawContent}
-							</div>
-						{/if}
-					{:else if item?.content}
-						{@const rawContent = (item?.content ?? '').trim() || 'Sem conteúdo'}
-						{@const isTruncated =
-							($settings?.renderMarkdownInPreviews ?? true) &&
-							rawContent.length > CONTENT_PREVIEW_LIMIT &&
-							!expandedContent}
-						{#if $settings?.renderMarkdownInPreviews ?? true}
-							<div
-								class="text-sm prose dark:prose-invert max-w-full"
-							>
-								<Markdown
-									content={isTruncated ? rawContent.slice(0, CONTENT_PREVIEW_LIMIT) : rawContent}
-									id="file-preview-content"
-								/>
-							</div>
-							{#if isTruncated}
-								<button
-									class="mt-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition"
-									on:click={() => {
-										expandedContent = true;
-									}}
-								>
-									{$i18n.t('Show all ({{COUNT}} characters)', {
-										COUNT: rawContent.length.toLocaleString()
-									})}
-								</button>
-							{/if}
-						{:else}
-							<div class="text-xs whitespace-pre-wrap">
-								{rawContent}
-							</div>
-						{/if}
-					{/if}
-				{:else if selectedTab === 'preview'}
-					{#if isAudio}
-						<audio
-							src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
-							class="w-full border-0 rounded-lg mb-2"
-							controls
-							playsinline
-						/>
-					{:else if isPDF}
-						<PDFViewer
-							url={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
-							className="w-full h-full border-0 rounded-lg"
-						/>
-					{:else if isExcel}
-						{#if excelError}
-							<div class="text-red-500 text-sm p-4">
-								{excelError}
-							</div>
-						{:else}
-							{#if excelSheetNames.length > 1}
-								<div
-									class="flex mb-2.5 scrollbar-none overflow-x-auto w-full border-b border-gray-50 dark:border-gray-850/30 text-center text-sm font-medium bg-transparent dark:text-gray-200"
-								>
-									{#each excelSheetNames as sheetName}
-										<button
-											class="min-w-fit py-1.5 px-4 border-b {selectedSheet === sheetName
-												? ' '
-												: ' border-transparent text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-											type="button"
-											on:click={() => {
-												selectedSheet = sheetName;
-											}}>{sheetName}</button
-										>
-									{/each}
+						</div>
+					{:else if selectedTab === ''}
+						{#if item?.file?.data}
+							{@const rawContent = (item?.file?.data?.content ?? '').trim() || 'Sem conteúdo'}
+							{@const isTruncated =
+								($settings?.renderMarkdownInPreviews ?? true) &&
+								rawContent.length > CONTENT_PREVIEW_LIMIT &&
+								!expandedContent}
+							{#if $settings?.renderMarkdownInPreviews ?? true}
+								<div class="text-sm prose dark:prose-invert max-w-full">
+									<Markdown
+										content={isTruncated ? rawContent.slice(0, CONTENT_PREVIEW_LIMIT) : rawContent}
+										id="file-preview"
+									/>
+								</div>
+								{#if isTruncated}
+									<button
+										class="mt-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition"
+										on:click={() => {
+											expandedContent = true;
+										}}
+									>
+										{$i18n.t('Show all ({{COUNT}} characters)', {
+											COUNT: rawContent.length.toLocaleString()
+										})}
+									</button>
+								{/if}
+							{:else}
+								<div class="text-xs whitespace-pre-wrap">
+									{rawContent}
 								</div>
 							{/if}
+						{:else if item?.content}
+							{@const rawContent = (item?.content ?? '').trim() || 'Sem conteúdo'}
+							{@const isTruncated =
+								($settings?.renderMarkdownInPreviews ?? true) &&
+								rawContent.length > CONTENT_PREVIEW_LIMIT &&
+								!expandedContent}
+							{#if $settings?.renderMarkdownInPreviews ?? true}
+								<div class="text-sm prose dark:prose-invert max-w-full">
+									<Markdown
+										content={isTruncated ? rawContent.slice(0, CONTENT_PREVIEW_LIMIT) : rawContent}
+										id="file-preview-content"
+									/>
+								</div>
+								{#if isTruncated}
+									<button
+										class="mt-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition"
+										on:click={() => {
+											expandedContent = true;
+										}}
+									>
+										{$i18n.t('Show all ({{COUNT}} characters)', {
+											COUNT: rawContent.length.toLocaleString()
+										})}
+									</button>
+								{/if}
+							{:else}
+								<div class="text-xs whitespace-pre-wrap">
+									{rawContent}
+								</div>
+							{/if}
+						{/if}
+					{:else if selectedTab === 'preview'}
+						{#if isAudio}
+							<audio
+								src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
+								class="w-full border-0 rounded-lg mb-2"
+								controls
+								playsinline
+							/>
+						{:else if isPDF}
+							<PDFViewer
+								url={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
+								className="w-full h-full border-0 rounded-lg"
+							/>
+						{:else if isExcel}
+							{#if excelError}
+								<div class="text-red-500 text-sm p-4">
+									{excelError}
+								</div>
+							{:else}
+								{#if excelSheetNames.length > 1}
+									<div
+										class="flex mb-2.5 scrollbar-none overflow-x-auto w-full border-b border-gray-50 dark:border-gray-850/30 text-center text-sm font-medium bg-transparent dark:text-gray-200"
+									>
+										{#each excelSheetNames as sheetName}
+											<button
+												class="min-w-fit py-1.5 px-4 border-b {selectedSheet === sheetName
+													? ' '
+													: ' border-transparent text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
+												type="button"
+												on:click={() => {
+													selectedSheet = sheetName;
+												}}>{sheetName}</button
+											>
+										{/each}
+									</div>
+								{/if}
 
-							{#if excelHtml}
-								<div class="office-preview">
-									{@html excelHtml}
+								{#if excelHtml}
+									<div class="office-preview">
+										{@html excelHtml}
+									</div>
+								{:else}
+									<div class="text-gray-500 text-sm p-4">Sem conteúdo</div>
+								{/if}
+							{/if}
+						{:else if isCode}
+							<div class="text-sm relative">
+								<CodeBlock
+									code={item.file.data.content}
+									lang={item.name.split('.').pop()}
+									token={null}
+									edit={false}
+									run={false}
+									save={false}
+								/>
+							</div>
+						{:else if isMarkdown}
+							<div class="text-sm prose dark:prose-invert max-w-full">
+								<Markdown content={item.file.data.content} id="markdown-viewer" />
+							</div>
+						{:else if isDocx}
+							{#if docxError}
+								<div class="text-red-500 text-sm p-4">{docxError}</div>
+							{:else if docxHtml}
+								<div class="office-preview p-4 prose dark:prose-invert max-w-full text-sm">
+									{@html docxHtml}
 								</div>
 							{:else}
 								<div class="text-gray-500 text-sm p-4">Sem conteúdo</div>
 							{/if}
-						{/if}
-					{:else if isCode}
-						<div class="text-sm relative">
-							<CodeBlock
-								code={item.file.data.content}
-								lang={item.name.split('.').pop()}
-								token={null}
-								edit={false}
-								run={false}
-								save={false}
-							/>
-						</div>
-					{:else if isMarkdown}
-						<div
-							class="text-sm prose dark:prose-invert max-w-full"
-						>
-							<Markdown content={item.file.data.content} id="markdown-viewer" />
-						</div>
-					{:else if isDocx}
-						{#if docxError}
-							<div class="text-red-500 text-sm p-4">{docxError}</div>
-						{:else if docxHtml}
-							<div
-								class="office-preview p-4 prose dark:prose-invert max-w-full text-sm"
-							>
-								{@html docxHtml}
-							</div>
-						{:else}
-							<div class="text-gray-500 text-sm p-4">Sem conteúdo</div>
-						{/if}
-					{:else if isPptx}
-						{#if pptxError}
-							<div class="text-red-500 text-sm p-4">{pptxError}</div>
-						{:else if pptxSlides.length > 0}
-							<div>
-								<div class="flex justify-center p-4">
-									<img
-										src={pptxSlides[pptxCurrentSlide]}
-										alt="Slide {pptxCurrentSlide + 1}"
-										class="max-w-full max-h-[50vh] object-contain rounded-md shadow-lg"
-										draggable="false"
-									/>
-								</div>
-								{#if pptxSlides.length > 1}
-									<div class="flex items-center justify-center gap-3 pb-3 text-sm text-gray-500">
-										<button
-											class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
-											disabled={pptxCurrentSlide === 0}
-											on:click={() => (pptxCurrentSlide = Math.max(0, pptxCurrentSlide - 1))}
-										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												viewBox="0 0 20 20"
-												fill="currentColor"
-												class="size-5"
-											>
-												<path
-													fill-rule="evenodd"
-													d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z"
-													clip-rule="evenodd"
-												/>
-											</svg>
-										</button>
-										<span>{pptxCurrentSlide + 1} / {pptxSlides.length}</span>
-										<button
-											class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
-											disabled={pptxCurrentSlide === pptxSlides.length - 1}
-											on:click={() =>
-												(pptxCurrentSlide = Math.min(pptxSlides.length - 1, pptxCurrentSlide + 1))}
-										>
-											<svg
-												xmlns="http://www.w3.org/2000/svg"
-												viewBox="0 0 20 20"
-												fill="currentColor"
-												class="size-5"
-											>
-												<path
-													fill-rule="evenodd"
-													d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z"
-													clip-rule="evenodd"
-												/>
-											</svg>
-										</button>
+						{:else if isPptx}
+							{#if pptxError}
+								<div class="text-red-500 text-sm p-4">{pptxError}</div>
+							{:else if pptxSlides.length > 0}
+								<div>
+									<div class="flex justify-center p-4">
+										<img
+											src={pptxSlides[pptxCurrentSlide]}
+											alt="Slide {pptxCurrentSlide + 1}"
+											class="max-w-full max-h-[50vh] object-contain rounded-md shadow-lg"
+											draggable="false"
+										/>
 									</div>
-								{/if}
-							</div>
+									{#if pptxSlides.length > 1}
+										<div class="flex items-center justify-center gap-3 pb-3 text-sm text-gray-500">
+											<button
+												class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
+												disabled={pptxCurrentSlide === 0}
+												on:click={() => (pptxCurrentSlide = Math.max(0, pptxCurrentSlide - 1))}
+											>
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													viewBox="0 0 20 20"
+													fill="currentColor"
+													class="size-5"
+												>
+													<path
+														fill-rule="evenodd"
+														d="M11.78 5.22a.75.75 0 0 1 0 1.06L8.06 10l3.72 3.72a.75.75 0 1 1-1.06 1.06l-4.25-4.25a.75.75 0 0 1 0-1.06l4.25-4.25a.75.75 0 0 1 1.06 0Z"
+														clip-rule="evenodd"
+													/>
+												</svg>
+											</button>
+											<span>{pptxCurrentSlide + 1} / {pptxSlides.length}</span>
+											<button
+												class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
+												disabled={pptxCurrentSlide === pptxSlides.length - 1}
+												on:click={() =>
+													(pptxCurrentSlide = Math.min(
+														pptxSlides.length - 1,
+														pptxCurrentSlide + 1
+													))}
+											>
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													viewBox="0 0 20 20"
+													fill="currentColor"
+													class="size-5"
+												>
+													<path
+														fill-rule="evenodd"
+														d="M8.22 5.22a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06L11.94 10 8.22 6.28a.75.75 0 0 1 0-1.06Z"
+														clip-rule="evenodd"
+													/>
+												</svg>
+											</button>
+										</div>
+									{/if}
+								</div>
+							{:else}
+								<div class="text-gray-500 text-sm p-4">Sem conteúdo</div>
+							{/if}
 						{:else}
-						<div class="text-gray-500 text-sm p-4">Sem conteúdo</div>
+							<div class="text-xs whitespace-pre-wrap">
+								{(item?.file?.data?.content ?? '').trim() || 'Sem conteúdo'}
+							</div>
+						{/if}
 					{/if}
-				{:else}
-					<div class="text-xs whitespace-pre-wrap">
-						{(item?.file?.data?.content ?? '').trim() || 'Sem conteúdo'}
-						</div>
-					{/if}
-				{/if}
 				</div>
 			{:else}
 				<div class="flex items-center justify-center py-6">

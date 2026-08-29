@@ -3,6 +3,44 @@
  */
 import { NEVEAI_BASE_URL } from '$lib/constants';
 
+export type LocalModelRuntimeAction = 'load' | 'unload';
+export type LocalModelRuntimePhase = 'start' | 'success' | 'error';
+
+export interface LocalModelRuntimeEventDetail {
+	operationId: string;
+	action: LocalModelRuntimeAction;
+	phase: LocalModelRuntimePhase;
+	timestamp: number;
+	filename?: string;
+	modelId?: string;
+	result?: any;
+	error?: string;
+}
+
+export const LOCAL_MODEL_RUNTIME_EVENT = 'neveai:local-model-runtime';
+
+let latestLocalModelRuntimeEvent: LocalModelRuntimeEventDetail | null = null;
+
+const createLocalModelOperationId = () =>
+	typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+		? crypto.randomUUID()
+		: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const emitLocalModelRuntimeEvent = (
+	detail: Omit<LocalModelRuntimeEventDetail, 'timestamp'>
+) => {
+	latestLocalModelRuntimeEvent = { ...detail, timestamp: Date.now() };
+	if (typeof window !== 'undefined') {
+		window.dispatchEvent(
+			new CustomEvent<LocalModelRuntimeEventDetail>(LOCAL_MODEL_RUNTIME_EVENT, {
+				detail: latestLocalModelRuntimeEvent
+			})
+		);
+	}
+};
+
+export const getLatestLocalModelRuntimeEvent = () => latestLocalModelRuntimeEvent;
+
 export interface LocalModel {
 	id: string;
 	filename: string;
@@ -214,54 +252,112 @@ export const loadLocalModel = async (
 	token_prediction: string = 'off',
 	context_shift: string = 'off'
 ): Promise<any> => {
-	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/load`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		},
-		body: JSON.stringify({
+	const operationId = createLocalModelOperationId();
+	emitLocalModelRuntimeEvent({ operationId, action: 'load', phase: 'start', filename });
+
+	try {
+		const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/load`, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+				...(token && { authorization: `Bearer ${token}` })
+			},
+			body: JSON.stringify({
+				filename,
+				n_gpu_layers,
+				n_ctx,
+				mmproj_filename: mmproj_filename ?? null,
+				cache_type,
+				speculative_decoding,
+				token_prediction,
+				context_shift
+			})
+		});
+
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({ detail: 'Falha ao carregar modelo' }));
+			throw new Error(err.detail || 'Falha ao carregar modelo');
+		}
+
+		const result = await res.json();
+		emitLocalModelRuntimeEvent({
+			operationId,
+			action: 'load',
+			phase: 'success',
 			filename,
-			n_gpu_layers,
-			n_ctx,
-			mmproj_filename: mmproj_filename ?? null,
-			cache_type,
-			speculative_decoding,
-			token_prediction,
-			context_shift
-		})
-	});
-
-	if (!res.ok) {
-		const err = await res.json().catch(() => ({ detail: 'Falha ao carregar modelo' }));
-		throw new Error(err.detail || 'Falha ao carregar modelo');
+			modelId: result?.id,
+			result
+		});
+		return result;
+	} catch (error: any) {
+		emitLocalModelRuntimeEvent({
+			operationId,
+			action: 'load',
+			phase: 'error',
+			filename,
+			error: error?.message || 'Falha ao carregar modelo'
+		});
+		throw error;
 	}
-
-	return res.json();
 };
 
 export const unloadLocalModel = async (token: string = '', model_id: string): Promise<any> => {
-	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/unload`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		},
-		body: JSON.stringify({ model_id })
+	const operationId = createLocalModelOperationId();
+	emitLocalModelRuntimeEvent({
+		operationId,
+		action: 'unload',
+		phase: 'start',
+		modelId: model_id
 	});
 
-	if (!res.ok) {
-		const err = await res.json().catch(() => ({ detail: 'Falha ao descarregar modelo' }));
-		const detail = `${err.detail || ''}`.toLowerCase();
-		if (res.status === 404 && detail.includes('model not loaded')) {
-			return { id: model_id, status: 'unloaded' };
-		}
-		throw new Error(err.detail || 'Falha ao descarregar modelo');
-	}
+	try {
+		const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/unload`, {
+			method: 'POST',
+			headers: {
+				Accept: 'application/json',
+				'Content-Type': 'application/json',
+				...(token && { authorization: `Bearer ${token}` })
+			},
+			body: JSON.stringify({ model_id })
+		});
 
-	return res.json();
+		if (!res.ok) {
+			const err = await res.json().catch(() => ({ detail: 'Falha ao descarregar modelo' }));
+			const detail = `${err.detail || ''}`.toLowerCase();
+			if (res.status === 404 && detail.includes('model not loaded')) {
+				const result = { id: model_id, status: 'unloaded' };
+				emitLocalModelRuntimeEvent({
+					operationId,
+					action: 'unload',
+					phase: 'success',
+					modelId: model_id,
+					result
+				});
+				return result;
+			}
+			throw new Error(err.detail || 'Falha ao descarregar modelo');
+		}
+
+		const result = await res.json();
+		emitLocalModelRuntimeEvent({
+			operationId,
+			action: 'unload',
+			phase: 'success',
+			modelId: model_id,
+			result
+		});
+		return result;
+	} catch (error: any) {
+		emitLocalModelRuntimeEvent({
+			operationId,
+			action: 'unload',
+			phase: 'error',
+			modelId: model_id,
+			error: error?.message || 'Falha ao descarregar modelo'
+		});
+		throw error;
+	}
 };
 
 // ---------------------------------------------------------------------------

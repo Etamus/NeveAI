@@ -906,23 +906,34 @@ class LocalModelManager:
                         # Use taskkill /F /T to kill the entire process tree on Windows
                         # This ensures child processes are also killed and file handles released
                         try:
-                            subprocess.run(
+                            taskkill_result = await asyncio.to_thread(
+                                subprocess.run,
                                 ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
                                 capture_output=True, timeout=10,
                                 creationflags=subprocess.CREATE_NO_WINDOW,
                             )
+                            if taskkill_result.returncode != 0 and proc.poll() is None:
+                                proc.kill()
                         except Exception:
                             proc.kill()
                         try:
-                            proc.wait(timeout=5)
+                            await asyncio.to_thread(proc.wait, timeout=5)
                         except subprocess.TimeoutExpired:
-                            pass
+                            proc.kill()
+                            try:
+                                await asyncio.to_thread(proc.wait, timeout=2)
+                            except subprocess.TimeoutExpired:
+                                log.error(f"_kill_server: process {proc.pid} did not exit after forced kill")
                     else:
                         proc.send_signal(signal.SIGTERM)
                         try:
-                            proc.wait(timeout=5)
+                            await asyncio.to_thread(proc.wait, timeout=5)
                         except subprocess.TimeoutExpired:
                             proc.kill()
+                            try:
+                                await asyncio.to_thread(proc.wait, timeout=2)
+                            except subprocess.TimeoutExpired:
+                                log.error(f"_kill_server: process {proc.pid} did not exit after forced kill")
                     # Wait a moment for the OS to release file handles and port
                     await asyncio.sleep(1.5)
                     log.info(f"llama-server process for {model_id} terminated (pid={proc.pid})")
@@ -973,6 +984,7 @@ class LocalModelManager:
         dry_allowed_length: Optional[int] = None,
         dry_base: Optional[float] = None,
         no_think: bool = False,
+        thinking_budget_tokens: Optional[int] = None,
     ):
         """Proxy a chat completion request to llama-server for the given model."""
         if not self.is_model_loaded(model_id):
@@ -1071,6 +1083,10 @@ class LocalModelManager:
             payload["dry_allowed_length"] = dry_allowed_length
         if dry_base is not None:
             payload["dry_base"] = dry_base
+        # Per-request equivalent of --reasoning-budget; the CLI flag would
+        # freeze one budget for the lifetime of the llama-server process.
+        if thinking_budget_tokens is not None:
+            payload["thinking_budget_tokens"] = thinking_budget_tokens
 
         # Disable reasoning/thinking when requested
         if no_think:
@@ -1505,11 +1521,14 @@ async def generate_chat_completion(
 
     # --- Thinking/Reasoning toggle ---
     no_think = bool(form_data.get("no_think", False))
-    reasoning_extended = form_data.get("reasoning_extended", True)
-    if reasoning_extended is False or str(reasoning_extended).lower() == "false":
-        form_data["temperature"] = 0.5
-        form_data["min_p"] = 0.1
-        form_data["dry_multiplier"] = 0.1
+    reasoning_extended = form_data.pop("reasoning_extended", None)
+    thinking_budget_tokens = None
+    if reasoning_extended is not None:
+        reasoning_extended_enabled = not (
+            reasoning_extended is False
+            or str(reasoning_extended).lower() == "false"
+        )
+        thinking_budget_tokens = 4096 if reasoning_extended_enabled else 512
 
     stream = form_data.get("stream", False)
     temperature = form_data.get("temperature", 0.7)
@@ -1607,6 +1626,7 @@ async def generate_chat_completion(
             dry_allowed_length=dry_allowed_length,
             dry_base=dry_base,
             no_think=no_think,
+            thinking_budget_tokens=thinking_budget_tokens,
         )
         return StreamingResponse(
             generator,
@@ -1641,6 +1661,7 @@ async def generate_chat_completion(
             dry_allowed_length=dry_allowed_length,
             dry_base=dry_base,
             no_think=no_think,
+            thinking_budget_tokens=thinking_budget_tokens,
         )
         return result
 

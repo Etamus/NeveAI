@@ -140,6 +140,7 @@
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
 	export let codeExecutionEnabled = false;
+	export let fileGenerationEnabled = false;
 	export let stableDiffusionEnabled = false;
 	export let musicGenerationEnabled = false;
 	export let thinkingEnabled = true;
@@ -180,6 +181,7 @@
 		webSearchEnabled,
 		deepSearchEnabled,
 		codeExecutionEnabled,
+		fileGenerationEnabled,
 		stableDiffusionEnabled,
 		musicGenerationEnabled,
 		thinkingEnabled,
@@ -629,6 +631,8 @@
 	$: showCodeExecutionButton =
 		($config?.features?.enable_code_execution !== false) &&
 		($_user.role === 'admin' || $_user?.permissions?.features?.code_execution !== false);
+
+	let showFileGenerationButton = true;
 
 	let showStableDiffusionButton = false;
 	$: showStableDiffusionButton =
@@ -1582,6 +1586,7 @@
 								{showWebSearchButton}
 								{showImageGenerationButton}
 								{showCodeExecutionButton}
+								{showFileGenerationButton}
 								{showStableDiffusionButton}
 								{showMusicGenerationButton}
 								bind:selectedToolIds
@@ -1590,6 +1595,7 @@
 								bind:deepSearchEnabled
 								bind:imageGenerationEnabled
 								bind:codeExecutionEnabled
+								bind:fileGenerationEnabled
 								bind:stableDiffusionEnabled
 								bind:musicGenerationEnabled
 								onShowValves={(e) => {
@@ -1774,7 +1780,7 @@
 																	imageGenerationEnabled = false;
 																		stableDiffusionEnabled = false;
 																		musicGenerationEnabled = false;
-																}
+															}
 													}}
 													on:paste={handleChatInputPaste}
 												/>
@@ -1924,6 +1930,7 @@
 									{showWebSearchButton}
 									{showImageGenerationButton}
 									{showCodeExecutionButton}
+									{showFileGenerationButton}
 									{showStableDiffusionButton}
 									{showMusicGenerationButton}
 									bind:selectedToolIds
@@ -1932,6 +1939,7 @@
 									bind:deepSearchEnabled
 									bind:imageGenerationEnabled
 									bind:codeExecutionEnabled
+									bind:fileGenerationEnabled
 									bind:stableDiffusionEnabled
 									bind:musicGenerationEnabled
 									onShowValves={(e) => {

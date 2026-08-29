@@ -50,6 +50,7 @@
 
 	export let imageGenerationEnabled = false;
 	export let codeExecutionEnabled = false;
+	export let fileGenerationEnabled = false;
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
 	export let stableDiffusionEnabled = false;
@@ -132,6 +133,7 @@
 					bind:selectedFilterIds
 					bind:imageGenerationEnabled
 					bind:codeExecutionEnabled
+					bind:fileGenerationEnabled
 					bind:webSearchEnabled
 					bind:deepSearchEnabled
 					bind:stableDiffusionEnabled

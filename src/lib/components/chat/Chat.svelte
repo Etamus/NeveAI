@@ -177,6 +177,7 @@
 	let webSearchEnabled = false;
 	let deepSearchEnabled = false;
 	let codeExecutionEnabled = false;
+	let fileGenerationEnabled = false;
 	let stableDiffusionEnabled = false;
 	let musicGenerationEnabled = false;
 	let previousMediaGenerationEnabled = stableDiffusionEnabled || musicGenerationEnabled;
@@ -546,6 +547,8 @@
 		webSearchEnabled = false;
 		deepSearchEnabled = false;
 		imageGenerationEnabled = false;
+		codeExecutionEnabled = false;
+		fileGenerationEnabled = false;
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
 
@@ -600,6 +603,7 @@
 						deepSearchEnabled = input.deepSearchEnabled ?? false;
 						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
+						fileGenerationEnabled = input.fileGenerationEnabled ?? false;
 						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
 						musicGenerationEnabled = input.musicGenerationEnabled ?? false;
 						normalizeExclusiveFeatureToggles();
@@ -667,6 +671,7 @@
 		deepSearchEnabled = false;
 		imageGenerationEnabled = false;
 		codeExecutionEnabled = false;
+		fileGenerationEnabled = false;
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
 		params = {};
@@ -1872,6 +1877,7 @@
 				deepSearchEnabled = false;
 				imageGenerationEnabled = false;
 				codeExecutionEnabled = false;
+				fileGenerationEnabled = false;
 				stableDiffusionEnabled = false;
 				musicGenerationEnabled = false;
 
@@ -1887,6 +1893,7 @@
 						deepSearchEnabled = input.deepSearchEnabled ?? false;
 						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
+						fileGenerationEnabled = input.fileGenerationEnabled ?? false;
 						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
 						musicGenerationEnabled = input.musicGenerationEnabled ?? false;
 						normalizeExclusiveFeatureToggles();
@@ -4208,6 +4215,12 @@
 					$config?.features?.enable_code_execution
 						? codeExecutionEnabled
 						: false,
+				file_generation:
+					fileGenerationEnabled &&
+					!deepSearchEnabled &&
+					!imageGenerationEnabled &&
+					!stableDiffusionEnabled &&
+					!musicGenerationEnabled,
 				stable_diffusion:
 					$config?.features?.enable_stable_diffusion &&
 					($user?.role === 'admin' || $user?.permissions?.features?.stable_diffusion)
@@ -4531,13 +4544,8 @@
 				params: {
 					...$settings?.params,
 					...params,
-					...(!thinkingExtendedEnabled && canCurrentModelsToggleReasoning()
-						? {
-								temperature: 0.5,
-								min_p: 0.1,
-								dry_multiplier: 0.1,
-								reasoning_extended: false
-							}
+					...(canCurrentModelsToggleReasoning()
+						? { reasoning_extended: thinkingExtendedEnabled }
 						: {}),
 					stop: getStopTokens(),
 					...(!thinkingEnabled && canCurrentModelsToggleReasoning() ? { no_think: true } : {})
@@ -4692,12 +4700,34 @@
 	};
 
 	const stopResponse = async () => {
-		// Cancel pending content flush
+		// Commit the last buffered frame before ending the stream. Dropping it here leaves
+		// partially rendered Markdown (especially an open code fence) in the DOM until reload.
 		if (_flushRAF) {
 			cancelAnimationFrame(_flushRAF);
 			_flushRAF = null;
 		}
+		for (const [messageId, bufferedContent] of _contentBuffers) {
+			const message = history?.messages?.[messageId];
+			if (!message) continue;
+			message.content = bufferedContent;
+			message.done = true;
+			history.messages[messageId] = message;
+			releaseGeneratingMessageAnchor(messageId);
+		}
 		_contentBuffers.clear();
+
+		const currentResponse = history?.messages?.[history.currentId];
+		if (currentResponse?.role === 'assistant' && currentResponse.done !== true) {
+			currentResponse.done = true;
+			history.messages[currentResponse.id] = currentResponse;
+			releaseGeneratingMessageAnchor(currentResponse.id);
+		}
+
+		if (generating) {
+			generating = false;
+			generationController?.abort();
+			generationController = null;
+		}
 
 		if (musicGenerationEnabled) {
 			void fetch(`${NEVEAI_API_BASE_URL}/music-generation/cancel`, {
@@ -4735,11 +4765,6 @@
 			}
 		}
 
-		if (generating) {
-			generating = false;
-			generationController?.abort();
-			generationController = null;
-		}
 	};
 
 	const submitMessage = async (parentId, prompt) => {
@@ -5333,6 +5358,7 @@
 									bind:selectedFilterIds
 									bind:imageGenerationEnabled
 									bind:codeExecutionEnabled
+									bind:fileGenerationEnabled
 									bind:webSearchEnabled
 									bind:deepSearchEnabled
 									bind:stableDiffusionEnabled
@@ -5410,6 +5436,7 @@
 									bind:selectedFilterIds
 									bind:imageGenerationEnabled
 									bind:codeExecutionEnabled
+									bind:fileGenerationEnabled
 									bind:webSearchEnabled
 									bind:deepSearchEnabled
 									bind:stableDiffusionEnabled
@@ -5446,7 +5473,6 @@
 				<ModelSettingsSheet
 					bind:params
 					bind:chatFiles
-					thinkingExtendedEnabled={thinkingExtendedEnabled || !canCurrentModelsToggleReasoning()}
 					selectedModelName={$models.find((m) => m.id === selectedModelIds?.at(0))?.name ?? selectedModelIds?.at(0) ?? ''}
 				/>
 

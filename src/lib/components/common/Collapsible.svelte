@@ -158,7 +158,7 @@
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
 		<div
-			class="flex items-center justify-between gap-3 px-3 py-2 {disabled ? '' : 'cursor-pointer'}"
+			class="flex select-none items-center justify-between gap-3 px-3 py-2 {disabled ? '' : 'cursor-pointer'}"
 			on:pointerup={() => {
 				if (!disabled) {
 					open = !open;

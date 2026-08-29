@@ -57,12 +57,12 @@
 		]
 	});
 
-	const parseTokens = () => {
-		if (content === lastContent) return;
+	const parseTokens = (force = false) => {
+		if (!force && content === lastContent) return;
 		lastContent = content;
 
 		const processed = replaceTokens(processResponseContent(content), model?.name, $user?.name);
-		if (processed === lastParsedContent) return;
+		if (!force && processed === lastParsedContent) return;
 		lastParsedContent = processed;
 
 		const newTokens = marked.lexer(processed);
@@ -80,12 +80,12 @@
 		}
 	};
 
-	const updateHandler = (content) => {
+	const updateHandler = (content, isDone) => {
 		if (content) {
-			if (done) {
+			if (isDone) {
 				cancelAnimationFrame(pendingUpdate);
 				pendingUpdate = null;
-				parseTokens();
+				parseTokens(true);
 			} else if (!pendingUpdate) {
 				pendingUpdate = requestAnimationFrame(() => {
 					pendingUpdate = null;
@@ -95,7 +95,7 @@
 		}
 	};
 
-	$: updateHandler(content);
+	$: updateHandler(content, done);
 
 	// Throttle parsing to once per animation frame while streaming
 	$: onDestroy(() => {

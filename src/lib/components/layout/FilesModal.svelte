@@ -1,3 +1,8 @@
+<script context="module" lang="ts">
+	let cachedFiles: any[] | null = null;
+	let cachedAllFilesLoaded = true;
+</script>
+
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount, onDestroy } from 'svelte';
@@ -20,13 +25,13 @@
 
 	export let show = false;
 
-	let files: any[] | null = null;
+	let files: any[] = cachedFiles ? [...cachedFiles] : [];
 	let query = '';
 	let orderBy = 'created_at';
 	let direction = 'desc';
 
 	let page = 0;
-	let allFilesLoaded = false;
+	let allFilesLoaded = cachedFiles ? cachedAllFilesLoaded : true;
 	let filesLoading = false;
 	let searchDebounceTimer: ReturnType<typeof setTimeout>;
 	let searchRequestId = 0;
@@ -59,12 +64,11 @@
 		searchHandler();
 	};
 
-	const searchHandler = async () => {
-		if (!show) return;
+	const searchHandler = async (allowHidden = false) => {
+		if (!show && !allowHidden) return;
 
 		const requestId = ++searchRequestId;
 		page = 0;
-		allFilesLoaded = false;
 
 		try {
 			const pattern = query ? `*${query}*` : '*';
@@ -72,11 +76,19 @@
 			if (requestId !== searchRequestId) return;
 			files = sortFiles(newFiles);
 			allFilesLoaded = newFiles.length < PAGE_SIZE;
+			if (!query) {
+				cachedFiles = [...files];
+				cachedAllFilesLoaded = allFilesLoaded;
+			}
 		} catch (error) {
 			if (requestId !== searchRequestId) return;
-			// Handle 404 or other errors - show empty state instead of spinner
-			files = [];
-			allFilesLoaded = true;
+			if (!query && cachedFiles) {
+				files = [...cachedFiles];
+				allFilesLoaded = cachedAllFilesLoaded;
+			} else {
+				files = [];
+				allFilesLoaded = true;
+			}
 		}
 	};
 
@@ -84,6 +96,8 @@
 		clearTimeout(searchDebounceTimer);
 		searchRequestId += 1;
 		files = [];
+		cachedFiles = [];
+		cachedAllFilesLoaded = true;
 		page = 0;
 		allFilesLoaded = true;
 		filesLoading = false;
@@ -108,6 +122,10 @@
 
 			if (newFiles.length > 0) {
 				files = sortFiles([...(files || []), ...newFiles]);
+			}
+			if (!query) {
+				cachedFiles = [...files];
+				cachedAllFilesLoaded = allFilesLoaded;
 			}
 		} catch (error) {
 			if (requestId === searchRequestId) {
@@ -144,7 +162,10 @@
 			await deleteFileById(localStorage.token, fileId);
 			toast.success($i18n.t('File deleted successfully.'));
 			// Remove from local array instead of re-fetching to allow rapid deletion
-			files = files?.filter((f) => f.id !== fileId) ?? null;
+			files = files.filter((f) => f.id !== fileId);
+			if (cachedFiles) {
+				cachedFiles = cachedFiles.filter((file) => file.id !== fileId);
+			}
 		} catch (error) {
 			toast.error(`${error}`);
 		}
@@ -166,10 +187,12 @@
 		clearTimeout(searchDebounceTimer);
 		searchDebounceTimer = setTimeout(() => {
 			searchHandler();
-		}, 300);
+		}, query ? 300 : 0);
 	}
 
 	onMount(() => {
+		void searchHandler(true);
+
 		const onKeyDown = (event: KeyboardEvent) => {
 			if (event.key === 'Shift') {
 				shiftKey = true;
@@ -216,8 +239,8 @@
 <FileItemModal bind:show={showFileItemModal} item={selectedFile} edit={false} />
 
 <Modal size="md" bind:show>
-	<div>
-		<div class="flex justify-between dark:text-gray-300 px-5 pt-4 pb-1">
+	<div class="flex h-[33rem] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden">
+		<div class="flex shrink-0 justify-between dark:text-gray-300 px-5 pt-4 pb-1">
 			<div class="text-lg font-medium self-center">{$i18n.t('Files')}</div>
 			<button
 				class="self-center"
@@ -240,9 +263,9 @@
 			</button>
 		</div>
 
-		<div class="flex flex-col w-full px-5 pb-4 dark:text-gray-200">
+		<div class="flex min-h-0 flex-1 flex-col w-full px-5 pt-2 pb-4 dark:text-gray-200">
 			<!-- Search -->
-			<div class="flex w-full space-x-2 mb-0.5">
+			<div class="flex w-full space-x-2 mb-3">
 				<div class="flex flex-1">
 					<div class="self-center ml-1 mr-3">
 						<svg
@@ -281,121 +304,117 @@
 			</div>
 
 			<!-- Files List -->
-			<div class="flex flex-col w-full">
-				{#if files !== null}
-					<div class="w-full">
-						{#if files.length > 0}
-							<div class="flex text-xs font-medium mb-1.5">
-								<button
-									class="px-1.5 py-1 cursor-pointer select-none basis-3/5"
-									on:click={() => setSortKey('filename')}
-								>
-									<div class="flex gap-1.5 items-center">
-										{$i18n.t('Filename')}
-										{#if orderBy === 'filename'}
-											<span class="font-normal">
-												{#if direction === 'asc'}
-													<ChevronUp className="size-2" />
-												{:else}
-													<ChevronDown className="size-2" />
-												{/if}
-											</span>
-										{:else}
-											<span class="invisible">
+			<div class="flex min-h-0 flex-1 flex-col w-full">
+				<div class="flex min-h-0 flex-1 flex-col w-full">
+					{#if files.length > 0}
+						<div class="flex text-xs font-medium mb-1.5">
+							<button
+								class="px-1.5 py-1 cursor-pointer select-none basis-3/5"
+								on:click={() => setSortKey('filename')}
+							>
+								<div class="flex gap-1.5 items-center">
+									{$i18n.t('Filename')}
+									{#if orderBy === 'filename'}
+										<span class="font-normal">
+											{#if direction === 'asc'}
 												<ChevronUp className="size-2" />
-											</span>
-										{/if}
-									</div>
-								</button>
-								<button
-									class="px-1.5 py-1 cursor-pointer select-none hidden sm:flex sm:basis-2/5 justify-end"
-									on:click={() => setSortKey('created_at')}
-								>
-									<div class="flex gap-1.5 items-center">
-										{$i18n.t('Created at')}
-										{#if orderBy === 'created_at'}
-											<span class="font-normal">
-												{#if direction === 'asc'}
-													<ChevronUp className="size-2" />
-												{:else}
-													<ChevronDown className="size-2" />
-												{/if}
-											</span>
-										{:else}
-											<span class="invisible">
+											{:else}
+												<ChevronDown className="size-2" />
+											{/if}
+										</span>
+									{:else}
+										<span class="invisible">
+											<ChevronUp className="size-2" />
+										</span>
+									{/if}
+								</div>
+							</button>
+							<button
+								class="px-1.5 py-1 cursor-pointer select-none hidden sm:flex sm:basis-2/5 justify-end"
+								on:click={() => setSortKey('created_at')}
+							>
+								<div class="flex gap-1.5 items-center">
+									{$i18n.t('Created at')}
+									{#if orderBy === 'created_at'}
+										<span class="font-normal">
+											{#if direction === 'asc'}
 												<ChevronUp className="size-2" />
-											</span>
-										{/if}
-									</div>
-								</button>
+											{:else}
+												<ChevronDown className="size-2" />
+											{/if}
+										</span>
+									{:else}
+										<span class="invisible">
+											<ChevronUp className="size-2" />
+										</span>
+									{/if}
+								</div>
+							</button>
+						</div>
+					{/if}
+
+					<div class="min-h-0 flex-1 text-left text-sm w-full mb-3 overflow-y-auto">
+						{#if files.length === 0}
+							<div
+								class="text-xs text-gray-500 dark:text-gray-400 text-center px-5 min-h-20 w-full h-full flex justify-center items-center"
+							>
+								{$i18n.t('No files found')}
 							</div>
 						{/if}
 
-						<div class="text-left text-sm w-full mb-3 max-h-[32rem] overflow-y-scroll">
-							{#if files.length === 0}
-								<div
-									class="text-xs text-gray-500 dark:text-gray-400 text-center px-5 min-h-20 w-full h-full flex justify-center items-center"
-								>
-									{$i18n.t('No files found')}
-								</div>
-							{/if}
-
-							{#each files as file (file.id)}
-								<div
-									class="w-full flex justify-between items-center rounded-lg text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 cursor-pointer"
-									on:click={() => openFileViewer(file)}
-								>
-									<div class="basis-3/5 min-w-0">
-										<div class="text-ellipsis line-clamp-1">{file.filename}</div>
-										<div class="text-xs text-gray-500">
-											{formatFileSize(file.meta?.size ?? 0)}
-										</div>
-									</div>
-
-									<div class="basis-2/5 flex items-center justify-end">
-										<div class="hidden sm:flex text-gray-500 dark:text-gray-400 text-xs">
-											{dayjs(file.created_at * 1000).format('D MMM, YYYY')}
-										</div>
-
-										<div class="flex justify-end pl-2.5 text-gray-600 dark:text-gray-300">
-											<Tooltip content={shiftKey ? $i18n.t('Delete File') : $i18n.t('Delete File')}>
-												<button
-													class="self-center w-fit px-1 text-sm rounded-xl {shiftKey
-														? 'text-red-500'
-														: ''}"
-													on:click|stopPropagation={() => {
-														if (shiftKey) {
-															deleteHandler(file.id);
-														} else {
-															selectedFileId = file.id;
-															showDeleteConfirmDialog = true;
-														}
-													}}
-												>
-													<GarbageBin class="size-4" strokeWidth="1.5" />
-												</button>
-											</Tooltip>
-										</div>
+						{#each files as file (file.id)}
+							<div
+								class="w-full flex justify-between items-center rounded-lg text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 cursor-pointer"
+								on:click={() => openFileViewer(file)}
+							>
+								<div class="basis-3/5 min-w-0">
+									<div class="text-ellipsis line-clamp-1">{file.filename}</div>
+									<div class="text-xs text-gray-500">
+										{formatFileSize(file.meta?.size ?? 0)}
 									</div>
 								</div>
-							{/each}
 
-							{#if !allFilesLoaded}
-								<Loader
-									on:visible={() => {
-										if (!filesLoading) {
-											loadMoreFiles();
-										}
-									}}
-								>
-									<div class="py-1"></div>
-								</Loader>
-							{/if}
-						</div>
+								<div class="basis-2/5 flex items-center justify-end">
+									<div class="hidden sm:flex text-gray-500 dark:text-gray-400 text-xs">
+										{dayjs(file.created_at * 1000).format('D MMM, YYYY')}
+									</div>
+
+									<div class="flex justify-end pl-2.5 text-gray-600 dark:text-gray-300">
+										<Tooltip content={shiftKey ? $i18n.t('Delete File') : $i18n.t('Delete File')}>
+											<button
+												class="self-center w-fit px-1 text-sm rounded-xl {shiftKey
+													? 'text-red-500'
+													: ''}"
+												on:click|stopPropagation={() => {
+													if (shiftKey) {
+														deleteHandler(file.id);
+													} else {
+														selectedFileId = file.id;
+														showDeleteConfirmDialog = true;
+													}
+												}}
+											>
+												<GarbageBin class="size-4" strokeWidth="1.5" />
+											</button>
+										</Tooltip>
+									</div>
+								</div>
+							</div>
+						{/each}
+
+						{#if !allFilesLoaded}
+							<Loader
+								on:visible={() => {
+									if (!filesLoading) {
+										loadMoreFiles();
+									}
+								}}
+							>
+								<div class="py-1"></div>
+							</Loader>
+						{/if}
 					</div>
-				{:else}
-					<div class="w-full h-full min-h-20"></div>
-				{/if}
+				</div>
 			</div>
 		</div>
 	</div>
