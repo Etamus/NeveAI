@@ -2,7 +2,7 @@
 
 ---
 
-**Neve AI** é um ecossistema local de orquestração de IA privacy-first, desenvolvido para oferecer uma experiência de alta performance na execução de LLMs de forma acessível, privada e independente. O projeto busca reduzir a dependência de grandes plataformas, assinaturas caras e APIs externas, oferecendo ao usuário uma alternativa própria para conversar com modelos, trabalhar com documentos, automatizar tarefas e explorar o potencial da inteligência artificial diretamente no computador. O projeto consolida funcionalidades avançadas de nível empresarial em um ambiente completamente offline, integrando um backend assíncrono em FastAPI a uma interface reativa em SvelteKit 5 e utilizando o motor llama.cpp para viabilizar o suporte a modelos GGUF com aceleração de hardware via CUDA/Vulkan.
+**NeveAI** é um ecossistema local de orquestração de IA privacy-first, desenvolvido para oferecer uma experiência de alta performance na execução de LLMs de forma acessível, privada e independente. O projeto busca reduzir a dependência de grandes plataformas, assinaturas caras e APIs externas, oferecendo ao usuário uma alternativa própria para conversar com modelos, trabalhar com documentos, automatizar tarefas e explorar o potencial da inteligência artificial diretamente no computador. O projeto consolida funcionalidades avançadas de nível empresarial em um ambiente completamente offline, integrando um backend assíncrono em FastAPI a uma interface reativa em SvelteKit 5 e utilizando o motor llama.cpp para viabilizar o suporte a modelos GGUF com aceleração de hardware via CUDA/Vulkan.
 
 ---
 
@@ -57,7 +57,7 @@ O instalador realiza automaticamente as seguintes ações:
 
 ---
 
-## Atualizando a Neve AI
+## Atualizando a NeveAI
 
 ```bat
 instalar.bat → Atualizar
@@ -84,7 +84,7 @@ O atualizador realiza automaticamente as seguintes ações:
 
 ---
 
-## Iniciando a Neve AI
+## Iniciando a NeveAI
 
 ```bat
 iniciar.bat
@@ -94,7 +94,7 @@ O script:
 1. Encerra qualquer processo existente na porta 8080
 2. Inicia o backend Uvicorn em segundo plano (que já serve o frontend compilado)
 3. Aguarda o health check (`http://localhost:8080/health`) por até 120 segundos
-4. Abre o Neve AI em uma **janela de app isolada** via `neve_window.py` (usa Chrome/Brave/Edge em modo `--app`, sem barra de URL)
+4. Abre o NeveAI em uma **janela de app isolada** via `neve_window.py` (usa Chrome/Brave/Edge em modo `--app`, sem barra de URL)
 
 Acesse manualmente se preferir: **http://localhost:8080**
 
@@ -113,7 +113,7 @@ Acesse manualmente se preferir: **http://localhost:8080**
 Coloque arquivos `.gguf` em:
 
 ```
-Neve AI\models\
+NeveAI\models\
 ```
 
 Os modelos são carregados dinamicamente pelo painel de modelos da interface. O llama.cpp é iniciado automaticamente ao carregar um modelo, com auto-detecção do arquivo mmproj correspondente quando disponível.
@@ -123,7 +123,7 @@ Os modelos são carregados dinamicamente pelo painel de modelos da interface. O 
 Coloque arquivos mmproj em:
 
 ```
-Neve AI\mmproj\
+NeveAI\mmproj\
 ```
 
 O backend auto-detecta o mmproj compatível pelo prefixo do nome do modelo (ex: `Qwen3.5 9B.gguf` → `Qwen3.5 9B Mmproj F16.gguf`).
@@ -133,13 +133,13 @@ O backend auto-detecta o mmproj compatível pelo prefixo do nome do modelo (ex: 
 ## Estrutura do Projeto
 
 ```
-Neve AI/
+NeveAI/
 ├── instalar.bat              # Abre o Neve Hub para instalar, atualizar ou buildar
-├── depurar.bat               # Inicia o Neve AI mantendo o console de diagnóstico
+├── depurar.bat               # Inicia o NeveAI mantendo o console de diagnóstico
 ├── launchers/                # Scripts PowerShell e VBS usados pelos launchers
 ├── version.txt               # Versão (tag) atualmente instalada
 ├── iniciar.bat               # Inicia o backend e abre a janela de app
-├── neve_window.py            # Abre o Neve AI em janela Chromium isolada
+├── neve_window.py            # Abre o NeveAI em janela Chromium isolada
 ├── .env                      # Variáveis de ambiente (gerado pelo instalar)
 ├── .gitignore                # Exclui pastas pesadas (venv, build, models, etc.)
 │
@@ -245,7 +245,7 @@ Neve AI/
 ### Compilar e fazer deploy manualmente
 
 ```powershell
-cd "c:\Neve AI"
+cd "c:\NeveAI"
 npm run build
 Copy-Item -Path "build\*" -Destination "backend\neveai\frontend" -Recurse -Force
 ```
@@ -263,11 +263,11 @@ instalar.bat → Buildar
 
 ```powershell
 # Terminal 1 — Backend
-cd "c:\Neve AI\backend"
+cd "c:\NeveAI\backend"
 ..\backend\neveai\venv\Scripts\python -m uvicorn neveai.main:app --host 0.0.0.0 --port 8080 --reload
 
 # Terminal 2 — Frontend
-cd "c:\Neve AI"
+cd "c:\NeveAI"
 npm run dev
 
 Frontend de dev disponível em `http://localhost:5173` (proxy para o backend em 8080).
@@ -279,4 +279,4 @@ Frontend de dev disponível em `http://localhost:5173` (proxy para o backend em 
 
 Copyright (c) 2026 Mateus Lopes. Todos os direitos reservados.
 
-"Neve AI" e sua identidade visual são marcas/propriedade de Mateus Lopes. Este repositório é a fonte oficial do projeto. Qualquer cópia, redistribuição ou modificação deve preservar a atribuição ao autor original conforme LICENSE.txt.
+"NeveAI" e sua identidade visual são marcas/propriedade de Mateus Lopes. Este repositório é a fonte oficial do projeto. Qualquer cópia, redistribuição ou modificação deve preservar a atribuição ao autor original conforme LICENSE.txt.

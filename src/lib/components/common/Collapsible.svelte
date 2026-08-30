@@ -109,6 +109,34 @@
 		shouldAutoScroll = scrollHeight - scrollTop - clientHeight < 24;
 	}
 
+	function handleReasoningWheel(event: WheelEvent) {
+		if (!reasoningScrollEl) return;
+
+		const maxScrollTop = Math.max(
+			0,
+			reasoningScrollEl.scrollHeight - reasoningScrollEl.clientHeight
+		);
+		if (maxScrollTop <= 0) return;
+
+		const delta =
+			event.deltaMode === WheelEvent.DOM_DELTA_LINE
+				? event.deltaY * 16
+				: event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+					? event.deltaY * reasoningScrollEl.clientHeight
+					: event.deltaY;
+		const nextScrollTop = Math.max(
+			0,
+			Math.min(maxScrollTop, reasoningScrollEl.scrollTop + delta)
+		);
+
+		if (Math.abs(nextScrollTop - reasoningScrollEl.scrollTop) <= 0.5) return;
+
+		event.preventDefault();
+		event.stopPropagation();
+		reasoningScrollEl.scrollTop = nextScrollTop;
+		shouldAutoScroll = maxScrollTop - nextScrollTop < 24;
+	}
+
 	function scrollToBottom() {
 		if (reasoningScrollEl && shouldAutoScroll) {
 			reasoningScrollEl.scrollTop = reasoningScrollEl.scrollHeight;
@@ -151,9 +179,9 @@
 	<!-- LM Studio-inspired reasoning block -->
 	<div
 		{id}
-		class="reasoning-block mb-4 w-full overflow-hidden rounded-xl transition-all duration-200 {showActivityChrome
-			? 'border border-gray-200/80 bg-gray-50/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-white/[0.035] dark:shadow-none'
-			: ''} {className}"
+		class="reasoning-block mb-4 w-full overflow-hidden rounded-xl border transition-colors duration-150 {showActivityChrome
+			? 'border-gray-200/80 bg-gray-50/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-white/[0.035] dark:shadow-none'
+			: 'border-transparent'} {className}"
 	>
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -178,7 +206,7 @@
 					{/if}
 				</span>
 
-				<span class="relative min-w-0 truncate leading-5">
+				<span class="relative min-w-0 truncate pr-1 leading-5">
 					{#if isReasoning}
 						{#if isStreaming}
 							<span class="shimmer text-sm leading-5">{$i18n.t('Thinking...')}</span>
@@ -265,33 +293,42 @@
 		</div>
 
 		<!-- Reasoning content -->
-		{#if isReasoning && showReasoningContent}
+		{#if isReasoning}
 			<div
-				class="reasoning-content relative border-t border-gray-200/70 bg-white/55 text-sm text-gray-600 dark:border-white/10 dark:bg-black/10 dark:text-gray-300"
-				transition:slide={{ duration: 200, easing: quintOut, axis: 'y' }}
+				class="grid transition-[grid-template-rows] duration-150 ease-out {showReasoningContent
+					? 'grid-rows-[1fr]'
+					: 'grid-rows-[0fr]'}"
+				aria-hidden={!showReasoningContent}
 			>
-				{#if isStreaming}
+				<div class="min-h-0 overflow-hidden">
 					<div
-						class="reasoning-fade-top pointer-events-none absolute inset-x-0 top-0 z-10 h-5 bg-gradient-to-b from-white/90 to-transparent dark:from-gray-950/70"
-					></div>
-				{/if}
+						class="reasoning-content relative border-t border-gray-200/70 bg-white/55 text-sm text-gray-600 dark:border-white/10 dark:bg-black/10 dark:text-gray-300"
+					>
+						{#if isStreaming}
+							<div
+								class="reasoning-fade-top pointer-events-none absolute inset-x-0 top-0 z-10 h-5 bg-gradient-to-b from-white/90 to-transparent dark:from-gray-950/70"
+							></div>
+						{/if}
 
-				<div
-					id="reasoning-content-{collapsibleId}"
-					bind:this={reasoningScrollEl}
-					on:scroll={handleReasoningScroll}
-					class="reasoning-text relative z-0 overflow-y-auto px-3 py-2.5 leading-relaxed text-gray-600 dark:text-gray-300 {reasoningPreviewMode
-						? 'max-h-24'
-						: isStreaming
-							? 'max-h-40'
-							: 'max-h-72'}"
-				>
-					<slot name="content" />
+						<div
+							id="reasoning-content-{collapsibleId}"
+							bind:this={reasoningScrollEl}
+							on:scroll={handleReasoningScroll}
+							on:wheel|nonpassive={handleReasoningWheel}
+							class="reasoning-text relative z-0 overflow-y-auto px-3 py-2.5 leading-relaxed text-gray-600 dark:text-gray-300 {reasoningPreviewMode
+								? 'h-24'
+								: isStreaming
+									? 'h-40'
+									: 'max-h-72'}"
+						>
+							<slot name="content" />
+						</div>
+
+						<div
+							class="reasoning-fade pointer-events-none absolute inset-x-0 bottom-0 z-10 h-7 bg-gradient-to-t from-white/95 to-transparent dark:from-gray-950/80"
+						></div>
+					</div>
 				</div>
-
-				<div
-					class="reasoning-fade pointer-events-none absolute inset-x-0 bottom-0 z-10 h-7 bg-gradient-to-t from-white/95 to-transparent dark:from-gray-950/80"
-				></div>
 			</div>
 		{:else if isCodeInterpreter && open && !hide}
 			<div

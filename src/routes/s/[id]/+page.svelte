@@ -142,11 +142,7 @@
 </script>
 
 <svelte:head>
-	<title>
-		{title
-			? `${title.length > 30 ? `${title.slice(0, 30)}...` : title} • ${$NEVEAI_NAME}`
-			: `${$NEVEAI_NAME}`}
-	</title>
+	<title>&#8203;</title>
 </svelte:head>
 
 {#if loaded}

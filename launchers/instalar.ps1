@@ -1,4 +1,4 @@
-﻿# Neve AI - Instalador Grafico (WPF)
+﻿# NeveAI - Instalador Grafico (WPF)
 # UI bonita + progresso visual + log em tempo real.
 # Toda a logica original (deteccao de GPU, llama.cpp, venv, requirements, npm)
 # roda em runspace separado para nao travar a interface.
@@ -20,6 +20,56 @@ Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class NeveInstallerWindowIdentity
+{
+    private const uint WM_SETICON = 0x0080;
+    private const int ICON_SMALL = 0;
+    private const int ICON_BIG = 1;
+    private const int ICON_SMALL2 = 2;
+    private const uint IMAGE_ICON = 1;
+    private const uint LR_LOADFROMFILE = 0x0010;
+    private const uint LR_DEFAULTSIZE = 0x0040;
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    public static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr LoadImage(
+        IntPtr instance,
+        string name,
+        uint type,
+        int width,
+        int height,
+        uint loadFlags
+    );
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+
+    public static void ApplyIcon(IntPtr window, string iconPath)
+    {
+        IntPtr icon = LoadImage(
+            IntPtr.Zero,
+            iconPath,
+            IMAGE_ICON,
+            0,
+            0,
+            LR_LOADFROMFILE | LR_DEFAULTSIZE
+        );
+        if (icon == IntPtr.Zero) return;
+
+        SendMessage(window, WM_SETICON, new IntPtr(ICON_BIG), icon);
+        SendMessage(window, WM_SETICON, new IntPtr(ICON_SMALL), icon);
+        SendMessage(window, WM_SETICON, new IntPtr(ICON_SMALL2), icon);
+    }
+}
+'@
+
+[NeveInstallerWindowIdentity]::SetCurrentProcessExplicitAppUserModelID('NeveAI.Installer') | Out-Null
 
 # =============================================================================
 # Caminhos globais
@@ -27,6 +77,7 @@ Add-Type -AssemblyName System.Windows.Forms
 $SCRIPT_PATH = if ($PSCommandPath) { $PSCommandPath } elseif ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path } else { throw 'Não foi possível determinar o caminho do instalador.' }
 $LAUNCHER_DIR = (Resolve-Path -LiteralPath (Split-Path -Parent $SCRIPT_PATH)).ProviderPath
 $ROOT         = (Resolve-Path -LiteralPath (Join-Path $LAUNCHER_DIR '..')).ProviderPath
+$WINDOW_ICON_PATH = Join-Path $ROOT 'static\static\faviconbar.ico'
 Set-Location -LiteralPath $ROOT
 $VENV_DIR = Join-Path $ROOT 'backend\neveai\venv'
 $VENV_PY  = Join-Path $VENV_DIR 'Scripts\python.exe'
@@ -52,7 +103,7 @@ if (-not (Test-Path $LOGO_PATH)) {
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Neve AI - Instalador"
+        Title="NeveAI - Instalador"
         Width="780" Height="560"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
@@ -210,7 +261,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="18,0,0,0" VerticalAlignment="Center">
                     <Button x:Name="BtnHubBack" Content="Voltar" Style="{StaticResource TextNavBtn}" Margin="0,0,18,0" Visibility="Collapsed"/>
                     <Image x:Name="LogoImg" Width="22" Height="22" Margin="0,0,10,0"/>
-                    <TextBlock x:Name="LblHubBrand" Text="Neve AI" FontSize="15" FontWeight="SemiBold" Foreground="#111111" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="LblHubBrand" Text="NeveAI" FontSize="15" FontWeight="SemiBold" Foreground="#111111" VerticalAlignment="Center"/>
                     <TextBlock x:Name="LblHubMode" Text="  ·  Hub" FontSize="13" Foreground="#71717A" VerticalAlignment="Center"/>
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
@@ -234,21 +285,21 @@ if (-not (Test-Path $LOGO_PATH)) {
                     <Button x:Name="BtnHubHomeInstall" Style="{StaticResource HubCardBtn}" Height="148" Margin="0,0,12,0">
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Instalar" FontSize="18" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,8"/>
-                            <TextBlock Text="Detecta o hardware, instala dependências, prepara backend, frontend e llama.cpp." FontSize="12" Foreground="#52525B" TextWrapping="Wrap" LineHeight="18"/>
+                            <TextBlock Text="Detecta o hardware e instala o projeto e suas dependências." FontSize="12" Foreground="#52525B" TextWrapping="Wrap" LineHeight="18"/>
                         </StackPanel>
                     </Button>
 
                     <Button x:Name="BtnHubHomeUpdate" Style="{StaticResource HubCardBtn}" Height="148" Margin="6,0,6,0">
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Atualizar" FontSize="18" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,8"/>
-                            <TextBlock Text="Verifica novas versões da Neve AI e do llama.cpp, aplica updates e repara arquivos locais." FontSize="12" Foreground="#52525B" TextWrapping="Wrap" LineHeight="18"/>
+                            <TextBlock Text="Verifica e instala novas versões da NeveAI e llama.cpp." FontSize="12" Foreground="#52525B" TextWrapping="Wrap" LineHeight="18"/>
                         </StackPanel>
                     </Button>
 
                     <Button x:Name="BtnHubHomeBuild" Style="{StaticResource HubCardBtn}" Height="148" Margin="12,0,0,0">
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Buildar" FontSize="18" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,8"/>
-                            <TextBlock Text="Compila o frontend e publica a build em backend\neveai\frontend." FontSize="12" Foreground="#52525B" TextWrapping="Wrap" LineHeight="18"/>
+                            <TextBlock Text="Compila e publica o projeto." FontSize="12" Foreground="#52525B" TextWrapping="Wrap" LineHeight="18"/>
                         </StackPanel>
                     </Button>
                 </UniformGrid>
@@ -265,7 +316,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Margin="0,0,0,18">
-                        <TextBlock Text="Bem-vindo a Neve AI" FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
+                        <TextBlock Text="Bem-vindo a NeveAI" FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
                         <TextBlock Text="Vamos detectar seu hardware e instalar tudo o que é preciso."
                                    FontSize="13" Foreground="#71717A" Margin="0,4,0,0"/>
                     </StackPanel>
@@ -325,7 +376,6 @@ if (-not (Test-Path $LOGO_PATH)) {
                                     <TextBlock Text="O que será instalado:" FontWeight="SemiBold" FontSize="13" Foreground="#111111" Margin="0,0,0,4"/>
                                     <TextBlock Text="• llama.cpp e stable-diffusion.cpp (binários mais recentes do GitHub)" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="• Python 3.11 e venv com PyTorch + diffusers + dependências do backend" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="• Criar música: ambiente isolado preparado no primeiro uso" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="• Pacotes npm e build do frontend" FontSize="12" Foreground="#52525B"/>
                                     <TextBlock Text="• Estrutura de pastas (logs, models, mmproj, data) e .env padrão" FontSize="12" Foreground="#52525B"/>
                                 </StackPanel>
@@ -375,7 +425,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <TextBlock Text="OK" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <TextBlock x:Name="LblDoneTitle" Text="Tudo pronto!" FontSize="22" FontWeight="SemiBold" Foreground="#111111" HorizontalAlignment="Center"/>
-                            <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar o Neve AI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
+                            <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar o NeveAI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
                             <Border Background="#FAFAFA" CornerRadius="8" Padding="14,12">
                                 <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="#52525B"/>
                             </Border>
@@ -405,6 +455,14 @@ if (-not (Test-Path $LOGO_PATH)) {
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [Windows.Markup.XamlReader]::Load($reader)
 $window.Tag = 'idle'
+
+if (Test-Path -LiteralPath $WINDOW_ICON_PATH) {
+    $window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([Uri]$WINDOW_ICON_PATH)
+    $window.Add_SourceInitialized({
+        $interop = New-Object System.Windows.Interop.WindowInteropHelper($window)
+        [NeveInstallerWindowIdentity]::ApplyIcon($interop.Handle, $WINDOW_ICON_PATH)
+    })
+}
 
 # Atalhos para controles
 $ctl = @{}
@@ -442,7 +500,7 @@ $window.Dispatcher.add_UnhandledException({
         $ctl.LogBox.AppendText("[FATAL UI] $msg`r`n")
         $ctl.LogScroll.ScrollToEnd()
     } catch {}
-    [System.Windows.MessageBox]::Show("O instalador encontrou uma falha, mas a janela ficará aberta.`n`nVeja logs\install.log`n`n$msg", 'Neve AI - Instalador', 'OK', 'Error') | Out-Null
+    [System.Windows.MessageBox]::Show("O instalador encontrou uma falha, mas a janela ficará aberta.`n`nVeja logs\install.log`n`n$msg", 'NeveAI - Instalador', 'OK', 'Error') | Out-Null
     $eventArgs.Handled = $true
 })
 
@@ -498,7 +556,7 @@ function Stop-NeveRunningApp([string]$Reason = 'operação') {
     $script:NeveAppCloseRequested = $true
 
     try {
-        Add-Content -LiteralPath $LOG -Value ("[INFO] Encerrando Neve AI antes de iniciar: {0}" -f $Reason) -Encoding UTF8
+        Add-Content -LiteralPath $LOG -Value ("[INFO] Encerrando NeveAI antes de iniciar: {0}" -f $Reason) -Encoding UTF8
     } catch {}
 
     $targets = @()
@@ -886,7 +944,7 @@ function New-NeveDesktopShortcut([string]$RootPath, [string]$LogPath) {
         $shortcut.TargetPath = $launcherPath
         $shortcut.Arguments = ''
         $shortcut.WorkingDirectory = $RootPath
-        $shortcut.Description = 'Neve AI'
+        $shortcut.Description = 'NeveAI'
         $shortcut.WindowStyle = 1
         if (Test-Path -LiteralPath $iconPath) { $shortcut.IconLocation = $iconPath }
         $shortcut.Save()
@@ -918,7 +976,7 @@ $ctl.BtnPrimary.Add_Click({
     if (([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) -and -not $installPython311) {
         [System.Windows.MessageBox]::Show(
             "Python 3.11/3.12 válido não encontrado.`n`nMarque `"Instalar Python 3.11 automaticamente`" ou instale o Python manualmente pelo python.org.",
-            'Neve AI - Instalador', 'OK', 'Warning') | Out-Null
+            'NeveAI - Instalador', 'OK', 'Warning') | Out-Null
         return
     }
     # Coleta selecoes
@@ -1005,7 +1063,7 @@ $ctl.BtnPrimary.Add_Click({
         $ctl.InstallPanel.Visibility = 'Collapsed'
         $ctl.DonePanel.Visibility    = 'Visible'
         $ctl.LblDoneTitle.Text       = 'Já está tudo pronto!'
-        $ctl.LblDoneSub.Text         = 'Nenhuma pendência detectada. Use iniciar.bat para iniciar o Neve AI.'
+        $ctl.LblDoneSub.Text         = 'Nenhuma pendência detectada. Use iniciar.bat para iniciar o NeveAI.'
         $ctl.LblSummary.Text         = ($summary -join "`r`n")
         $ctl.BtnCancel.Visibility    = 'Collapsed'
         $ctl.BtnPrimary.IsEnabled    = $true
@@ -1071,7 +1129,7 @@ $ctl.BtnPrimary.Add_Click({
                 $shortcut.TargetPath = $launcherPath
                 $shortcut.Arguments = ''
                 $shortcut.WorkingDirectory = $RootPath
-                $shortcut.Description = 'Neve AI'
+                $shortcut.Description = 'NeveAI'
                 $shortcut.WindowStyle = 1
                 if (Test-Path -LiteralPath $iconPath) { $shortcut.IconLocation = $iconPath }
                 $shortcut.Save()
@@ -1590,7 +1648,7 @@ ENV=dev
 PORT=8080
 NEVE_SECRET_KEY=troque-esta-chave-por-algo-seguro
 NEVE_AUTH=False
-NEVE_NAME=Neve AI
+NEVE_NAME=NeveAI
 ENABLE_OLLAMA_API=False
 ENABLE_OPENAI_API=False
 ENABLE_WEB_SEARCH=False
@@ -1603,7 +1661,7 @@ ENABLE_SIGNUP=True
 ENABLE_LOGIN_FORM=True
 SAFE_MODE=False
 CORS_ALLOW_ORIGIN=http://localhost:8080
-USER_AGENT=Neve AI
+USER_AGENT=NeveAI
 "@
                 [System.IO.File]::WriteAllText($envPath, $envText, [System.Text.UTF8Encoding]::new($false))
                 Log "[OK] .env criado"
@@ -2028,7 +2086,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             $useFullReq = @('1','true','yes','sim') -contains ([string]$env:NEVE_INSTALL_FULL_REQUIREMENTS).ToLowerInvariant()
             if ((-not $useFullReq) -and (Test-Path -LiteralPath $runtimeReq)) {
                 $req = $runtimeReq
-                Log "[OK] Usando requirements-runtime.txt (dependências essenciais do Neve AI)"
+                Log "[OK] Usando requirements-runtime.txt (dependências essenciais do NeveAI)"
                 Log "    Para instalar a lista completa antiga, defina NEVE_INSTALL_FULL_REQUIREMENTS=1 antes de abrir o instalador."
             } else {
                 $req = $fullReq
@@ -2192,7 +2250,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 $script:Ctl.LblSummary.Text         = ($summary -join "`r`n")
                 if ($pythonDependencyFailures.Count -gt 0) {
                     $script:Ctl.LblDoneTitle.Text = 'Concluído com pendências'
-                    $script:Ctl.LblDoneSub.Text = 'O Neve AI tentou todas as dependências e registrou as pendências para retry incremental.'
+                    $script:Ctl.LblDoneSub.Text = 'O NeveAI tentou todas as dependências e registrou as pendências para retry incremental.'
                 }
                 $script:Ctl.BtnCancel.Visibility    = 'Collapsed'
                 $script:Ctl.BtnPrimary.IsEnabled    = $true
@@ -2221,7 +2279,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 $script:Ctl.BtnCancel.IsEnabled  = $false
                 $script:Ctl.BtnClose.IsEnabled   = $true
                 $script:Window.Tag = 'failed'
-                [System.Windows.MessageBox]::Show("A instalação falhou. A janela ficará aberta para você ler o log.`n`nVeja logs\install.log`n`n$errMsg", 'Neve AI', 'OK', 'Error') | Out-Null
+                [System.Windows.MessageBox]::Show("A instalação falhou. A janela ficará aberta para você ler o log.`n`nVeja logs\install.log`n`n$errMsg", 'NeveAI', 'OK', 'Error') | Out-Null
             })
         }
     }
@@ -2279,7 +2337,7 @@ $script:HubScriptPath = $SCRIPT_PATH
 $script:HubActiveMode = 'home'
 
 $script:UpdateLegacySource = @'
-# Neve AI - Atualizador Grafico (WPF)
+# NeveAI - Atualizador Grafico (WPF)
 # Verifica a ultima release em github.com/Etamus/NeveAI, baixa, aplica e refaz o build.
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -2509,7 +2567,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Neve AI - Atualizador"
+        Title="NeveAI - Atualizador"
         Width="780" Height="560"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
@@ -2603,7 +2661,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="18,0,0,0" VerticalAlignment="Center">
                     <Image x:Name="LogoImg" Width="22" Height="22" Margin="0,0,10,0"/>
-                    <TextBlock Text="Neve AI" FontSize="15" FontWeight="SemiBold" Foreground="#111111" VerticalAlignment="Center"/>
+                    <TextBlock Text="NeveAI" FontSize="15" FontWeight="SemiBold" Foreground="#111111" VerticalAlignment="Center"/>
                     <TextBlock Text="  ·  Atualizador" FontSize="13" Foreground="#71717A" VerticalAlignment="Center"/>
                 </StackPanel>
                 <Button x:Name="BtnClose" Grid.Column="2" Width="44" Height="32" Margin="0,0,12,0"
@@ -2664,7 +2722,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                                     </Grid.ColumnDefinitions>
 
                                     <Grid Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,8">
-                                        <TextBlock Text="Neve AI" FontSize="13" FontWeight="SemiBold" Foreground="#111111"/>
+                                        <TextBlock Text="NeveAI" FontSize="13" FontWeight="SemiBold" Foreground="#111111"/>
                                         <CheckBox x:Name="ChkUpdateNeve" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed"/>
                                     </Grid>
 
@@ -2752,7 +2810,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                                 <TextBlock Text="OK" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <TextBlock x:Name="LblDoneTitle" Text="Atualização concluída!" FontSize="22" FontWeight="SemiBold" Foreground="#111111" HorizontalAlignment="Center"/>
-                            <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar a Neve AI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
+                            <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar a NeveAI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
                             <Border Background="#FAFAFA" CornerRadius="8" Padding="14,12">
                                 <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="#52525B"/>
                             </Border>
@@ -2765,7 +2823,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
             <!-- FOOTER -->
             <Border Grid.Row="2" BorderBrush="#EEEEEE" BorderThickness="0,1,0,0" Padding="32,0,32,0">
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Button x:Name="BtnLlama" Style="{StaticResource AccentBtn}" Content="Atualizar llama.cpp" Margin="0,0,10,0" ToolTip="Atualização opcional, separada do Neve AI" Visibility="Collapsed"/>
+                    <Button x:Name="BtnLlama" Style="{StaticResource AccentBtn}" Content="Atualizar llama.cpp" Margin="0,0,10,0" ToolTip="Atualização opcional, separada do NeveAI" Visibility="Collapsed"/>
                     <Button x:Name="BtnCancel" Style="{StaticResource GhostBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/>
                     <Button x:Name="BtnPrimary" Style="{StaticResource PrimaryBtn}" Content="Atualizar" IsEnabled="False" Visibility="Collapsed"/>
                 </StackPanel>
@@ -3280,7 +3338,7 @@ $ctl.BtnLlama.Add_Click({
                 $script:Ctl.BtnCancel.IsEnabled  = $false
                 [System.Windows.MessageBox]::Show(
                     "A atualização do llama.cpp falhou.`r`n`r`nVeja o log em logs\update.log`r`n`r`n$errMsg",
-                    'Neve AI - Atualizador',
+                    'NeveAI - Atualizador',
                     [System.Windows.MessageBoxButton]::OK,
                     [System.Windows.MessageBoxImage]::Error) | Out-Null
             })
@@ -3447,13 +3505,13 @@ if ($ctl.ChkUpdateNeve.Visibility -eq 'Visible' -and $ctl.ChkUpdateLlama.Visibil
     $ctl.LblCheckSub.Text = 'Uma nova versão está pronta para ser instalada.'
 } elseif (-not $checkError -and -not $llamaCheckError) {
     $ctl.LblCheckTitle.Text = 'Você já está atualizado'
-    $ctl.LblCheckSub.Text = 'Nenhuma atualização pendente para a Neve AI ou llama.cpp.'
+    $ctl.LblCheckSub.Text = 'Nenhuma atualização pendente para a NeveAI ou llama.cpp.'
 }
 
 Update-PrimaryButtonState
 
 # =============================================================================
-# Worker da atualização combinada (Neve AI -> llama.cpp)
+# Worker da atualização combinada (NeveAI -> llama.cpp)
 # =============================================================================
 $ctl.BtnPrimary.Add_Click({
     $tag = $ctl.BtnPrimary.Tag
@@ -4080,7 +4138,7 @@ $ctl.BtnPrimary.Add_Click({
         }
         function Update-NeveAI {
             Set-Location -LiteralPath $ROOT
-            if (-not $latestTag -or -not $zipUrl) { throw 'Release do Neve AI indisponível para atualização.' }
+            if (-not $latestTag -or -not $zipUrl) { throw 'Release do NeveAI indisponível para atualização.' }
             $installState = Test-NeveInstallState $ROOT
             $canBuildAndDeploy = [bool]$installState.Installed
             if (-not $canBuildAndDeploy) {
@@ -4089,15 +4147,15 @@ $ctl.BtnPrimary.Add_Click({
                 L "    Rode instalar.bat para concluir a instalação antes de gerar frontend." 'warn'
             }
 
-            PN 5 "Baixando Neve AI $latestTag"
+            PN 5 "Baixando NeveAI $latestTag"
             L "==> Download $zipUrl"
             $tmpZip = Join-Path $env:TEMP "neve_update_$($latestTag).zip"
             if (Test-Path $tmpZip) { Remove-Item $tmpZip -Force }
             Invoke-WebRequest $zipUrl -OutFile $tmpZip -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Updater/1.0' }
             $sizeMB = [math]::Round((Get-Item $tmpZip).Length / 1MB, 1)
-            L "[OK] Neve AI baixado ($sizeMB MB)"
+            L "[OK] NeveAI baixado ($sizeMB MB)"
 
-            PN 18 'Extraindo Neve AI'
+            PN 18 'Extraindo NeveAI'
             $tmpExt = Join-Path $env:TEMP "neve_update_ext_$($latestTag)"
             if (Test-Path $tmpExt) { Remove-Item $tmpExt -Recurse -Force }
             New-Item $tmpExt -ItemType Directory | Out-Null
@@ -4114,7 +4172,7 @@ $ctl.BtnPrimary.Add_Click({
                 L '[OK] .env preservado'
             }
 
-            PN 35 'Aplicando arquivos do Neve AI'
+            PN 35 'Aplicando arquivos do NeveAI'
             $excludeDirs = @('backend\neveai\venv','backend\neveai\frontend','backend\neveai\data','backend\data','backend\__pycache__','models','mmproj','llamacpp-server','node_modules','build','logs','tools\nodejs','.git','.vscode','.svelte-kit')
             $excludeFiles = @('.env', 'version.txt')
             $sourceRoot = (Resolve-Path -LiteralPath $inner.FullName).ProviderPath
@@ -4171,13 +4229,13 @@ $ctl.BtnPrimary.Add_Click({
                 L '[OK] Build e deploy pulados porque o projeto ainda não foi instalado.'
             }
 
-            PN 97 'Salvando versão do Neve AI'
+            PN 97 'Salvando versão do NeveAI'
             Set-Content -Path $VERSION_FILE -Value $latestTag -Encoding UTF8
             try { Remove-Item $tmpZip -Force -EA SilentlyContinue } catch {}
             try { Remove-Item $tmpExt -Recurse -Force -EA SilentlyContinue } catch {}
-            L "[OK] Neve AI atualizado para $latestTag"
-            if ($canBuildAndDeploy) { return "Neve AI: $currentVersion -> $latestTag" }
-            return "Neve AI: $currentVersion -> $latestTag (build/deploy pulados; instalação incompleta)"
+            L "[OK] NeveAI atualizado para $latestTag"
+            if ($canBuildAndDeploy) { return "NeveAI: $currentVersion -> $latestTag" }
+            return "NeveAI: $currentVersion -> $latestTag (build/deploy pulados; instalação incompleta)"
         }
         function Update-LlamaCpp {
             $tmpFiles = @(); $stageDir = $null; $backupDir = $null
@@ -4265,12 +4323,12 @@ $ctl.BtnPrimary.Add_Click({
             P 100 'Concluído'
             L '[OK] Atualização concluída.'
 
-            $doneTitle = if ($updateNeve -and $updateLlama) { 'Atualizações concluídas!' } elseif ($updateNeve) { 'Neve AI atualizado!' } else { 'llama.cpp atualizado!' }
+            $doneTitle = if ($updateNeve -and $updateLlama) { 'Atualizações concluídas!' } elseif ($updateNeve) { 'NeveAI atualizado!' } else { 'llama.cpp atualizado!' }
             $script:Window.Dispatcher.Invoke([Action]{
                 $script:Ctl.UpdatePanel.Visibility = 'Collapsed'
                 $script:Ctl.DonePanel.Visibility   = 'Visible'
                 $script:Ctl.LblDoneTitle.Text = $doneTitle
-                $script:Ctl.LblDoneSub.Text   = 'Use iniciar.bat para iniciar a Neve AI.'
+                $script:Ctl.LblDoneSub.Text   = 'Use iniciar.bat para iniciar a NeveAI.'
                 $script:Ctl.LblSummary.Text   = ($summary -join "`r`n")
                 $script:Ctl.BtnPrimary.Content   = 'Concluir'
                 $script:Ctl.BtnPrimary.Tag       = 'done'
@@ -4292,7 +4350,7 @@ $ctl.BtnPrimary.Add_Click({
                 $script:Ctl.BtnCancel.IsEnabled = $false
                 [System.Windows.MessageBox]::Show(
                     "A atualização falhou.`r`n`r`nVeja o log em logs\update.log`r`n`r`n$errMsg",
-                    'Neve AI - Atualizador',
+                    'NeveAI - Atualizador',
                     [System.Windows.MessageBoxButton]::OK,
                     [System.Windows.MessageBoxImage]::Error) | Out-Null
             })
@@ -4331,7 +4389,7 @@ exit $script:ExitCode
 '@
 
 $script:BuildLegacySource = @'
-# Neve AI - Buildar Grafico (WPF)
+# NeveAI - Buildar Grafico (WPF)
 # Faz build limpo, publica em backend\neveai\frontend e valida o hash do index.html.
 
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -4368,7 +4426,7 @@ if (-not (Test-Path $LOGO_PATH)) {
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Neve AI - Buildar"
+        Title="NeveAI - Buildar"
         Width="780" Height="560"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
@@ -4441,7 +4499,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="18,0,0,0" VerticalAlignment="Center">
                     <Image x:Name="LogoImg" Width="22" Height="22" Margin="0,0,10,0"/>
-                    <TextBlock Text="Neve AI" FontSize="15" FontWeight="SemiBold" Foreground="#111111" VerticalAlignment="Center"/>
+                    <TextBlock Text="NeveAI" FontSize="15" FontWeight="SemiBold" Foreground="#111111" VerticalAlignment="Center"/>
                     <TextBlock Text="  -  Buildar" FontSize="13" Foreground="#71717A" VerticalAlignment="Center"/>
                 </StackPanel>
                 <Button x:Name="BtnClose" Grid.Column="2" Width="44" Height="32" Margin="0,0,12,0"
@@ -4469,8 +4527,8 @@ if (-not (Test-Path $LOGO_PATH)) {
                     </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0" Margin="0,0,0,18">
-                        <TextBlock Text="Build e deploy do frontend" FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
-                        <TextBlock Text="Compila o projeto e publica a pasta build no backend da Neve AI."
+                        <TextBlock Text="Realizar build do projeto" FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
+                        <TextBlock Text="Compila e publica a pasta build no backend da NeveAI."
                                    FontSize="13" Foreground="#71717A" Margin="0,4,0,0"/>
                     </StackPanel>
 
@@ -4498,14 +4556,14 @@ if (-not (Test-Path $LOGO_PATH)) {
 
                             <Border Grid.Row="3" Grid.ColumnSpan="2" Background="#FAFAFA" CornerRadius="8" Padding="14,12" Margin="0,8,0,0">
                                 <StackPanel>
-                                    <TextBlock Text="O que sera feito:" FontWeight="SemiBold" FontSize="13" Foreground="#111111" Margin="0,0,0,4"/>
-                                    <TextBlock Text="- Limpar a pasta build antiga" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="- Preparar Node.js/npm portatil se necessario" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="- Instalar pacotes npm se estiverem ausentes" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="- Rodar npm run build" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="- Limpar backend\neveai\frontend" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="- Copiar build para o backend" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="- Conferir o hash do index.html publicado" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="O que será feito:" FontWeight="SemiBold" FontSize="13" Foreground="#111111" Margin="0,0,0,4"/>
+                                    <TextBlock Text="• Limpar a pasta build antiga" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="• Preparar Node.js/npm portatil" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="• Instalar pacotes npm se estiverem ausentes" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="• Rodar npm run build" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="• Limpar backend\neveai\frontend" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="• Copiar build para o backend" FontSize="12" Foreground="#52525B"/>
+                                    <TextBlock Text="• Conferir o hash do index.html publicado" FontSize="12" Foreground="#52525B"/>
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -5034,7 +5092,7 @@ function Stop-NeveRunningApp([string]$Reason = 'operação') {
 	$script:NeveAppCloseRequested = $true
 
 	try {
-		Add-Content -LiteralPath $LOG -Value ("[INFO] Encerrando Neve AI antes de iniciar: {0}" -f $Reason) -Encoding UTF8
+		Add-Content -LiteralPath $LOG -Value ("[INFO] Encerrando NeveAI antes de iniciar: {0}" -f $Reason) -Encoding UTF8
 	} catch {}
 
 	$targets = @()
@@ -5212,7 +5270,7 @@ function Select-HubPage([string]$mode) {
 	} catch {
 		[System.Windows.MessageBox]::Show(
 			"Falha ao abrir a pagina '$mode'.`r`n`r`n$($_.Exception.Message)",
-			'Neve AI - Hub',
+			'NeveAI - Hub',
 			[System.Windows.MessageBoxButton]::OK,
 			[System.Windows.MessageBoxImage]::Error
 		) | Out-Null

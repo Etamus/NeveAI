@@ -75,7 +75,7 @@ def search_searxng(
     response = requests.get(
         query_url,
         headers={
-            "User-Agent": "Neve AI (https://github.com/Etamus/NeveAI) RAG Bot",
+            "User-Agent": "NeveAI (https://github.com/Etamus/NeveAI) RAG Bot",
             "Accept": "application/json, text/html",
             "Accept-Encoding": "gzip, deflate",
             "Accept-Language": "en-US,en;q=0.5",

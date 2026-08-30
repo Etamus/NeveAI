@@ -11,6 +11,7 @@ $Backend = Join-Path $Root 'backend'
 $VenvPy = Join-Path $Root 'backend\neveai\venv\Scripts\python.exe'
 $VenvPyw = Join-Path $Root 'backend\neveai\venv\Scripts\pythonw.exe'
 $WindowScript = Join-Path $Root 'neve_window.py'
+$WindowIconPath = Join-Path $Root 'static\static\faviconbar.ico'
 $LogDir = Join-Path $Root 'logs'
 $LogPath = Join-Path $LogDir 'start-launcher.log'
 
@@ -61,12 +62,62 @@ function Pump-Ui {
 
 function Show-Error {
 	param([string]$Message)
-	[System.Windows.MessageBox]::Show($Message, 'Neve AI', 'OK', 'Error') | Out-Null
+	[System.Windows.MessageBox]::Show($Message, 'NeveAI', 'OK', 'Error') | Out-Null
 }
 
 Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class NeveLauncherWindowIdentity
+{
+    private const uint WM_SETICON = 0x0080;
+    private const int ICON_SMALL = 0;
+    private const int ICON_BIG = 1;
+    private const int ICON_SMALL2 = 2;
+    private const uint IMAGE_ICON = 1;
+    private const uint LR_LOADFROMFILE = 0x0010;
+    private const uint LR_DEFAULTSIZE = 0x0040;
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    public static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr LoadImage(
+        IntPtr instance,
+        string name,
+        uint type,
+        int width,
+        int height,
+        uint loadFlags
+    );
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+
+    public static void ApplyIcon(IntPtr window, string iconPath)
+    {
+        IntPtr icon = LoadImage(
+            IntPtr.Zero,
+            iconPath,
+            IMAGE_ICON,
+            0,
+            0,
+            LR_LOADFROMFILE | LR_DEFAULTSIZE
+        );
+        if (icon == IntPtr.Zero) return;
+
+        SendMessage(window, WM_SETICON, new IntPtr(ICON_BIG), icon);
+        SendMessage(window, WM_SETICON, new IntPtr(ICON_SMALL), icon);
+        SendMessage(window, WM_SETICON, new IntPtr(ICON_SMALL2), icon);
+    }
+}
+'@
+
+[NeveLauncherWindowIdentity]::SetCurrentProcessExplicitAppUserModelID('NeveAI.Startup') | Out-Null
 
 $logoPath = Resolve-LogoPath
 $xaml = @'
@@ -99,22 +150,26 @@ $xaml = @'
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
                         Orientation="Vertical">
-                <Image x:Name="Logo"
-                       Width="64"
-                       Height="64"
-                       Stretch="Uniform"
-                       Margin="0,0,0,16" />
-                <TextBlock Text="Neve AI"
-                           HorizontalAlignment="Center"
-                           Foreground="#111827"
-                           FontSize="28"
-                           FontWeight="SemiBold" />
+                <StackPanel HorizontalAlignment="Center"
+                            Orientation="Horizontal"
+                            Margin="0,0,0,18">
+                    <Image x:Name="Logo"
+                           Width="84"
+                           Height="84"
+                           Stretch="Uniform"
+                           Margin="-25,3,0,0" />
+                    <TextBlock Text="NeveAI"
+                               VerticalAlignment="Center"
+                               Foreground="#111827"
+                               FontSize="38"
+                               FontWeight="SemiBold" />
+                </StackPanel>
                 <TextBlock x:Name="StatusText"
                            Text="Iniciando..."
                            HorizontalAlignment="Center"
                            Foreground="#6B7280"
                            FontSize="12"
-                           Margin="0,8,0,0" />
+                           Margin="10,20,0,0" />
             </StackPanel>
 
             <Grid Grid.Row="1">
@@ -137,6 +192,21 @@ $window = [Windows.Markup.XamlReader]::Load($reader)
 $logo = $window.FindName('Logo')
 $statusText = $window.FindName('StatusText')
 $progressBar = $window.FindName('Progress')
+
+if (Test-Path -LiteralPath $WindowIconPath) {
+	$window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([Uri]$WindowIconPath)
+	$window.Add_SourceInitialized({
+		$interop = New-Object System.Windows.Interop.WindowInteropHelper($window)
+		[NeveLauncherWindowIdentity]::ApplyIcon($interop.Handle, $WindowIconPath)
+	})
+}
+
+$window.Add_MouseLeftButtonDown({
+	param($sender, $eventArgs)
+	if ($eventArgs.ButtonState -eq 'Pressed') {
+		try { $window.DragMove() } catch {}
+	}
+})
 
 if ($logoPath) {
 	$image = New-Object System.Windows.Media.Imaging.BitmapImage
@@ -193,7 +263,7 @@ try {
 		$backendQ = Quote-PsLiteral $Backend
 		$venvPyQ = Quote-PsLiteral $VenvPy
 		$backendCommand = "`$env:PYTHONIOENCODING='utf-8'; `$env:PYTHONPATH='$backendQ'; Set-Location -LiteralPath '$backendQ'; & '$venvPyQ' -m uvicorn neveai.main:app --host 0.0.0.0 --port 8080"
-		$cmdStartCommand = 'start "Neve AI - Backend" /min /D "' + $Backend + '" powershell -NoProfile -ExecutionPolicy Bypass -Command "' + $backendCommand.Replace('"', '\"') + '"'
+		$cmdStartCommand = 'start "NeveAI - Backend" /min /D "' + $Backend + '" powershell -NoProfile -ExecutionPolicy Bypass -Command "' + $backendCommand.Replace('"', '\"') + '"'
 		Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', $cmdStartCommand) -WindowStyle Hidden -WorkingDirectory $Root | Out-Null
 		Write-StartLog 'backend debug console started through cmd start /min'
 	} else {
@@ -241,14 +311,29 @@ try {
 		}
 	}
 
-	Set-SplashProgress 'Abrindo Neve AI...' 100
-	Start-Sleep -Milliseconds 250
+	Set-SplashProgress 'Abrindo NeveAI...' 100
+
+	$pythonWindow = if (Test-Path -LiteralPath $VenvPyw) { $VenvPyw } else { $VenvPy }
+	$readyFile = Join-Path $LogDir ("webview-ready-{0}.tmp" -f $PID)
+	Remove-Item -LiteralPath $readyFile -Force -ErrorAction SilentlyContinue
+	$previousReadyFile = $env:NEVE_WINDOW_READY_FILE
+	try {
+		$env:NEVE_WINDOW_READY_FILE = $readyFile
+		$frontendProcess = Start-Process -FilePath $pythonWindow -ArgumentList @("`"$WindowScript`"") -WorkingDirectory $Root -PassThru
+	} finally {
+		$env:NEVE_WINDOW_READY_FILE = $previousReadyFile
+	}
+
+	$readyDeadline = [DateTime]::UtcNow.AddSeconds(12)
+	while (-not (Test-Path -LiteralPath $readyFile) -and [DateTime]::UtcNow -lt $readyDeadline) {
+		if ($frontendProcess.HasExited) { break }
+		Pump-Ui
+		Start-Sleep -Milliseconds 40
+	}
+	Remove-Item -LiteralPath $readyFile -Force -ErrorAction SilentlyContinue
 
 	$window.Close()
 	$window = $null
-
-	$pythonWindow = if (Test-Path -LiteralPath $VenvPyw) { $VenvPyw } else { $VenvPy }
-	$frontendProcess = Start-Process -FilePath $pythonWindow -ArgumentList @("`"$WindowScript`"") -WorkingDirectory $Root -PassThru
 	Write-StartLog "frontend window opened; launcher pid=$($frontendProcess.Id)"
 } catch {
 	Write-StartLog "[FATAL] $($_.Exception.Message)"

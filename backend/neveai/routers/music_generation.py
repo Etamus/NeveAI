@@ -1,7 +1,7 @@
 """Local music generation powered by ACE-Step 1.5 Turbo.
 
 ACE-Step runs in its own uv-managed environment so its pinned PyTorch and
-Transformers dependencies never mix with the Neve AI backend environment.
+Transformers dependencies never mix with the NeveAI backend environment.
 The runtime and model cache are prepared lazily on the first generation.
 """
 

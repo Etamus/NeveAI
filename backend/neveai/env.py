@@ -31,7 +31,7 @@ NEVEAI_DIR = ENV_FILE_PATH.parent
 # BACKEND_DIR is the parent of NEVEAI_DIR (backend/)
 BACKEND_DIR = NEVEAI_DIR.parent
 
-# BASE_DIR is the parent of BACKEND_DIR (Neve AI/)
+# BASE_DIR is the parent of BACKEND_DIR (NeveAI/)
 BASE_DIR = BACKEND_DIR.parent
 
 try:
@@ -133,7 +133,7 @@ if "cuda_error" in locals():
 
 SRC_LOG_LEVELS = {}  # Legacy variable, do not remove
 
-NEVEAI_NAME = os.environ.get("NEVE_NAME", "Neve AI")
+NEVEAI_NAME = os.environ.get("NEVE_NAME", "NeveAI")
 # Custom name - no suffix appended
 
 NEVEAI_FAVICON_URL = "/static/favicon.png"
@@ -600,7 +600,7 @@ OAUTH_SESSION_TOKEN_ENCRYPTION_KEY = os.environ.get(
 OAUTH_MAX_SESSIONS_PER_USER = int(os.environ.get("OAUTH_MAX_SESSIONS_PER_USER", "10"))
 
 # Token Exchange Configuration
-# Allows external apps to exchange OAuth tokens for Neve AI tokens
+# Allows external apps to exchange OAuth tokens for NeveAI tokens
 ENABLE_OAUTH_TOKEN_EXCHANGE = (
     os.environ.get("ENABLE_OAUTH_TOKEN_EXCHANGE", "False").lower() == "true"
 )

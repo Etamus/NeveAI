@@ -157,7 +157,7 @@
 			const deploymentId = res?.deployment_id ?? null;
 			const version = res?.version ?? null;
 
-			/* Version-mismatch reload desabilitado para Neve AI (evita loop com HMR)
+			/* Version-mismatch reload desabilitado para NeveAI (evita loop com HMR)
 			if (version !== null || deploymentId !== null) {
 				if (
 					($NEVEAI_VERSION !== null && version !== $NEVEAI_VERSION) ||
@@ -489,7 +489,7 @@
 				console.log('execute:tool', data);
 				executeTool(data, cb);
 			} else if (type === 'request:chat:completion') {
-				// Direct connections disabled (Neve AI uses server-side llamacpp)
+				// Direct connections disabled (NeveAI uses server-side llamacpp)
 				console.log('request:chat:completion (no-op, direct connections disabled)', data);
 			} else {
 				console.log('chatEventHandler', event);
@@ -630,6 +630,20 @@
 	onMount(async () => {
 		window.addEventListener('message', windowMessageEventHandler);
 		preloadAppVersion();
+
+		const emptyWindowTitle = '\u200b\u200c';
+		const clearBrowserWindowChrome = () => {
+			if (document.title !== emptyWindowTitle) {
+				document.title = emptyWindowTitle;
+			}
+		};
+		clearBrowserWindowChrome();
+		const browserWindowChromeObserver = new MutationObserver(clearBrowserWindowChrome);
+		browserWindowChromeObserver.observe(document.head, {
+			childList: true,
+			characterData: true,
+			subtree: true
+		});
 
 		let touchstartY = 0;
 
@@ -846,6 +860,7 @@
 		}
 
 		return () => {
+			browserWindowChromeObserver.disconnect();
 			window.removeEventListener('resize', onResize);
 			window.removeEventListener('message', windowMessageEventHandler);
 			document.removeEventListener('touchstart', touchstartHandler);
@@ -861,8 +876,7 @@
 </script>
 
 <svelte:head>
-	<title>{$NEVEAI_NAME}</title>
-	<link crossorigin="anonymous" rel="icon" href="{NEVEAI_BASE_URL}/static/favicon.png" />
+	<title>&#8203;&#8204;</title>
 
 	<meta name="apple-mobile-web-app-title" content={$NEVEAI_NAME} />
 	<meta name="description" content={$NEVEAI_NAME} />

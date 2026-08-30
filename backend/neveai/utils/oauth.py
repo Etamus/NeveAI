@@ -1307,7 +1307,7 @@ class OAuthManager:
         log.debug(f"User oauth groups: {user_oauth_groups}")
         log.debug(f"User's current groups: {[g.name for g in user_current_groups]}")
         log.debug(
-            f"All groups available in Neve AI: {[g.name for g in all_available_groups]}"
+            f"All groups available in NeveAI: {[g.name for g in all_available_groups]}"
         )
 
         # Remove groups that user is no longer a part of

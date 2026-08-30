@@ -1064,7 +1064,7 @@ app.state.config.YOUTUBE_LOADER_PROXY_URL = YOUTUBE_LOADER_PROXY_URL
 
 
 app.state.config.ENABLE_WEB_SEARCH = ENABLE_WEB_SEARCH
-app.state.config.ENABLE_WEB_SEARCH = True  # Force-enabled for Neve AI
+app.state.config.ENABLE_WEB_SEARCH = True  # Force-enabled for NeveAI
 app.state.config.WEB_SEARCH_ENGINE = WEB_SEARCH_ENGINE
 app.state.config.WEB_SEARCH_ENGINE = "searxng"  # Force free SearXNG with DDGS fallback
 app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST = WEB_SEARCH_DOMAIN_FILTER_LIST
@@ -1577,7 +1577,7 @@ app.mount("/ws", socket_app)
 
 
 app.include_router(llamacpp.router, prefix="/llamacpp", tags=["llamacpp"])
-# Ollama external router disabled (Neve AI uses llamacpp by default)
+# Ollama external router disabled (NeveAI uses llamacpp by default)
 # app.include_router(ollama.router, prefix="/ollama", tags=["ollama"])
 
 
@@ -2518,7 +2518,7 @@ def launch_installer_update_page():
 
 @app.post("/api/shutdown")
 async def shutdown_app(background_tasks: BackgroundTasks, user=Depends(get_admin_user)):
-    """Encerra o servidor Neve AI (backend + llama-server). Apenas admins."""
+    """Encerra o servidor NeveAI (backend + llama-server). Apenas admins."""
     import signal
     import psutil
 
@@ -2558,7 +2558,7 @@ async def start_app_updater(user=Depends(get_admin_user)):
     try:
         await anyio.to_thread.run_sync(launch_installer_update_page)
     except Exception as e:
-        log.exception("Failed to launch Neve AI updater")
+        log.exception("Failed to launch NeveAI updater")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Falha ao abrir o atualizador: {e}",

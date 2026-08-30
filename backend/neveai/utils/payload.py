@@ -63,13 +63,13 @@ def apply_model_params_to_body(
 
 def remove_neveai_params(params: dict) -> dict:
     """
-    Removes Neve AI specific parameters from the provided dictionary.
+    Removes NeveAI specific parameters from the provided dictionary.
 
     Args:
         params (dict): The dictionary containing parameters.
 
     Returns:
-        dict: The modified dictionary with Neve AI parameters removed.
+        dict: The modified dictionary with NeveAI parameters removed.
     """
     neveai_params = {
         "stream_response": bool,

@@ -33,6 +33,7 @@
 	import Notes from './InputMenu/Notes.svelte';
 
 	import { createPicker } from '$lib/utils/google-drive-picker';
+	import { setFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
 
 	const i18n = getContext('i18n');
 
@@ -650,6 +651,7 @@
 								disabled={fileGenerationBlocked}
 								on:click|stopPropagation={() => {
 									fileGenerationEnabled = !fileGenerationEnabled;
+									setFileGenerationPreference(fileGenerationEnabled);
 								}}
 							>
 								<div class="flex min-w-0 flex-1 items-center gap-2">

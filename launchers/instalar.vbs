@@ -33,7 +33,7 @@ command = Quote(powershellPath) & " -NoProfile -STA -ExecutionPolicy Bypass -Win
 result = shell.Run(command, 0, True)
 
 If result <> 0 Then
-    MsgBox "Falha ao abrir o Neve Hub." & vbCrLf & vbCrLf & "Veja os arquivos em logs para mais detalhes.", vbCritical, "Neve AI"
+    MsgBox "Falha ao abrir o Neve Hub." & vbCrLf & vbCrLf & "Veja os arquivos em logs para mais detalhes.", vbCritical, "NeveAI"
 End If
 
 Function Quote(ByVal value)

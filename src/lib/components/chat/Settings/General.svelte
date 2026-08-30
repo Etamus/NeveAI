@@ -283,7 +283,7 @@
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
 					<div id="stream-response-label" class=" self-center text-sm">
-						{$i18n.t('Resposta em streaming')}
+						{$i18n.t('Resposta em transmissão')}
 					</div>
 
 					<div class="flex items-center gap-2 p-1">

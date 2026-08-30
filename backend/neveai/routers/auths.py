@@ -1306,7 +1306,7 @@ async def token_exchange(
     db: Session = Depends(get_session),
 ):
     """
-    Exchange an external OAuth provider token for a Neve AI JWT.
+    Exchange an external OAuth provider token for a NeveAI JWT.
     This endpoint is disabled by default. Set ENABLE_OAUTH_TOKEN_EXCHANGE=True to enable.
     """
     if not ENABLE_OAUTH_TOKEN_EXCHANGE:

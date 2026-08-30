@@ -2,7 +2,30 @@
 <html lang="en" spellcheck="false">
 	<head>
 		<meta charset="utf-8" />
-		<link rel="icon" type="image/png" href="/static/favicon.png" crossorigin="use-credentials" />
+		<script>
+			(() => {
+				const desktopSessionKey = 'neve-desktop-window';
+				let isDesktopWindow = new URLSearchParams(window.location.search).has('neve-desktop');
+
+				try {
+					if (isDesktopWindow) {
+						sessionStorage.setItem(desktopSessionKey, '1');
+					} else {
+						isDesktopWindow = sessionStorage.getItem(desktopSessionKey) === '1';
+					}
+				} catch {
+					// The URL marker still handles the initial desktop load when storage is unavailable.
+				}
+
+				const favicon = document.createElement('link');
+				favicon.rel = 'icon';
+				favicon.type = isDesktopWindow ? 'image/png' : 'image/x-icon';
+				favicon.href = isDesktopWindow
+					? 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAE0lEQVR4nGNgGAWjYBSMAgYwAAAEEAABsax5zAAAAABJRU5ErkJggg=='
+					: '/static/faviconbar.ico?v=72b9cf03';
+				document.head.appendChild(favicon);
+			})();
+		</script>
 		<link
 			rel="apple-touch-icon"
 			sizes="180x180"
@@ -88,7 +111,7 @@
 				})();
 		</script>
 
-		<title>Neve AI</title>
+		<title>&#8203;&#8204;</title>
 
 		%sveltekit.head%
 	</head>

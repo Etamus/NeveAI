@@ -90,7 +90,7 @@
 		const pendingTargets: string[] = [];
 
 		if (projectUpdateAvailable) {
-			pendingTargets.push(latest ? `Neve AI ${latest}` : 'Neve AI');
+			pendingTargets.push(latest ? `NeveAI ${latest}` : 'NeveAI');
 		}
 
 		if (llamaUpdateAvailable) {
@@ -161,8 +161,8 @@
 					type="button"
 					class="bg-transparent p-0 text-sm font-medium text-gray-700 transition-opacity hover:opacity-60 disabled:cursor-default disabled:opacity-60 dark:text-gray-200"
 					aria-label={latestProjectVersion
-						? `Atualizar Neve AI para ${latestProjectVersion}`
-						: 'Atualizar Neve AI'}
+						? `Atualizar NeveAI para ${latestProjectVersion}`
+						: 'Atualizar NeveAI'}
 					disabled={startingUpdater}
 					on:click={startUpdate}
 				>
@@ -173,7 +173,7 @@
 	</section>
 
 	<section class="space-y-1.5">
-		<div class="text-sm font-medium text-gray-900 dark:text-white">Neve AI</div>
+		<div class="text-sm font-medium text-gray-900 dark:text-white">NeveAI</div>
 		<p class="text-sm leading-6 text-gray-600 dark:text-gray-300">
 			Copyright © 2026 Mateus Lopes<br />
 			Todos os direitos reservados.

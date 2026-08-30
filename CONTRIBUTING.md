@@ -79,14 +79,14 @@ Para desenvolvimento com hot reload, execute o backend e o frontend separadament
 ### Backend
 
 ```powershell
-cd "c:\Neve AI\backend"
+cd "c:\NeveAI\backend"
 ..\backend\neveai\venv\Scripts\python -m uvicorn neveai.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 ### Frontend
 
 ```powershell
-cd "c:\Neve AI"
+cd "c:\NeveAI"
 npm run dev
 ```
 

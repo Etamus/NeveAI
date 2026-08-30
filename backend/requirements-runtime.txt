@@ -1,4 +1,4 @@
-# Neve AI minimal runtime dependencies used by launchers/instalar.ps1.
+# NeveAI minimal runtime dependencies used by launchers/instalar.ps1.
 # Keep backend/requirements.txt as the complete optional/integration reference.
 
 # Core web server

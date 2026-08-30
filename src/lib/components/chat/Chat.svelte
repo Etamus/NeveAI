@@ -102,6 +102,7 @@
 	} from '$lib/apis/llamacpp';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
 	import { getLocalModelLoadPreferences, LOCAL_MODEL_CONTEXT_OPTIONS } from '$lib/utils/llamacppLoadPreferences';
+	import { getFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
 	import { getFunctions } from '$lib/apis/functions';
 	import { updateFolderById } from '$lib/apis/folders';
 
@@ -177,7 +178,7 @@
 	let webSearchEnabled = false;
 	let deepSearchEnabled = false;
 	let codeExecutionEnabled = false;
-	let fileGenerationEnabled = false;
+	let fileGenerationEnabled = getFileGenerationPreference(false);
 	let stableDiffusionEnabled = false;
 	let musicGenerationEnabled = false;
 	let previousMediaGenerationEnabled = stableDiffusionEnabled || musicGenerationEnabled;
@@ -548,7 +549,7 @@
 		deepSearchEnabled = false;
 		imageGenerationEnabled = false;
 		codeExecutionEnabled = false;
-		fileGenerationEnabled = false;
+		fileGenerationEnabled = getFileGenerationPreference(false);
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
 
@@ -603,7 +604,9 @@
 						deepSearchEnabled = input.deepSearchEnabled ?? false;
 						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
-						fileGenerationEnabled = input.fileGenerationEnabled ?? false;
+						fileGenerationEnabled = getFileGenerationPreference(
+							input.fileGenerationEnabled ?? false
+						);
 						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
 						musicGenerationEnabled = input.musicGenerationEnabled ?? false;
 						normalizeExclusiveFeatureToggles();
@@ -671,7 +674,7 @@
 		deepSearchEnabled = false;
 		imageGenerationEnabled = false;
 		codeExecutionEnabled = false;
-		fileGenerationEnabled = false;
+		fileGenerationEnabled = getFileGenerationPreference(false);
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
 		params = {};
@@ -1877,7 +1880,7 @@
 				deepSearchEnabled = false;
 				imageGenerationEnabled = false;
 				codeExecutionEnabled = false;
-				fileGenerationEnabled = false;
+				fileGenerationEnabled = getFileGenerationPreference(false);
 				stableDiffusionEnabled = false;
 				musicGenerationEnabled = false;
 
@@ -1893,7 +1896,9 @@
 						deepSearchEnabled = input.deepSearchEnabled ?? false;
 						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
-						fileGenerationEnabled = input.fileGenerationEnabled ?? false;
+						fileGenerationEnabled = getFileGenerationPreference(
+							input.fileGenerationEnabled ?? false
+						);
 						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
 						musicGenerationEnabled = input.musicGenerationEnabled ?? false;
 						normalizeExclusiveFeatureToggles();
@@ -5122,14 +5127,6 @@
 		}
 	};
 </script>
-
-<svelte:head>
-	<title>
-		{$settings.showChatTitleInTab !== false && $chatTitle
-			? `${$chatTitle.length > 30 ? `${$chatTitle.slice(0, 30)}...` : $chatTitle} • ${$NEVEAI_NAME}`
-			: `${$NEVEAI_NAME}`}
-	</title>
-</svelte:head>
 
 <audio id="audioElement" src="" style="display: none;"></audio>
 
