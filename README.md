@@ -6,11 +6,11 @@
 
 ---
 
-<img width="1919" height="1010" alt="{F622C17A-A4A8-4FA2-BB18-50FD99AB9A2D}" src="https://github.com/user-attachments/assets/c563bf45-299c-4fee-8829-db625b464805" />
+<img width="1917" height="1000" alt="{372DD1EB-1236-49B9-8224-C8BC487A9BE3}" src="https://github.com/user-attachments/assets/133935ca-c9fb-4727-bf41-9a30da473600" />
 
 ---
 
-<img width="1659" height="410" alt="{67C684F2-FDD6-499D-BB0E-42745276867F}" src="https://github.com/user-attachments/assets/eb1a0148-65f9-44c8-8e19-f1700dd3fe5b" />
+<img width="1654" height="374" alt="{1EDCDA18-B461-4F17-9F4F-63A65322D971}" src="https://github.com/user-attachments/assets/6855986e-d1ed-4e90-8947-996d40d67697" />
 
 ---
 
@@ -256,7 +256,7 @@ instalar.bat → Buildar
 ```
 
 <h1 align="center">
-<img width="781" alt="{C01EC582-F13F-4CC0-BFC9-93D0D1A52B1C}" src="https://github.com/user-attachments/assets/fec18717-6fc5-4296-abb2-4d1360d86a78" />
+<img width="778" alt="{767081D2-462D-4E97-A1FF-8B1F3A027F0F}" src="https://github.com/user-attachments/assets/eea2377c-27da-435d-8ace-264306a70a5e" />
 </h1>
 
 ### Dev mode (hot reload)

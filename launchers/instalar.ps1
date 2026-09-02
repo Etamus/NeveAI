@@ -4551,9 +4551,6 @@ if (-not (Test-Path $LOGO_PATH)) {
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Destino:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
                             <TextBlock Grid.Row="1" Grid.Column="1" x:Name="LblDeployPath" Text="backend\neveai\frontend" FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,12" TextTrimming="CharacterEllipsis"/>
 
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Comando:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
-                            <TextBlock Grid.Row="2" Grid.Column="1" Text="npm portatil run build" FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,12"/>
-
                             <Border Grid.Row="3" Grid.ColumnSpan="2" Background="#FAFAFA" CornerRadius="8" Padding="14,12" Margin="0,8,0,0">
                                 <StackPanel>
                                     <TextBlock Text="O que será feito:" FontWeight="SemiBold" FontSize="13" Foreground="#111111" Margin="0,0,0,4"/>

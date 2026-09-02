@@ -910,12 +910,14 @@
 				<div
 					class="{scrollTop > 0
 						? 'visible'
-						: 'invisible'} sidebar-bg-gradient-to-b bg-linear-to-b from-gray-50 dark:from-gray-850 to-transparent from-50% pointer-events-none absolute inset-0 -z-10 -mb-6"
+						: 'invisible'} sidebar-bg-gradient-to-b bg-linear-to-b from-gray-50 from-50% to-transparent dark:hidden pointer-events-none absolute inset-0 -z-10 -mb-6"
 				></div>
 			</div>
 
 			<div
-				class="relative flex flex-col flex-1 overflow-y-auto scrollbar-hidden pt-5 pb-3"
+				class="sidebar-scroll-fade {scrollTop > 0
+					? 'sidebar-scroll-fade-top'
+					: ''} relative flex flex-col flex-1 overflow-y-auto scrollbar-hidden pt-5 pb-3"
 				on:scroll={(e) => {
 					if (e.target.scrollTop === 0) {
 						scrollTop = 0;
@@ -1295,7 +1297,7 @@
 
 			<div class="px-1.5 pt-1.5 pb-2 sticky bottom-0 z-10 -mt-3 sidebar">
 				<div
-					class=" sidebar-bg-gradient-to-t bg-linear-to-t from-gray-50 dark:from-gray-850 to-transparent from-50% pointer-events-none absolute inset-0 -z-10 -mt-6"
+					class="sidebar-bg-gradient-to-t bg-linear-to-t from-gray-50 from-50% to-transparent dark:hidden pointer-events-none absolute inset-0 -z-10 -mt-6"
 				></div>
 				<div class="flex flex-col">
 					{#if $user !== undefined && $user !== null}
@@ -1357,3 +1359,27 @@
 			/>
 		</div>
 	{/if}
+
+<style>
+	:global(.dark) .sidebar-scroll-fade {
+		-webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 1.5rem), transparent 100%);
+		mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 1.5rem), transparent 100%);
+	}
+
+	:global(.dark) .sidebar-scroll-fade.sidebar-scroll-fade-top {
+		-webkit-mask-image: linear-gradient(
+			to bottom,
+			transparent 0,
+			#000 1.5rem,
+			#000 calc(100% - 1.5rem),
+			transparent 100%
+		);
+		mask-image: linear-gradient(
+			to bottom,
+			transparent 0,
+			#000 1.5rem,
+			#000 calc(100% - 1.5rem),
+			transparent 100%
+		);
+	}
+</style>
