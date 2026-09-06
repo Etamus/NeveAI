@@ -8,7 +8,6 @@
 
 	import ChatList from './ChatList.svelte';
 	import FolderKnowledge from './FolderKnowledge.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { getChatListByFolderId } from '$lib/apis/chats';
 
 	export let folder: any = null;
@@ -101,10 +100,6 @@
 		{:else if selectedTab === 'chats'}
 			{#if chats !== null}
 				<ChatList {chats} {chatListLoading} {allChatsLoaded} loadHandler={loadChats} />
-			{:else}
-				<div class="py-10">
-					<Spinner />
-				</div>
 			{/if}
 		{/if}
 	</div>

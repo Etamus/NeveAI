@@ -69,13 +69,9 @@
 		if (autoSaveTimer) {
 			clearTimeout(autoSaveTimer);
 		}
-		if (advancedParamsMeasureRaf !== null && typeof window !== 'undefined') {
-			window.cancelAnimationFrame(advancedParamsMeasureRaf);
-		}
 		if (modelNameWidthRaf !== null && typeof window !== 'undefined') {
 			window.cancelAnimationFrame(modelNameWidthRaf);
 		}
-		advancedParamsResizeObserver?.disconnect();
 		if (initialized && edit && !savingOnClose) {
 			submitHandler();
 		}
@@ -91,16 +87,21 @@
 	let name = '';
 	let description = '';
 	let baseModelId: string | null = null;
-	const MODEL_DESCRIPTION_MAX_CHARS = 144;
+	const MODEL_DESCRIPTION_MAX_CHARS = 94;
 	const MODEL_NAME_MIN_CHARS = 10;
-	const MODEL_NAME_MAX_CHARS = 22;
+	const MODEL_NAME_MAX_CHARS = 50;
+	const MODEL_NAME_DISPLAY_MAX_CHARS = 22;
 	let modelNameSizerElement: HTMLSpanElement | null = null;
 	let modelNameFieldWidth = `${MODEL_NAME_MIN_CHARS}ch`;
 	let modelNameMeasureText = '';
 	let modelNameInputFocused = false;
 	let modelNameWidthRaf: number | null = null;
-	$: modelNameMeasureText = `${name || ''}`.slice(0, MODEL_NAME_MAX_CHARS);
-	$: modelNameDisplayValue = modelNameInputFocused ? `${name || ''}` : modelNameMeasureText;
+	$: modelNameMeasureText = name
+		? `${name}`.slice(0, MODEL_NAME_DISPLAY_MAX_CHARS)
+		: $i18n.t('Model Name');
+	$: modelNameDisplayValue = modelNameInputFocused
+		? `${name || ''}`.slice(0, MODEL_NAME_MAX_CHARS)
+		: `${name || ''}`.slice(0, MODEL_NAME_DISPLAY_MAX_CHARS);
 
 	const measureModelNameField = async () => {
 		await tick();
@@ -110,7 +111,7 @@
 			return;
 		}
 
-		const measuredWidth = Math.ceil(modelNameSizerElement.getBoundingClientRect().width) + 1;
+		const measuredWidth = Math.ceil(modelNameSizerElement.getBoundingClientRect().width) + 4;
 		modelNameFieldWidth = `${measuredWidth}px`;
 	};
 
@@ -138,62 +139,6 @@
 	let system = '';
 	let showSystemPromptField = false;
 	$: if (system !== '') showSystemPromptField = true;
-	let advancedParamsWindowElement: HTMLDivElement | null = null;
-	let advancedParamsViewportHeight = 'auto';
-	let advancedParamsResizeObserver: ResizeObserver | null = null;
-	let advancedParamsMeasureRaf: number | null = null;
-
-	const measureAdvancedParamsViewport = async () => {
-		await tick();
-		if (!advancedParamsWindowElement) return;
-
-		const paramsRoot = advancedParamsWindowElement.querySelector<HTMLElement>(
-			'.model-editor-advanced-params > div'
-		);
-		if (!paramsRoot) return;
-
-		const rows = Array.from(paramsRoot.children).filter(
-			(child): child is HTMLElement =>
-				child instanceof HTMLElement && child.offsetParent !== null
-		);
-		if (rows.length === 0) return;
-
-		const lastVisibleRow = rows[Math.min(4, rows.length - 1)];
-		const viewportTop = advancedParamsWindowElement.getBoundingClientRect().top;
-		const lastRowBottom = lastVisibleRow.getBoundingClientRect().bottom;
-		const nextHeight = `${Math.ceil(
-			lastRowBottom - viewportTop + advancedParamsWindowElement.scrollTop + 1
-		)}px`;
-
-		if (advancedParamsViewportHeight !== nextHeight) {
-			advancedParamsViewportHeight = nextHeight;
-		}
-	};
-
-	const scheduleAdvancedParamsMeasure = () => {
-		if (typeof window === 'undefined' || advancedParamsMeasureRaf !== null) return;
-		advancedParamsMeasureRaf = window.requestAnimationFrame(() => {
-			advancedParamsMeasureRaf = null;
-			void measureAdvancedParamsViewport();
-		});
-	};
-
-	const observeAdvancedParamsViewport = () => {
-		if (typeof ResizeObserver === 'undefined' || !advancedParamsWindowElement) return;
-
-		advancedParamsResizeObserver?.disconnect();
-		advancedParamsResizeObserver = new ResizeObserver(scheduleAdvancedParamsMeasure);
-		advancedParamsResizeObserver.observe(advancedParamsWindowElement);
-
-		const paramsRoot = advancedParamsWindowElement.querySelector<HTMLElement>(
-			'.model-editor-advanced-params > div'
-		);
-		if (paramsRoot) {
-			advancedParamsResizeObserver.observe(paramsRoot);
-		}
-	};
-
-	$: params, showSystemPromptField, loaded, scheduleAdvancedParamsMeasure();
 	const DEFAULT_MODEL_PROFILE_IMAGE_URL = `${NEVEAI_BASE_URL}/static/favicon.png`;
 	let info = {
 		id: '',
@@ -216,6 +161,10 @@
 
 	$: isCatalogIconLocked = Boolean(
 		info?.meta?.neve_catalog_profile_image_locked || info?.meta?.neve_catalog_id
+	);
+	$: hasCustomModelImage = Boolean(
+		info?.meta?.profile_image_url &&
+			info.meta.profile_image_url !== DEFAULT_MODEL_PROFILE_IMAGE_URL
 	);
 
 	let knowledge = [];
@@ -265,7 +214,8 @@
 		info.base_model_id = baseModelId;
 		info.access_grants = accessGrants;
 		info.meta.capabilities = { ...DEFAULT_CAPABILITIES };
-		info.meta.capabilities.toggle_reasoning = defaultFeatureIds.includes('toggle_reasoning');
+		info.meta.capabilities.toggle_reasoning = true;
+		defaultFeatureIds = defaultFeatureIds.filter((featureId) => featureId !== 'toggle_reasoning');
 
 		if (description.trim() !== '') {
 			info.meta.description = description;
@@ -459,10 +409,10 @@
 			actionIds = model?.meta?.actionIds ?? [];
 
 			capabilities = { ...capabilities, ...(model?.meta?.capabilities ?? {}) };
-			defaultFeatureIds = model?.meta?.defaultFeatureIds ?? [];
-			if (capabilities.toggle_reasoning !== false && !defaultFeatureIds.includes('toggle_reasoning')) {
-				defaultFeatureIds = [...defaultFeatureIds, 'toggle_reasoning'];
-			}
+			capabilities.toggle_reasoning = true;
+			defaultFeatureIds = (model?.meta?.defaultFeatureIds ?? []).filter(
+				(featureId) => featureId !== 'toggle_reasoning'
+			);
 			builtinTools = model?.meta?.builtinTools ?? {};
 			tts = { voice: model?.meta?.tts?.voice ?? '' };
 
@@ -487,8 +437,6 @@
 
 		loaded = true;
 		await tick();
-		observeAdvancedParamsViewport();
-		scheduleAdvancedParamsMeasure();
 		if (edit) {
 			initialized = true;
 		}
@@ -642,53 +590,56 @@
 										class="rounded-xl flex shrink-0 items-center {info.meta.profile_image_url !==
 										DEFAULT_MODEL_PROFILE_IMAGE_URL
 											? 'bg-transparent'
-											: 'bg-white'} shadow-xl relative {isCatalogIconLocked
+											: 'bg-white'} shadow-xl relative overflow-hidden {isCatalogIconLocked
 											? 'cursor-default disabled:opacity-100'
 											: 'group'}"
 										type="button"
 										disabled={isCatalogIconLocked}
 										aria-label={isCatalogIconLocked
 											? $i18n.t('Default model image')
-											: $i18n.t('Upload profile image')}
+											: hasCustomModelImage
+												? $i18n.t('Reset Image')
+												: $i18n.t('Upload profile image')}
 										on:click={() => {
 											if (isCatalogIconLocked) return;
-											filesInputElement.click();
+											if (hasCustomModelImage) {
+												updateProfileImageUrl(DEFAULT_MODEL_PROFILE_IMAGE_URL);
+											} else {
+												filesInputElement.click();
+											}
 										}}
 									>
-										{#if info.meta.profile_image_url}
-											<img
-												src={info.meta.profile_image_url}
-												alt="model profile"
-												class="rounded-lg size-20 md:size-36 object-cover shrink-0"
-											/>
-										{:else}
-											<img
-												src={DEFAULT_MODEL_PROFILE_IMAGE_URL}
-												alt="model profile"
-												class="rounded-lg size-20 md:size-36 object-cover shrink-0"
-											/>
-										{/if}
+										<img
+											src={info.meta.profile_image_url || DEFAULT_MODEL_PROFILE_IMAGE_URL}
+											alt="model profile"
+											class="rounded-lg size-20 md:size-36 object-cover shrink-0 transition-[filter] duration-150 {!isCatalogIconLocked
+												? 'group-hover:blur-[1px] group-hover:brightness-75'
+												: ''}"
+										/>
 
 										{#if !isCatalogIconLocked}
 											<div
-												class="absolute top-0 bottom-0 left-0 right-0 bg-white dark:bg-black rounded-lg opacity-0 group-hover:opacity-20 transition"
-											></div>
+												class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 text-white opacity-0 transition-opacity duration-150 group-hover:bg-black/10 group-hover:opacity-100"
+											>
+												{#if hasCustomModelImage}
+													<XMark className="size-7 drop-shadow-md" />
+												{:else}
+													<svg
+														aria-hidden="true"
+														xmlns="http://www.w3.org/2000/svg"
+														viewBox="0 0 24 24"
+														fill="none"
+														stroke="currentColor"
+														stroke-width="1.7"
+														class="size-7 drop-shadow-md"
+													>
+														<path stroke-linecap="round" stroke-linejoin="round" d="M14.5 4.5 16 7h2.25A2.75 2.75 0 0 1 21 9.75v7.5A2.75 2.75 0 0 1 18.25 20H5.75A2.75 2.75 0 0 1 3 17.25v-7.5A2.75 2.75 0 0 1 5.75 7H8l1.5-2.5h5Z" />
+														<circle cx="12" cy="13" r="3.25" />
+													</svg>
+												{/if}
+											</div>
 										{/if}
 									</button>
-
-									{#if !isCatalogIconLocked && info.meta.profile_image_url && info.meta.profile_image_url !== DEFAULT_MODEL_PROFILE_IMAGE_URL}
-										<button
-											class="absolute -right-1 top-30 z-10 flex size-7 items-center justify-center rounded-full border border-white bg-gray-500 text-white shadow-lg shadow-black/20 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-white/70 dark:border-gray-200 dark:bg-gray-600 dark:hover:bg-gray-500"
-											type="button"
-											aria-label={$i18n.t('Reset Image')}
-											title={$i18n.t('Reset Image')}
-											on:click={() => {
-												updateProfileImageUrl(DEFAULT_MODEL_PROFILE_IMAGE_URL);
-											}}
-										>
-											<XMark className="size-3.5" />
-										</button>
-									{/if}
 								</div>
 							</div>
 						</div>
@@ -708,7 +659,7 @@
 									placeholder={$i18n.t('Model Name')}
 									value={modelNameDisplayValue}
 									on:input={(e) => {
-										name = e.currentTarget.value;
+										name = e.currentTarget.value.slice(0, MODEL_NAME_MAX_CHARS);
 									}}
 									on:focus={() => {
 										modelNameInputFocused = true;
@@ -717,6 +668,7 @@
 										modelNameInputFocused = false;
 									}}
 									spellcheck="false"
+									maxlength={MODEL_NAME_MAX_CHARS}
 									required
 								/>
 								<input
@@ -750,14 +702,15 @@
 								</div>
 							{/if}
 
-							<div class="mt-3 mb-1">
-								<label class="text-xs font-medium text-gray-500 dark:text-gray-400 block mb-1">
+							<div class="mt-4 mb-1">
+								<label class="text-xs font-medium text-gray-800 dark:text-gray-200 block mb-1">
 									Descrição
 								</label>
 								<Textarea
-									className="text-sm w-full pr-6 bg-transparent outline-hidden resize-none overflow-y-hidden"
+									className="h-10 w-full pr-6 bg-transparent text-[15px]! leading-5 text-gray-400 outline-hidden resize-none overflow-y-auto"
 									placeholder={$i18n.t('Add a short description about what this model does')}
 									spellcheck={false}
+									autoResize={false}
 									maxlength={MODEL_DESCRIPTION_MAX_CHARS}
 									bind:value={description}
 								/>
@@ -769,26 +722,21 @@
 
 				<!-- Params (scrollable) + Features (static) side by side -->
 				<div class="flex-1 min-h-0 overflow-hidden px-4 pb-4 border-t border-gray-200/30 dark:border-gray-700/20 mt-2 pt-6">
-					<div class="flex gap-0 w-full pl-8 h-full min-h-0">
+					<div class="flex gap-0 w-full pl-2 h-full min-h-0">
 						<!-- Left: advanced params + system prompt (only this scrolls) -->
 						<div class="w-[55%] min-w-0 h-full flex flex-col pr-1">
-							<div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 py-0 pl-2 pr-5 shrink-0">
+							<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2 py-0 pl-2 pr-5 shrink-0">
 								{$i18n.t('Par\u00e2metros avan\u00e7ados')}
 							</div>
 							<div class="min-h-0 pr-5">
 								<div
-									bind:this={advancedParamsWindowElement}
 									class="model-editor-advanced-params-window"
-									style="height: {advancedParamsViewportHeight}; max-height: {advancedParamsViewportHeight};"
 									on:scroll={() => tippyHideAll()}
 								>
 									<div class="model-editor-advanced-params">
-										<AdvancedParams admin={true} custom={true} janStyle={true} bind:params tooltipsEnabled={false} />
-									</div>
-
-									<!-- System prompt -->
-									<div class="mt-0.5">
-										<div class="flex w-full items-center justify-between py-1">
+									<AdvancedParams admin={true} custom={true} janStyle={true} fixedJanRows={true} safeBottomPadding={false} bind:params tooltipsEnabled={false}>
+										<div slot="janFooter">
+											<div class="flex h-[34px] w-full items-center justify-between py-0">
 											{#if showSystemPromptField}
 												<button
 													type="button"
@@ -805,16 +753,18 @@
 													on:click={() => { showSystemPromptField = true; }}
 												>{$i18n.t('Default')}</button>
 											{/if}
+											</div>
+											{#if showSystemPromptField}
+												<Textarea
+													className="text-xs w-full bg-transparent border border-gray-200/40 dark:border-gray-700/30 rounded-lg px-3 py-2 outline-hidden resize-none overflow-y-auto focus:border-gray-300 dark:focus:border-gray-600 transition min-h-[5rem]"
+													placeholder={$i18n.t('Digite o prompt do sistema')}
+													rows={4}
+													bind:value={system}
+												/>
+											{/if}
 										</div>
-										{#if showSystemPromptField}
-											<Textarea
-												className="text-xs w-full bg-transparent border border-gray-200/40 dark:border-gray-700/30 rounded-lg px-3 py-2 outline-hidden resize-none overflow-y-auto focus:border-gray-300 dark:focus:border-gray-600 transition min-h-[5rem]"
-												placeholder={$i18n.t('Digite o prompt do sistema')}
-												rows={4}
-												bind:value={system}
-											/>
-										{/if}
-									</div>
+									</AdvancedParams>
+								</div>
 								</div>
 							</div>
 						</div>
@@ -822,18 +772,20 @@
 						<!-- Right: Capacidades (static, does not scroll) -->
 						<div class="border-l border-gray-300/50 dark:border-gray-600/30"></div>
 						<div class="w-[45%] min-w-0 pl-6 h-full overflow-hidden">
-							<div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">
-								{$i18n.t('Capacidades')}
+							<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2">
+								Capacidades padrão
 							</div>
 							<DefaultFeatures
-								availableFeatures={[
-									'web_search',
-									'deep_search',
-									'code_execution',
-									'toggle_reasoning'
-								]}
+							availableFeatures={[
+								'web_search',
+								'deep_search',
+								'code_execution',
+								'stable_diffusion',
+								'music_generation'
+							]}
 								bind:featureIds={defaultFeatureIds}
 								tooltipsEnabled={false}
+								insetToggles={true}
 							/>
 						</div>
 					</div>
@@ -852,7 +804,9 @@
 		overflow-y: auto;
 		overflow-x: hidden;
 		overscroll-behavior: contain;
-		padding-right: 0.25rem;
+		width: calc(100% + 10px);
+		padding-right: 14px;
+		max-height: 234px;
 	}
 
 	.model-editor-advanced-params :global(.inline-tooltip) {

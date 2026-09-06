@@ -599,30 +599,30 @@
 	}}
 	closeFocus={false}
 >
-	<DropdownMenu.Trigger
-		class="relative w-full {($settings?.highContrastMode ?? false)
-			? ''
-			: 'outline-hidden focus:outline-hidden'}"
-		aria-label={selectedModel
-			? $i18n.t('Selected model: {{modelName}}', { modelName: selectedModel.label })
-			: placeholder}
-		id="model-selector-{id}-button"
-	>
-		<div
-			class="flex w-full items-center text-left px-4 py-1.5 rounded-lg gap-2 {triggerClassName} {($settings?.highContrastMode ??
+	<div
+		class="flex w-full items-center text-left px-4 py-1.5 rounded-lg gap-2 {triggerClassName} {($settings?.highContrastMode ??
 			false)
 				? 'dark:placeholder-gray-100 placeholder-gray-800'
 				: ''}"
-			on:mouseenter={async () => {
-				models.set(
-					await getModels(
-						localStorage.token,
-						$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-					)
-				);
-			}}
+		on:mouseenter={async () => {
+			models.set(
+				await getModels(
+					localStorage.token,
+					$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
+				)
+			);
+		}}
+	>
+		<DropdownMenu.Trigger
+			class="relative flex min-w-0 flex-1 items-center gap-1.5 text-left {($settings?.highContrastMode ?? false)
+				? ''
+				: 'outline-hidden focus:outline-hidden'}"
+			aria-label={selectedModel
+				? $i18n.t('Selected model: {{modelName}}', { modelName: selectedModel.label })
+				: placeholder}
+			id="model-selector-{id}-button"
 		>
-			<span class="flex-1 truncate flex items-center gap-1.5">
+			<span class="flex min-w-0 flex-1 items-center gap-1.5 truncate">
 				{#if selectedModel}
 					<div class="relative size-5 shrink-0 group/pin">
 						<img
@@ -647,16 +647,18 @@
 							{/if}
 						</button>
 					</div>
-					{selectedModel.label}
+					<span class="min-w-0 -translate-y-px truncate">{selectedModel.label}</span>
 				{:else}
-					{placeholder}
+					<span class="min-w-0 -translate-y-px truncate">{placeholder}</span>
 				{/if}
 			</span>
-			{#if selectedModel && onGearClick}
+		</DropdownMenu.Trigger>
+		{#if selectedModel && onGearClick}
+			<Tooltip content="Configurações" placement="top" className="relative z-20 -mr-2 flex shrink-0 self-center">
 				<button
-					class="relative z-20 -mr-2 shrink-0 self-center p-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+					class="shrink-0 p-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
 					type="button"
-					aria-label="Controles"
+					aria-label="Configurações"
 					on:pointerdown|stopPropagation|preventDefault
 					on:click|stopPropagation|preventDefault={() => { show = false; onGearClick(); }}
 				>
@@ -672,7 +674,9 @@
 						<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
 					</svg>
 				</button>
-			{:else if selectedModel}
+			</Tooltip>
+		{:else if selectedModel}
+			<div class="pointer-events-none flex shrink-0 self-center" aria-hidden="true">
 				<svg
 					xmlns="http://www.w3.org/2000/svg"
 					viewBox="0 0 24 24"
@@ -684,9 +688,9 @@
 				>
 					<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
 				</svg>
-			{/if}
-		</div>
-	</DropdownMenu.Trigger>
+			</div>
+		{/if}
+	</div>
 
 	<DropdownMenu.Content
 		class="z-40 {$mobile
@@ -695,7 +699,7 @@
 		transition={flyAndScale}
 		side={$mobile ? 'bottom' : 'bottom-start'}
 		sideOffset={6}
-		alignOffset={$mobile ? -1 : 18}
+		alignOffset={$mobile ? -1 : 0}
 	>
 		<slot>
 			{#if searchEnabled}
@@ -751,7 +755,7 @@
 				{:else}
 					<!-- svelte-ignore a11y-no-static-element-interactions -->
 					<div
-						class="max-h-[275px] overflow-y-auto pr-2"
+						class="max-h-[277px] overflow-y-auto pr-2"
 						role="listbox"
 						aria-label={$i18n.t('Available models')}
 						bind:this={listContainer}

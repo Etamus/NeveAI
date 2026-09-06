@@ -146,6 +146,51 @@
 	export let thinkingEnabled = true;
 	export let thinkingExtendedEnabled = true;
 
+	let previousFileGenerationEnabled = fileGenerationEnabled;
+	let previousAttachmentFingerprint = '';
+
+	$: {
+		const attachmentFingerprint = files
+			.map((file) => file?.id ?? file?.itemId ?? file?.url ?? file?.name ?? '')
+			.join('|');
+		const featureChanged = fileGenerationEnabled !== previousFileGenerationEnabled;
+		const attachmentsChanged = attachmentFingerprint !== previousAttachmentFingerprint;
+
+		if (featureChanged || attachmentsChanged) {
+			previousFileGenerationEnabled = fileGenerationEnabled;
+			previousAttachmentFingerprint = attachmentFingerprint;
+
+			if (fileGenerationEnabled) {
+				let contextChanged = false;
+				files.forEach((file) => {
+					const isImage =
+						file?.type === 'image' || (file?.content_type ?? '').startsWith('image/');
+					if (isImage || file?._contextManuallySet || file?._fileGenerationDefaultContext) {
+						return;
+					}
+
+					file.context = 'full';
+					file._fileGenerationDefaultContext = true;
+					contextChanged = true;
+				});
+				if (contextChanged) {
+					files = files;
+				}
+			} else if (featureChanged) {
+				let contextChanged = false;
+				files.forEach((file) => {
+					if (!file?._fileGenerationDefaultContext) return;
+					delete file.context;
+					delete file._fileGenerationDefaultContext;
+					contextChanged = true;
+				});
+				if (contextChanged) {
+					files = files;
+				}
+			}
+		}
+	}
+
 	let showTerminalMenu = false;
 
 	export let messageQueue: { id: string; prompt: string; files: any[] }[] = [];
@@ -646,9 +691,7 @@
 
 	let showThinkingButton = false;
 	let thinkingModeModelKey = '';
-	$: showThinkingButton = selectedModels.length > 0 && selectedModels.every(
-		(model) => $models.find((m) => m.id === model)?.info?.meta?.capabilities?.toggle_reasoning ?? false
-	);
+	$: showThinkingButton = selectedModels.length > 0;
 	$: thinkingModeModelKey = showThinkingButton ? selectedModels.join('\u0000') : '';
 	$: if (showThinkingButton && thinkingModeModelKey !== appliedThinkingModeKey) {
 		thinkingEnabled = getGlobalThinkingEnabled();
@@ -1364,7 +1407,7 @@
 					/>
 
 					<form
-						class="w-full flex flex-col gap-1.5"
+						class="relative w-full flex flex-col gap-1.5"
 						on:submit|preventDefault={() => {
 							// check if selectedModels support image input
 							if (!sendDisabled && (prompt !== '' || files.length > 0)) {
@@ -1381,7 +1424,7 @@
 						<!-- Queued messages display -->
 						{#if messageQueue.length > 0}
 							<div
-								class="mb-1 mx-2 py-0.5 px-1.5 rounded-2xl bg-white dark:bg-gray-900/60 border border-gray-100 dark:border-gray-800/50 overflow-x-hidden overflow-y-auto max-h-[25vh]"
+								class="absolute bottom-full left-0 right-0 z-30 mx-2 mb-2.5 max-h-[25vh] overflow-x-hidden overflow-y-auto rounded-2xl border border-gray-100 bg-white px-1.5 py-0.5 dark:border-gray-800/50 dark:bg-gray-900/60"
 							>
 								{#each messageQueue as queuedMessage (queuedMessage.id)}
 									<QueuedMessageItem
@@ -1445,12 +1488,12 @@
 												file.url.startsWith('data') || file.url.startsWith('http')
 													? file.url
 													: `${NEVEAI_API_BASE_URL}/files/${file.url}${file?.content_type ? '/content' : ''}`}
-											<div class=" relative group">
+											<div class="relative group shrink-0">
 												<div class="relative flex items-center">
 													<Image
 														src={fileUrl}
 														alt=""
-														imageClassName=" size-8 rounded-lg object-cover"
+														imageClassName="size-8 rounded-lg object-cover"
 													/>
 													{#if !stableDiffusionEnabled && (atSelectedModel ? visionCapableModels.length === 0 : selectedModels.length !== visionCapableModels.length)}
 														<Tooltip
@@ -1477,9 +1520,9 @@
 														</Tooltip>
 													{/if}
 												</div>
-												<div class=" absolute -top-1 -right-1">
+												<div class="absolute top-0 right-0 z-10">
 													<button
-														class=" bg-white text-black border border-white rounded-full {($settings?.highContrastMode ??
+														class="flex size-4 items-center justify-center bg-white text-black border border-white rounded-full {($settings?.highContrastMode ??
 														false)
 															? ''
 															: 'outline-hidden focus:outline-hidden group-hover:visible invisible transition'}"

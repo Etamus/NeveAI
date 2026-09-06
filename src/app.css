@@ -17,6 +17,14 @@ html {
 	font-size: calc(1rem * var(--app-text-scale, 1));
 }
 
+html.theme-switching,
+html.theme-switching body,
+html.theme-switching body *,
+html.theme-switching body *::before,
+html.theme-switching body *::after {
+	transition: none !important;
+}
+
 #sidebar-chat-item {
 	/* sidebar item sizing scales for the chat list entries */
 	min-height: calc(32px * var(--app-text-scale, 1));

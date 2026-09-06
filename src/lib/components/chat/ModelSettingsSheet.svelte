@@ -118,40 +118,45 @@
 								custom={true}
 								separators={true}
 								janStyle={true}
+								fixedJanRows={true}
+								tooltipsEnabled={false}
 								bind:params
-							/>
+							>
+								<div
+									slot="janFooter"
+									hidden={!($user?.role === 'admin' || ($user?.permissions?.chat?.system_prompt ?? true))}
+								>
+										<div class="flex h-[34px] w-full items-center justify-between py-0">
+											{#if showSystemPromptField}
+												<button
+													type="button"
+													class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition"
+													on:click={() => { params.system = ''; showSystemPromptField = false; }}
+												>{$i18n.t('Prompt do sistema')}</button>
+											{:else}
+												<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('Prompt do sistema')}</div>
+											{/if}
+											{#if !showSystemPromptField}
+												<button
+													type="button"
+													class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700"
+													on:click={() => { showSystemPromptField = true; }}
+												>{$i18n.t('Default')}</button>
+											{/if}
+										</div>
+										{#if showSystemPromptField}
+											<div class="pt-1">
+												<textarea
+													bind:value={params.system}
+													class="w-full text-xs border border-gray-200/40 dark:border-gray-700/30 rounded-lg px-3 py-2 outline-hidden resize-none overflow-y-auto focus:border-gray-300 dark:focus:border-gray-600 transition min-h-[5rem] outline-none resize-vertical bg-transparent py-1.5"
+													rows="4"
+													placeholder={$i18n.t('Enter system prompt')}
+												/>
+											</div>
+										{/if}
+								</div>
+							</AdvancedParams>
 						</div>
-					{/if}
-
-					{#if $user?.role === 'admin' || ($user?.permissions?.chat?.system_prompt ?? true)}
-						<div class="flex w-full items-center justify-between py-1 mt-0.5">
-							{#if showSystemPromptField}
-								<button
-									type="button"
-									class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition"
-									on:click={() => { params.system = ''; showSystemPromptField = false; }}
-								>{$i18n.t('Prompt do sistema')}</button>
-							{:else}
-								<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('Prompt do sistema')}</div>
-							{/if}
-							{#if !showSystemPromptField}
-								<button
-									type="button"
-									class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700"
-									on:click={() => { showSystemPromptField = true; }}
-								>{$i18n.t('Default')}</button>
-							{/if}
-						</div>
-						{#if showSystemPromptField}
-							<div class="pt-1">
-								<textarea
-									bind:value={params.system}
-									class="w-full text-xs border border-gray-200/40 dark:border-gray-700/30 rounded-lg px-3 py-2 outline-hidden resize-none overflow-y-auto focus:border-gray-300 dark:focus:border-gray-600 transition min-h-[5rem] outline-none resize-vertical bg-transparent py-1.5"
-									rows="4"
-									placeholder={$i18n.t('Enter system prompt')}
-								/>
-							</div>
-						{/if}
 					{/if}
 				</div>
 			{/if}

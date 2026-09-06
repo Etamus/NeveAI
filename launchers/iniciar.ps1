@@ -157,7 +157,7 @@ $xaml = @'
                            Width="84"
                            Height="84"
                            Stretch="Uniform"
-                           Margin="-25,3,0,0" />
+                           Margin="-23,3,0,0" />
                     <TextBlock Text="NeveAI"
                                VerticalAlignment="Center"
                                Foreground="#111827"
@@ -169,7 +169,7 @@ $xaml = @'
                            HorizontalAlignment="Center"
                            Foreground="#6B7280"
                            FontSize="12"
-                           Margin="10,20,0,0" />
+                           Margin="13,20,0,0" />
             </StackPanel>
 
             <Grid Grid.Row="1">

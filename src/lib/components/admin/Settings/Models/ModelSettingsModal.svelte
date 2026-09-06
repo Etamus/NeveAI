@@ -64,8 +64,10 @@
 		DEFAULT_PINNED_MODELS: defaultPinnedModelIds.join(','),
 		MODEL_ORDER_LIST: modelIds,
 		DEFAULT_MODEL_METADATA: {
-			capabilities: defaultCapabilities,
-			...(defaultFeatureIds.length > 0 ? { defaultFeatureIds } : {}),
+			capabilities: { ...defaultCapabilities, toggle_reasoning: true },
+			...(defaultFeatureIds.filter((id) => id !== 'toggle_reasoning').length > 0
+				? { defaultFeatureIds: defaultFeatureIds.filter((id) => id !== 'toggle_reasoning') }
+				: {}),
 			...(Object.keys(builtinTools).length > 0 ? { builtinTools } : {})
 		},
 		DEFAULT_MODEL_PARAMS: getCleanDefaultParams()
@@ -117,8 +119,13 @@
 
 		const savedMeta = config?.DEFAULT_MODEL_METADATA;
 		if (savedMeta && Object.keys(savedMeta).length > 0) {
-			defaultCapabilities = savedMeta.capabilities ?? { ...DEFAULT_CAPABILITIES };
-			defaultFeatureIds = savedMeta.defaultFeatureIds ?? [];
+			defaultCapabilities = {
+				...(savedMeta.capabilities ?? DEFAULT_CAPABILITIES),
+				toggle_reasoning: true
+			};
+			defaultFeatureIds = (savedMeta.defaultFeatureIds ?? []).filter(
+				(id) => id !== 'toggle_reasoning'
+			);
 			builtinTools = savedMeta.builtinTools ?? {};
 		} else {
 			defaultCapabilities = { ...DEFAULT_CAPABILITIES };
@@ -276,7 +283,7 @@
 	}}
 />
 
-<Modal size="md" className="bg-white dark:bg-gray-900 rounded-xl w-[36rem]! h-[32rem]! max-h-[calc(100dvh-2rem)]! max-w-[calc(100vw-2rem)]! flex flex-col" bind:show>
+<Modal size="md" animated={false} className="bg-white dark:bg-gray-900 rounded-xl w-[36rem]! h-[32rem]! max-h-[calc(100dvh-2rem)]! max-w-[calc(100vw-2rem)]! flex flex-col" bind:show>
 	<div class="flex h-full min-h-0 flex-col">
 		<div class="flex justify-between items-center dark:text-gray-100 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20 shrink-0">
 			<div class="text-lg font-semibold font-primary">
@@ -301,32 +308,33 @@
 					>
 						<div class="flex flex-col w-full h-full min-h-0">
 							<div class="flex-1 mt-0 flex flex-col min-w-0 min-h-0">
-								<div class="w-full h-full overflow-y-auto overflow-x-hidden scrollbar-hidden px-4 py-3">
+								<div class="w-full h-full overflow-y-auto overflow-x-hidden scrollbar-hidden pl-2 pr-4 py-3">
 									<div class="h-full min-h-0 overflow-hidden">
 										<div class="flex gap-0 w-full h-full min-h-0 pl-1">
 											<div class="w-[56%] min-w-0 h-full flex flex-col pr-3">
-												<div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 py-1 pl-2 pr-5 shrink-0 whitespace-nowrap">
+											<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2 py-1 pl-2 pr-5 shrink-0 whitespace-nowrap">
 													{$i18n.t('Par\u00e2metros avan\u00e7ados')}
 												</div>
-												<div class="flex-1 min-h-0 overflow-y-auto pr-3 no-ap-sep">
-													<div class="model-settings-default-params">
-														<AdvancedParams admin={true} janStyle={true} bind:params={defaultParams} tooltipsEnabled={false} />
-													</div>
+											<div class="flex-1 min-h-0 overflow-y-auto pr-3 no-ap-sep">
+												<div class="model-settings-default-params">
+													<AdvancedParams admin={true} janStyle={true} fixedJanRows={true} bind:params={defaultParams} tooltipsEnabled={false} />
+												</div>
 												</div>
 											</div>
 
 											<div class="border-l border-gray-300/50 dark:border-gray-600/30"></div>
 											<div class="w-[48%] min-w-0 pl-5 h-full overflow-hidden">
-												<div class="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2 py-1 shrink-0 whitespace-nowrap">
-													{$i18n.t('Model Capabilities')}
+											<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2 py-1 shrink-0 whitespace-nowrap">
+											Capacidades padrão
 												</div>
 												<DefaultFeatures
-											availableFeatures={[
-												'web_search',
-												'deep_search',
-												'code_execution',
-												'toggle_reasoning'
-													]}
+										availableFeatures={[
+											'web_search',
+											'deep_search',
+											'code_execution',
+											'stable_diffusion',
+											'music_generation'
+											]}
 													bind:featureIds={defaultFeatureIds}
 													tooltipsEnabled={false}
 												/>

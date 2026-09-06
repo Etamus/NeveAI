@@ -45,7 +45,6 @@ peewee-migrate==1.14.3
 redis
 pycrdt==0.12.47
 APScheduler==3.11.2
-RestrictedPython==8.1
 pytz==2026.1.post1
 loguru==0.7.3
 asgiref==3.11.1
@@ -98,7 +97,6 @@ soundfile==0.13.1
 onnxruntime==1.24.3
 faster-whisper==1.2.1
 youtube-transcript-api==1.2.4
-pytube==15.0.0
 pydub
 av==14.0.1
 

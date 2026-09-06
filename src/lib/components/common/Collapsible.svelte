@@ -110,7 +110,10 @@
 	}
 
 	function handleReasoningWheel(event: WheelEvent) {
-		if (!reasoningScrollEl) return;
+		if (!showReasoningContent || !reasoningScrollEl) return;
+
+		event.preventDefault();
+		event.stopPropagation();
 
 		const maxScrollTop = Math.max(
 			0,
@@ -131,8 +134,6 @@
 
 		if (Math.abs(nextScrollTop - reasoningScrollEl.scrollTop) <= 0.5) return;
 
-		event.preventDefault();
-		event.stopPropagation();
 		reasoningScrollEl.scrollTop = nextScrollTop;
 		shouldAutoScroll = maxScrollTop - nextScrollTop < 24;
 	}
@@ -182,6 +183,7 @@
 		class="reasoning-block mb-4 w-full overflow-hidden rounded-xl border transition-colors duration-150 {showActivityChrome
 			? 'border-gray-200/80 bg-gray-50/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-white/[0.035] dark:shadow-none'
 			: 'border-transparent'} {className}"
+		on:wheel|nonpassive={handleReasoningWheel}
 	>
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -197,7 +199,7 @@
 				class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100"
 			>
 				<span
-					class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
+					class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
 				>
 					{#if isReasoning}
 						<Lightbulb className="size-3.5" strokeWidth="1.6" />
@@ -314,7 +316,6 @@
 							id="reasoning-content-{collapsibleId}"
 							bind:this={reasoningScrollEl}
 							on:scroll={handleReasoningScroll}
-							on:wheel|nonpassive={handleReasoningWheel}
 							class="reasoning-text relative z-0 overflow-y-auto px-3 py-2.5 leading-relaxed text-gray-600 dark:text-gray-300 {reasoningPreviewMode
 								? 'h-24'
 								: isStreaming

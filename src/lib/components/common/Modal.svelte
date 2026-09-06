@@ -9,6 +9,7 @@
 	export let containerClassName = 'p-3';
 	export let className = 'bg-white dark:bg-gray-900 rounded-xl';
 	export let keepMounted = false;
+	export let animated = true;
 
 	let modalElement = null;
 	let mounted = false;
@@ -125,7 +126,7 @@
 			? 'flex'
 			: 'hidden'} justify-center z-9999 overflow-y-auto overscroll-contain"
 		style="scrollbar-gutter: stable;"
-		in:fade={{ duration: 150 }}
+		in:fade={{ duration: animated ? 150 : 0 }}
 		on:mousedown={() => {
 			show = false;
 		}}
@@ -134,7 +135,7 @@
 			class="m-auto max-w-full {sizeToWidth(size)} {size !== 'full'
 				? 'mx-2'
 				: ''} shadow-3xl min-h-fit scrollbar-hidden {className} border border-gray-200 dark:border-gray-800"
-			in:flyAndScale={{ start: 1, y: -8, duration: 150 }}
+			in:flyAndScale={{ start: 1, y: animated ? -8 : 0, duration: animated ? 150 : 0 }}
 			on:mousedown={(e) => {
 				e.stopPropagation();
 			}}

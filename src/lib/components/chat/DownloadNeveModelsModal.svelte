@@ -8,8 +8,7 @@
 		'neve-muse': {
 			repo: 'NeveAI/Neve-Muse-5-12B-GGUF',
 			size_label: '12.1 GB',
-			params: { temperature: 0.75, min_p: 0.1, dry_multiplier: 0.9, dry_allowed_length: 2 },
-			default_feature_ids: ['toggle_reasoning']
+			params: { temperature: 0.75, min_p: 0.1, dry_multiplier: 0.9, dry_allowed_length: 2 }
 		},
 		'neve-cascade-x': {
 			name: 'Neve Cascade',
@@ -28,7 +27,13 @@
 		Array.isArray(catalog)
 			? catalog
 					.filter((model) => !retiredModelIds.has(model?.id))
-					.map((model) => ({ ...model, ...(catalogModelOverrides[model?.id] ?? {}) }))
+					.map((model) => ({
+						...model,
+						...(catalogModelOverrides[model?.id] ?? {}),
+						default_feature_ids: (model?.default_feature_ids ?? []).filter(
+							(featureId: string) => featureId !== 'toggle_reasoning'
+						)
+					}))
 					.sort(
 						(a, b) =>
 							(catalogModelOrder.get(a?.id) ?? Number.MAX_SAFE_INTEGER) -
@@ -85,12 +90,15 @@
 
 <script lang="ts">
 	import { createEventDispatcher, getContext, onDestroy, onMount } from 'svelte';
+	import { fade } from 'svelte/transition';
+	import { DropdownMenu } from 'bits-ui';
 	import { toast } from 'svelte-sonner';
 
 	import Modal from '$lib/components/common/Modal.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import DownloadProgressToast from '$lib/components/chat/DownloadNeveModelsProgressToast.svelte';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 	import { getModels } from '$lib/apis';
@@ -138,6 +146,7 @@
 	let selectedDownloadItems: NeveCatalogModel[] = [];
 	let selectedDownloadCount = 0;
 	let selectedDownloadSizeLabel = '0 GB';
+	let showDownloadDetails = false;
 
 	const activeStatuses = ['queued', 'resolving', 'downloading', 'cancelling'];
 
@@ -250,6 +259,13 @@
 		selectedIds = new Set();
 	};
 
+	const selectAllModels = () => {
+		if (downloading) return;
+		selectedIds = new Set(
+			catalog.filter((item) => !item.installed).map((item) => item.id)
+		);
+	};
+
 	const showDownloadProgressToast = (name: string, progressValue: number, label: string) => {
 		if (!downloading || show || !name) return;
 		progressToastVisible = true;
@@ -281,9 +297,6 @@
 		}
 		if (state.model_id) {
 			downloadingModelId = state.model_id;
-			if (!selectedIds.has(state.model_id)) {
-				selectedIds = new Set([...selectedIds, state.model_id]);
-			}
 		}
 		if (state.name) {
 			downloadingModelName = state.name;
@@ -315,18 +328,22 @@
 	};
 
 	const clearDownloadState = () => {
+		const queueContinues = queuedModelIds.length > 0;
 		if (currentEs) {
 			currentEs.close();
 		}
-		downloading = false;
+		downloading = queueContinues;
 		cancelling = false;
 		progress = 0;
-		progressLabel = '';
+		progressLabel = queueContinues ? 'Preparando próximo download...' : '';
 		currentTaskId = null;
 		downloadingModelId = null;
 		downloadingModelName = '';
 		currentEs = null;
-		dismissDownloadProgressToast();
+		if (!queueContinues) {
+			showDownloadDetails = false;
+			dismissDownloadProgressToast();
+		}
 	};
 
 	const startNextQueuedDownload = async () => {
@@ -456,6 +473,8 @@
 		void hydrateModal();
 	} else if (!show && wasShown) {
 		wasShown = false;
+		selectedIds = new Set();
+		showDownloadDetails = false;
 	}
 
 	$: if (downloading && !show && !interfaceBlockersOpen && !$showArtifacts && downloadingModelName) {
@@ -587,27 +606,104 @@
 
 <Modal
 	bind:show
+	animated={false}
 	size="w-[min(40rem,calc(100vw-1rem))]"
 	containerClassName="p-2 sm:p-3"
 	className="bg-white dark:bg-gray-900 rounded-xl max-h-[calc(100dvh-1rem)] overflow-hidden"
 >
 	<div class="flex max-h-[calc(100dvh-1rem)] flex-col">
 		<div
-			class="flex shrink-0 justify-between dark:text-gray-300 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20"
+			class="flex h-[60px] min-h-[60px] shrink-0 items-center justify-between border-b border-gray-200/30 px-5 dark:border-gray-700/20 dark:text-gray-300"
 		>
-			<div class="text-lg font-medium self-center">{$i18n.t('Baixar modelos')}</div>
-			<button
-				class="self-center"
-				on:click={() => {
-					show = false;
-				}}
-			>
-				<XMark className={'size-5'} />
-			</button>
+			<div class="self-center text-lg font-medium text-black dark:text-[#eee]">{$i18n.t('Baixar modelos')}</div>
+			<div class="flex items-center gap-1.5">
+				{#if downloading}
+					<Dropdown
+						bind:show={showDownloadDetails}
+						align="end"
+						triggerClassName="group relative grid size-9 shrink-0 place-items-center p-0"
+					>
+						<span aria-label="Progresso do download">
+							<span class="pointer-events-none absolute inset-[3px] rounded-full bg-gray-800 transition group-hover:bg-gray-700 dark:bg-gray-800 dark:group-hover:bg-gray-700"></span>
+							<svg
+								aria-hidden="true"
+								class="pointer-events-none absolute inset-0 size-9 -rotate-90"
+								viewBox="0 0 36 36"
+							>
+								<circle cx="18" cy="18" r="16.5" fill="none" stroke="currentColor" stroke-width="1.5" class="text-white/20" />
+								<circle
+									cx="18"
+									cy="18"
+									r="16.5"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="1.5"
+									stroke-linecap="round"
+									pathLength="100"
+									stroke-dasharray="100"
+									stroke-dashoffset={100 - Math.min(100, Math.max(0, progress * 100))}
+									class="text-white transition-[stroke-dashoffset]"
+								/>
+							</svg>
+							<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="relative z-10 size-5">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+							</svg>
+						</span>
+
+						<div slot="content">
+							<DropdownMenu.Content
+								class="z-[10002] w-[19rem] rounded-lg border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-800 dark:bg-gray-850 dark:text-white"
+								side="bottom"
+								align="end"
+								sideOffset={7}
+								transition={(node) => fade(node, { duration: 100 })}
+							>
+								<div class="flex justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+									<span class="min-w-0 truncate">{progressLabel}</span>
+									<span class="shrink-0">{Math.round(progress * 100)}%</span>
+								</div>
+								<div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+									<div
+										class="h-full bg-black transition-all dark:bg-white"
+										style="width: {Math.min(100, Math.max(0, progress * 100))}%"
+									></div>
+								</div>
+								<div class="mt-3 flex items-center justify-between gap-3">
+									{#if queuedModelIds.length > 0}
+										<span class="text-xs text-gray-500 dark:text-gray-400">
+											{queuedModelIds.length}
+											{queuedModelIds.length === 1 ? 'modelo em fila' : 'modelos em fila'}
+										</span>
+									{:else}
+										<span></span>
+									{/if}
+									<button
+										type="button"
+										class="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium transition hover:bg-gray-50 disabled:opacity-40 dark:border-gray-700 dark:hover:bg-gray-800"
+										disabled={cancelling}
+										on:click={handleCancelDownload}
+									>
+										{#if cancelling}<Spinner className="size-3" />{/if}
+										{$i18n.t(cancelling ? 'Cancelando...' : 'Cancelar')}
+									</button>
+								</div>
+							</DropdownMenu.Content>
+						</div>
+					</Dropdown>
+				{/if}
+				<button
+					class="self-center"
+					on:click={() => {
+						show = false;
+					}}
+				>
+					<XMark className={'size-5'} />
+				</button>
+			</div>
 		</div>
 
-		<div class="flex min-h-0 w-full flex-col px-5 pt-4 pb-4 dark:text-gray-200">
-			<div class="flex h-[min(26.15rem,calc(100dvh-12rem))] min-h-[12rem] max-h-[26.15rem] snap-y snap-mandatory flex-col gap-1 overflow-y-auto pr-1">
+		<div class="flex min-h-0 w-full flex-col px-5 pt-4 pb-1 dark:text-gray-200">
+			<div class="flex h-[min(490px,calc(100dvh-164px))] min-h-[192px] flex-col gap-1 overflow-y-auto pr-1">
 				{#if loading && catalog.length === 0}
 					<div class="flex h-full items-center justify-center">
 						<Spinner className="size-5" />
@@ -631,58 +727,63 @@
 					{#each catalog as item (item.id)}
 						{@const selected = selectedIds.has(item.id)}
 						{@const isCurrentDownload = downloading && downloadingModelId === item.id}
+						{@const isQueuedDownload = queuedModelIds.includes(item.id)}
+						{@const isDownloadMarked = selected || isCurrentDownload || isQueuedDownload}
 						<div
-							class="relative flex h-[4.15rem] shrink-0 snap-start items-center gap-3 rounded-lg px-3 transition border {item.installed
+							class="relative box-border h-[66px] min-h-[66px] max-h-[66px] shrink-0 rounded-lg border transition-colors {item.installed
 								? 'opacity-70 border-transparent'
-								: selected
+								: selected || isCurrentDownload || isQueuedDownload
 								? `${downloading ? 'cursor-default' : ''} border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-850`
-								: 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
+								: downloading
+									? 'cursor-default border-transparent'
+									: 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
 						>
-							<button
+							<div class="grid h-full grid-cols-[auto_auto_minmax(0,1fr)_6rem] items-center gap-3 px-3">
+								<button
 								type="button"
-								class="mr-2 flex size-5 shrink-0 items-center justify-center rounded-full border transition {selected
+								class="flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors {isDownloadMarked
 									? 'border-black bg-black text-white dark:border-white dark:bg-white dark:text-black'
-									: 'border-gray-300 bg-white text-transparent dark:border-gray-700 dark:bg-gray-900'} {item.installed || downloading ? 'cursor-default opacity-50' : 'cursor-pointer hover:border-gray-500 dark:hover:border-gray-500'}"
+									: 'border-gray-300 bg-white text-transparent dark:border-gray-700 dark:bg-gray-900'} {item.installed ? 'cursor-default opacity-50' : downloading ? 'cursor-default' : 'cursor-pointer hover:border-gray-500 dark:hover:border-gray-500'}"
 								disabled={item.installed || downloading}
 								aria-label={selected ? `Remover ${item.name} da seleção` : `Selecionar ${item.name}`}
-								aria-pressed={selected}
+								aria-pressed={isDownloadMarked}
 								on:click|stopPropagation={() => toggleSelection(item)}
-							>
-								{#if selected}
-									<svg class="size-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-										<path d="M4.5 10.5 8 14l7.5-8" />
-									</svg>
-								{/if}
-							</button>
+								>
+									{#if isDownloadMarked}
+										<svg class="size-3" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+											<path d="M4.5 10.5 8 14l7.5-8" />
+										</svg>
+									{/if}
+								</button>
 
-							<img
-								src={getModelIconUrl(item)}
-								alt=""
-								class="size-8 rounded-full object-cover shrink-0"
-							/>
+								<img
+									src={getModelIconUrl(item)}
+									alt=""
+									class="size-8 shrink-0 rounded-full object-cover"
+								/>
 
-							<div class="min-w-0 flex-1 self-center">
-								<div class="flex min-w-0 items-center gap-1.5">
+								<div class="grid h-10 min-w-0 grid-rows-[1.25rem_1.25rem] self-center">
+									<div class="flex h-5 min-w-0 items-center gap-1.5 overflow-hidden">
 									<span class="shrink-0 text-sm font-semibold leading-none">
 										{item.name}
 									</span>
-									<div class="flex min-w-0 flex-wrap items-center gap-1">
+									<div class="flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden">
 										{#each modelBadges[item.id] ?? [] as badge}
 											<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[10px] font-medium leading-none text-gray-600 dark:bg-gray-800 dark:text-gray-300">
 												{badge}
 											</span>
 										{/each}
 									</div>
+									</div>
+									<div
+										class="relative top-[4px] h-5 overflow-hidden whitespace-nowrap text-gray-500 dark:text-gray-400"
+										style="font-size: 14px !important; line-height: 1.08rem; transform: scale(1.04); transform-origin: left center; width: calc(100% / 1.04);"
+									>
+										{item.description}
+									</div>
 								</div>
-								<div
-									class="mt-1 text-gray-500 dark:text-gray-400 line-clamp-1"
-									style="font-size: 14px !important; line-height: 1.08rem; transform: scale(1.04); transform-origin: left center; width: calc(100% / 1.04);"
-								>
-									{item.description}
-								</div>
-							</div>
 
-							<div class="flex w-24 shrink-0 items-center justify-end">
+								<div class="flex h-7 w-24 shrink-0 items-center justify-end">
 								{#if item.installed}
 									<button
 										type="button"
@@ -699,66 +800,57 @@
 											<span class="hidden group-hover:block">Desinstalar</span>
 										{/if}
 									</button>
-								{:else if isCurrentDownload}
-									<span
-										class="inline-flex h-7 w-full items-center justify-center rounded-md bg-gray-850 px-2 text-center text-xs font-medium text-gray-200 shadow-xs dark:bg-gray-850 dark:text-gray-200"
+							{:else if isCurrentDownload}
+								<span
+									class="inline-flex h-7 w-full items-center justify-center px-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400"
 									>
-										Baixando
-									</span>
-								{/if}
+									Baixando
+								</span>
+							{:else if isQueuedDownload}
+								<span
+									class="inline-flex h-7 w-full items-center justify-center px-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400"
+								>
+									Em fila
+								</span>
+							{/if}
+								</div>
 							</div>
+
+							{#if downloading && !item.installed && !isCurrentDownload && !isQueuedDownload}
+								<div
+									aria-hidden="true"
+									class="pointer-events-none absolute inset-0 z-10 rounded-lg bg-white/50 dark:bg-gray-900/50"
+								></div>
+							{/if}
 						</div>
 					{/each}
 				{/if}
 			</div>
 
-			<div class="flex items-center gap-2 pt-4">
-				{#if downloading}
-					<div class="min-w-0 flex-1 pr-2">
-						<div class="mx-auto w-[94%]">
-							<div class="flex justify-between gap-3 text-xs text-gray-500 dark:text-gray-400 mb-1">
-								<span class="min-w-0 line-clamp-1">{progressLabel}</span>
-								<span class="shrink-0">{Math.round(progress * 100)}%</span>
-							</div>
-							<div class="w-full h-1.5 bg-gray-100 dark:bg-gray-800 rounded-full overflow-hidden">
-								<div
-									class="h-full bg-black dark:bg-white transition-all"
-									style="width: {Math.min(100, Math.max(0, progress * 100))}%"
-								></div>
-							</div>
-						</div>
-					</div>
-					<button
-						class="px-4 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-850 transition rounded-lg disabled:opacity-40 flex items-center gap-2"
-						disabled={cancelling}
-						on:click={handleCancelDownload}
-					>
-						{#if cancelling}
-							<Spinner className="size-3" />
-						{/if}
-						{$i18n.t(cancelling ? 'Cancelando...' : 'Cancelar')}
-					</button>
-				{:else}
-					<div class="min-w-0 flex flex-1 items-center justify-between gap-3">
-						{#if selectedDownloadCount > 0}
+			<div class="mt-2 flex h-11 shrink-0 -translate-y-1 items-center gap-2">
+				<div class="min-w-0 flex flex-1 items-center justify-between gap-3">
+						{#if !downloading}
 							<button
 								type="button"
-								class="shrink-0 text-xs font-medium text-gray-400 transition hover:text-gray-700 dark:text-gray-500 dark:hover:text-gray-200"
-								on:click={clearSelections}
+								class="shrink-0 text-xs font-medium text-gray-400 transition hover:text-gray-700 disabled:cursor-default disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-200"
+								disabled={loading}
+								on:click={selectedDownloadCount > 0 ? clearSelections : selectAllModels}
 							>
-								Desmarcar tudo
+								{selectedDownloadCount > 0 ? 'Desmarcar tudo' : 'Selecionar tudo'}
 							</button>
-							<div class="flex min-w-0 items-center justify-end gap-2 text-xs text-gray-500 dark:text-gray-400">
-								<span class="whitespace-nowrap">
-									{selectedDownloadCount}
-									{selectedDownloadCount === 1 ? 'item selecionado' : 'itens selecionados'}
-								</span>
-								<span class="whitespace-nowrap font-medium text-gray-600 dark:text-gray-300">
-									{selectedDownloadSizeLabel}
-								</span>
-							</div>
+							{#if selectedDownloadCount > 0}
+								<div class="flex min-w-0 items-center justify-end gap-2 text-xs text-gray-500 dark:text-gray-400">
+									<span class="whitespace-nowrap">
+										{selectedDownloadCount}
+										{selectedDownloadCount === 1 ? 'item selecionado' : 'itens selecionados'}
+									</span>
+									<span class="whitespace-nowrap font-medium text-gray-600 dark:text-gray-300">
+										{selectedDownloadSizeLabel}
+									</span>
+								</div>
+							{/if}
 						{/if}
-					</div>
+				</div>
 					{#if false}
 						<div class="hidden">
 							<button
@@ -778,14 +870,13 @@
 							</span>
 						</div>
 					{/if}
-					<button
+				<button
 						class="ml-2 px-4 py-1.5 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg disabled:opacity-40 flex items-center gap-2"
-						disabled={selectedDownloadCount === 0 || loading}
+						disabled={selectedDownloadCount === 0 || loading || downloading}
 						on:click={handleDownload}
 					>
 						{$i18n.t('Baixar')}
-					</button>
-				{/if}
+				</button>
 			</div>
 		</div>
 	</div>
@@ -793,6 +884,7 @@
 
 <ConfirmDialog
 	bind:show={showUninstallConfirm}
+	animated={false}
 	title="Desinstalar modelo?"
 	message={`Tem certeza que deseja desinstalar ${uninstallTarget?.name ?? 'este modelo'}?`}
 	confirmLabel="Confirmar"

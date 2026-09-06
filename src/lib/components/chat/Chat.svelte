@@ -288,7 +288,7 @@
 	};
 
 	const CONTEXT_SIZE_ERROR_MESSAGE =
-		'A solicitação excede a quantidade de tokens disponíveis. Aumente e tente novamente.';
+		'O tamanho do contexto foi excedido.';
 
 	const stringifyError = (error: unknown) => {
 		if (typeof error === 'string') return error;
@@ -305,6 +305,7 @@
 		if (
 			text.includes(CONTEXT_SIZE_ERROR_MESSAGE) ||
 			lower.includes('exceed_context_size_error') ||
+			lower.includes('context size has been exceeded') ||
 			lower.includes('exceeds the available context size') ||
 			(lower.includes('n_prompt_tokens') && lower.includes('n_ctx'))
 		) {
@@ -795,6 +796,13 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.stable_diffusion)
 				) {
 					stableDiffusionEnabled = model.info.meta.defaultFeatureIds?.includes('stable_diffusion') ?? false;
+				}
+
+				if (
+					$config?.features?.enable_music_generation &&
+					($user?.role === 'admin' || $user?.permissions?.features?.music_generation)
+				) {
+					musicGenerationEnabled = model.info.meta.defaultFeatureIds?.includes('music_generation') ?? false;
 				}
 			}
 
@@ -4257,14 +4265,29 @@
 		return features;
 	};
 
-	const canCurrentModelsToggleReasoning = () => {
+	const currentModelsUseLlamaCpp = () => {
 		const currentModels = atSelectedModel?.id ? [atSelectedModel.id] : selectedModels;
 		return (
 			currentModels.length > 0 &&
 			currentModels.every(
-				(modelId) =>
-					$models.find((model) => model.id === modelId)?.info?.meta?.capabilities
-						?.toggle_reasoning ?? false
+				(modelId) => $models.find((model) => model.id === modelId)?.owned_by === 'llamacpp'
+			)
+		);
+	};
+
+	const currentModelsExplicitlyToggleReasoning = () => {
+		const currentModels = atSelectedModel?.id ? [atSelectedModel.id] : selectedModels;
+		return (
+			currentModels.length > 0 &&
+			currentModels.every(
+				(modelId) => {
+					const model = $models.find((item) => item.id === modelId);
+					return (
+						model?.owned_by !== 'llamacpp' &&
+						model?.info?.meta?.capabilities?.toggle_reasoning === true &&
+						model?.info?.meta?.defaultFeatureIds?.includes('toggle_reasoning')
+					);
+				}
 			)
 		);
 	};
@@ -4549,11 +4572,20 @@
 				params: {
 					...$settings?.params,
 					...params,
-					...(canCurrentModelsToggleReasoning()
-						? { reasoning_extended: thinkingExtendedEnabled }
-						: {}),
+					...(currentModelsUseLlamaCpp()
+						? {
+								reasoning_mode: thinkingEnabled ? 'reasoning' : 'quick',
+								reasoning_extended: thinkingExtendedEnabled
+							}
+						: currentModelsExplicitlyToggleReasoning()
+							? { reasoning_extended: thinkingExtendedEnabled }
+							: {}),
 					stop: getStopTokens(),
-					...(!thinkingEnabled && canCurrentModelsToggleReasoning() ? { no_think: true } : {})
+					...(!thinkingEnabled &&
+					!currentModelsUseLlamaCpp() &&
+					currentModelsExplicitlyToggleReasoning()
+						? { no_think: true }
+						: {})
 				},
 
 				files: (files?.length ?? 0) > 0 ? files : undefined,

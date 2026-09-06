@@ -42,7 +42,6 @@
 	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import FolderModal from './Folders/FolderModal.svelte';
 	import Emoji from '$lib/components/common/Emoji.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	export let folderRegistry = {};
 	export let open = false;
@@ -277,6 +276,10 @@
 			await tick();
 			renameHandler();
 		}
+
+		if (!open) {
+			void setFolderItems();
+		}
 	});
 
 	onDestroy(() => {
@@ -371,16 +374,21 @@
 	};
 
 	let chats = null;
+	let folderItemsLoaded = false;
+	$: folderHasItems =
+		(folders[folderId]?.childrenIds ?? []).length > 0 || (chats?.length ?? 0) > 0;
+	$: if (folderItemsLoaded && !folderHasItems && open) {
+		open = false;
+		isExpandedUpdateDebounceHandler();
+	}
+
 	export const setFolderItems = async () => {
 		await tick();
-		if (open) {
-			chats = await getChatListByFolderId(localStorage.token, folderId).catch((error) => {
-				toast.error(`${error}`);
-				return [];
-			});
-		} else {
-			chats = null;
-		}
+		chats = await getChatListByFolderId(localStorage.token, folderId).catch((error) => {
+			toast.error(`${error}`);
+			return [];
+		});
+		folderItemsLoaded = true;
 	};
 
 	$: if (open) {
@@ -446,6 +454,7 @@
 
 <DeleteConfirmDialog
 	bind:show={showDeleteConfirm}
+	animated={false}
 	title={$i18n.t('Delete folder?')}
 	on:confirm={() => {
 		deleteHandler();
@@ -500,6 +509,7 @@
 
 	<Collapsible
 		bind:open
+		hide={!folderHasItems}
 		className="w-full"
 		buttonClassName="w-full"
 		onChange={(state) => {
@@ -510,17 +520,10 @@
 		<div class="w-full group">
 			<div
 				id="folder-{folderId}-button"
-				class="relative w-full py-1 px-1.5 rounded-xl flex items-center gap-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition {$selectedFolder?.id ===
+				class="relative w-full py-1 px-1.5 rounded-lg flex items-center gap-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition {$selectedFolder?.id ===
 				folderId
 					? 'bg-gray-100 dark:bg-gray-800 selected'
 					: ''}"
-				on:dblclick={(e) => {
-					if (clickTimer) {
-						clearTimeout(clickTimer); // cancel the single-click action
-						clickTimer = null;
-					}
-					renameHandler();
-				}}
 				on:click={async (e) => {
 					(e) => e.stopPropagation();
 					if (clickTimer) {
@@ -550,39 +553,45 @@
 					e.stopPropagation();
 				}}
 			>
-				<button
-					class="text-gray-500 dark:text-gray-500 transition-all p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg"
-					on:click={(e) => {
-						e.stopPropagation();
-						e.stopImmediatePropagation();
-						open = !open;
-						isExpandedUpdateDebounceHandler();
-					}}
+				{#if folderHasItems}
+					<button
+						class="text-gray-500 dark:text-gray-500 transition-all p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg"
+						on:click={(e) => {
+							e.stopPropagation();
+							e.stopImmediatePropagation();
+							open = !open;
+							isExpandedUpdateDebounceHandler();
+						}}
+					>
+						{#if folders[folderId]?.meta?.icon}
+							<div class="flex group-hover:hidden transition-all">
+								<Emoji className="size-3.5" shortCode={folders[folderId].meta.icon} />
+							</div>
+
+							<div class="hidden group-hover:flex transition-all p-[1px]">
+								{#if open}
+									<ChevronDown className=" size-3" strokeWidth="2.5" />
+								{:else}
+									<ChevronRight className=" size-3" strokeWidth="2.5" />
+								{/if}
+							</div>
+						{:else}
+							<div class="p-[1px]">
+								{#if open}
+									<ChevronDown className=" size-3" strokeWidth="2.5" />
+								{:else}
+									<ChevronRight className=" size-3" strokeWidth="2.5" />
+								{/if}
+							</div>
+						{/if}
+					</button>
+				{/if}
+
+				<div
+					class="translate-y-[0.5px] flex-1 justify-start text-start line-clamp-1 {!folderHasItems
+						? 'ml-[5px]'
+						: ''}"
 				>
-					{#if folders[folderId]?.meta?.icon}
-						<div class="flex group-hover:hidden transition-all">
-							<Emoji className="size-3.5" shortCode={folders[folderId].meta.icon} />
-						</div>
-
-						<div class="hidden group-hover:flex transition-all p-[1px]">
-							{#if open}
-								<ChevronDown className=" size-3" strokeWidth="2.5" />
-							{:else}
-								<ChevronRight className=" size-3" strokeWidth="2.5" />
-							{/if}
-						</div>
-					{:else}
-						<div class="p-[1px]">
-							{#if open}
-								<ChevronDown className=" size-3" strokeWidth="2.5" />
-							{:else}
-								<ChevronRight className=" size-3" strokeWidth="2.5" />
-							{/if}
-						</div>
-					{/if}
-				</button>
-
-				<div class="translate-y-[0.5px] flex-1 justify-start text-start line-clamp-1">
 					{#if edit}
 						<input
 							id="folder-{folderId}-input"
@@ -640,10 +649,10 @@
 			</div>
 		</div>
 
-		<div slot="content" class="w-full">
+		<div slot="content" class="w-full pt-0.5">
 			{#if (folders[folderId]?.childrenIds ?? []).length > 0 || (chats ?? []).length > 0}
 				<div
-					class="ml-3 pl-1 mt-[1px] flex flex-col overflow-y-auto scrollbar-hidden border-s border-gray-100 dark:border-gray-900"
+					class="ml-3 pl-1 flex flex-col overflow-y-auto scrollbar-hidden border-s border-gray-100 dark:border-gray-700"
 				>
 					{#if folders[folderId]?.childrenIds}
 						{@const children = folders[folderId]?.childrenIds
@@ -691,15 +700,6 @@
 				</div>
 			{/if}
 
-			{#if chats === null}
-				<div class="flex justify-center items-center p-2">
-					<Spinner className="size-4 text-gray-500" />
-				</div>
-			{:else if (folders[folderId]?.childrenIds ?? []).length === 0 && chats.length === 0}
-				<div class="px-3 py-1.5 text-xs text-gray-400 dark:text-gray-500 italic">
-					{$i18n.t('Vazio')}
-				</div>
-			{/if}
 		</div>
 	</Collapsible>
 </div>

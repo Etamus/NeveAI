@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { DropdownMenu } from 'bits-ui';
-	import { flyAndScale } from '$lib/utils/transitions';
+	import { fade } from 'svelte/transition';
 	import { getContext, createEventDispatcher } from 'svelte';
 
 	const i18n = getContext('i18n');
@@ -43,29 +43,31 @@
 
 	<div slot="content">
 		<DropdownMenu.Content
-			class="w-full max-w-[170px] rounded-2xl px-1 py-1 border border-gray-100  dark:border-gray-800   z-50 bg-white dark:bg-gray-850 dark:text-white shadow-lg"
+			class="select-none w-full max-w-[200px] rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-md"
 			sideOffset={-2}
 			side="bottom"
 			{align}
-			transition={flyAndScale}
+			transition={(node) => fade(node, { duration: 100 })}
 		>
 			<DropdownMenu.Item
-				class="flex gap-2 items-center px-3 py-1.5 text-sm select-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl"
+				draggable="false"
+				class="flex gap-2 items-center px-3 py-1.5 text-sm select-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-sm"
 				on:click={() => {
 					onEdit();
 				}}
 			>
-				<Pencil />
+				<Pencil strokeWidth="1.5" />
 				<div class="flex items-center">{$i18n.t('Edit')}</div>
 			</DropdownMenu.Item>
 
 			<DropdownMenu.Item
-				class="flex gap-2 items-center px-3 py-1.5 text-sm select-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl"
+				draggable="false"
+				class="flex gap-2 items-center px-3 py-1.5 text-sm select-none cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-sm"
 				on:click={() => {
 					onDelete();
 				}}
 			>
-				<GarbageBin />
+				<GarbageBin strokeWidth="1.5" />
 				<div class="flex items-center">{$i18n.t('Delete')}</div>
 			</DropdownMenu.Item>
 		</DropdownMenu.Content>

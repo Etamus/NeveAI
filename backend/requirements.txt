@@ -33,7 +33,6 @@ pycrdt==0.12.47
 redis
 
 APScheduler==3.11.2
-RestrictedPython==8.1
 pytz==2026.1.post1
 
 loguru==0.7.3
@@ -94,7 +93,6 @@ faster-whisper==1.2.1
 
 black==26.1.0
 youtube-transcript-api==1.2.4
-pytube==15.0.0
 
 pydub
 ddgs==9.14.2

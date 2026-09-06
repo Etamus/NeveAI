@@ -77,6 +77,7 @@ def remove_neveai_params(params: dict) -> dict:
         "function_calling": str,
         "reasoning_tags": list,
         "reasoning_extended": bool,
+        "reasoning_mode": str,
         "system": str,
     }
 

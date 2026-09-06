@@ -66,18 +66,14 @@
 						<div class="w-full">
 							{#each visibleHistory as status, idx}
 								<div class="flex items-stretch gap-2 mb-1">
-									<div class=" ">
-										<div class="pt-3 px-1 mb-1.5">
-											<span class="relative flex size-1.5 rounded-full justify-center items-center">
-												<span
-													class="relative inline-flex size-1.5 rounded-full bg-gray-500 dark:bg-gray-400"
-												></span>
-											</span>
-										</div>
+									<div class="relative w-3 shrink-0">
+										<span
+											class="absolute left-1/2 top-[17px] flex size-1.5 -translate-x-1/2 items-center justify-center rounded-full bg-gray-500 dark:bg-gray-400"
+										></span>
 										{#if idx !== visibleHistory.length - 1}
 											<div
-												class="w-[0.5px] ml-[6.5px] h-[calc(100%-14px)] bg-gray-300 dark:bg-gray-700"
-											/>
+												class="absolute bottom-[-20px] left-1/2 top-[24px] w-px -translate-x-1/2 bg-gray-300 dark:bg-gray-700"
+											></div>
 										{/if}
 									</div>
 

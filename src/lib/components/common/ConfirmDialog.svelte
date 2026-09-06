@@ -26,6 +26,7 @@
 	export let inputType = '';
 
 	export let show = false;
+	export let animated = true;
 
 	$: if (show) {
 		init();
@@ -101,14 +102,14 @@
 	<div
 		bind:this={modalElement}
 		class=" fixed top-0 right-0 left-0 bottom-0 bg-black/60 w-full h-screen max-h-[100dvh] flex justify-center z-99999999 overflow-hidden overscroll-contain"
-		in:fade={{ duration: 10 }}
+		in:fade={{ duration: animated ? 10 : 0 }}
 		on:mousedown={() => {
 			show = false;
 		}}
 	>
 		<div
 			class=" m-auto max-w-full w-[32rem] mx-2 bg-white dark:bg-gray-950 rounded-xl max-h-[100dvh] shadow-3xl border border-gray-200 dark:border-gray-800"
-			in:flyAndScale
+			in:flyAndScale={{ start: 1, y: animated ? -8 : 0, duration: animated ? 150 : 0 }}
 			on:mousedown={(e) => {
 				e.stopPropagation();
 			}}

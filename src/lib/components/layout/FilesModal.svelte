@@ -236,9 +236,9 @@
 	}}
 />
 
-<FileItemModal bind:show={showFileItemModal} item={selectedFile} edit={false} />
+<FileItemModal bind:show={showFileItemModal} item={selectedFile} edit={false} animated={false} />
 
-<Modal size="md" bind:show>
+<Modal size="md" animated={false} bind:show>
 	<div class="flex h-[33rem] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden">
 		<div class="flex shrink-0 justify-between dark:text-gray-300 px-5 pt-4 pb-1">
 			<div class="text-lg font-medium self-center">{$i18n.t('Files')}</div>

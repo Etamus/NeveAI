@@ -8,7 +8,6 @@
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import Loader from '$lib/components/common/Loader.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 
 	dayjs.extend(localizedFormat);
 
@@ -152,10 +151,7 @@
 					}
 				}}
 			>
-				<div class="w-full flex justify-center py-1 text-xs animate-pulse items-center gap-2">
-					<Spinner className=" size-4" />
-					<div class=" ">Loading...</div>
-				</div>
+				<div class="h-px w-full" aria-hidden="true"></div>
 			</Loader>
 		{/if}
 	</div>

@@ -36,7 +36,7 @@
 	};
 </script>
 
-<Modal bind:show size="sm">
+<Modal bind:show size="sm" animated={false}>
 	<div>
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20">
 			<div class=" text-lg font-medium self-center">

@@ -25,6 +25,7 @@
 		return themeSelectorOptions.includes(storedTheme) ? storedTheme : 'system';
 	};
 	let selectedTheme = getSelectedTheme();
+	let themeSwitchGeneration = 0;
 
 	let enableMessageQueue = true;
 	let temporaryChatByDefault = false;
@@ -185,9 +186,22 @@
 	};
 
 	const themeChangeHandler = (_theme: string) => {
+		const root = document.documentElement;
+		const generation = ++themeSwitchGeneration;
+		root.classList.add('theme-switching');
+		void root.offsetWidth;
+
 		theme.set(_theme);
 		localStorage.setItem('theme', _theme);
 		applyTheme(_theme);
+
+		requestAnimationFrame(() => {
+			requestAnimationFrame(() => {
+				if (generation === themeSwitchGeneration) {
+					root.classList.remove('theme-switching');
+				}
+			});
+		});
 	};
 </script>
 

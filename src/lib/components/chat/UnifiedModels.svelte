@@ -449,15 +449,45 @@
 	};
 	const waitForPaint = () =>
 		new Promise<void>((resolve) => {
+			let settled = false;
+			let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+			const finish = () => {
+				if (settled) return;
+				settled = true;
+				if (fallbackTimer) clearTimeout(fallbackTimer);
+				document.removeEventListener('visibilitychange', handleVisibilityChange);
+				resolve();
+			};
+			const handleVisibilityChange = () => {
+				if (document.visibilityState !== 'visible') finish();
+			};
+
 			if (typeof requestAnimationFrame === 'function') {
-				requestAnimationFrame(() => resolve());
+				document.addEventListener('visibilitychange', handleVisibilityChange);
+				requestAnimationFrame(finish);
+				fallbackTimer = setTimeout(finish, 120);
 			} else {
-				setTimeout(resolve, 0);
+				setTimeout(finish, 0);
 			}
 		});
 	const wait = (duration: number) => new Promise<void>((resolve) => setTimeout(resolve, duration));
+	const isDocumentVisible = () =>
+		typeof document === 'undefined' || document.visibilityState === 'visible';
 	const releasePinnedSettledUnloadsAfterOpen = async () => {
 		if (!show || destroyed) return;
+		if (!isDocumentVisible()) {
+			const state = getStoreValue(localModelProcessingStore);
+			state.pinnedUnload.forEach((filename) => {
+				if (
+					state.actions[filename] === 'unload' &&
+					state.settlingUnload.includes(filename) &&
+					!state.loading.includes(filename)
+				) {
+					clearLocalModelProcessing(filename);
+				}
+			});
+			return;
+		}
 
 		await tick();
 		await waitForPaint();
@@ -511,7 +541,7 @@
 				localActionReleasePending.delete(filename);
 				return;
 			}
-			if (!show) {
+			if (!show || !isDocumentVisible()) {
 				localActionReleaseTimers.delete(filename);
 				localActionReleasePending.delete(filename);
 				clearLocalModelProcessing(filename);
@@ -532,7 +562,7 @@
 
 			if ((localActionReleaseTokens.get(filename) ?? 0) !== token) return;
 			if (destroyed) return;
-			if (!show) {
+			if (!show || !isDocumentVisible()) {
 				localActionReleaseTimers.delete(filename);
 				localActionReleasePending.delete(filename);
 				clearLocalModelProcessing(filename);
@@ -580,7 +610,7 @@
 				const requestFinished =
 					processingState.settlingUnload.includes(filename) &&
 					!processingState.loading.includes(filename);
-				if (!show && requestFinished) {
+				if (requestFinished && (!show || !isDocumentVisible())) {
 					clearLocalModelProcessing(filename);
 				} else if (show && processingState.pinnedUnload.includes(filename)) {
 					void releasePinnedSettledUnloadsAfterOpen();
@@ -1222,7 +1252,9 @@
 		try {
 			await unloadLocalModel(localStorage.token, model.id);
 			localSuccess = `${model.filename} descarregado.`;
+			markLocalModelUnloaded(model.filename, model.id);
 			setLocalModelUnloadSettling(model.filename);
+			if (!show) clearLocalModelProcessing(model.filename);
 			completed = true;
 			await refreshUntilLocalActionSettles(model.filename);
 			void refreshGlobalModelsStore();
@@ -1939,7 +1971,7 @@
 
 	{:else}
 		<!-- ─── Model Editor ──────────────────────────────────────────────── -->
-		<div style="height: 610px; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
+		<div style="height: 600px; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
 			<ModelEditor
 				edit
 				model={adminModels?.find((m) => m.id === selectedModelId)}

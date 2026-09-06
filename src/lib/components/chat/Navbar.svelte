@@ -259,11 +259,7 @@
 	aria-label="New Chat"
 />
 
-<nav
-	class="sticky top-0 z-30 w-full {chat?.id
-		? 'pt-0.5 pb-1'
-		: 'pt-1 pb-1'} flex flex-col items-center drag-region"
->
+<nav class="sticky top-0 z-30 w-full pt-0.5 pb-1 flex flex-col items-center drag-region">
 	<div class="flex items-center w-full pl-1.5 pr-0">
 		<div
 			id="navbar-bg-gradient-to-b"

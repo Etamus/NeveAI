@@ -86,7 +86,7 @@ $LOG_DIR  = Join-Path $ROOT 'logs'
 if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
 $LOG = Join-Path $LOG_DIR 'install.log'
 $STATE_FILE = Join-Path $LOG_DIR 'install-state.txt'
-$INSTALLER_REVISION = '2026-08-14-update-stream-drain-v1'
+$INSTALLER_REVISION = '2026-09-01-transactional-update-v1'
 '' | Set-Content $LOG
 Add-Content -LiteralPath $LOG -Value ("[INSTALLER] revision={0}; script={1}; root={2}" -f $INSTALLER_REVISION, $SCRIPT_PATH, $ROOT) -Encoding UTF8
 [System.IO.File]::WriteAllText($STATE_FILE, 'idle', [System.Text.UTF8Encoding]::new($false))
@@ -1250,7 +1250,7 @@ $ctl.BtnPrimary.Add_Click({
                 try { $p.Dispose() } catch {}
             }
         }
-        function Run([string]$exe, [string[]]$argv, [string]$desc) {
+        function Run([string]$exe, [string[]]$argv, [string]$desc, [int]$timeoutSeconds = 3600) {
             return Run-NoPipe $exe $argv $desc
         }
         function Save-RemoteFile([string]$Url, [string]$Destination, [int]$TimeoutSec = 300) {
@@ -3699,6 +3699,7 @@ $ctl.BtnPrimary.Add_Click({
             $stdoutTask = $p.StandardOutput.ReadLineAsync()
             $stderrTask = $p.StandardError.ReadLineAsync()
             $lastActivity = Get-Date
+            $startedAt = Get-Date
 
             while (-not ($stdoutDone -and $stderrDone)) {
                 $readLine = $false
@@ -3730,6 +3731,12 @@ $ctl.BtnPrimary.Add_Click({
                 }
 
                 $now = Get-Date
+                if (-not $p.HasExited -and $timeoutSeconds -gt 0 -and ($now - $startedAt).TotalSeconds -ge $timeoutSeconds) {
+                    try { $p.Kill() } catch {}
+                    try { $p.WaitForExit(5000) | Out-Null } catch {}
+                    try { $p.Dispose() } catch {}
+                    throw "Tempo limite excedido em '$desc' após $timeoutSeconds segundos. A atualização será restaurada."
+                }
                 if (-not $p.HasExited -and ($now - $lastActivity).TotalSeconds -ge 10) {
                     L "    ... $desc ainda em andamento."
                     $lastActivity = $now
@@ -3887,25 +3894,77 @@ $ctl.BtnPrimary.Add_Click({
             [pscustomobject]@{ Ok = $missing.Count -eq 0; Missing = $missing }
         }
         function Copy-ReleaseInstallerFiles([string]$sourceRoot, [string]$destinationRoot) {
-            foreach ($fileName in @('instalar.bat')) {
-                $sourceFile = Join-Path $sourceRoot $fileName
-                if (-not (Test-Path -LiteralPath $sourceFile)) {
-                    throw "Release do GitHub não contém $fileName; atualização abortada para evitar instalador antigo."
+            $relativeFiles = @(
+                'instalar.bat',
+                'launchers\instalar.ps1',
+                'launchers\instalar.vbs',
+                'launchers\iniciar.ps1',
+                'launchers\iniciar.vbs'
+            )
+            foreach ($relativePath in $relativeFiles) {
+                if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot $relativePath))) {
+                    throw "Release do GitHub não contém $relativePath; atualização abortada antes de alterar os launchers atuais."
                 }
-                Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $destinationRoot $fileName) -Force
-                L "[OK] $fileName atualizado a partir do release do GitHub"
             }
 
-            $sourceLauncherDir = Join-Path $sourceRoot 'launchers'
-            $destinationLauncherDir = Join-Path $destinationRoot 'launchers'
-            New-Item -ItemType Directory -Force -Path $destinationLauncherDir | Out-Null
-            foreach ($fileName in @('instalar.ps1','instalar.vbs','iniciar.ps1','iniciar.vbs')) {
-                $sourceFile = Join-Path $sourceLauncherDir $fileName
-                if (-not (Test-Path -LiteralPath $sourceFile)) {
-                    throw "Release do GitHub não contém launchers\$fileName; atualização abortada para evitar launcher incompleto."
+            $transactionRoot = Join-Path $env:TEMP "neve_launcher_tx_$([guid]::NewGuid().ToString('N'))"
+            $backupRoot = Join-Path $transactionRoot 'backup'
+            $stageRoot = Join-Path $transactionRoot 'stage'
+            New-Item -ItemType Directory -Path $backupRoot,$stageRoot -Force | Out-Null
+            $committed = @()
+            try {
+                foreach ($relativePath in $relativeFiles) {
+                    $sourceFile = Join-Path $sourceRoot $relativePath
+                    $destinationFile = Join-Path $destinationRoot $relativePath
+                    $stageFile = Join-Path $stageRoot $relativePath
+                    $backupFile = Join-Path $backupRoot $relativePath
+                    New-Item -ItemType Directory -Path (Split-Path -Parent $stageFile) -Force | Out-Null
+                    Copy-Item -LiteralPath $sourceFile -Destination $stageFile -Force -EA Stop
+                    if (Test-Path -LiteralPath $destinationFile) {
+                        New-Item -ItemType Directory -Path (Split-Path -Parent $backupFile) -Force | Out-Null
+                        Copy-Item -LiteralPath $destinationFile -Destination $backupFile -Force -EA Stop
+                    }
                 }
-                Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $destinationLauncherDir $fileName) -Force
-                L "[OK] launchers\$fileName atualizado a partir do release do GitHub"
+
+                foreach ($relativePath in $relativeFiles) {
+                    $stageFile = Join-Path $stageRoot $relativePath
+                    $destinationFile = Join-Path $destinationRoot $relativePath
+                    $destinationDir = Split-Path -Parent $destinationFile
+                    New-Item -ItemType Directory -Path $destinationDir -Force | Out-Null
+                    $pendingFile = "$destinationFile.neve-new-$([guid]::NewGuid().ToString('N'))"
+                    Copy-Item -LiteralPath $stageFile -Destination $pendingFile -Force -EA Stop
+                    try {
+                        if (Test-Path -LiteralPath $destinationFile) {
+                            try {
+                                [System.IO.File]::Replace($pendingFile, $destinationFile, $null, $true)
+                            } catch {
+                                Move-Item -LiteralPath $pendingFile -Destination $destinationFile -Force -EA Stop
+                            }
+                        } else {
+                            Move-Item -LiteralPath $pendingFile -Destination $destinationFile -Force -EA Stop
+                        }
+                    } finally {
+                        Remove-Item -LiteralPath $pendingFile -Force -EA SilentlyContinue
+                    }
+                    $committed += $relativePath
+                    L "[OK] $relativePath atualizado a partir do release do GitHub"
+                }
+            } catch {
+                $commitError = $_
+                foreach ($relativePath in $committed) {
+                    $destinationFile = Join-Path $destinationRoot $relativePath
+                    $backupFile = Join-Path $backupRoot $relativePath
+                    try {
+                        if (Test-Path -LiteralPath $backupFile) {
+                            Copy-Item -LiteralPath $backupFile -Destination $destinationFile -Force -EA Stop
+                        } else {
+                            Remove-Item -LiteralPath $destinationFile -Force -EA SilentlyContinue
+                        }
+                    } catch {}
+                }
+                throw "Falha ao trocar os launchers; os anteriores foram restaurados: $($commitError.Exception.Message)"
+            } finally {
+                Remove-Item -LiteralPath $transactionRoot -Recurse -Force -EA SilentlyContinue
             }
         }
         function Get-RelativePath([string]$basePath, [string]$path) {
@@ -4027,6 +4086,90 @@ $ctl.BtnPrimary.Add_Click({
             [System.IO.File]::Copy($item.FullName, $destinationPath, $true)
             $script:CopiedReleaseFiles++
         }
+        function Invoke-ReleaseDownload([string]$uri, [string]$destination) {
+            $lastError = $null
+            for ($attempt = 1; $attempt -le 4; $attempt++) {
+                try {
+                    Remove-Item -LiteralPath $destination -Force -EA SilentlyContinue
+                    Invoke-WebRequest $uri -OutFile $destination -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Updater/2.0'; 'Accept' = 'application/octet-stream' } -TimeoutSec 600 -EA Stop
+                    if (-not (Test-Path -LiteralPath $destination)) { throw 'O download não criou o arquivo esperado.' }
+                    if ((Get-Item -LiteralPath $destination).Length -lt 1KB) { throw 'O pacote baixado está vazio ou incompleto.' }
+                    return
+                } catch {
+                    $lastError = $_
+                    Remove-Item -LiteralPath $destination -Force -EA SilentlyContinue
+                    if ($attempt -lt 4) {
+                        L "[!] Download interrompido (tentativa $attempt/4). Tentando novamente..." 'warn'
+                        Start-Sleep -Seconds ([math]::Min(8, [math]::Pow(2, $attempt)))
+                    }
+                }
+            }
+            throw "Não foi possível baixar a release após 4 tentativas: $($lastError.Exception.Message)"
+        }
+        function New-ReleaseRollbackSnapshot([string]$sourceRoot, [string]$snapshotRoot, [string[]]$excludeDirs, [string[]]$excludeFiles) {
+            New-Item -ItemType Directory -Path $snapshotRoot -Force | Out-Null
+            $savedCopied = $script:CopiedReleaseFiles
+            $savedSkipped = $script:SkippedReleaseItems
+            try {
+                foreach ($item in @(Get-ChildItem -LiteralPath $sourceRoot -Force -EA Stop)) {
+                    Copy-ReleaseTree $item.FullName $sourceRoot $snapshotRoot $excludeDirs $excludeFiles
+                }
+            } finally {
+                $script:CopiedReleaseFiles = $savedCopied
+                $script:SkippedReleaseItems = $savedSkipped
+            }
+        }
+        function Restore-ReleaseRollbackSnapshot([string]$snapshotRoot, [string]$destinationRoot, [string[]]$excludeDirs, [string[]]$excludeFiles) {
+            if (-not (Test-Path -LiteralPath $snapshotRoot)) { throw 'Snapshot de restauração não encontrado.' }
+            $savedCopied = $script:CopiedReleaseFiles
+            $savedRemoved = $script:RemovedReleaseItems
+            $savedSkipped = $script:SkippedReleaseItems
+            try {
+                Remove-ReleaseOrphans $destinationRoot $snapshotRoot $destinationRoot $excludeDirs $excludeFiles
+                foreach ($item in @(Get-ChildItem -LiteralPath $snapshotRoot -Force -EA Stop)) {
+                    Copy-ReleaseTree $item.FullName $snapshotRoot $destinationRoot $excludeDirs $excludeFiles
+                }
+            } finally {
+                $script:CopiedReleaseFiles = $savedCopied
+                $script:RemovedReleaseItems = $savedRemoved
+                $script:SkippedReleaseItems = $savedSkipped
+            }
+        }
+        function Publish-FrontendAtomically([string]$sourceDir, [string]$destinationDir) {
+            if (-not (Test-Path -LiteralPath (Join-Path $sourceDir 'index.html'))) {
+                throw 'O build novo não contém index.html; o frontend atual foi mantido.'
+            }
+            $parent = Split-Path -Parent $destinationDir
+            $suffix = [guid]::NewGuid().ToString('N')
+            $stagedDir = Join-Path $parent "frontend.neve-new-$suffix"
+            $backupDir = Join-Path $parent "frontend.neve-old-$suffix"
+            $hadExisting = Test-Path -LiteralPath $destinationDir
+            New-Item -ItemType Directory -Path $stagedDir -Force | Out-Null
+            try {
+                Get-ChildItem -LiteralPath $sourceDir -Force | Copy-Item -Destination $stagedDir -Recurse -Force -EA Stop
+                if ($hadExisting) {
+                    Move-Item -LiteralPath $destinationDir -Destination $backupDir -Force -EA Stop
+                }
+                try {
+                    Move-Item -LiteralPath $stagedDir -Destination $destinationDir -Force -EA Stop
+                } catch {
+                    if (Test-Path -LiteralPath $backupDir) {
+                        Move-Item -LiteralPath $backupDir -Destination $destinationDir -Force -EA SilentlyContinue
+                    }
+                    throw
+                }
+                return [pscustomobject]@{
+                    Destination = $destinationDir
+                    Backup      = if ($hadExisting) { $backupDir } else { $null }
+                    HadExisting = $hadExisting
+                }
+            } finally {
+                Remove-Item -LiteralPath $stagedDir -Recurse -Force -EA SilentlyContinue
+                if ((Test-Path -LiteralPath $backupDir) -and -not (Test-Path -LiteralPath $destinationDir)) {
+                    Move-Item -LiteralPath $backupDir -Destination $destinationDir -Force -EA SilentlyContinue
+                }
+            }
+        }
         function Test-NeveInstallState([string]$root) {
             $required = @(
                 @{ Path = '.env'; Label = '.env' },
@@ -4147,95 +4290,168 @@ $ctl.BtnPrimary.Add_Click({
                 L "    Rode instalar.bat para concluir a instalação antes de gerar frontend." 'warn'
             }
 
-            PN 5 "Baixando NeveAI $latestTag"
-            L "==> Download $zipUrl"
-            $tmpZip = Join-Path $env:TEMP "neve_update_$($latestTag).zip"
-            if (Test-Path $tmpZip) { Remove-Item $tmpZip -Force }
-            Invoke-WebRequest $zipUrl -OutFile $tmpZip -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Updater/1.0' }
-            $sizeMB = [math]::Round((Get-Item $tmpZip).Length / 1MB, 1)
-            L "[OK] NeveAI baixado ($sizeMB MB)"
-
-            PN 18 'Extraindo NeveAI'
-            $tmpExt = Join-Path $env:TEMP "neve_update_ext_$($latestTag)"
-            if (Test-Path $tmpExt) { Remove-Item $tmpExt -Recurse -Force }
-            New-Item $tmpExt -ItemType Directory | Out-Null
-            Expand-Archive $tmpZip -DestinationPath $tmpExt -Force
-            $inner = Get-ChildItem $tmpExt -Directory | Select-Object -First 1
-            if (-not $inner) { throw 'Estrutura inesperada do zip da release.' }
-
-            PN 28 'Preservando configurações locais'
+            $operationId = [guid]::NewGuid().ToString('N')
+            $tmpZip = Join-Path $env:TEMP "neve_update_$operationId.zip"
+            $tmpExt = Join-Path $env:TEMP "neve_update_ext_$operationId"
+            $rollbackRoot = Join-Path $env:TEMP "neve_update_rollback_$operationId"
             $envFile = Join-Path $ROOT '.env'
             $envBackup = $null
-            if (Test-Path $envFile) {
-                $envBackup = Join-Path $env:TEMP "neve_update_env_$([guid]::NewGuid().ToString('N')).bak"
-                Copy-Item $envFile $envBackup -Force
-                L '[OK] .env preservado'
-            }
-
-            PN 35 'Aplicando arquivos do NeveAI'
+            $mutationStarted = $false
+            $frontendTransaction = $null
+            $backendDependenciesChanged = $false
+            $rollbackRequirement = $null
+            $versionExisted = Test-Path -LiteralPath $VERSION_FILE
+            $previousVersion = if ($versionExisted) { Get-Content -LiteralPath $VERSION_FILE -Raw -EA SilentlyContinue } else { $null }
             $excludeDirs = @('backend\neveai\venv','backend\neveai\frontend','backend\neveai\data','backend\data','backend\__pycache__','models','mmproj','llamacpp-server','node_modules','build','logs','tools\nodejs','.git','.vscode','.svelte-kit')
-            $excludeFiles = @('.env', 'version.txt')
-            $sourceRoot = (Resolve-Path -LiteralPath $inner.FullName).ProviderPath
-            $destinationRoot = (Resolve-Path -LiteralPath $ROOT).ProviderPath
-            if ($sourceRoot.Equals($destinationRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-                throw 'A pasta fonte da release é igual à pasta de instalação; atualização abortada.'
+            $excludeFiles = @('.env', 'version.txt', 'instalar.bat', 'instalar.ps1', 'instalar.vbs', 'iniciar.ps1', 'iniciar.vbs')
+
+            try {
+                PN 5 "Baixando NeveAI $latestTag"
+                L "==> Download $zipUrl"
+                Invoke-ReleaseDownload $zipUrl $tmpZip
+                $sizeMB = [math]::Round((Get-Item -LiteralPath $tmpZip).Length / 1MB, 1)
+                L "[OK] NeveAI baixado ($sizeMB MB)"
+
+                PN 18 'Extraindo e validando NeveAI'
+                New-Item $tmpExt -ItemType Directory -Force | Out-Null
+                Expand-Archive $tmpZip -DestinationPath $tmpExt -Force -EA Stop
+                $inner = Get-ChildItem -LiteralPath $tmpExt -Directory | Select-Object -First 1
+                if (-not $inner) { throw 'Estrutura inesperada do zip da release.' }
+                $sourceRoot = (Resolve-Path -LiteralPath $inner.FullName).ProviderPath
+                $destinationRoot = (Resolve-Path -LiteralPath $ROOT).ProviderPath
+                if ($sourceRoot.Equals($destinationRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw 'A pasta fonte da release é igual à pasta de instalação; atualização abortada.'
+                }
+                $releaseIntegrity = Test-NeveAppIntegrity $sourceRoot
+                if (-not $releaseIntegrity.Ok) {
+                    throw "Release incompleta; nenhum arquivo local foi alterado. Faltando: $($releaseIntegrity.Missing -join ', ')."
+                }
+                L "[OK] Pasta da instalação: $destinationRoot"
+                L "[OK] Pasta da release validada: $sourceRoot"
+
+                PN 27 'Preservando dados e estado atual'
+                if (Test-Path -LiteralPath $envFile) {
+                    $envBackup = Join-Path $env:TEMP "neve_update_env_$operationId.bak"
+                    Copy-Item -LiteralPath $envFile -Destination $envBackup -Force -EA Stop
+                    L '[OK] .env preservado'
+                }
+                New-ReleaseRollbackSnapshot $destinationRoot $rollbackRoot $excludeDirs $excludeFiles
+                L '[OK] Ponto de restauração criado'
+
+                PN 38 'Aplicando arquivos do NeveAI'
+                $mutationStarted = $true
+                $script:CopiedReleaseFiles = 0
+                $script:RemovedReleaseItems = 0
+                $script:SkippedReleaseItems = 0
+                Remove-ReleaseOrphans $destinationRoot $sourceRoot $destinationRoot $excludeDirs $excludeFiles
+                foreach ($item in @(Get-ChildItem -LiteralPath $sourceRoot -Force -EA Stop)) {
+                    Copy-ReleaseTree $item.FullName $sourceRoot $destinationRoot $excludeDirs $excludeFiles
+                }
+                L "[OK] Arquivos de release aplicados ($script:CopiedReleaseFiles arquivos, $script:RemovedReleaseItems órfãos removidos, $script:SkippedReleaseItems itens preservados)"
+
+                $integrity = Test-NeveAppIntegrity $ROOT
+                if (-not $integrity.Ok) {
+                    throw "Release aplicada sem arquivos essenciais: $($integrity.Missing -join ', ')."
+                }
+                if ($envBackup -and -not (Test-Path -LiteralPath $envFile)) {
+                    Copy-Item -LiteralPath $envBackup -Destination $envFile -Force -EA Stop
+                }
+                L '[OK] Integridade dos arquivos essenciais validada'
+
+                if ($canBuildAndDeploy) {
+                    $requirementRelative = if (Test-Path -LiteralPath (Join-Path $ROOT 'backend\requirements-runtime.txt')) { 'backend\requirements-runtime.txt' } else { 'backend\requirements.txt' }
+                    $activeRequirement = Join-Path $ROOT $requirementRelative
+                    $rollbackRequirement = Join-Path $rollbackRoot $requirementRelative
+                    if (-not (Test-Path -LiteralPath $activeRequirement)) { throw 'A release não contém a lista de dependências do backend.' }
+                    $backendDependenciesChanged = -not (Test-Path -LiteralPath $rollbackRequirement)
+                    if (-not $backendDependenciesChanged) {
+                        $backendDependenciesChanged = (Get-FileHash -LiteralPath $activeRequirement -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $rollbackRequirement -Algorithm SHA256).Hash
+                    }
+                    if ($backendDependenciesChanged) {
+                        PN 48 'Atualizando dependências do backend'
+                        $venvPython = Join-Path $ROOT 'backend\neveai\venv\Scripts\python.exe'
+                        if (-not (Test-Path -LiteralPath $venvPython)) { throw 'Python do ambiente virtual não encontrado para atualizar as dependências do backend.' }
+                        $rc = Run $venvPython @('-m', 'pip', 'install', '--disable-pip-version-check', '-r', $activeRequirement) 'dependências do backend' 3600
+                        if ($rc -ne 0) { throw "Atualização das dependências do backend falhou (código $rc)" }
+                        L '[OK] Dependências do backend sincronizadas'
+                    }
+                }
+
+                if ($canBuildAndDeploy) {
+                    PN 55 'Instalando dependências do frontend'
+                    $frontendNode = Resolve-FrontendNodeLaunch
+                    if (-not $frontendNode) { $frontendNode = Install-PortableNode22 }
+                    if (-not $frontendNode) { throw 'Node.js 18-22 com npm não encontrado e o Node.js 22 portátil não pôde ser preparado.' }
+                    $script:FrontendNodeDir = $frontendNode.NodeDir
+                    $npmExe = $frontendNode.NpmExecutable
+                    L "[OK] Node.js do frontend: $($frontendNode.NodeVersion) / npm $($frontendNode.NpmVersion) em $($frontendNode.NodeDir)"
+                    $rc = Run $npmExe @('install', '--no-audit', '--no-fund') 'npm install' 2700
+                    if ($rc -ne 0) { throw "npm install falhou (código $rc)" }
+
+                    PN 76 'Gerando build do frontend'
+                    Remove-Item -LiteralPath (Join-Path $ROOT 'build') -Recurse -Force -EA SilentlyContinue
+                    $rc = Run $npmExe @('run', 'build') 'npm run build' 1800
+                    if ($rc -ne 0) { throw "npm run build falhou (código $rc)" }
+
+                    PN 91 'Publicando frontend'
+                    $buildDir = Join-Path $ROOT 'build'
+                    $deployDir = Join-Path $ROOT 'backend\neveai\frontend'
+                    $frontendTransaction = Publish-FrontendAtomically $buildDir $deployDir
+                    L '[OK] Frontend novo publicado de forma transacional'
+                } else {
+                    PN 91 'Pulando build/deploy'
+                    L '[OK] Build e deploy pulados porque o projeto ainda não foi instalado.'
+                }
+
+                PN 96 'Finalizando atualização'
+                [System.IO.File]::WriteAllText($VERSION_FILE, $latestTag, [System.Text.UTF8Encoding]::new($false))
+                Copy-ReleaseInstallerFiles $sourceRoot $destinationRoot
+                $mutationStarted = $false
+                if ($frontendTransaction -and $frontendTransaction.Backup) {
+                    Remove-Item -LiteralPath $frontendTransaction.Backup -Recurse -Force -EA SilentlyContinue
+                }
+                try { L "[OK] NeveAI atualizado para $latestTag" } catch {}
+                if ($canBuildAndDeploy) { return "NeveAI: $currentVersion -> $latestTag" }
+                return "NeveAI: $currentVersion -> $latestTag (build/deploy pulados; instalação incompleta)"
+            } catch {
+                $updateError = $_
+                if ($mutationStarted) {
+                    L '[!] A atualização não foi concluída; restaurando a instalação anterior...' 'warn'
+                    try {
+                        if ($frontendTransaction) {
+                            Remove-Item -LiteralPath $frontendTransaction.Destination -Recurse -Force -EA SilentlyContinue
+                            if ($frontendTransaction.HadExisting -and (Test-Path -LiteralPath $frontendTransaction.Backup)) {
+                                Move-Item -LiteralPath $frontendTransaction.Backup -Destination $frontendTransaction.Destination -Force -EA Stop
+                            }
+                        }
+                        Restore-ReleaseRollbackSnapshot $rollbackRoot $ROOT $excludeDirs $excludeFiles
+                        if ($backendDependenciesChanged -and $rollbackRequirement -and (Test-Path -LiteralPath $rollbackRequirement)) {
+                            $venvPython = Join-Path $ROOT 'backend\neveai\venv\Scripts\python.exe'
+                            if (Test-Path -LiteralPath $venvPython) {
+                                $restoreRc = Run $venvPython @('-m', 'pip', 'install', '--disable-pip-version-check', '-r', $rollbackRequirement) 'restauração das dependências do backend' 3600
+                                if ($restoreRc -ne 0) { L '[!] Não foi possível ressincronizar todas as dependências antigas; os arquivos do projeto foram restaurados.' 'warn' }
+                            }
+                        }
+                        if ($envBackup -and (Test-Path -LiteralPath $envBackup)) {
+                            Copy-Item -LiteralPath $envBackup -Destination $envFile -Force -EA Stop
+                        }
+                        if ($versionExisted) {
+                            [System.IO.File]::WriteAllText($VERSION_FILE, [string]$previousVersion, [System.Text.UTF8Encoding]::new($false))
+                        } else {
+                            Remove-Item -LiteralPath $VERSION_FILE -Force -EA SilentlyContinue
+                        }
+                        L '[OK] Instalação anterior restaurada.'
+                    } catch {
+                        throw "A atualização falhou e a restauração automática também encontrou um erro: $($_.Exception.Message). Erro original: $($updateError.Exception.Message)"
+                    }
+                }
+                throw $updateError
+            } finally {
+                Remove-Item -LiteralPath $tmpZip -Force -EA SilentlyContinue
+                Remove-Item -LiteralPath $tmpExt -Recurse -Force -EA SilentlyContinue
+                Remove-Item -LiteralPath $rollbackRoot -Recurse -Force -EA SilentlyContinue
+                if ($envBackup) { Remove-Item -LiteralPath $envBackup -Force -EA SilentlyContinue }
             }
-            L "[OK] Pasta da instalação: $destinationRoot"
-            L "[OK] Pasta da release extraída: $sourceRoot"
-
-            $script:CopiedReleaseFiles = 0
-            $script:RemovedReleaseItems = 0
-            $script:SkippedReleaseItems = 0
-            Remove-ReleaseOrphans $destinationRoot $sourceRoot $destinationRoot $excludeDirs $excludeFiles
-            Get-ChildItem -LiteralPath $sourceRoot -Force | ForEach-Object {
-                Copy-ReleaseTree $_.FullName $sourceRoot $destinationRoot $excludeDirs $excludeFiles
-            }
-            Copy-ReleaseInstallerFiles $sourceRoot $destinationRoot
-            L "[OK] Arquivos de release aplicados ($script:CopiedReleaseFiles arquivos, $script:RemovedReleaseItems órfãos removidos, $script:SkippedReleaseItems itens preservados)"
-
-            $integrity = Test-NeveAppIntegrity $ROOT
-            if (-not $integrity.Ok) {
-                throw "Release aplicada sem arquivos essenciais: $($integrity.Missing -join ', '). Verifique se o release do GitHub contém backend\neveai\models."
-            }
-            L '[OK] Integridade dos arquivos essenciais validada'
-
-            if ($envBackup -and -not (Test-Path -LiteralPath $envFile)) { Copy-Item -LiteralPath $envBackup -Destination $envFile -Force; L '[OK] .env restaurado' }
-            if ($envBackup) { Remove-Item -LiteralPath $envBackup -Force -EA SilentlyContinue }
-
-            if ($canBuildAndDeploy) {
-                PN 55 'Instalando dependências do frontend'
-                $frontendNode = Resolve-FrontendNodeLaunch
-                if (-not $frontendNode) { $frontendNode = Install-PortableNode22 }
-                if (-not $frontendNode) { throw 'Node.js 18-22 com npm não encontrado e o Node.js 22 portátil não pôde ser preparado.' }
-                $script:FrontendNodeDir = $frontendNode.NodeDir
-                $npmExe = $frontendNode.NpmExecutable
-                L "[OK] Node.js do frontend: $($frontendNode.NodeVersion) / npm $($frontendNode.NpmVersion) em $($frontendNode.NodeDir)"
-                $rc = Run $npmExe @('install', '--no-audit', '--no-fund') 'npm install'
-                if ($rc -ne 0) { throw "npm install falhou (código $rc)" }
-
-                PN 78 'Gerando build do frontend'
-                $rc = Run $npmExe @('run', 'build') 'npm run build'
-                if ($rc -ne 0) { throw "npm run build falhou (código $rc)" }
-
-                PN 92 'Publicando frontend'
-                $buildDir = Join-Path $ROOT 'build'
-                $deployDir = Join-Path $ROOT 'backend\neveai\frontend'
-                if (-not (Test-Path $buildDir)) { throw 'Pasta build\ não foi gerada' }
-                if (Test-Path $deployDir) { Remove-Item $deployDir -Recurse -Force }
-                New-Item $deployDir -ItemType Directory | Out-Null
-                Get-ChildItem -LiteralPath $buildDir -Force | Copy-Item -Destination $deployDir -Recurse -Force
-            } else {
-                PN 92 'Pulando build/deploy'
-                L '[OK] Build e deploy pulados porque o projeto ainda não foi instalado.'
-            }
-
-            PN 97 'Salvando versão do NeveAI'
-            Set-Content -Path $VERSION_FILE -Value $latestTag -Encoding UTF8
-            try { Remove-Item $tmpZip -Force -EA SilentlyContinue } catch {}
-            try { Remove-Item $tmpExt -Recurse -Force -EA SilentlyContinue } catch {}
-            L "[OK] NeveAI atualizado para $latestTag"
-            if ($canBuildAndDeploy) { return "NeveAI: $currentVersion -> $latestTag" }
-            return "NeveAI: $currentVersion -> $latestTag (build/deploy pulados; instalação incompleta)"
         }
         function Update-LlamaCpp {
             $tmpFiles = @(); $stageDir = $null; $backupDir = $null

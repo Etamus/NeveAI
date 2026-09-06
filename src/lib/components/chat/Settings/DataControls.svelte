@@ -139,6 +139,7 @@
 	title={$i18n.t('Delete All Chats')}
 	message={$i18n.t('Are you sure you want to delete all chats? This action cannot be undone.')}
 	bind:show={showDeleteConfirmDialog}
+	animated={false}
 	on:confirm={deleteAllChatsHandler}
 	on:cancel={() => {
 		showDeleteConfirmDialog = false;
@@ -149,6 +150,7 @@
 	title={$i18n.t('Delete All Files')}
 	message={$i18n.t('Are you sure you want to delete all files? This action cannot be undone.')}
 	bind:show={showDeleteFilesConfirmDialog}
+	animated={false}
 	on:confirm={deleteAllFilesHandler}
 	on:cancel={() => {
 		showDeleteFilesConfirmDialog = false;

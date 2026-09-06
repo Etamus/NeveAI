@@ -53,6 +53,20 @@
 		item?.file?.meta?.content_type ??
 		item?.file?.content_type ??
 		(type?.includes('/') ? type : '');
+	$: normalizedFileName = decodeString(
+		item?.name ?? item?.filename ?? item?.file?.filename ?? item?.meta?.name ?? name ?? ''
+	)
+		.toLowerCase()
+		.split(/[?#]/, 1)[0];
+	$: fileExtension = normalizedFileName.split('.').at(-1) ?? '';
+	$: attachmentKind =
+		contentType?.toLowerCase().includes('presentation') ||
+		contentType?.toLowerCase().includes('powerpoint') ||
+		['odp', 'otp', 'pot', 'potm', 'potx', 'pps', 'ppsm', 'ppsx', 'ppt', 'pptm', 'pptx'].includes(
+			fileExtension
+		)
+			? 'presentation'
+			: null;
 
 	const downloadGeneratedFile = async () => {
 		const content = await getFileContentById(item.id);
@@ -73,7 +87,7 @@
 </script>
 
 {#if item}
-	<FileItemModal bind:show={showModal} bind:item {edit} />
+	<FileItemModal bind:show={showModal} bind:item {edit} animated={false} />
 {/if}
 
 {#if item?.generated}
@@ -86,10 +100,8 @@
 				dispatch('click');
 			}}
 		>
-			<div
-				class="flex size-7 shrink-0 items-center justify-center text-blue-500 dark:text-blue-400"
-			>
-				<AttachmentFile {name} {contentType} className="size-4.5" />
+			<div class="flex size-7 shrink-0 items-center justify-center">
+				<AttachmentFile {name} {contentType} kindOverride={attachmentKind} className="size-4.5" />
 			</div>
 			<div class="min-w-0 flex-1 truncate text-sm font-normal">
 				{decodeString(name)}
@@ -108,7 +120,7 @@
 				viewBox="0 0 24 24"
 				stroke-width="2"
 				stroke="currentColor"
-				class="size-4"
+				class="block size-4 -translate-y-[0.5px]"
 			>
 				<path
 					stroke-linecap="round"
@@ -154,7 +166,7 @@
 					class="size-10 shrink-0 flex justify-center items-center bg-gray-100 dark:bg-gray-800 rounded-lg"
 				>
 					{#if !loading}
-						<AttachmentFile {name} {contentType} className="size-5" />
+						<AttachmentFile {name} {contentType} kindOverride={attachmentKind} className="size-5" />
 					{:else}
 						<Spinner />
 					{/if}
@@ -189,7 +201,12 @@
 						{:else if type === 'folder'}
 							<Folder />
 						{:else}
-							<AttachmentFile {name} {contentType} className={inputChip ? 'size-3.5' : 'size-4'} />
+							<AttachmentFile
+								{name}
+								{contentType}
+								kindOverride={attachmentKind}
+								className={inputChip ? 'size-3.5' : 'size-4'}
+							/>
 						{/if}
 					{:else}
 						<Spinner className={inputChip ? 'size-3.5' : 'size-4'} />

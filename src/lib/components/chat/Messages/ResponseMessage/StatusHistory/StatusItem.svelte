@@ -32,6 +32,7 @@
 		statusAction.includes('music_generation') ||
 		statusDescription.includes('música') ||
 		statusDescription.includes('musica');
+	$: isFileGenerationStatus = statusAction.includes('file_generation');
 </script>
 
 {#if !status?.hidden}
@@ -61,7 +62,7 @@
 						class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors dark:text-gray-300"
 					>
 						<span
-							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
+							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
 						>
 							{#if isMusicStatus}
 								<MusicNote className="size-3.5" strokeWidth="1.6" />
@@ -118,7 +119,7 @@
 						class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors dark:text-gray-300"
 					>
 						<span
-							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
+							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
 						>
 							{#if isMusicStatus}
 								<MusicNote className="size-3.5" strokeWidth="1.6" />
@@ -158,7 +159,7 @@
 						class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors dark:text-gray-300"
 					>
 						<span
-							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
+							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
 						>
 							{#if isDeepSearchStatus}
 								<Atom02 className="size-3.5" />
@@ -194,11 +195,11 @@
 						class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors dark:text-gray-300"
 					>
 						<span
-							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
+							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
 						>
 							{#if isGitHubStatus}
 								<Github className="size-3.5" />
-							{:else if isFileSourceStatus}
+							{:else if isFileSourceStatus || isFileGenerationStatus}
 								<DocumentPage className="size-3.5" strokeWidth="1.6" />
 							{:else if isDeepSearchStatus}
 								<Atom02 className="size-3.5" />
@@ -238,11 +239,11 @@
 						class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors dark:text-gray-300"
 					>
 						<span
-							class="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-gray-500 ring-1 ring-gray-200 dark:bg-white/5 dark:text-gray-300 dark:ring-white/10"
+							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
 						>
 							{#if isGitHubStatus}
 								<Github className="size-3.5" />
-							{:else if isFileSourceStatus}
+							{:else if isFileSourceStatus || isFileGenerationStatus}
 								<DocumentPage className="size-3.5" strokeWidth="1.6" />
 							{:else if isMusicStatus}
 								<MusicNote className="size-3.5" strokeWidth="1.6" />

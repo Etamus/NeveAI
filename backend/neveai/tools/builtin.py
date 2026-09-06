@@ -428,7 +428,15 @@ def _resolve_generated_file_format(
     requested_format = _get_requested_generated_file_format(
         (metadata or {}).get("user_prompt", "")
     )
-    resolved_format = requested_format or _get_attached_generated_file_format(metadata)
+    explicit_format = str(file_format or "").strip().lower().lstrip(".")
+    explicit_format = FORMAT_ALIASES.get(explicit_format, explicit_format)
+    if explicit_format not in MIME_TYPES:
+        explicit_format = ""
+    resolved_format = (
+        requested_format
+        or _get_attached_generated_file_format(metadata)
+        or explicit_format
+    )
     if not resolved_format:
         return filename, file_format
 

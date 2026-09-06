@@ -13,6 +13,8 @@
 	export let janStyle = false;
 	export let tooltipsEnabled = true;
 	export let disabledParams: string[] = [];
+	export let fixedJanRows = false;
+	export let safeBottomPadding = true;
 
 	const isParamDisabled = (key: string) => disabledParams.includes(key);
 	const disabledRowClass = (key: string) =>
@@ -52,9 +54,9 @@
 		onChange(params);
 	}
 </script>
-<div class=" space-y-1 text-xs pb-safe-bottom">
+<div class="{fixedJanRows ? 'space-y-1.5' : 'space-y-1'} text-xs {safeBottomPadding ? 'pb-safe-bottom' : ''}">
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5 {disabledRowClass('temperature')}">
+		<div class="flex w-full items-center justify-between {fixedJanRows ? 'h-[34px] py-0' : 'py-1.5'} {disabledRowClass('temperature')}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('The temperature of the model. Increasing the temperature will make the model answer more creatively.') : ""}
 				placement="top-start"
@@ -137,7 +139,7 @@
 	</div>
 	{/if}
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5">
+		<div class="flex w-full items-center justify-between {fixedJanRows ? 'h-[34px] py-0' : 'py-1.5'}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('Esta opção define o número máximo de tokens que o modelo pode gerar em sua resposta.') : ""}
 				placement="top-start"
@@ -216,7 +218,7 @@
 	</div>
 	{/if}
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5 {disabledRowClass('top_k')}">
+		<div class="flex w-full items-center justify-between {fixedJanRows ? 'h-[34px] py-0' : 'py-1.5'} {disabledRowClass('top_k')}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('Limits token sampling to the top K most likely tokens. Use 0 to keep the default behavior.') : ""}
 				placement="top-start"
@@ -294,7 +296,7 @@
 	</div>
 	{/if}
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5 {disabledRowClass('top_p')}">
+		<div class="flex w-full items-center justify-between {fixedJanRows ? 'h-[34px] py-0' : 'py-1.5'} {disabledRowClass('top_p')}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('Nucleus sampling probability. Lower values make generation more focused; 1 keeps the default behavior.') : ""}
 				placement="top-start"
@@ -372,7 +374,7 @@
 	</div>
 	{/if}
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5 {disabledRowClass('min_p')}">
+		<div class="flex w-full items-center justify-between {fixedJanRows ? 'h-[34px] py-0' : 'py-1.5'} {disabledRowClass('min_p')}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('Alternative to the top_p, and aims to ensure a balance of quality and variety. The parameter p represents the minimum probability for a token to be considered, relative to the probability of the most likely token. For example, with p=0.05 and the most likely token having a probability of 0.9, logits with a value less than 0.045 are filtered out.') : ""}
 				placement="top-start"
@@ -450,7 +452,7 @@
 	</div>
 	{/if}
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5">
+		<div class="flex w-full items-center justify-between {fixedJanRows ? 'h-[34px] py-0' : 'py-1.5'}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('Limiar de amostragem XTC (eXclude Top Choices). Tokens com probabilidade acima deste valor são candidatos à exclusão. Intervalo 0–1. Padrão 0.1.') : ""}
 				placement="top-start"
@@ -524,7 +526,7 @@
 	</div>
 	{/if}
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5">
+		<div class="flex w-full items-center justify-between {fixedJanRows ? 'h-[34px] py-0' : 'py-1.5'}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('Probabilidade de amostragem XTC. Controla a chance de os tokens candidatos serem excluídos. Intervalo 0–1. Padrão 0.') : ""}
 				placement="top-start"
@@ -598,7 +600,7 @@
 	</div>
 	{/if}
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5 {disabledRowClass('dry_multiplier')}">
+		<div class="flex w-full items-center justify-between {fixedJanRows ? 'h-[34px] py-0' : 'py-1.5'} {disabledRowClass('dry_multiplier')}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('Multiplicador de penalidade de repetição DRY (Não Se Repita). 0 desativa o DRY. Valores maiores penalizam sequências repetitivas com mais intensidade. Padrão 0.') : ""}
 				placement="top-start"
@@ -675,7 +677,7 @@
 	</div>
 	{/if}
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5">
+		<div class="flex w-full items-center justify-between {fixedJanRows ? 'h-[34px] py-0' : 'py-1.5'}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('Comprimento permitido pelo DRY. Sequências menores que este valor não são penalizadas pelo DRY. Padrão 2.') : ""}
 				placement="top-start"
@@ -749,7 +751,7 @@
 	</div>
 	{/if}
 	{#if janStyle}
-		<div class="flex w-full items-center justify-between py-1.5">
+		<div class="flex w-full items-center justify-between {fixedJanRows ? 'h-[34px] py-0' : 'py-1.5'}">
 			<Tooltip
 				content={tooltipsEnabled ? $i18n.t('Base exponencial do DRY. A penalidade cresce exponencialmente com o comprimento da sequência. Valores maiores penalizam mais repetições longas. Padrão 1.75.') : ""}
 				placement="top-start"
@@ -821,6 +823,9 @@
 			</div>
 		{/if}
 	</div>
+	{/if}
+	{#if janStyle}
+		<slot name="janFooter" />
 	{/if}
 
 	{#if admin}

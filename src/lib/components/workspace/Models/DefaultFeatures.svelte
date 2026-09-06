@@ -3,6 +3,11 @@
 	import type { Readable } from 'svelte/store';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
+	import Atom02 from '$lib/components/icons/Atom02.svelte';
+	import Photo from '$lib/components/icons/Photo.svelte';
+	import ImageIcon from '$lib/components/icons/Image.svelte';
+	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 	import { marked } from 'marked';
 
 	type I18nStore = Readable<{ t: (key: string) => string }>;
@@ -26,13 +31,13 @@
 			label: $i18n.t('Pesquisa profunda'),
 			description: $i18n.t('Modelo inicia com pesquisa profunda por padrão')
 		},
-		toggle_reasoning: {
-			label: $i18n.t('Ajustar raciocínio'),
-			description: $i18n.t('Show the Rápido/Raciocínio toggle in the message input bar')
-		},
 		stable_diffusion: {
 			label: $i18n.t('Criar imagem'),
 			description: $i18n.t('Modelo pode gerar imagens usando Stable Diffusion local')
+		},
+		music_generation: {
+			label: $i18n.t('Criar música'),
+			description: $i18n.t('Modelo inicia com geração de música por padrão')
 		}
 	};
 
@@ -41,17 +46,17 @@
 		'deep_search',
 		'code_execution',
 		'image_generation',
-		'toggle_reasoning'
+		'stable_diffusion',
+		'music_generation'
 	];
 	export let featureIds: string[] = [];
 	export let tooltipsEnabled = true;
+	export let insetToggles = false;
 
 	let activeFeatureIds: string[] = [];
 	let featureViewState: Record<string, { enabled: boolean; disabled: boolean }> = {};
-	const independentFeatures = new Set(['toggle_reasoning']);
-
 	const isExclusiveFeature = (feature: string) =>
-		availableFeatures.includes(feature) && !independentFeatures.has(feature);
+		availableFeatures.includes(feature);
 
 	const getFeatureLabel = (feature: string) =>
 		featureLabels[feature as keyof typeof featureLabels] ?? {
@@ -113,31 +118,52 @@
 </script>
 
 <div>
-	<div class="flex flex-col mt-2 gap-2">
+	<div class="flex flex-col mt-3 gap-2">
 		{#each availableFeatures as feature}
-			{#if feature === 'toggle_reasoning' && availableFeatures.includes('deep_search')}
-				<div class="ml-1 mr-auto my-0.5 w-[92%] border-t border-gray-200/80 dark:border-gray-700/50"></div>
-			{/if}
 			{@const featureLabel = getFeatureLabel(feature)}
 			{@const featureState = featureViewState[feature] ?? { enabled: false, disabled: false }}
+			{#if feature === 'stable_diffusion' && availableFeatures.includes('code_execution')}
+				<div class="my-0.5 w-[96%] border-t border-gray-300/50 dark:border-gray-600/30"></div>
+			{/if}
 			<div
-				class="flex items-center gap-2 transition {featureState.disabled
+				class="flex w-full items-center justify-between gap-3 transition {featureState.disabled
 					? 'opacity-50 text-gray-400 dark:text-gray-500'
 					: ''}"
 				aria-disabled={featureState.disabled}
 			>
-				<Switch
-					state={featureState.enabled}
-					disabled={featureState.disabled}
-					on:change={(e) => {
-						setFeatureState(feature, Boolean(e.detail));
-					}}
-				/>
+				<div class="flex min-w-0 items-center gap-2">
+					<div class="flex size-4 shrink-0 items-center justify-center">
+						{#if feature === 'web_search'}
+							<GlobeAlt />
+						{:else if feature === 'deep_search'}
+							<Atom02 />
+						{:else if feature === 'code_execution'}
+							<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" class="size-4">
+								<path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
+							</svg>
+						{:else if feature === 'image_generation'}
+							<Photo className="size-4" strokeWidth="1.5" />
+						{:else if feature === 'stable_diffusion'}
+							<ImageIcon className="size-4" strokeWidth="1.5" />
+						{:else if feature === 'music_generation'}
+							<MusicNote className="size-4" strokeWidth="1.5" />
+						{/if}
+					</div>
+					<div class="min-w-0 py-0.5 text-sm text-gray-700 dark:text-gray-300">
+						<Tooltip content={tooltipsEnabled ? marked.parse(featureLabel.description) : ''}>
+							{$i18n.t(featureLabel.label)}
+						</Tooltip>
+					</div>
+				</div>
 
-				<div class="py-0.5 text-sm min-w-0">
-					<Tooltip content={tooltipsEnabled ? marked.parse(featureLabel.description) : ''}>
-						{$i18n.t(featureLabel.label)}
-					</Tooltip>
+				<div class="shrink-0 {insetToggles ? 'mr-2' : ''}">
+					<Switch
+						state={featureState.enabled}
+						disabled={featureState.disabled}
+						on:change={(e) => {
+							setFeatureState(feature, Boolean(e.detail));
+						}}
+					/>
 				</div>
 			</div>
 		{/each}

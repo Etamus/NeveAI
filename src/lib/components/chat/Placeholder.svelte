@@ -22,7 +22,6 @@
 	import { sanitizeResponseContent, extractCurlyBraceWords } from '$lib/utils';
 	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
 
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import MessageInput from './MessageInput.svelte';
 	import FolderPlaceholder from './Placeholder/FolderPlaceholder.svelte';
 	import FolderTitle from './Placeholder/FolderTitle.svelte';
@@ -78,18 +77,6 @@
 </script>
 
 <div class="m-auto w-full max-w-6xl px-2 @2xl:px-20 -translate-y-20 py-24 text-center">
-	{#if $temporaryChatEnabled}
-		<Tooltip
-			content={$i18n.t("This chat won't appear in history and your messages will not be saved.")}
-			className="w-full flex justify-center mb-0.5"
-			placement="top"
-		>
-			<div class="flex items-center gap-2 text-gray-500 text-base my-2 w-fit">
-				{$i18n.t('Temporary Chat')}
-			</div>
-		</Tooltip>
-	{/if}
-
 	<div
 		class="w-full text-3xl text-gray-800 dark:text-gray-100 text-center flex items-center gap-4"
 	>
@@ -109,13 +96,20 @@
 					}}
 				/>
 			{:else}
-				<div class="flex flex-row justify-center gap-3 @sm:gap-3.5 w-fit px-5 max-w-xl mb-8">
+				<div class="flex max-w-xl flex-col items-center justify-center px-5 mb-8">
 					<div
 						class=" text-3xl @sm:text-3xl flex items-center"
 						in:fade={{ duration: 100 }}
 					>
-						O que você quer explorar hoje?
+						{$temporaryChatEnabled
+							? $i18n.t('Temporary Chat')
+							: 'O que você quer explorar hoje?'}
 					</div>
+					{#if $temporaryChatEnabled}
+						<div class="mt-2 text-sm font-normal text-gray-500 dark:text-gray-400" in:fade={{ duration: 100 }}>
+							{$i18n.t("This chat won't appear in history and your messages will not be saved.")}
+						</div>
+					{/if}
 				</div>
 
 

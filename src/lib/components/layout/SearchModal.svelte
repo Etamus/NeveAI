@@ -20,7 +20,6 @@
 	import Modal from '$lib/components/common/Modal.svelte';
 	import SearchInput from './Sidebar/SearchInput.svelte';
 	import { getChatById, getChatList, getChatListBySearchText } from '$lib/apis/chats';
-	import Spinner from '../common/Spinner.svelte';
 
 	import dayjs from '$lib/dayjs';
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
@@ -459,10 +458,7 @@
 								}
 							}}
 						>
-							<div class="w-full flex justify-center py-4 text-xs animate-pulse items-center gap-2">
-								<Spinner className=" size-4" />
-								<div class=" ">{$i18n.t('Loading...')}</div>
-							</div>
+							<div class="h-px w-full" aria-hidden="true"></div>
 						</Loader>
 					{/if}
 				{:else}

@@ -9,6 +9,7 @@
 	export let maxlength: number | null = null;
 	export let required = false;
 	export let readonly = false;
+	export let autoResize = true;
 	export let className =
 		'w-full rounded-lg px-3.5 py-2 text-sm bg-gray-50 dark:text-gray-300 dark:bg-gray-850 outline-hidden  h-full';
 	export let ariaLabel = null;
@@ -21,6 +22,7 @@
 
 	// Adjust height on mount and after setting the element.
 	onMount(async () => {
+		if (!autoResize) return;
 		await tick();
 		resize();
 
@@ -36,7 +38,7 @@
 	});
 
 	const resize = () => {
-		if (textareaElement) {
+		if (autoResize && textareaElement) {
 			textareaElement.style.height = '';
 
 			let height = textareaElement.scrollHeight;
@@ -58,19 +60,19 @@
 	{placeholder}
 	aria-label={ariaLabel || placeholder}
 	class={className}
-	style="field-sizing: content;"
+	style="field-sizing: {autoResize ? 'content' : 'fixed'};"
 	{rows}
 	maxlength={maxlength ?? undefined}
 	{required}
 	{readonly}
 	spellcheck={spellcheck !== null ? spellcheck : undefined}
 	on:input={(e) => {
-		resize();
+		if (autoResize) resize();
 
 		onInput(e);
 	}}
 	on:focus={() => {
-		resize();
+		if (autoResize) resize();
 	}}
 	on:blur={onBlur}
 />

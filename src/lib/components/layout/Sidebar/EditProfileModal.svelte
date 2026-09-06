@@ -134,7 +134,7 @@
 	on:change={handleImageChange}
 />
 
-<Modal size="sm" bind:show>
+<Modal size="sm" animated={false} bind:show>
 	<div>
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-1">
 			<div class=" text-lg font-medium self-center">

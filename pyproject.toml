@@ -41,7 +41,6 @@ dependencies = [
 
     "pytz==2026.1.post1",
     "APScheduler==3.11.2",
-    "RestrictedPython==8.1",
 
     "loguru==0.7.3",
     "asgiref==3.11.1",
@@ -104,7 +103,6 @@ dependencies = [
 
     "black==26.1.0",
     "youtube-transcript-api==1.2.4",
-    "pytube==15.0.0",
 
     "pydub",
     "ddgs==9.11.2",

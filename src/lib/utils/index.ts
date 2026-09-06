@@ -913,10 +913,13 @@ export const removeReasoningArtifacts = (content: string) => {
 export const removeReasoningControlTokens = (content: string) => {
 	if (!content) return content;
 
-	return content
-		.replace(/<\|?\s*channel\s*\|?>\s*(?:analysis|thought|thinking|reasoning|reason)\s*(?:<\|?\s*(?:message|content|channel)\s*\|?>)?/gi, '')
-		.replace(/<\|?\s*channel\s*\|?>\s*(?:final|answer|response)\s*(?:<\|?\s*(?:message|content|channel)\s*\|?>)?/gi, '')
-		.replace(/<\|?\s*start\s*\|?>\s*(?:assistant|model)\b\s*|<\|?\s*(?:start|end|message|content)\s*\|?>|<\|?\s*channel\s*\|?>\s*(?:final|answer|response)?/gi, '');
+	return replaceOutsideCode(content, (segment) =>
+		segment
+			.replace(/<\|?\s*channel\s*\|?>\s*(?:analysis|thought|thinking|reasoning|reason)\s*(?:<\|?\s*(?:message|content|channel)\s*\|?>)?/gi, '')
+			.replace(/<\|?\s*channel\s*\|?>\s*(?:final|answer|response)\s*(?:<\|?\s*(?:message|content|channel)\s*\|?>)?/gi, '')
+			.replace(/<\|?\s*start\s*\|?>\s*(?:assistant|model)\b\s*|<\|?\s*(?:start|end|message|content)\s*\|?>|<\|?\s*channel\s*\|?>\s*(?:final|answer|response)?/gi, '')
+			.replace(/<\s*\/?\s*(?:think|thinking|thought|reason|reasoning|analysis)\b[^>]*>/gi, '')
+	);
 };
 
 export const removeDetails = (content, types) => {

@@ -112,6 +112,7 @@
 
 	<DeleteConfirmDialog
 		bind:show={showDeleteConfirm}
+		animated={false}
 		title={$i18n.t('Delete folder?')}
 		on:confirm={() => {
 			deleteHandler();

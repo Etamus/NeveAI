@@ -32,6 +32,7 @@
 	export let item;
 	export let show = false;
 	export let edit = false;
+	export let animated = true;
 
 	let enableFullContent = false;
 	let loading = false;
@@ -288,9 +289,13 @@
 		await tick();
 	};
 
-	$: if (show) {
-		loadContent();
-	}
+$: if (show) {
+	loadContent();
+}
+
+$: if (show) {
+	enableFullContent = item?.context === 'full';
+}
 
 	onMount(() => {
 		console.log(item);
@@ -306,6 +311,7 @@
 
 <Modal
 	bind:show
+	{animated}
 	size="md"
 	className="h-[min(30rem,calc(100dvh-2rem))] overflow-hidden bg-white dark:bg-gray-900 rounded-xl"
 >
@@ -413,6 +419,8 @@
 									<Switch
 										bind:state={enableFullContent}
 										on:change={(e) => {
+											item._contextManuallySet = true;
+											delete item._fileGenerationDefaultContext;
 											item.context = e.detail ? 'full' : undefined;
 										}}
 									/>
@@ -470,7 +478,7 @@
 					{/if}
 
 					{#if isImage}
-						<div class="relative w-full overflow-hidden">
+						<div class="file-image-viewport relative w-full overflow-hidden bg-white dark:bg-gray-900">
 							<div class="absolute top-2 right-2 z-10">
 								<Tooltip content={$i18n.t('Reset view')}>
 									<button
@@ -481,11 +489,12 @@
 									</button>
 								</Tooltip>
 							</div>
-							<div use:initImagePanzoom>
+							<div class="flex w-full items-center justify-center">
 								<img
+									use:initImagePanzoom
 									src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
 									alt={item?.name ?? 'Image'}
-									class="w-full object-contain rounded-lg"
+									class="file-image-target block w-full object-contain rounded-lg"
 									loading="lazy"
 									draggable="false"
 								/>
@@ -702,6 +711,11 @@
 </Modal>
 
 <style>
+	.file-image-viewport {
+		contain: paint;
+		isolation: isolate;
+	}
+
 	:global(.excel-table-container table) {
 		width: 100%;
 		border-collapse: collapse;

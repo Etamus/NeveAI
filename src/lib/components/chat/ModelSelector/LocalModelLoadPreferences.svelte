@@ -463,12 +463,12 @@
 		{/if}
 		<div class="mx-3 mb-1 border-t border-gray-100 dark:border-gray-800"></div>
 		<div
-			class="flex flex-col gap-1 text-sm transition"
+			class="flex flex-col gap-1.5 pt-1 text-sm transition"
 			class:opacity-60={presetLocked}
 			class:pointer-events-none={presetLocked || showPresetDropdown}
 			aria-disabled={presetLocked || showPresetDropdown}
 		>
-			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
+			<div class="flex h-[34px] w-full justify-between gap-2 items-center px-3 py-0 rounded-sm">
 				{#if contextPreference === 'ask'}
 					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Tamanho do contexto</div>
 				{:else}
@@ -483,7 +483,7 @@
 				{#if contextPreference === 'ask'}
 					<button
 						type="button"
-						class="px-2.5 py-0.5 rounded-md border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
+						class="w-[4.75rem] px-0 py-0.5 rounded-md border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
 						on:click|stopPropagation={cycleContextPreference}
 					>
 						{getContextPreferenceLabel(contextPreference)}
@@ -503,7 +503,7 @@
 								<path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14" />
 							</svg>
 						</button>
-						<div class="h-7 w-14 flex items-center justify-center text-xs tabular-nums whitespace-nowrap">
+						<div class="h-7 w-12 flex items-center justify-center text-xs tabular-nums whitespace-nowrap">
 							{getContextPreferenceLabel(contextPreference)}
 						</div>
 						<button

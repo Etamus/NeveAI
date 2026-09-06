@@ -86,6 +86,8 @@
 				cancelAnimationFrame(pendingUpdate);
 				pendingUpdate = null;
 				parseTokens(true);
+			} else if (tokens.length === 0) {
+				parseTokens();
 			} else if (!pendingUpdate) {
 				pendingUpdate = requestAnimationFrame(() => {
 					pendingUpdate = null;

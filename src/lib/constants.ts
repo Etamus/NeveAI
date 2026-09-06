@@ -108,7 +108,7 @@ export const DEFAULT_CAPABILITIES = {
 	status_updates: true,
 	usage: undefined,
 	builtin_tools: true,
-	toggle_reasoning: false
+	toggle_reasoning: true
 };
 
 export const PASTED_TEXT_CHARACTER_LIMIT = 1000;

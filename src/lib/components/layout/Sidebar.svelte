@@ -878,7 +878,7 @@
 				: 'invisible'}"
 		>
 			<div
-				class="sidebar px-[0.5625rem] pt-2 pb-1.5 flex justify-between space-x-1 text-gray-600 dark:text-gray-400 sticky top-0 z-10 -mb-3"
+				class="sidebar px-[0.5625rem] pt-2 pb-1.5 flex justify-between space-x-1 text-gray-600 dark:text-gray-400 sticky top-0 z-10"
 			>
 				<a href="/" class="flex flex-1 px-1.5" on:click={newChatHandler}>
 					<div
@@ -914,10 +914,32 @@
 				></div>
 			</div>
 
+			<div class="shrink-0 pt-2">
+				<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
+					<a
+						id="sidebar-new-chat-button"
+						class="group grow flex items-center space-x-3 rounded-lg px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none"
+						href="/"
+						draggable="false"
+						on:click={newChatHandler}
+						aria-label={$i18n.t('New Chat')}
+					>
+						<div class="self-center">
+							<PencilSquare className=" size-4.5" strokeWidth="2" />
+						</div>
+
+						<div class="flex flex-1 self-center translate-y-[0.5px]">
+							<div class=" self-center text-sm">{$i18n.t('New Chat')}</div>
+							<HotkeyHint name="newChat" className="ml-auto group-hover:visible invisible" />
+						</div>
+					</a>
+				</div>
+			</div>
+
 			<div
 				class="sidebar-scroll-fade {scrollTop > 0
 					? 'sidebar-scroll-fade-top'
-					: ''} relative flex flex-col flex-1 overflow-y-auto scrollbar-hidden pt-5 pb-3"
+					: ''} relative flex flex-col flex-1 overflow-y-auto scrollbar-hidden pb-3"
 				on:scroll={(e) => {
 					if (e.target.scrollTop === 0) {
 						scrollTop = 0;
@@ -927,26 +949,6 @@
 				}}
 			>
 				<div class="pb-1.5">
-					<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
-						<a
-							id="sidebar-new-chat-button"
-							class="group grow flex items-center space-x-3 rounded-lg px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none"
-							href="/"
-							draggable="false"
-							on:click={newChatHandler}
-							aria-label={$i18n.t('New Chat')}
-						>
-							<div class="self-center">
-								<PencilSquare className=" size-4.5" strokeWidth="2" />
-							</div>
-
-							<div class="flex flex-1 self-center translate-y-[0.5px]">
-							<div class=" self-center text-sm">{$i18n.t('New Chat')}</div>
-
-							<HotkeyHint name="newChat" className="ml-auto group-hover:visible invisible" />
-						</a>
-					</div>
-
 					<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
 						<button
 							id="sidebar-search-button"
@@ -1072,25 +1074,27 @@
 							}
 						}}
 					>
-						<Folders
-							bind:folderRegistry
-							{folders}
-							{shiftKey}
-							onDelete={(folderId) => {
-								selectedFolder.set(null);
-								initChatList();
-							}}
-							on:update={() => {
-								initChatList();
-							}}
-							on:import={(e) => {
-								const { folderId, items } = e.detail;
-								importChatHandler(items, false, folderId);
-							}}
-							on:change={async () => {
-								initChatList();
-							}}
-						/>
+						<div class="pt-1.5">
+							<Folders
+								bind:folderRegistry
+								{folders}
+								{shiftKey}
+								onDelete={(folderId) => {
+									selectedFolder.set(null);
+									initChatList();
+								}}
+								on:update={() => {
+									initChatList();
+								}}
+								on:import={(e) => {
+									const { folderId, items } = e.detail;
+									importChatHandler(items, false, folderId);
+								}}
+								on:change={async () => {
+									initChatList();
+								}}
+							/>
+						</div>
 					</Folder>
 				{/if}
 

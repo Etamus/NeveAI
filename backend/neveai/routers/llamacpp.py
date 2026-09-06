@@ -67,6 +67,59 @@ def _normalize_llamacpp_error_message(error_text: str) -> str:
         return LLAMACPP_CONTEXT_SIZE_ERROR_MESSAGE
     return text
 
+
+def _detect_reasoning_control(
+    model_filename: str,
+    props: Optional[dict] = None,
+    runtime_hint: str = "",
+) -> str:
+    """Classify how the loaded chat template controls reasoning.
+
+    Effort-based templates (notably GPT-OSS/Harmony) must never receive
+    enable_thinking=false. Other templates retain the existing toggle behavior
+    so Quick mode actually disables thinking.
+    """
+    filename_hint = str(model_filename or "").lower()
+    props_text = json.dumps(props or {}, ensure_ascii=False, default=str).lower()
+    combined = f"{filename_hint}\n{props_text}\n{str(runtime_hint or '').lower()}"
+
+    harmony_tokens = (
+        "<|channel|>" in combined
+        and "<|constrain|>" in combined
+        and ("<|start|>" in combined or "<|message|>" in combined)
+    )
+    harmony_format = bool(
+        re.search(
+            r'"(?:chat_format|chat_template_name|format)"\s*:\s*"[^"]*harmony',
+            props_text,
+        )
+    )
+    if re.search(r"gpt[\s._-]*oss", combined) or harmony_tokens or harmony_format:
+        return "effort"
+    if "enable_thinking" in combined:
+        return "toggle"
+    if "thinking_budget" in combined or "reasoning_budget" in combined:
+        return "budget"
+    return "unknown"
+
+
+def _resolve_reasoning_settings(
+    control: str,
+    mode: str,
+    extended: Optional[bool],
+) -> tuple[bool, Optional[int], Optional[str]]:
+    """Return no_think, token budget and effort for a semantic UI state."""
+    quick = mode == "quick"
+
+    if control == "effort":
+        effort = "low" if quick else "high" if extended else "medium"
+        return False, None, effort
+
+    if quick:
+        return True, None, None
+    budget = None if extended is None else (4096 if extended else 512)
+    return False, budget, None
+
 # ---------------------------------------------------------------------------
 # mmproj compatibility helpers
 # ---------------------------------------------------------------------------
@@ -323,6 +376,7 @@ class _LoadedModelInfo:
         "speculative_decoding",
         "token_prediction",
         "context_shift",
+        "reasoning_control",
     )
 
     def __init__(self, model_id: str, filename: str, n_gpu_layers: int, n_ctx: int, file_size: int, mmproj_filename: Optional[str] = None, cache_type: str = "f16", speculative_decoding: str = "off", token_prediction: str = "off", context_shift: str = "off"):
@@ -335,6 +389,7 @@ class _LoadedModelInfo:
         self.mmproj_filename = mmproj_filename
         self.cache_type = cache_type
         self.context_shift = _normalize_context_shift(context_shift)
+        self.reasoning_control = None
         self.token_prediction = _normalize_token_prediction(token_prediction)
         if self.context_shift != "off" or self.token_prediction != "off":
             token_prediction = "off" if self.context_shift != "off" else token_prediction
@@ -442,6 +497,18 @@ class LocalModelManager:
         except Exception:
             return ""
 
+    def _read_log_probe(self, model_id: str, max_bytes: int = 262144) -> str:
+        """Read startup metadata used to identify renamed model architectures."""
+        log_path = self._log_paths.get(model_id)
+        if not log_path or not log_path.exists():
+            return ""
+
+        try:
+            with log_path.open("rb") as log_file:
+                return log_file.read(max_bytes).decode("utf-8", errors="replace")
+        except Exception:
+            return ""
+
     # -- scanning --------------------------------------------------------
 
     def _next_free_port(self) -> int:
@@ -507,6 +574,36 @@ class LocalModelManager:
     def get_loaded_models(self) -> list[dict]:
         """Return models that are currently loaded in memory."""
         return [m for m in self.scan_models() if m["is_loaded"]]
+
+    async def get_reasoning_control(self, model_id: str) -> str:
+        """Resolve and cache the reasoning controls exposed by llama-server."""
+        info = self._loaded.get(model_id)
+        if not info:
+            return "unknown"
+        if info.reasoning_control is not None:
+            return info.reasoning_control
+
+        props = None
+        port = self._ports.get(model_id)
+        if port is not None:
+            try:
+                response = await _get_http_client(port).get("/props", timeout=5.0)
+                if response.status_code == 200:
+                    props = response.json()
+            except Exception as exc:
+                log.debug("Unable to inspect reasoning properties for %s: %s", model_id, exc)
+
+        info.reasoning_control = _detect_reasoning_control(
+            info.filename,
+            props,
+            self._read_log_probe(model_id),
+        )
+        log.info(
+            "Reasoning control detected for %s: %s",
+            model_id,
+            info.reasoning_control,
+        )
+        return info.reasoning_control
 
     def auto_detect_mmproj(self, model_filename: str) -> Optional[str]:
         """Auto-detect a compatible mmproj file for the given model."""
@@ -985,6 +1082,8 @@ class LocalModelManager:
         dry_base: Optional[float] = None,
         no_think: bool = False,
         thinking_budget_tokens: Optional[int] = None,
+        reasoning_effort: Optional[str] = None,
+        response_format: Optional[dict] = None,
     ):
         """Proxy a chat completion request to llama-server for the given model."""
         if not self.is_model_loaded(model_id):
@@ -1088,13 +1187,20 @@ class LocalModelManager:
         if thinking_budget_tokens is not None:
             payload["thinking_budget_tokens"] = thinking_budget_tokens
 
-        # Disable reasoning/thinking when requested
+        if reasoning_effort in {"low", "medium", "high"}:
+            payload["reasoning_effort"] = reasoning_effort
+            payload["chat_template_kwargs"] = {"reasoning_effort": reasoning_effort}
+
         if no_think:
-            # chat_template_kwargs passes enable_thinking=false to the Jinja template
-            # This works for Qwen3, Gemma and other models with thinking support
             payload["chat_template_kwargs"] = {"enable_thinking": False}
-            # reasoning_format=none prevents parsing/extracting <think> tags
-            payload["reasoning_format"] = "none"
+            # A constrained JSON grammar is applied to the answer channel only.
+            # Keeping the reasoning parser enabled avoids treating the template's
+            # empty <think> markers as JSON while thinking itself remains disabled.
+            payload["reasoning_format"] = (
+                "deepseek" if isinstance(response_format, dict) else "none"
+            )
+        if isinstance(response_format, dict):
+            payload["response_format"] = response_format
 
         if stream:
             return self._stream_proxy(client, payload, model_id)
@@ -1520,15 +1626,25 @@ async def generate_chat_completion(
         messages = form_data.get("messages", messages)
 
     # --- Thinking/Reasoning toggle ---
-    no_think = bool(form_data.get("no_think", False))
+    reasoning_requested = any(
+        key in form_data for key in ("reasoning_mode", "reasoning_extended", "no_think")
+    )
+    requested_no_think = bool(form_data.pop("no_think", False))
+    reasoning_mode = str(form_data.pop("reasoning_mode", "") or "").strip().lower()
+    if reasoning_mode not in {"quick", "reasoning"}:
+        reasoning_mode = "quick" if requested_no_think else "reasoning"
+    requested_quick = reasoning_mode == "quick"
     reasoning_extended = form_data.pop("reasoning_extended", None)
     thinking_budget_tokens = None
+    reasoning_extended_enabled = False
     if reasoning_extended is not None:
         reasoning_extended_enabled = not (
             reasoning_extended is False
             or str(reasoning_extended).lower() == "false"
         )
         thinking_budget_tokens = 4096 if reasoning_extended_enabled else 512
+    no_think = False
+    reasoning_effort = None
 
     stream = form_data.get("stream", False)
     temperature = form_data.get("temperature", 0.7)
@@ -1549,6 +1665,7 @@ async def generate_chat_completion(
     dry_multiplier = form_data.get("dry_multiplier", None)
     dry_allowed_length = form_data.get("dry_allowed_length", None)
     dry_base = form_data.get("dry_base", None)
+    response_format = form_data.get("response_format", None)
 
     model_filename = None
     for m in model_manager.scan_models():
@@ -1599,8 +1716,25 @@ async def generate_chat_completion(
                         f"Failed to reload model {model_id} with mmproj={mmproj}: {e}"
                     )
 
+    if reasoning_requested:
+        reasoning_control = await model_manager.get_reasoning_control(model_id)
+        no_think, thinking_budget_tokens, reasoning_effort = _resolve_reasoning_settings(
+            reasoning_control,
+            reasoning_mode,
+            reasoning_extended_enabled if reasoning_extended is not None else None,
+        )
+
+    # Preserve the legacy marker so the response middleware also removes any
+    # reasoning text that a non-effort template emits despite being disabled.
     if no_think:
-        log.info(f"generate_chat_completion: thinking disabled for model {model_id}")
+        form_data["no_think"] = True
+
+    if reasoning_effort:
+        log.info(
+            "generate_chat_completion: reasoning effort=%s for model %s",
+            reasoning_effort,
+            model_id,
+        )
 
     if stream:
         generator = await model_manager.chat_completion(
@@ -1627,6 +1761,8 @@ async def generate_chat_completion(
             dry_base=dry_base,
             no_think=no_think,
             thinking_budget_tokens=thinking_budget_tokens,
+            reasoning_effort=reasoning_effort,
+            response_format=response_format,
         )
         return StreamingResponse(
             generator,
@@ -1662,6 +1798,8 @@ async def generate_chat_completion(
             dry_base=dry_base,
             no_think=no_think,
             thinking_budget_tokens=thinking_budget_tokens,
+            reasoning_effort=reasoning_effort,
+            response_format=response_format,
         )
         return result
 
@@ -1686,7 +1824,7 @@ def _human_size(nbytes: int) -> str:
 import uuid
 import threading
 
-NEVE_CATALOG_DEFAULTS_VERSION = 1
+NEVE_CATALOG_DEFAULTS_VERSION = 2
 NEVE_DOWNLOAD_USER_ID = "neve-download"
 
 NEVE_DEFAULT_CAPABILITIES = {
@@ -1699,7 +1837,7 @@ NEVE_DEFAULT_CAPABILITIES = {
     "citations": True,
     "status_updates": True,
     "builtin_tools": True,
-    "toggle_reasoning": False,
+    "toggle_reasoning": True,
 }
 
 
@@ -1714,7 +1852,7 @@ NEVE_CATALOG = [
         "profile_image_url": "/static/logoechos.png",
         "description": "Modelo de uso geral e raciocínio para tarefas imediatas.",
         "params": {"temperature": 1, "min_p": 0.05, "dry_multiplier": 0.25},
-        "default_feature_ids": ["web_search", "toggle_reasoning"],
+        "default_feature_ids": ["web_search"],
     },
     {
         "id": "neve-echo",
@@ -1726,7 +1864,7 @@ NEVE_CATALOG = [
         "profile_image_url": "/static/logoecho.png",
         "description": "Modelo de uso geral e raciocínio para tarefas variadas.",
         "params": {"temperature": 1, "min_p": 0.05, "dry_multiplier": 0.15},
-        "default_feature_ids": ["toggle_reasoning"],
+        "default_feature_ids": [],
     },
     {
         "id": "neve-sense",
@@ -1750,7 +1888,7 @@ NEVE_CATALOG = [
         "profile_image_url": "/static/logostratas.png",
         "description": "Modelo de programação e raciocínio para execução em escala.",
         "params": {"temperature": 0.4, "min_p": 0.1},
-        "default_feature_ids": ["code_execution", "toggle_reasoning"],
+        "default_feature_ids": ["code_execution"],
     },
     {
         "id": "neve-strata-x",
@@ -1762,7 +1900,7 @@ NEVE_CATALOG = [
         "profile_image_url": "/static/logostrata.png",
         "description": "Modelo de programação e raciocínio para arquiteturas complexas.",
         "params": {"temperature": 0.6, "min_p": 0.1},
-        "default_feature_ids": ["code_execution", "toggle_reasoning"],
+        "default_feature_ids": ["code_execution"],
     },
     {
         "id": "neve-muse",
@@ -1779,7 +1917,7 @@ NEVE_CATALOG = [
             "dry_multiplier": 0.9,
             "dry_allowed_length": 2,
         },
-        "default_feature_ids": ["toggle_reasoning"],
+        "default_feature_ids": [],
     },
     {
         "id": "neve-cascade-x",
@@ -1973,10 +2111,14 @@ def _catalog_model_id(repo_filename: str) -> str:
 
 
 def _catalog_model_form(entry: dict, repo_filename: str) -> ModelForm:
-    default_feature_ids = entry.get("default_feature_ids", [])
+    default_feature_ids = [
+        feature_id
+        for feature_id in entry.get("default_feature_ids", [])
+        if feature_id != "toggle_reasoning"
+    ]
     capabilities = {
         **NEVE_DEFAULT_CAPABILITIES,
-        "toggle_reasoning": "toggle_reasoning" in default_feature_ids,
+        "toggle_reasoning": True,
     }
 
     meta = {
@@ -2444,7 +2586,17 @@ async def get_neve_catalog():
     """Return the curated Neve model catalog with installed status and hardware requirements."""
     items = []
     for entry in NEVE_CATALOG:
-        installed = len(_catalog_main_paths(entry)) > 0
+        main_paths = _catalog_main_paths(entry)
+        installed = len(main_paths) > 0
+        for model_path in main_paths:
+            existing_model = Models.get_model_by_id(_catalog_model_id(model_path.name))
+            existing_meta = existing_model.meta.model_dump() if existing_model and existing_model.meta else {}
+            if (
+                existing_meta.get("managed_by") == "neve_download"
+                and existing_meta.get("neve_catalog_defaults_version", 0)
+                < NEVE_CATALOG_DEFAULTS_VERSION
+            ):
+                _apply_catalog_model_defaults(entry, model_path.name)
         items.append({**entry, "installed": installed})
     return {"models": items}
 
