@@ -3104,6 +3104,7 @@ FILE_GENERATION_OUTPUT_FORMATS = (
     "yaml",
     "yml",
     "xml",
+    "srt",
     "sql",
     "rtf",
     "docx",
@@ -3139,6 +3140,10 @@ FILE_GENERATION_FORMAT_GUIDANCE = {
         "Create a complete, readable document with all unique source information requested. "
         "Do not invent an ending, conclusion, or new facts merely because the user calls it a final file."
     ),
+    "srt": (
+        "Return plain subtitle text using the .srt extension. Apply subtitle timestamp and cue-number "
+        "removal exactly when requested, without converting the result to code, SQL, JSON, or another format."
+    ),
     "zip": (
         "Return every required file with a safe relative path. Do not omit support files needed "
         "for the requested result."
@@ -3153,6 +3158,7 @@ FILE_GENERATION_CODE_FORMATS = {
 FILE_GENERATION_CHUNKABLE_FORMATS = {
     *FILE_GENERATION_NARRATIVE_FORMATS,
     "csv",
+    "srt",
     "xlsx",
     "pptx",
 }
@@ -3519,11 +3525,11 @@ async def _plan_attachment_file_generation(
     files: list[dict],
     enabled: bool,
 ) -> Optional[dict]:
-    if not enabled or not prompt or not files:
+    if not enabled or not prompt:
         return None
 
     source_payloads = _get_file_generation_source_payloads(files, user)
-    if not source_payloads:
+    if files and not source_payloads:
         return None
 
     task_model_id = get_task_model_id(
@@ -3532,8 +3538,9 @@ async def _plan_attachment_file_generation(
         request.app.state.config.TASK_MODEL_EXTERNAL,
         models,
     )
-    attachment_summary = "\n".join(
-        f"- {source['name']}" for source in source_payloads
+    attachment_summary = (
+        "\n".join(f"- {source['name']}" for source in source_payloads)
+        or "- No attached files"
     )
     schema = {
         "type": "object",
@@ -3591,9 +3598,12 @@ async def _plan_attachment_file_generation(
         {
             "role": "system",
             "content": (
-                "Decide whether the user's request expects a new downloadable file made from the "
-                "attached files. Understand the semantic objective; do not decide by keyword matching. "
+                "Decide whether the user's request expects a new downloadable file, either created "
+                "from scratch or made from attached files. Understand the semantic objective; do not "
+                "decide by keyword matching. "
                 "Questions, explanations, and summaries meant only as chat text are not file generation. "
+                "Creating a document, spreadsheet, presentation, or other downloadable deliverable "
+                "from scratch is file generation even when there are no attachments. "
                 "Merging, editing, converting, restructuring, or producing a deliverable from attachments "
                 "is file generation. preserve_all_unique_content must be false whenever the requested "
                 "transformation removes, filters, excludes, summarizes, or selectively extracts any "
@@ -3984,6 +3994,44 @@ def _decode_generated_file_response(
         if not isinstance(content, str):
             raise RuntimeError("The model did not return textual file content")
     return content.strip(), sources_used
+
+
+def _unwrap_generated_file_container(raw_content: str, output_format: str) -> str:
+    """Remove an accidental ZIP-style envelope from a non-ZIP deliverable."""
+    if output_format == "zip":
+        return raw_content
+    try:
+        payload = _load_model_json(raw_content)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return raw_content
+    if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
+        return raw_content
+
+    candidates = [item for item in payload["files"] if isinstance(item, dict)]
+    if not candidates:
+        return raw_content
+    matching = [
+        item
+        for item in candidates
+        if Path(str(item.get("path") or "")).suffix.casefold()
+        == f".{output_format.casefold()}"
+    ]
+    selected = (matching or candidates)[0]
+    content = selected.get("content")
+    if isinstance(content, (dict, list)):
+        content = json.dumps(content, ensure_ascii=False)
+    if not isinstance(content, str) or not content.strip():
+        return raw_content
+
+    if output_format in {"xlsx", "pptx"}:
+        try:
+            structured = _load_model_json(content)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return content.strip()
+        if isinstance(structured, dict):
+            structured.setdefault("sources_used", payload.get("sources_used", []))
+            return json.dumps(structured, ensure_ascii=False)
+    return content.strip()
 
 
 def _normalize_file_coverage_text(value: str) -> str:
@@ -4765,6 +4813,9 @@ final file body.
     cleaned_content = strip_reasoning_text_artifacts(raw_content).strip()
     cleaned_content = _strip_file_generation_process_preamble(
         cleaned_content, source_payloads
+    )
+    cleaned_content = _unwrap_generated_file_container(
+        cleaned_content, output_format
     )
     if response_format:
         content, sources_used = _decode_generated_file_response(
@@ -6324,7 +6375,6 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             if (
                 features.get("file_generation")
                 and "create_downloadable_file" in builtin_tools
-                and (not native_function_calling or bool(files))
             ):
                 deferred_file_generation_tools = {
                     "create_downloadable_file": builtin_tools.pop(

@@ -47,6 +47,7 @@ from neveai.utils.generated_files import (
     MIME_TYPES,
     GeneratedFileError,
     build_generated_file,
+    was_generated_with_officecli,
 )
 
 log = logging.getLogger(__name__)
@@ -461,7 +462,7 @@ async def create_downloadable_file(
     Use this only when the user asks to create, export, save, assemble, or download a
     deliverable file. Do not use it for ordinary answers that should remain chat text.
     Supported formats are txt, md, csv, json, html, css, js, ts, py, java, c, cpp,
-    h, sh, yaml, yml, xml, sql, rtf, docx, xlsx, pdf, pptx, and zip.
+    h, sh, yaml, yml, xml, srt, sql, rtf, docx, xlsx, pdf, pptx, and zip.
 
     For xlsx, content should be JSON such as
     {"sheets":[{"name":"Dados","rows":[["Nome","Valor"],["A",1]]}]}.
@@ -500,7 +501,17 @@ async def create_downloadable_file(
             filename,
             content,
             file_format,
+            prefer_officecli=True,
         )
+        resolved_output_format = Path(safe_name).suffix.lstrip(".").lower()
+        if resolved_output_format in {"docx", "xlsx", "pptx"}:
+            generation_engine = (
+                "officecli"
+                if was_generated_with_officecli(file_bytes, resolved_output_format)
+                else "fallback"
+            )
+        else:
+            generation_engine = "native"
         user = UserModel(**__user__)
         upload = UploadFile(
             file=io.BytesIO(file_bytes),
@@ -510,7 +521,11 @@ async def create_downloadable_file(
         file_item = upload_file_handler(
             request=__request__,
             file=upload,
-            metadata={"generated": True, "source": "file_generation"},
+            metadata={
+                "generated": True,
+                "source": "file_generation",
+                "generation_engine": generation_engine,
+            },
             process=False,
             process_in_background=False,
             user=user,

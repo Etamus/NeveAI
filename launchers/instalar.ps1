@@ -2212,6 +2212,18 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             }
             Log "[OK] Pacotes npm instalados"
 
+            $officeCli = Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe'
+            if (-not (Test-Path -LiteralPath $officeCli)) {
+                Log "[!] Binário do OfficeCLI ausente após o npm install; executando a recuperação oficial." 'warn'
+                $rc = Run $NPM_EXE @('exec','--','officecli','--version') 'preparar OfficeCLI'
+                if ($rc -ne 0 -or -not (Test-Path -LiteralPath $officeCli)) {
+                    throw 'Falha ao preparar o OfficeCLI para geração de DOCX, XLSX e PPTX.'
+                }
+            }
+            $rc = Run $officeCli @('--version') 'validar OfficeCLI'
+            if ($rc -ne 0) { throw "OfficeCLI instalado, mas a validação falhou (exit $rc)." }
+            Log "[OK] OfficeCLI pronto para gerar DOCX, XLSX e PPTX"
+
             # ---- 11. npm run build
             P 92 'Compilando frontend (~2-5 min)'
             $rc = Run $NPM_EXE @('run','build') 'npm run build'
@@ -4390,6 +4402,17 @@ $ctl.BtnPrimary.Add_Click({
                     $rc = Run $npmExe @('install', '--no-audit', '--no-fund') 'npm install' 2700
                     if ($rc -ne 0) { throw "npm install falhou (código $rc)" }
 
+                    $officeCli = Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe'
+                    if (-not (Test-Path -LiteralPath $officeCli)) {
+                        $rc = Run $npmExe @('exec', '--', 'officecli', '--version') 'preparar OfficeCLI'
+                        if ($rc -ne 0 -or -not (Test-Path -LiteralPath $officeCli)) {
+                            throw 'Falha ao preparar o OfficeCLI para geração de DOCX, XLSX e PPTX.'
+                        }
+                    }
+                    $rc = Run $officeCli @('--version') 'validar OfficeCLI'
+                    if ($rc -ne 0) { throw "OfficeCLI instalado, mas a validação falhou (código $rc)." }
+                    L '[OK] OfficeCLI pronto para gerar DOCX, XLSX e PPTX'
+
                     PN 76 'Gerando build do frontend'
                     Remove-Item -LiteralPath (Join-Path $ROOT 'build') -Recurse -Force -EA SilentlyContinue
                     $rc = Run $npmExe @('run', 'build') 'npm run build' 1800
@@ -5131,6 +5154,24 @@ function Ensure-FrontendDependencies([string]$npmExe) {
     if ($rc -ne 0) { throw "npm install falhou (codigo $rc)." }
 }
 
+function Ensure-OfficeCLI([string]$npmExe) {
+    $officeCli = Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe'
+    $officeCliLauncher = Join-Path $ROOT 'node_modules\@officecli\officecli\officecli.js'
+    if (-not (Test-Path -LiteralPath $officeCliLauncher)) {
+        $rc = Invoke-LoggedProcess $npmExe @('install', '--no-audit', '--no-fund', '--prefer-offline', '--progress=false') 'instalar OfficeCLI'
+        if ($rc -ne 0) { throw "npm install do OfficeCLI falhou (codigo $rc)." }
+    }
+    if (-not (Test-Path -LiteralPath $officeCli)) {
+        $rc = Invoke-LoggedProcess $npmExe @('exec', '--', 'officecli', '--version') 'preparar OfficeCLI'
+        if ($rc -ne 0 -or -not (Test-Path -LiteralPath $officeCli)) {
+            throw 'Falha ao preparar o OfficeCLI para geracao de DOCX, XLSX e PPTX.'
+        }
+    }
+    $rc = Invoke-LoggedProcess $officeCli @('--version') 'validar OfficeCLI'
+    if ($rc -ne 0) { throw "OfficeCLI instalado, mas a validacao falhou (codigo $rc)." }
+    Append-Log 'OfficeCLI pronto para gerar DOCX, XLSX e PPTX' 'ok'
+}
+
 function Set-Done([bool]$ok, [string]$summary) {
     $script:ExitCode = if ($ok) { 0 } else { 1 }
 
@@ -5188,6 +5229,7 @@ function Start-BuildDeploy {
         $npmExe = $frontendNode.NpmExecutable
 
         Ensure-FrontendDependencies $npmExe
+        Ensure-OfficeCLI $npmExe
 
         Set-Progress 22 'Limpando build antigo'
         if (Test-Path $BUILD_DIR) {

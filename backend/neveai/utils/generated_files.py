@@ -1,10 +1,14 @@
 import csv
 import io
 import json
+import logging
 import re
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
+
+
+log = logging.getLogger(__name__)
 
 
 MAX_SOURCE_CHARS = 4_000_000
@@ -29,6 +33,7 @@ TEXT_FORMATS = {
     "yaml": "application/yaml; charset=utf-8",
     "yml": "application/yaml; charset=utf-8",
     "xml": "application/xml; charset=utf-8",
+    "srt": "application/x-subrip; charset=utf-8",
     "sql": "application/sql; charset=utf-8",
     "rtf": "application/rtf",
 }
@@ -362,7 +367,10 @@ def _build_zip(content: str) -> bytes:
 
 
 def build_generated_file(
-    filename: str, content: str, requested_format: str = ""
+    filename: str,
+    content: str,
+    requested_format: str = "",
+    prefer_officecli: bool = False,
 ) -> tuple[str, bytes, str]:
     if not isinstance(content, str):
         raise GeneratedFileError("O conteúdo do arquivo deve ser texto.")
@@ -373,7 +381,29 @@ def build_generated_file(
 
     safe_name, file_format = _sanitize_filename(filename, requested_format)
 
-    if file_format == "docx":
+    if prefer_officecli and file_format in {"docx", "xlsx", "pptx"}:
+        try:
+            from neveai.utils.officecli_files import build_officecli_file
+
+            data = build_officecli_file(safe_name, content, file_format)
+            log.info(
+                "OfficeCLI generated %s from the resolved output format %s",
+                safe_name,
+                file_format,
+            )
+        except Exception as error:
+            log.warning(
+                "OfficeCLI could not build %s; using the existing generator fallback: %s",
+                file_format,
+                error,
+            )
+            if file_format == "docx":
+                data = _build_docx(content)
+            elif file_format == "xlsx":
+                data = _build_xlsx(content)
+            else:
+                data = _build_pptx(content)
+    elif file_format == "docx":
         data = _build_docx(content)
     elif file_format == "xlsx":
         data = _build_xlsx(content)
@@ -397,3 +427,14 @@ def build_generated_file(
         )
 
     return safe_name, data, MIME_TYPES[file_format]
+
+
+def was_generated_with_officecli(data: bytes, file_format: str) -> bool:
+    if _normalize_format(file_format) not in {"docx", "xlsx", "pptx"}:
+        return False
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            producer = archive.read("docProps/app.xml")
+        return b"OfficeCLI/" in producer
+    except (KeyError, OSError, zipfile.BadZipFile):
+        return False

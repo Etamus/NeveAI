@@ -89,9 +89,12 @@
 
 	$: isPlainText =
 		(item?.meta?.content_type ?? '').startsWith('text/plain') ||
+		(item?.meta?.content_type ?? '').startsWith('application/x-subrip') ||
 		item?.meta?.content_type === 'application/rtf' ||
 		(item?.name &&
-			(item.name.toLowerCase().endsWith('.txt') || item.name.toLowerCase().endsWith('.rtf')));
+			(item.name.toLowerCase().endsWith('.txt') ||
+				item.name.toLowerCase().endsWith('.srt') ||
+				item.name.toLowerCase().endsWith('.rtf')));
 
 	$: isCode =
 		item?.name &&
