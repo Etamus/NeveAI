@@ -989,7 +989,7 @@ $ctl.BtnPrimary.Add_Click({
     # Mapeia indice -> torchIndex / llamaAsset / cudaVer / useOnnxGpu
     $cfg = switch ($backendIdx) {
         0 { @{ torchIndex='https://download.pytorch.org/whl/cpu'; llamaAsset='cpu';        cudaVer='CPU';                 useOnnxGpu=$false; vendor='CPU'    } }
-        1 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-13.3'; cudaVer='CUDA 13.3 (Blackwell)'; useOnnxGpu=$true;  vendor='NVIDIA' } }
+        1 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-13.4'; cudaVer='CUDA 13.4 (Blackwell)'; useOnnxGpu=$true;  vendor='NVIDIA' } }
         2 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.8 (Ada)';        useOnnxGpu=$true;  vendor='NVIDIA' } }
         3 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.8 (Ampere)';     useOnnxGpu=$true;  vendor='NVIDIA' } }
         4 { @{ torchIndex='https://download.pytorch.org/whl/cu126'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.6 (Turing)';     useOnnxGpu=$true;  vendor='NVIDIA' } }
@@ -2212,21 +2212,30 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             }
             Log "[OK] Pacotes npm instalados"
 
-            $officeCli = Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe'
-            if (-not (Test-Path -LiteralPath $officeCli)) {
-                Log "[!] Binário do OfficeCLI ausente após o npm install; executando a recuperação oficial." 'warn'
-                $rc = Run $NPM_EXE @('exec','--','officecli','--version') 'preparar OfficeCLI'
-                if ($rc -ne 0 -or -not (Test-Path -LiteralPath $officeCli)) {
-                    throw 'Falha ao preparar o OfficeCLI para geração de DOCX, XLSX e PPTX.'
+            $previousOfficeCliSkipUpdate = $env:OFFICECLI_SKIP_UPDATE
+            $previousOfficeCliNoAutoResident = $env:OFFICECLI_NO_AUTO_RESIDENT
+            try {
+                $env:OFFICECLI_SKIP_UPDATE = '1'
+                $env:OFFICECLI_NO_AUTO_RESIDENT = '1'
+                $officeCli = Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe'
+                if (-not (Test-Path -LiteralPath $officeCli)) {
+                    Log "[!] Binário do OfficeCLI ausente após o npm install; executando a recuperação oficial." 'warn'
+                    $rc = Run $NPM_EXE @('exec','--','officecli','--version') 'preparar OfficeCLI'
+                    if ($rc -ne 0 -or -not (Test-Path -LiteralPath $officeCli)) {
+                        throw 'Falha ao preparar o OfficeCLI para geração de DOCX, XLSX e PPTX.'
+                    }
                 }
+                $rc = Run $officeCli @('--version') 'validar OfficeCLI'
+                if ($rc -ne 0) { throw "OfficeCLI instalado, mas a validação falhou (exit $rc)." }
+            } finally {
+                if ($null -eq $previousOfficeCliSkipUpdate) { Remove-Item Env:\OFFICECLI_SKIP_UPDATE -ErrorAction SilentlyContinue } else { $env:OFFICECLI_SKIP_UPDATE = $previousOfficeCliSkipUpdate }
+                if ($null -eq $previousOfficeCliNoAutoResident) { Remove-Item Env:\OFFICECLI_NO_AUTO_RESIDENT -ErrorAction SilentlyContinue } else { $env:OFFICECLI_NO_AUTO_RESIDENT = $previousOfficeCliNoAutoResident }
             }
-            $rc = Run $officeCli @('--version') 'validar OfficeCLI'
-            if ($rc -ne 0) { throw "OfficeCLI instalado, mas a validação falhou (exit $rc)." }
             Log "[OK] OfficeCLI pronto para gerar DOCX, XLSX e PPTX"
 
             # ---- 11. npm run build
             P 92 'Compilando frontend (~2-5 min)'
-            $rc = Run $NPM_EXE @('run','build') 'npm run build'
+            $rc = Run $NPM_EXE @('run','build','--','--logLevel','error') 'npm run build'
             if ($rc -ne 0) { throw "Falha no build do frontend (exit $rc)" }
             Log "[OK] Frontend compilado"
 
@@ -2510,8 +2519,17 @@ function Test-LlamaReleaseAssetReference([string]$url) {
     }
 }
 
+function Test-LlamaBackendCompatible([string]$requested, [string]$available) {
+    if ([string]::IsNullOrWhiteSpace($requested) -or [string]::IsNullOrWhiteSpace($available)) { return $false }
+    if ($requested -eq $available) { return $true }
+
+    $requestedCuda = [regex]::Match($requested, '^cuda(?:-cu)?-?(\d+)(?:\.\d+)?$')
+    $availableCuda = [regex]::Match($available, '^cuda(?:-cu)?-?(\d+)(?:\.\d+)?$')
+    return ($requestedCuda.Success -and $availableCuda.Success -and $requestedCuda.Groups[1].Value -eq $availableCuda.Groups[1].Value)
+}
+
 function Get-GitHubLatestLlamaRelease([string[]]$backends = @()) {
-    $supportedBackends = @('cpu', 'cuda-12.4', 'cuda-13.3', 'cuda-cu12.4', 'cuda-cu13.3', 'vulkan')
+    $supportedBackends = @('cpu', 'cuda-12.4', 'cuda-13.4', 'cuda-13.3', 'cuda-cu12.4', 'cuda-cu13.4', 'cuda-cu13.3', 'vulkan')
     $wantedBackends = @($backends | Where-Object { $_ })
     if ($wantedBackends.Count -eq 0) { $wantedBackends = $supportedBackends }
     if ($wantedBackends -contains 'cuda-cu12.4') { $wantedBackends += 'cuda-12.4' }
@@ -2526,10 +2544,13 @@ function Get-GitHubLatestLlamaRelease([string[]]$backends = @()) {
         foreach ($release in $releases) {
             if ($release.draft -or -not $release.tag_name) { continue }
             $tagEsc = [regex]::Escape([string]$release.tag_name)
-            foreach ($backend in $wantedBackends) {
-                $backendEsc = [regex]::Escape([string]$backend)
-                $asset = $release.assets | Where-Object { $_.name -match "^llama-$tagEsc-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
-                if ($asset) { return $release }
+            foreach ($asset in @($release.assets)) {
+                $assetMatch = [regex]::Match([string]$asset.name, "^llama-$tagEsc-bin-win-(.+)-x64\.zip$")
+                if (-not $assetMatch.Success) { continue }
+                $availableBackend = $assetMatch.Groups[1].Value
+                foreach ($backend in $wantedBackends) {
+                    if (Test-LlamaBackendCompatible $backend $availableBackend) { return $release }
+                }
             }
         }
         throw 'Nenhuma release recente do llama.cpp contém binários Windows compatíveis.'
@@ -3007,6 +3028,13 @@ $ctl.BtnLlama.Add_Click({
                 if ($phase) { $script:Ctl.LblPhase.Text = $phase; $script:Ctl.LblStep.Text = $phase }
             })
         }
+        function Test-LlamaBackendCompatible([string]$requested, [string]$available) {
+            if ([string]::IsNullOrWhiteSpace($requested) -or [string]::IsNullOrWhiteSpace($available)) { return $false }
+            if ($requested -eq $available) { return $true }
+            $requestedCuda = [regex]::Match($requested, '^cuda(?:-cu)?-?(\d+)(?:\.\d+)?$')
+            $availableCuda = [regex]::Match($available, '^cuda(?:-cu)?-?(\d+)(?:\.\d+)?$')
+            return ($requestedCuda.Success -and $availableCuda.Success -and $requestedCuda.Groups[1].Value -eq $availableCuda.Groups[1].Value)
+        }
         function Get-LatestLlamaRelease([string[]]$backends) {
             $apiError = $null
             try {
@@ -3014,10 +3042,13 @@ $ctl.BtnLlama.Add_Click({
                 foreach ($release in $releases) {
                     if ($release.draft -or -not $release.tag_name) { continue }
                     $tagEsc = [regex]::Escape([string]$release.tag_name)
-                    foreach ($backend in $backends) {
-                        $backendEsc = [regex]::Escape([string]$backend)
-                        $asset = $release.assets | Where-Object { $_.name -match "^llama-$tagEsc-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
-                        if ($asset) { return $release }
+                    foreach ($asset in @($release.assets)) {
+                        $assetMatch = [regex]::Match([string]$asset.name, "^llama-$tagEsc-bin-win-(.+)-x64\.zip$")
+                        if (-not $assetMatch.Success) { continue }
+                        $availableBackend = $assetMatch.Groups[1].Value
+                        foreach ($backend in $backends) {
+                            if (Test-LlamaBackendCompatible $backend $availableBackend) { return $release }
+                        }
                     }
                 }
                 throw 'Nenhuma release recente do llama.cpp contém os binários Windows necessários.'
@@ -3123,7 +3154,7 @@ $ctl.BtnLlama.Add_Click({
                 }
 
                 if ($name -match 'RTX\s*5\d{3}|50\d{2}|Blackwell' -or ($computeCap -ne $null -and $computeCap -ge 12.0)) {
-                    return New-LlamaTarget 'NVIDIA' $name 'NVIDIA CUDA 13.3' @('cuda-13.3','cuda-cu13.3') "GPU NVIDIA Blackwell detectada: $name."
+                    return New-LlamaTarget 'NVIDIA' $name 'NVIDIA CUDA 13' @('cuda-13.4','cuda-cu13.4','cuda-13.3','cuda-cu13.3') "GPU NVIDIA Blackwell detectada: $name."
                 }
 
                 if ($computeCap -ne $null -and $computeCap -ge 5.0) {
@@ -3159,6 +3190,13 @@ $ctl.BtnLlama.Add_Click({
                 $match = $assets | Where-Object { $_.name -match "^llama-.+-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
                 if ($match) { return $match }
             }
+            foreach ($asset in @($assets)) {
+                $assetMatch = [regex]::Match([string]$asset.name, '^llama-.+-bin-win-(.+)-x64\.zip$')
+                if (-not $assetMatch.Success) { continue }
+                foreach ($backend in $backends) {
+                    if (Test-LlamaBackendCompatible $backend $assetMatch.Groups[1].Value) { return $asset }
+                }
+            }
             foreach ($backend in $backends) {
                 $asset = New-LlamaReleaseAsset $tag "llama-$tag-bin-win-$backend-x64.zip"
                 if (Test-ReleaseAssetUrl $asset.browser_download_url) { return $asset }
@@ -3170,6 +3208,13 @@ $ctl.BtnLlama.Add_Click({
                 $backendEsc = [regex]::Escape($backend)
                 $match = $assets | Where-Object { $_.name -match "^cudart-llama-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
                 if ($match) { return $match }
+            }
+            foreach ($asset in @($assets)) {
+                $assetMatch = [regex]::Match([string]$asset.name, '^cudart-llama-bin-win-(.+)-x64\.zip$')
+                if (-not $assetMatch.Success) { continue }
+                foreach ($backend in $backends) {
+                    if (Test-LlamaBackendCompatible $backend $assetMatch.Groups[1].Value) { return $asset }
+                }
             }
             foreach ($backend in $backends) {
                 $asset = New-LlamaReleaseAsset $tag "cudart-llama-bin-win-$backend-x64.zip"
@@ -3589,6 +3634,13 @@ $ctl.BtnPrimary.Add_Click({
         function PL([int]$v, [string]$phase) {
             if ($updateNeve) { P (70 + [int][math]::Round($v * 0.30)) $phase } else { P $v $phase }
         }
+        function Test-LlamaBackendCompatible([string]$requested, [string]$available) {
+            if ([string]::IsNullOrWhiteSpace($requested) -or [string]::IsNullOrWhiteSpace($available)) { return $false }
+            if ($requested -eq $available) { return $true }
+            $requestedCuda = [regex]::Match($requested, '^cuda(?:-cu)?-?(\d+)(?:\.\d+)?$')
+            $availableCuda = [regex]::Match($available, '^cuda(?:-cu)?-?(\d+)(?:\.\d+)?$')
+            return ($requestedCuda.Success -and $availableCuda.Success -and $requestedCuda.Groups[1].Value -eq $availableCuda.Groups[1].Value)
+        }
         function Get-LatestLlamaRelease([string[]]$backends) {
             $apiError = $null
             try {
@@ -3596,10 +3648,13 @@ $ctl.BtnPrimary.Add_Click({
                 foreach ($release in $releases) {
                     if ($release.draft -or -not $release.tag_name) { continue }
                     $tagEsc = [regex]::Escape([string]$release.tag_name)
-                    foreach ($backend in $backends) {
-                        $backendEsc = [regex]::Escape([string]$backend)
-                        $asset = $release.assets | Where-Object { $_.name -match "^llama-$tagEsc-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
-                        if ($asset) { return $release }
+                    foreach ($asset in @($release.assets)) {
+                        $assetMatch = [regex]::Match([string]$asset.name, "^llama-$tagEsc-bin-win-(.+)-x64\.zip$")
+                        if (-not $assetMatch.Success) { continue }
+                        $availableBackend = $assetMatch.Groups[1].Value
+                        foreach ($backend in $backends) {
+                            if (Test-LlamaBackendCompatible $backend $availableBackend) { return $release }
+                        }
                     }
                 }
                 throw 'Nenhuma release recente do llama.cpp contém os binários Windows necessários.'
@@ -4246,7 +4301,7 @@ $ctl.BtnPrimary.Add_Click({
                     return New-LlamaTarget 'CPU' $name 'CPU (GPU NVIDIA sem suporte CUDA moderno)' @('cpu') "GPU NVIDIA detectada ($name), mas compute capability $computeCap não é suportada pelos binários CUDA atuais."
                 }
                 if ($name -match 'RTX\s*5\d{3}|50\d{2}|Blackwell' -or ($computeCap -ne $null -and $computeCap -ge 12.0)) {
-                    return New-LlamaTarget 'NVIDIA' $name 'NVIDIA CUDA 13.3' @('cuda-13.3','cuda-cu13.3') "GPU NVIDIA Blackwell detectada: $name."
+                    return New-LlamaTarget 'NVIDIA' $name 'NVIDIA CUDA 13' @('cuda-13.4','cuda-cu13.4','cuda-13.3','cuda-cu13.3') "GPU NVIDIA Blackwell detectada: $name."
                 }
                 if ($computeCap -ne $null -and $computeCap -ge 5.0) {
                     return New-LlamaTarget 'NVIDIA' $name 'NVIDIA CUDA 12.4' @('cuda-12.4','cuda-cu12.4') "GPU NVIDIA compatível com CUDA 12 detectada: $name."
@@ -4275,6 +4330,13 @@ $ctl.BtnPrimary.Add_Click({
                 $match = $assets | Where-Object { $_.name -match "^llama-.+-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
                 if ($match) { return $match }
             }
+            foreach ($asset in @($assets)) {
+                $assetMatch = [regex]::Match([string]$asset.name, '^llama-.+-bin-win-(.+)-x64\.zip$')
+                if (-not $assetMatch.Success) { continue }
+                foreach ($backend in $backends) {
+                    if (Test-LlamaBackendCompatible $backend $assetMatch.Groups[1].Value) { return $asset }
+                }
+            }
             foreach ($backend in $backends) {
                 $asset = New-LlamaReleaseAsset $tag "llama-$tag-bin-win-$backend-x64.zip"
                 if (Test-ReleaseAssetUrl $asset.browser_download_url) { return $asset }
@@ -4286,6 +4348,13 @@ $ctl.BtnPrimary.Add_Click({
                 $backendEsc = [regex]::Escape($backend)
                 $match = $assets | Where-Object { $_.name -match "^cudart-llama-bin-win-$backendEsc-x64\.zip$" } | Select-Object -First 1
                 if ($match) { return $match }
+            }
+            foreach ($asset in @($assets)) {
+                $assetMatch = [regex]::Match([string]$asset.name, '^cudart-llama-bin-win-(.+)-x64\.zip$')
+                if (-not $assetMatch.Success) { continue }
+                foreach ($backend in $backends) {
+                    if (Test-LlamaBackendCompatible $backend $assetMatch.Groups[1].Value) { return $asset }
+                }
             }
             foreach ($backend in $backends) {
                 $asset = New-LlamaReleaseAsset $tag "cudart-llama-bin-win-$backend-x64.zip"
@@ -4402,20 +4471,29 @@ $ctl.BtnPrimary.Add_Click({
                     $rc = Run $npmExe @('install', '--no-audit', '--no-fund') 'npm install' 2700
                     if ($rc -ne 0) { throw "npm install falhou (código $rc)" }
 
-                    $officeCli = Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe'
-                    if (-not (Test-Path -LiteralPath $officeCli)) {
-                        $rc = Run $npmExe @('exec', '--', 'officecli', '--version') 'preparar OfficeCLI'
-                        if ($rc -ne 0 -or -not (Test-Path -LiteralPath $officeCli)) {
-                            throw 'Falha ao preparar o OfficeCLI para geração de DOCX, XLSX e PPTX.'
+                    $previousOfficeCliSkipUpdate = $env:OFFICECLI_SKIP_UPDATE
+                    $previousOfficeCliNoAutoResident = $env:OFFICECLI_NO_AUTO_RESIDENT
+                    try {
+                        $env:OFFICECLI_SKIP_UPDATE = '1'
+                        $env:OFFICECLI_NO_AUTO_RESIDENT = '1'
+                        $officeCli = Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe'
+                        if (-not (Test-Path -LiteralPath $officeCli)) {
+                            $rc = Run $npmExe @('exec', '--', 'officecli', '--version') 'preparar OfficeCLI'
+                            if ($rc -ne 0 -or -not (Test-Path -LiteralPath $officeCli)) {
+                                throw 'Falha ao preparar o OfficeCLI para geração de DOCX, XLSX e PPTX.'
+                            }
                         }
+                        $rc = Run $officeCli @('--version') 'validar OfficeCLI'
+                        if ($rc -ne 0) { throw "OfficeCLI instalado, mas a validação falhou (código $rc)." }
+                    } finally {
+                        if ($null -eq $previousOfficeCliSkipUpdate) { Remove-Item Env:\OFFICECLI_SKIP_UPDATE -ErrorAction SilentlyContinue } else { $env:OFFICECLI_SKIP_UPDATE = $previousOfficeCliSkipUpdate }
+                        if ($null -eq $previousOfficeCliNoAutoResident) { Remove-Item Env:\OFFICECLI_NO_AUTO_RESIDENT -ErrorAction SilentlyContinue } else { $env:OFFICECLI_NO_AUTO_RESIDENT = $previousOfficeCliNoAutoResident }
                     }
-                    $rc = Run $officeCli @('--version') 'validar OfficeCLI'
-                    if ($rc -ne 0) { throw "OfficeCLI instalado, mas a validação falhou (código $rc)." }
                     L '[OK] OfficeCLI pronto para gerar DOCX, XLSX e PPTX'
 
                     PN 76 'Gerando build do frontend'
                     Remove-Item -LiteralPath (Join-Path $ROOT 'build') -Recurse -Force -EA SilentlyContinue
-                    $rc = Run $npmExe @('run', 'build') 'npm run build' 1800
+                    $rc = Run $npmExe @('run', 'build', '--', '--logLevel', 'error') 'npm run build' 1800
                     if ($rc -ne 0) { throw "npm run build falhou (código $rc)" }
 
                     PN 91 'Publicando frontend'
@@ -4973,14 +5051,48 @@ function Invoke-LoggedProcess([string]$fileName, [string[]]$arguments, [string]$
     $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
     $stderrTask = $proc.StandardError.ReadToEndAsync()
     $proc.WaitForExit()
-    $stdoutTask.Wait()
-    $stderrTask.Wait()
 
-    foreach ($line in [regex]::Split($stdoutTask.Result, "\r?\n")) {
-        if (-not [string]::IsNullOrWhiteSpace($line)) { Append-Log $line }
+    $stdoutText = ''
+    $stderrText = ''
+    try { $stdoutText = $stdoutTask.GetAwaiter().GetResult() } catch {
+        Append-Log "Nao foi possivel ler toda a saida de ${description}: $($_.Exception.Message)" 'warn'
     }
-    foreach ($line in [regex]::Split($stderrTask.Result, "\r?\n")) {
-        if (-not [string]::IsNullOrWhiteSpace($line)) { Append-Log $line 'warn' }
+    try { $stderrText = $stderrTask.GetAwaiter().GetResult() } catch {
+        Append-Log "Nao foi possivel ler toda a saida de erro de ${description}: $($_.Exception.Message)" 'warn'
+    }
+
+    # Process output can contain thousands of Vite asset lines. Persist it in one
+    # operation and update WPF in one batch so the log control cannot interrupt a
+    # successful build while repeatedly repainting itself.
+    $processLines = New-Object System.Collections.Generic.List[string]
+    $ansiPattern = ([string][char]27) + '\[[0-9;?]*[ -/]*[@-~]'
+    foreach ($entry in @(@($stdoutText, 'info'), @($stderrText, 'warn'))) {
+        $text = [string]$entry[0]
+        $kind = [string]$entry[1]
+        $prefix = if ($kind -eq 'warn') { '[!]  ' } else { '     ' }
+        foreach ($rawLine in [regex]::Split($text, "\r?\n")) {
+            if ([string]::IsNullOrWhiteSpace($rawLine)) { continue }
+            $cleanLine = [regex]::Replace($rawLine, $ansiPattern, '')
+            [void]$processLines.Add("[$((Get-Date).ToString('HH:mm:ss'))] $prefix$cleanLine")
+        }
+    }
+
+    if ($processLines.Count -gt 0) {
+        Add-Content -LiteralPath $LOG -Value $processLines.ToArray() -Encoding UTF8
+        $visibleLines = if ($processLines.Count -gt 240) {
+            @("[... $($processLines.Count - 240) linhas mantidas somente em logs\build.log ...]") + $processLines.GetRange($processLines.Count - 240, 240).ToArray()
+        } else {
+            $processLines.ToArray()
+        }
+        try {
+            Set-UI {
+                $ctl.LogBox.AppendText(($visibleLines -join "`r`n") + "`r`n")
+                $ctl.LogScroll.ScrollToEnd()
+            }
+        } catch {
+            # A falha de pintura do log nao pode invalidar um processo concluido.
+            Add-Content -LiteralPath $LOG -Value "[WARN] Falha apenas ao atualizar o log visual: $($_.Exception.Message)" -Encoding UTF8
+        }
     }
 
     if ($proc.ExitCode -eq 0) {
@@ -5155,20 +5267,29 @@ function Ensure-FrontendDependencies([string]$npmExe) {
 }
 
 function Ensure-OfficeCLI([string]$npmExe) {
-    $officeCli = Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe'
-    $officeCliLauncher = Join-Path $ROOT 'node_modules\@officecli\officecli\officecli.js'
-    if (-not (Test-Path -LiteralPath $officeCliLauncher)) {
-        $rc = Invoke-LoggedProcess $npmExe @('install', '--no-audit', '--no-fund', '--prefer-offline', '--progress=false') 'instalar OfficeCLI'
-        if ($rc -ne 0) { throw "npm install do OfficeCLI falhou (codigo $rc)." }
-    }
-    if (-not (Test-Path -LiteralPath $officeCli)) {
-        $rc = Invoke-LoggedProcess $npmExe @('exec', '--', 'officecli', '--version') 'preparar OfficeCLI'
-        if ($rc -ne 0 -or -not (Test-Path -LiteralPath $officeCli)) {
-            throw 'Falha ao preparar o OfficeCLI para geracao de DOCX, XLSX e PPTX.'
+    $previousOfficeCliSkipUpdate = $env:OFFICECLI_SKIP_UPDATE
+    $previousOfficeCliNoAutoResident = $env:OFFICECLI_NO_AUTO_RESIDENT
+    try {
+        $env:OFFICECLI_SKIP_UPDATE = '1'
+        $env:OFFICECLI_NO_AUTO_RESIDENT = '1'
+        $officeCli = Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe'
+        $officeCliLauncher = Join-Path $ROOT 'node_modules\@officecli\officecli\officecli.js'
+        if (-not (Test-Path -LiteralPath $officeCliLauncher)) {
+            $rc = Invoke-LoggedProcess $npmExe @('install', '--no-audit', '--no-fund', '--prefer-offline', '--progress=false') 'instalar OfficeCLI'
+            if ($rc -ne 0) { throw "npm install do OfficeCLI falhou (codigo $rc)." }
         }
+        if (-not (Test-Path -LiteralPath $officeCli)) {
+            $rc = Invoke-LoggedProcess $npmExe @('exec', '--', 'officecli', '--version') 'preparar OfficeCLI'
+            if ($rc -ne 0 -or -not (Test-Path -LiteralPath $officeCli)) {
+                throw 'Falha ao preparar o OfficeCLI para geracao de DOCX, XLSX e PPTX.'
+            }
+        }
+        $rc = Invoke-LoggedProcess $officeCli @('--version') 'validar OfficeCLI'
+        if ($rc -ne 0) { throw "OfficeCLI instalado, mas a validacao falhou (codigo $rc)." }
+    } finally {
+        if ($null -eq $previousOfficeCliSkipUpdate) { Remove-Item Env:\OFFICECLI_SKIP_UPDATE -ErrorAction SilentlyContinue } else { $env:OFFICECLI_SKIP_UPDATE = $previousOfficeCliSkipUpdate }
+        if ($null -eq $previousOfficeCliNoAutoResident) { Remove-Item Env:\OFFICECLI_NO_AUTO_RESIDENT -ErrorAction SilentlyContinue } else { $env:OFFICECLI_NO_AUTO_RESIDENT = $previousOfficeCliNoAutoResident }
     }
-    $rc = Invoke-LoggedProcess $officeCli @('--version') 'validar OfficeCLI'
-    if ($rc -ne 0) { throw "OfficeCLI instalado, mas a validacao falhou (codigo $rc)." }
     Append-Log 'OfficeCLI pronto para gerar DOCX, XLSX e PPTX' 'ok'
 }
 
@@ -5240,7 +5361,7 @@ function Start-BuildDeploy {
         }
 
         Set-Progress 32 'Executando npm run build'
-        $rc = Invoke-LoggedProcess $npmExe @('run', 'build') 'npm run build'
+        $rc = Invoke-LoggedProcess $npmExe @('run', 'build', '--', '--logLevel', 'error') 'npm run build'
         if ($rc -ne 0) { throw "npm run build falhou (codigo $rc)." }
 
         $srcIndex = Join-Path $BUILD_DIR 'index.html'

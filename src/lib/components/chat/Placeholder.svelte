@@ -54,6 +54,7 @@
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
 	export let stableDiffusionEnabled = false;
+	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
 	export let musicGenerationEnabled = false;
 	export let thinkingEnabled = true;
 	export let thinkingExtendedEnabled = true;
@@ -134,6 +135,7 @@
 					bind:webSearchEnabled
 					bind:deepSearchEnabled
 					bind:stableDiffusionEnabled
+					bind:stableDiffusionQuality
 					bind:musicGenerationEnabled
 					bind:thinkingEnabled
 					bind:thinkingExtendedEnabled

@@ -55,20 +55,32 @@ SD_CACHE_DIR = CACHE_DIR / "stable_diffusion"
 GGUF_CACHE_DIR = SD_CACHE_DIR / "gguf"
 QWEN3_CACHE_DIR = SD_CACHE_DIR / "qwen3"
 VAE_CACHE_DIR = SD_CACHE_DIR / "vae"
+MAGEFLOW_CACHE_DIR = SD_CACHE_DIR / "mageflow"
 GGUF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 QWEN3_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 VAE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+MAGEFLOW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 ZIMAGE_REPO = "leejet/Z-Image-Turbo-GGUF"
 ZIMAGE_GGUF_FILE = "z_image_turbo-Q4_0.gguf"
+ZIMAGE_QUALITY_GGUF_FILE = "z_image_turbo-Q8_0.gguf"
 QWEN3_LLM_REPO = "unsloth/Qwen3-4B-Instruct-2507-GGUF"
 QWEN3_LLM_FILE = "Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
 ZIMAGE_VAE_REPO = "Comfy-Org/z_image_turbo"
 ZIMAGE_VAE_FILE = "split_files/vae/ae.safetensors"
+MAGEFLOW_REPO = "gguf-org/mageflow-gguf"
+MAGEFLOW_EDIT_FILE = "mageflow-edit-turbo-nvfp4.gguf"
+MAGEFLOW_VISION_FILE = "mmproj-qwen3vl-4b-it-f16.gguf"
+MAGEFLOW_VAE_FILE = "pig_mageflow_vae_fp32-f16.gguf"
+MAGEFLOW_LLM_REPO = "Qwen/Qwen3-VL-4B-Instruct-GGUF"
+MAGEFLOW_LLM_FILE = "Qwen3VL-4B-Instruct-Q4_K_M.gguf"
 
 MAX_IMAGE_WIDTH = 768
 MAX_IMAGE_HEIGHT = 768
 MAX_IMAGE_STEPS = 8
+QUALITY_IMAGE_WIDTH = 1280
+QUALITY_IMAGE_HEIGHT = 720
+QUALITY_IMAGE_STEPS = 8
 DEFAULT_CFG_SCALE = 1.0
 DEFAULT_IMG2IMG_STRENGTH = 0.55
 MAX_INIT_IMAGE_BYTES = 30 * 1024 * 1024
@@ -217,9 +229,9 @@ async def _prepare_init_image(reference: Optional[str], user_id: Optional[str] =
     return await loop.run_in_executor(None, _prepare_init_image_sync, reference, user_id)
 
 
-def _fit_init_image_dimensions(init_image: _InitImage, max_width: int, max_height: int) -> tuple[int, int]:
-    max_width = _align_image_dim(max_width, MAX_IMAGE_WIDTH, MAX_IMAGE_WIDTH)
-    max_height = _align_image_dim(max_height, MAX_IMAGE_HEIGHT, MAX_IMAGE_HEIGHT)
+def _fit_init_image_dimensions(init_image: _InitImage, max_width: int, max_height: int, max_size: int = MAX_IMAGE_WIDTH) -> tuple[int, int]:
+    max_width = _align_image_dim(max_width, max_size, max_size)
+    max_height = _align_image_dim(max_height, max_size, max_size)
 
     if init_image.width <= 0 or init_image.height <= 0:
         return max_width, max_height
@@ -603,6 +615,7 @@ class _ZImageResources:
     diffusion_model: Path
     llm: Path
     vae: Path
+    llm_vision: Optional[Path] = None
 
 
 def _download_file(url: str, destination: Path):
@@ -671,17 +684,22 @@ class _ZImageTurboPipeline:
     def __init__(self):
         self._resources: Optional[_ZImageResources] = None
         self._model_id: Optional[str] = None
+        self._quality = "neve_image"
+        self._edit_mode = False
         self._load_lock = asyncio.Lock()
         self._generation_lock = asyncio.Lock()
+        self._request_lock = asyncio.Lock()
 
     @property
     def is_loaded(self) -> bool:
         return self._resources is not None
 
-    async def load(self, model_id: str, device: str = "cuda", hf_token: Optional[str] = None):
+    async def load(self, model_id: str, device: str = "cuda", hf_token: Optional[str] = None, quality: str = "neve_image", edit: bool = False):
         async with self._load_lock:
             model_id = normalize_sd_model_id(model_id)
-            if self._resources is not None and self._model_id == model_id:
+            quality = "neve_image_2" if quality == "neve_image_2" else "neve_image"
+            edit = quality == "neve_image_2" and edit
+            if self._resources is not None and self._model_id == model_id and self._quality == quality and self._edit_mode == edit:
                 return
 
             loop = asyncio.get_event_loop()
@@ -692,11 +710,24 @@ class _ZImageTurboPipeline:
                 sd_cli = _ensure_sd_cli_binary()
                 token = hf_token or None
 
-                log.info("Baixando/carregando Z-Image-Turbo Q4_0 GGUF...")
+                if edit:
+                    def download(repo: str, filename: str) -> Path:
+                        return Path(hf_hub_download(repo_id=repo, filename=filename, cache_dir=str(MAGEFLOW_CACHE_DIR), token=token))
+
+                    return _ZImageResources(
+                        sd_cli=sd_cli,
+                        diffusion_model=download(MAGEFLOW_REPO, MAGEFLOW_EDIT_FILE),
+                        llm=download(MAGEFLOW_LLM_REPO, MAGEFLOW_LLM_FILE),
+                        vae=download(MAGEFLOW_REPO, MAGEFLOW_VAE_FILE),
+                        llm_vision=download(MAGEFLOW_REPO, MAGEFLOW_VISION_FILE),
+                    )
+
+                gguf_file = ZIMAGE_QUALITY_GGUF_FILE if quality == "neve_image_2" else ZIMAGE_GGUF_FILE
+                log.info("Baixando/carregando Z-Image-Turbo %s GGUF...", gguf_file)
                 diffusion_model = Path(
                     hf_hub_download(
                         repo_id=model_id,
-                        filename=ZIMAGE_GGUF_FILE,
+                        filename=gguf_file,
                         cache_dir=str(GGUF_CACHE_DIR),
                         token=token,
                     )
@@ -726,12 +757,22 @@ class _ZImageTurboPipeline:
 
             self._resources = await loop.run_in_executor(None, _prepare_sync)
             self._model_id = model_id
-            log.info("Z-Image-Turbo pronto via stable-diffusion.cpp")
+            self._quality = quality
+            self._edit_mode = edit
+            log.info("%s pronto via stable-diffusion.cpp", "Mage-Flow-Edit" if edit else "Z-Image-Turbo")
 
     async def unload(self):
-        async with self._load_lock:
-            self._resources = None
-            self._model_id = None
+        async with self._request_lock:
+            async with self._load_lock:
+                self._resources = None
+                self._model_id = None
+                self._quality = "neve_image"
+                self._edit_mode = False
+
+    async def run(self, model_id: str, hf_token: Optional[str], quality: str, **kwargs) -> str:
+        async with self._request_lock:
+            await self.load(model_id, hf_token=hf_token, quality=quality, edit=bool(kwargs.get("init_image_reference")))
+            return await self.generate(**kwargs)
 
     async def generate(
         self,
@@ -752,11 +793,16 @@ class _ZImageTurboPipeline:
 
         init_image = await _prepare_init_image(init_image_reference, user_id=user_id)
 
-        width = _align_image_dim(width, MAX_IMAGE_WIDTH, MAX_IMAGE_WIDTH)
-        height = _align_image_dim(height, MAX_IMAGE_HEIGHT, MAX_IMAGE_HEIGHT)
+        quality_mode = self._quality == "neve_image_2"
+        max_width = QUALITY_IMAGE_WIDTH if quality_mode else MAX_IMAGE_WIDTH
+        max_height = QUALITY_IMAGE_HEIGHT if quality_mode else MAX_IMAGE_HEIGHT
+        width = _align_image_dim(width, max_width, max_width)
+        height = _align_image_dim(height, max_height, max_height)
         if init_image is not None:
-            width, height = _fit_init_image_dimensions(init_image, width, height)
-        steps = _clamp_int(steps, MAX_IMAGE_STEPS, 1, MAX_IMAGE_STEPS)
+            width, height = _fit_init_image_dimensions(
+                init_image, width, height, max(max_width, max_height)
+            )
+        steps = 4 if self._edit_mode else _clamp_int(steps, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS, 1, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS)
         cfg = _cfg_scale(guidance_scale)
         seed = random.randint(0, 2**31 - 1)
         filename = f"sd_{int(time.time())}_{seed}.png"
@@ -786,21 +832,19 @@ class _ZImageTurboPipeline:
             "--cfg-scale",
             f"{cfg:g}",
             "--diffusion-fa",
-            "--offload-to-cpu",
+            *([] if quality_mode else ["--offload-to-cpu"]),
+            *(["--vae-conv-direct"] if quality_mode and not self._edit_mode else []),
+            *(["--llm_vision", str(self._resources.llm_vision), "--sampling-method", "euler"] if self._edit_mode else []),
             "-s",
             str(seed),
             "-o",
             str(output_path),
         ]
         if init_image is not None:
-            cmd.extend(
-                [
-                    "--init-img",
-                    str(init_image.path),
-                    "--strength",
-                    f"{DEFAULT_IMG2IMG_STRENGTH:g}",
-                ]
-            )
+            if self._edit_mode:
+                cmd.extend(["--ref-image", str(init_image.path)])
+            else:
+                cmd.extend(["--init-img", str(init_image.path), "--strength", f"{DEFAULT_IMG2IMG_STRENGTH:g}"])
 
         env = os.environ.copy()
         env["PATH"] = f"{SD_CPP_DIR}{os.pathsep}{env.get('PATH', '')}"
@@ -855,6 +899,7 @@ class GenerateForm(BaseModel):
     steps: Optional[int] = None
     guidance_scale: Optional[float] = None
     init_image: Optional[str] = None
+    quality: str = "neve_image"
 
 
 class ConfigForm(BaseModel):
@@ -928,13 +973,13 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
         raise HTTPException(status_code=403, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
 
     model_id = normalize_sd_model_id(request.app.state.config.STABLE_DIFFUSION_MODEL)
-    width = _align_image_dim(
-        form_data.width or request.app.state.config.STABLE_DIFFUSION_WIDTH, MAX_IMAGE_WIDTH, MAX_IMAGE_WIDTH
-    )
-    height = _align_image_dim(
-        form_data.height or request.app.state.config.STABLE_DIFFUSION_HEIGHT, MAX_IMAGE_HEIGHT, MAX_IMAGE_HEIGHT
-    )
-    steps = _clamp_int(form_data.steps or request.app.state.config.STABLE_DIFFUSION_STEPS, MAX_IMAGE_STEPS, 1, MAX_IMAGE_STEPS)
+    quality_mode = form_data.quality == "neve_image_2"
+    max_width = QUALITY_IMAGE_WIDTH if quality_mode else MAX_IMAGE_WIDTH
+    max_height = QUALITY_IMAGE_HEIGHT if quality_mode else MAX_IMAGE_HEIGHT
+    max_steps = QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS
+    width = _align_image_dim(form_data.width or (max_width if quality_mode else request.app.state.config.STABLE_DIFFUSION_WIDTH), max_width, max_width)
+    height = _align_image_dim(form_data.height or (max_height if quality_mode else request.app.state.config.STABLE_DIFFUSION_HEIGHT), max_height, max_height)
+    steps = _clamp_int(form_data.steps or (max_steps if quality_mode else request.app.state.config.STABLE_DIFFUSION_STEPS), max_steps, 1, max_steps)
     guidance_scale = _cfg_scale(
         form_data.guidance_scale
         if form_data.guidance_scale is not None
@@ -951,8 +996,10 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
 
     try:
         hf_token = str(request.app.state.config.STABLE_DIFFUSION_HF_TOKEN) or None
-        await _sd_pipeline.load(model_id, hf_token=hf_token)
-        data_uri = await _sd_pipeline.generate(
+        data_uri = await _sd_pipeline.run(
+            model_id=model_id,
+            hf_token=hf_token,
+            quality=form_data.quality,
             prompt=form_data.prompt,
             width=width,
             height=height,

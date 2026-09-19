@@ -2289,6 +2289,7 @@ async def chat_stable_diffusion_handler(
         messages,
         metadata.get("parent_message"),
     )
+    quality = "neve_image_2" if (extra_params.get("__features__") or {}).get("stable_diffusion_quality") == "neve_image_2" else "neve_image"
 
     await __event_emitter__(
         {
@@ -2311,6 +2312,10 @@ async def chat_stable_diffusion_handler(
         height         = request.app.state.config.STABLE_DIFFUSION_HEIGHT
         steps          = request.app.state.config.STABLE_DIFFUSION_STEPS
         guidance_scale = request.app.state.config.STABLE_DIFFUSION_GUIDANCE_SCALE
+        if quality == "neve_image_2":
+            width = 1280
+            height = 720
+            steps = 8
 
         # Put LLM in standby
         llm_standby_info = None
@@ -2320,11 +2325,11 @@ async def chat_stable_diffusion_handler(
             log.warning(f"SD handler: failed to put LLM in standby: {e}")
 
         try:
-            # Load SD pipeline
-            await _sd_pipeline.load(model_id, hf_token=hf_token)
-
             # Generate image directly and skip the LLM response path.
-            data_uri = await _sd_pipeline.generate(
+            data_uri = await _sd_pipeline.run(
+                model_id=model_id,
+                hf_token=hf_token,
+                quality=quality,
                 prompt=image_prompt,
                 width=width,
                 height=height,

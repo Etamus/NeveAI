@@ -60,6 +60,7 @@
 	import { flyAndScale } from '$lib/utils/transitions';
 	import StatusHistory from './ResponseMessage/StatusHistory.svelte';
 	import FullHeightIframe from '$lib/components/common/FullHeightIframe.svelte';
+	import GeneratedMusicPlayer from './GeneratedMusicPlayer.svelte';
 
 	interface MessageType {
 		id: string;
@@ -185,6 +186,17 @@
 	let loadingSpeech = false;
 
 	let showRateComment = false;
+	$: isGeneratedImageResponse = Boolean(
+		message?.files?.some(
+			(file) => file.type === 'image' || (file?.content_type ?? '').startsWith('image/')
+		) && message?.statusHistory?.some((status) => status.action === 'stable_diffusion')
+	);
+	$: isGeneratedMusicResponse = Boolean(
+		message?.files?.some(
+			(file) => file.type === 'audio' || (file?.content_type ?? '').startsWith('audio/')
+		) && message?.statusHistory?.some((status) => status.action === 'music_generation')
+	);
+	$: isGeneratedMediaResponse = isGeneratedImageResponse || isGeneratedMusicResponse;
 
 	const copyToClipboard = async (text) => {
 		text = removeAllDetails(text);
@@ -196,6 +208,44 @@
 		const res = await _copyToClipboard(text, null, $settings?.copyFormatted ?? false);
 		if (res) {
 			toast.success($i18n.t('Copying to clipboard was successful!'));
+		}
+	};
+
+	const copyGeneratedImage = async () => {
+		const file = message?.files?.find(
+			(file) => file.type === 'image' || (file?.content_type ?? '').startsWith('image/')
+		);
+		if (!file?.url || !navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+			toast.error($i18n.t('Failed to copy image'));
+			return;
+		}
+
+		try {
+			const imageUrl = file.url.startsWith('/') ? `${NEVEAI_BASE_URL}${file.url}` : file.url;
+			const response = await fetch(imageUrl, { credentials: 'include' });
+			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+			let blob = await response.blob();
+
+			if (blob.type !== 'image/png') {
+				const bitmap = await createImageBitmap(blob);
+				const canvas = document.createElement('canvas');
+				canvas.width = bitmap.width;
+				canvas.height = bitmap.height;
+				canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
+				bitmap.close();
+				blob = await new Promise<Blob>((resolve, reject) => {
+					canvas.toBlob(
+						(result) => (result ? resolve(result) : reject(new Error('PNG conversion failed'))),
+						'image/png'
+					);
+				});
+			}
+
+			await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+			toast.success($i18n.t('Copying to clipboard was successful!'));
+		} catch (error) {
+			console.error('Failed to copy generated image:', error);
+			toast.error($i18n.t('Failed to copy image'));
 		}
 	};
 
@@ -611,20 +661,34 @@
 								{#each message.files.filter((file) => file.type === 'image' || file.type === 'audio' || (file?.content_type ?? '').startsWith('image/') || (file?.content_type ?? '').startsWith('audio/')) as file}
 									<div>
 										{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
-											<Image src={file.url} alt={message.content} />
+											<Image
+												src={file.url}
+												alt={message.content}
+												imageClassName={message?.statusHistory?.some((status) => status.action === 'stable_diffusion')
+													? 'block max-h-[26rem] max-w-full sm:max-w-[26rem] rounded-lg'
+													: 'rounded-lg'}
+											/>
 										{:else if file.type === 'audio' || (file?.content_type ?? '').startsWith('audio/')}
-											<div
-												class="w-full min-w-[18rem] max-w-md rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 dark:border-gray-700/70 dark:bg-gray-800/50"
-											>
-												<audio
-													controls
-													preload="metadata"
-													src={file.url.startsWith('/')
-														? `${NEVEAI_BASE_URL}${file.url}`
-														: file.url}
-													class="h-10 w-full"
-												></audio>
-											</div>
+											{#if message?.statusHistory?.some((status) => status.action === 'music_generation')}
+												<GeneratedMusicPlayer
+													src={file.url}
+													fileId={file.id ?? null}
+													name={file.name ?? 'musica.mp3'}
+												/>
+											{:else}
+												<div
+													class="w-full min-w-[18rem] max-w-md rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 dark:border-gray-700/70 dark:bg-gray-800/50"
+												>
+													<audio
+														controls
+														preload="metadata"
+														src={file.url.startsWith('/')
+															? `${NEVEAI_BASE_URL}${file.url}`
+															: file.url}
+														class="h-10 w-full"
+													></audio>
+												</div>
+											{/if}
 										{/if}
 									</div>
 								{/each}
@@ -856,13 +920,17 @@
 									</button>
 								</div>
 							{/if}
-							{#if message.done && !readOnly}
+							{#if message.done && !readOnly && !isGeneratedMusicResponse}
 								<Tooltip content={$i18n.t('Copy')} placement="bottom">
 									<button
 										aria-label={$i18n.t('Copy')}
 										class="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-full dark:hover:text-white hover:text-black transition copy-response-button"
 										on:click={() => {
-											copyToClipboard(message.content);
+											if (isGeneratedImageResponse) {
+												copyGeneratedImage();
+											} else {
+												copyToClipboard(message.content);
+											}
 										}}
 									>
 										<svg
@@ -883,7 +951,7 @@
 									</button>
 								</Tooltip>
 							{/if}
-							{#if !readOnly && ($settings?.editResponseWithCtrl ? ctrlPressed : true) && ($user?.role === 'admin' || ($user?.permissions?.chat?.edit ?? true)) && ($settings?.responseEditorMode ?? false) === false}
+							{#if !isGeneratedMediaResponse && !readOnly && ($settings?.editResponseWithCtrl ? ctrlPressed : true) && ($user?.role === 'admin' || ($user?.permissions?.chat?.edit ?? true)) && ($settings?.responseEditorMode ?? false) === false}
 								<Tooltip content={$i18n.t('Edit')} placement="bottom">
 									<button
 										aria-label={$i18n.t('Edit')}
@@ -949,7 +1017,7 @@
 											</button>
 										</Tooltip>
 									{/if}
-									{#if isLastMessage && ($user?.role === 'admin' || ($user?.permissions?.chat?.continue_response ?? true))}
+									{#if !isGeneratedMediaResponse && isLastMessage && ($user?.role === 'admin' || ($user?.permissions?.chat?.continue_response ?? true))}
 										<Tooltip content="Continuar" placement="bottom">
 											<button
 												aria-label="Continuar"
@@ -984,7 +1052,7 @@
 										</Tooltip>
 									{/if}
 								{/if}
-								{#if !readOnly}
+								{#if !readOnly && !isGeneratedMediaResponse}
 									{#if !$temporaryChatEnabled && ($config?.features.enable_message_rating ?? true) && ($user?.role === 'admin' || ($user?.permissions?.chat?.rate_response ?? true))}
 										<Tooltip content={$i18n.t('Good Response')} placement="bottom">
 											<button

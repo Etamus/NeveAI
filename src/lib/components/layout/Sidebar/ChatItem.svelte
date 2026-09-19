@@ -381,7 +381,7 @@
 			draggable="false"
 		>
 			<div class="flex self-center flex-1 w-full min-w-0">
-				<div dir="auto" class="text-left self-center overflow-hidden w-full h-[20px] truncate">
+				<div dir="auto" class="text-left self-center overflow-hidden w-full h-[20px] truncate {$activeChatIds.has(id) && !mouseOver && !selected && id !== $chatId ? 'sidebar-chat-title-fade' : ''}">
 					{title}
 				</div>
 			</div>
@@ -400,7 +400,7 @@
 			: selected
 				? 'from-gray-100 dark:from-gray-800 selected'
 				: $activeChatIds.has(id) && !mouseOver
-					? 'from-gray-50 dark:from-gray-850'
+					? 'from-transparent'
 					: $activeChatIds.has(id) && mouseOver
 						? 'from-gray-100 dark:from-gray-800'
 						: 'invisible group-hover:visible from-gray-100 dark:from-gray-800'}
@@ -506,3 +506,10 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	.sidebar-chat-title-fade {
+		-webkit-mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent calc(100% - 1rem));
+		mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent calc(100% - 1rem));
+	}
+</style>

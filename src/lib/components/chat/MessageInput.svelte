@@ -83,6 +83,7 @@
 	import Atom02 from '../icons/Atom02.svelte';
 	import Photo from '../icons/Photo.svelte';
 	import ImageIcon from '../icons/Image.svelte';
+	import CheckCircle from '../icons/CheckCircle.svelte';
 	import MusicNote from '../icons/MusicNote.svelte';
 	import Wrench from '../icons/Wrench.svelte';
 	import Sparkles from '../icons/Sparkles.svelte';
@@ -143,6 +144,7 @@
 	export let codeExecutionEnabled = false;
 	export let fileGenerationEnabled = false;
 	export let stableDiffusionEnabled = false;
+	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
 	export let musicGenerationEnabled = false;
 	export let thinkingEnabled = true;
 	export let thinkingExtendedEnabled = true;
@@ -229,6 +231,7 @@
 		codeExecutionEnabled,
 		fileGenerationEnabled,
 		stableDiffusionEnabled,
+		stableDiffusionQuality,
 		musicGenerationEnabled,
 		thinkingEnabled,
 		thinkingExtendedEnabled
@@ -556,6 +559,7 @@
 
 	let loaded = false;
 	let showThinkingDropdown = false;
+	let showImageQualityDropdown = false;
 	const THINKING_MODE_STORAGE_KEY = 'neveai.globalThinkingEnabled';
 	const THINKING_EXTENDED_STORAGE_KEY = 'neveai.thinkingExtendedEnabled';
 	let appliedThinkingModeKey = '';
@@ -1303,6 +1307,9 @@
 </script>
 
 <svelte:window on:click={(e) => {
+	if (showImageQualityDropdown && !(e.target as HTMLElement).closest('#image-quality-dropdown-container')) {
+		showImageQualityDropdown = false;
+	}
 	if (showThinkingDropdown) {
 		const container = document.getElementById('thinking-dropdown-container');
 		if (container && !container.contains(e.target)) {
@@ -2170,6 +2177,21 @@
 												</div>
 												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Imagem</span>
 											</button>
+										<div class="relative shrink-0" id="image-quality-dropdown-container">
+											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label="Qualidade da imagem" aria-expanded={showImageQualityDropdown} on:click|preventDefault={() => (showImageQualityDropdown = !showImageQualityDropdown)}>
+												<span>{stableDiffusionQuality === 'neve_image_2' ? 'Neve Image 2' : 'Neve Image'}</span>
+												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageQualityDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
+											</button>
+											{#if showImageQualityDropdown}
+												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
+													{#each [{ id: 'neve_image', label: 'Neve Image' }, { id: 'neve_image_2', label: 'Neve Image 2' }] as quality}
+													<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { stableDiffusionQuality = quality.id as 'neve_image' | 'neve_image_2'; localStorage.setItem('neveai.imageQuality', stableDiffusionQuality); showImageQualityDropdown = false; }}>
+															<span>{quality.label}</span>{#if stableDiffusionQuality === quality.id}<CheckCircle strokeWidth="1.7" />{/if}
+														</button>
+													{/each}
+												</div>
+											{/if}
+										</div>
 										{/if}
 
 										{#if musicGenerationEnabled}

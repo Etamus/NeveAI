@@ -180,6 +180,7 @@
 	let codeExecutionEnabled = false;
 	let fileGenerationEnabled = getFileGenerationPreference(false);
 	let stableDiffusionEnabled = false;
+	let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
 	let musicGenerationEnabled = false;
 	let previousMediaGenerationEnabled = stableDiffusionEnabled || musicGenerationEnabled;
 	let stableDiffusionStandbyModel: LocalModel | null = null;
@@ -1799,6 +1800,9 @@
 	};
 
 	onMount(() => {
+		stableDiffusionQuality = localStorage.getItem('neveai.imageQuality') === 'neve_image_2'
+			? 'neve_image_2'
+			: 'neve_image';
 		loading = true;
 		console.log('mounted');
 		stopChatRenderDebug = startChatRenderDebug();
@@ -4266,6 +4270,7 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.stable_diffusion)
 						? stableDiffusionEnabled
 						: false,
+				stable_diffusion_quality: stableDiffusionQuality,
 				music_generation:
 					$config?.features?.enable_music_generation &&
 					($user?.role === 'admin' || $user?.permissions?.features?.music_generation)
@@ -5349,7 +5354,7 @@
 						}}
 					/>
 
-					<div id="chat-pane" class="flex flex-col flex-auto z-10 w-full @container overflow-auto">
+					<div id="chat-pane" class="flex flex-col flex-auto min-h-0 z-10 w-full @container overflow-auto" style="overflow-anchor: none;">
 						{#if ($settings?.landingPageMode === 'chat' && !$selectedFolder) || createMessagesList(history, history.currentId).length > 0}
 							<div
 								class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden"
@@ -5418,6 +5423,7 @@
 									bind:webSearchEnabled
 									bind:deepSearchEnabled
 									bind:stableDiffusionEnabled
+									bind:stableDiffusionQuality
 									bind:musicGenerationEnabled
 									bind:thinkingEnabled
 									bind:thinkingExtendedEnabled
@@ -5496,6 +5502,7 @@
 									bind:webSearchEnabled
 									bind:deepSearchEnabled
 									bind:stableDiffusionEnabled
+									bind:stableDiffusionQuality
 									bind:musicGenerationEnabled
 									bind:thinkingEnabled
 									bind:thinkingExtendedEnabled
