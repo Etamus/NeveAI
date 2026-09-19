@@ -106,7 +106,7 @@
 		{/if}
 	</button>
 
-	<div class="flex min-w-0 flex-1 flex-col gap-1.5">
+	<div class="flex min-w-0 flex-1 translate-y-[4px] flex-col gap-1.5">
 		<input
 			type="range"
 			min="0"
@@ -114,7 +114,7 @@
 			step="0.1"
 			value={progress}
 			aria-label={$i18n.t('Playback position')}
-			class="music-progress translate-y-[7px] w-full cursor-pointer"
+			class="music-progress translate-y-[9px] w-full cursor-pointer"
 			style="--music-progress: {progress}%"
 			on:input={seek}
 		/>

@@ -4885,55 +4885,86 @@
 					return;
 				}
 
-				if (!(await ensureLocalModelsReady([model.id]))) {
-					return;
-				}
-
-				stopContentFlush(message.id);
-
-				const responseMessage = {
-					...history.messages[message.id],
-					content: '',
-					done: false,
-					error: undefined,
-					files: undefined,
-					sources: undefined,
-					citations: undefined,
-					usage: undefined,
-					output: undefined,
-					originalContent: undefined,
-					lastSentence: undefined,
-					statusHistory: undefined,
-					timestamp: Math.floor(Date.now() / 1000)
+				const generatedAction = message?.statusHistory?.some(
+					(status: any) => status.action === 'music_generation'
+				)
+					? 'music_generation'
+					: message?.statusHistory?.some((status: any) => status.action === 'stable_diffusion')
+						? 'stable_diffusion'
+						: null;
+				const previousMediaState = {
+					stableDiffusionEnabled,
+					musicGenerationEnabled,
+					stableDiffusionQuality
 				};
 
-				history.messages[message.id] = responseMessage;
-				history.currentId = message.id;
-				history = history;
+				if (generatedAction) {
+					stableDiffusionEnabled = generatedAction === 'stable_diffusion';
+					musicGenerationEnabled = generatedAction === 'music_generation';
+					if (generatedAction === 'stable_diffusion') {
+						stableDiffusionQuality =
+							message?.statusHistory?.find((status: any) => status.action === 'stable_diffusion')
+								?.quality ?? stableDiffusionQuality;
+					}
+				}
 
-				await tick();
-				await anchorGeneratingMessageTop(userMessage.id, message.id, {
-					topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX,
-					stabilizeAcrossFrames: false
-				});
-				await saveChatHandler($chatId, history);
+				try {
+					if (!(await ensureLocalModelsReady([model.id]))) {
+						return;
+					}
 
-				const chatEventEmitter = await getChatEventEmitter(model.id, $chatId);
-				const _history = structuredClone(history);
+					stopContentFlush(message.id);
 
-				await sendMessageSocket(
-					model,
-					createMessagesList(_history, message.id),
-					_history,
-					message.id,
-					$chatId
-				);
+					const responseMessage = {
+						...history.messages[message.id],
+						content: '',
+						done: false,
+						error: undefined,
+						files: undefined,
+						sources: undefined,
+						citations: undefined,
+						usage: undefined,
+						output: undefined,
+						originalContent: undefined,
+						lastSentence: undefined,
+						statusHistory: undefined,
+						timestamp: Math.floor(Date.now() / 1000)
+					};
 
-				if (chatEventEmitter) clearInterval(chatEventEmitter);
+					history.messages[message.id] = responseMessage;
+					history.currentId = message.id;
+					history = history;
 
-				currentChatPage.set(1);
-				chats.set(await getChatList(localStorage.token, $currentChatPage));
-				return;
+					await tick();
+					await anchorGeneratingMessageTop(userMessage.id, message.id, {
+						topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX,
+						stabilizeAcrossFrames: false
+					});
+					await saveChatHandler($chatId, history);
+
+					const chatEventEmitter = await getChatEventEmitter(model.id, $chatId);
+					const _history = structuredClone(history);
+
+					await sendMessageSocket(
+						model,
+						createMessagesList(_history, message.id),
+						_history,
+						message.id,
+						$chatId
+					);
+
+					if (chatEventEmitter) clearInterval(chatEventEmitter);
+
+					currentChatPage.set(1);
+					chats.set(await getChatList(localStorage.token, $currentChatPage));
+					return;
+				} finally {
+					if (generatedAction) {
+						stableDiffusionEnabled = previousMediaState.stableDiffusionEnabled;
+						musicGenerationEnabled = previousMediaState.musicGenerationEnabled;
+						stableDiffusionQuality = previousMediaState.stableDiffusionQuality;
+					}
+				}
 			}
 
 			const retryModelIds =

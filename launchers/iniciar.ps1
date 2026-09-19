@@ -30,6 +30,7 @@ function Quote-PsLiteral {
 
 function Resolve-LogoPath {
 	$candidates = @(
+		(Join-Path $Root 'static\static\splash-dark.png'),
 		(Join-Path $Root 'static\static\favicon.png'),
 		(Join-Path $Root 'static\static\logo.png'),
 		(Join-Path $Root 'build\static\favicon.png'),
@@ -132,14 +133,11 @@ $xaml = @'
         Background="Transparent"
         Topmost="True"
         ShowInTaskbar="True">
-    <Border Background="White"
-            BorderBrush="#E5E7EB"
+    <Border Background="#171717"
+            BorderBrush="#303030"
             BorderThickness="1"
             CornerRadius="14"
             Padding="30">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="28" ShadowDepth="0" Opacity="0.22" Color="#111827" />
-        </Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
@@ -160,16 +158,16 @@ $xaml = @'
                            Margin="-23,3,0,0" />
                     <TextBlock Text="NeveAI"
                                VerticalAlignment="Center"
-                               Foreground="#111827"
+                               Foreground="#F3F5F7"
                                FontSize="38"
                                FontWeight="SemiBold" />
                 </StackPanel>
                 <TextBlock x:Name="StatusText"
                            Text="Iniciando..."
                            HorizontalAlignment="Center"
-                           Foreground="#6B7280"
+                           Foreground="#A9B1BC"
                            FontSize="12"
-                           Margin="13,20,0,0" />
+                           Margin="10,20,0,0" />
             </StackPanel>
 
             <Grid Grid.Row="1">
@@ -178,8 +176,8 @@ $xaml = @'
                              Minimum="0"
                              Maximum="100"
                              Value="0"
-                             Foreground="#111827"
-                             Background="#E5E7EB"
+                             Foreground="#F3F5F7"
+                             Background="#303030"
                              BorderThickness="0" />
             </Grid>
         </Grid>

@@ -2297,6 +2297,7 @@ async def chat_stable_diffusion_handler(
             "data": {
                 "action": "stable_diffusion",
                 "description": "Editando imagem..." if init_image_reference else "Gerando imagem...",
+                "quality": quality,
                 "done": False,
             },
         }
@@ -2345,6 +2346,7 @@ async def chat_stable_diffusion_handler(
                     "data": {
                         "action": "stable_diffusion",
                         "description": "Imagem editada" if init_image_reference else "Imagem gerada",
+                        "quality": quality,
                         "done": True,
                     },
                 }

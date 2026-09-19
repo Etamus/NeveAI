@@ -103,210 +103,114 @@ if (-not (Test-Path $LOGO_PATH)) {
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="NeveAI - Instalador"
-        Width="780" Height="560"
-        WindowStartupLocation="CenterScreen"
-        ResizeMode="NoResize"
-        WindowStyle="None"
-        AllowsTransparency="True"
-        Background="Transparent">
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="NeveAI"
+        Width="980" Height="600" MinWidth="980" MinHeight="600"
+        WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
+        WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" FontFamily="Segoe UI" TextOptions.TextFormattingMode="Display">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="18"/>
+    </shell:WindowChrome.WindowChrome>
     <Window.Resources>
+        <SolidColorBrush x:Key="BackgroundBrush" Color="#000000"/>
+        <SolidColorBrush x:Key="SidebarBrush" Color="#151515"/>
+        <SolidColorBrush x:Key="SurfaceBrush" Color="#171717"/>
+        <SolidColorBrush x:Key="SurfaceRaisedBrush" Color="#202020"/>
+        <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#292929"/>
+        <SolidColorBrush x:Key="InputBrush" Color="#0D0D0D"/>
+        <SolidColorBrush x:Key="BorderBrush" Color="#303030"/>
+        <SolidColorBrush x:Key="BorderStrongBrush" Color="#484848"/>
+        <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F3F5F7"/>
+        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A9B1BC"/>
+        <SolidColorBrush x:Key="TextMutedBrush" Color="#8B8B8B"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#F1F3F5"/>
+        <SolidColorBrush x:Key="AccentHoverBrush" Color="#DDE1E6"/>
+        <SolidColorBrush x:Key="AccentTextBrush" Color="#111317"/>
+        <SolidColorBrush x:Key="SuccessBrush" Color="#55C894"/>
+        <SolidColorBrush x:Key="DangerBrush" Color="#EC7272"/>
+
+        <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/></Style>
+        <Style x:Key="PageTitle" TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="FontSize" Value="24"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
+        <Style x:Key="CaptionText" TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/><Setter Property="FontSize" Value="12"/></Style>
+        <Style x:Key="Section" TargetType="Border"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="8"/><Setter Property="Padding" Value="20"/></Style>
+
         <Style x:Key="PrimaryBtn" TargetType="Button">
-            <Setter Property="Background" Value="#111111"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="22,9"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#262626"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="bd" Property="Opacity" Value="0.4"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+            <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="18,9"/><Setter Property="MinWidth" Value="96"/><Setter Property="Height" Value="36"/>
+            <Setter Property="FontSize" Value="13"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="bd" Property="Opacity" Value="0.8"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="bd" Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style x:Key="AccentActionBtn" TargetType="Button" BasedOn="{StaticResource PrimaryBtn}">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/><Setter Property="Foreground" Value="{DynamicResource AccentTextBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="{DynamicResource AccentHoverBrush}"/><Setter TargetName="bd" Property="BorderBrush" Value="{DynamicResource AccentHoverBrush}"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="bd" Property="Opacity" Value="0.82"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="bd" Property="Opacity" Value="0.38"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
         </Style>
         <Style x:Key="GhostBtn" TargetType="Button" BasedOn="{StaticResource PrimaryBtn}">
-            <Setter Property="Background" Value="#F4F4F5"/>
-            <Setter Property="Foreground" Value="#111111"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#E4E4E7"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+            <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="bd" Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
         </Style>
-        <Style x:Key="TextNavBtn" TargetType="Button">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="#52525B"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <TextBlock Text="{TemplateBinding Content}"
-                                   Foreground="{TemplateBinding Foreground}"
-                                   FontSize="{TemplateBinding FontSize}"
-                                   FontWeight="{TemplateBinding FontWeight}"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"/>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Foreground" Value="#111111"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+        <Style x:Key="WindowButton" TargetType="Button">
+            <Setter Property="Width" Value="46"/><Setter Property="Height" Value="44"/><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="bd" Background="{TemplateBinding Background}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
         </Style>
-        <Style x:Key="WindowCloseBtn" TargetType="Button" BasedOn="{StaticResource TextNavBtn}">
-            <Setter Property="Width" Value="34"/>
-            <Setter Property="Height" Value="28"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="FontSize" Value="20"/>
-            <Setter Property="FontWeight" Value="Normal"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="5">
-                            <TextBlock Text="{TemplateBinding Content}"
-                                       Foreground="{TemplateBinding Foreground}"
-                                       FontSize="{TemplateBinding FontSize}"
-                                       FontWeight="{TemplateBinding FontWeight}"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       Margin="0,-4,0,0"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#E4E4E7"/>
-                                <Setter Property="Foreground" Value="#111111"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+        <Style x:Key="CloseWindowButton" TargetType="Button" BasedOn="{StaticResource WindowButton}">
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="0,16,0,0"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="#C42B1C"/><Setter Property="Foreground" Value="White"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
         </Style>
-        <Style x:Key="HubCardBtn" TargetType="Button">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="Foreground" Value="#111111"/>
-            <Setter Property="BorderBrush" Value="#E4E4E7"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="20"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="16"
-                                Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#FAFAFA"/>
-                                <Setter TargetName="bd" Property="BorderBrush" Value="#D4D4D8"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+        <Style x:Key="NavigationButton" TargetType="Button">
+            <Setter Property="Height" Value="46"/><Setter Property="Margin" Value="10,3"/><Setter Property="Padding" Value="14,0"/><Setter Property="HorizontalContentAlignment" Value="Left"/><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="#B8B8B8"/><Setter Property="FontSize" Value="16"/><Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontWeight" Value="Regular"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/></Trigger><Trigger Property="Tag" Value="active"><Setter TargetName="bd" Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style x:Key="ComboBoxItemStyle" TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="Background" Value="Transparent"/><Setter Property="Padding" Value="10,8"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem"><Border x:Name="ItemBorder" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}" Margin="3,1"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="#303030"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
         </Style>
         <Style TargetType="ComboBox">
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Background" Value="{DynamicResource InputBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="11,0"/><Setter Property="MinHeight" Value="36"/><Setter Property="FontSize" Value="13"/><Setter Property="MaxDropDownHeight" Value="260"/><Setter Property="ItemContainerStyle" Value="{StaticResource ComboBoxItemStyle}"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox"><Grid><ToggleButton x:Name="DropDownToggle" Background="Transparent" BorderThickness="0" Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"><ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="ComboBorder" Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderThickness="{Binding BorderThickness, RelativeSource={RelativeSource AncestorType=ComboBox}}" CornerRadius="6"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="34"/></Grid.ColumnDefinitions><ContentPresenter Margin="11,0,6,0" VerticalAlignment="Center" HorizontalAlignment="Stretch" TextElement.Foreground="{DynamicResource TextPrimaryBrush}" Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}" ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"/><Path Grid.Column="1" Width="10" Height="6" HorizontalAlignment="Center" VerticalAlignment="Center" Stroke="{DynamicResource TextSecondaryBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 1 1 L 5 5 L 9 1"/></Grid></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ComboBorder" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template></ToggleButton><Popup x:Name="Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" PlacementTarget="{Binding ElementName=DropDownToggle}" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade"><Border Width="{Binding ActualWidth, ElementName=DropDownToggle}" MaxHeight="{TemplateBinding MaxDropDownHeight}" Margin="0,4,0,0" Padding="3" Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1" CornerRadius="6"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel IsItemsHost="True"/></ScrollViewer></Border></Popup></Grid><ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter TargetName="DropDownToggle" Property="Opacity" Value="0.48"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style x:Key="OptionCheckBox" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="FontSize" Value="13"/><Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox"><StackPanel Orientation="Horizontal"><Border x:Name="CheckBorder" Width="18" Height="18" Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1" CornerRadius="4"><Path x:Name="CheckMark" Width="10" Height="7" Data="M 1 3.5 L 4 6.5 L 9 1" Stroke="#111317" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed"/></Border><ContentPresenter Margin="9,0,0,0" VerticalAlignment="Center"/></StackPanel><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource TextSecondaryBrush}"/></Trigger><Trigger Property="IsChecked" Value="True"><Setter TargetName="CheckBorder" Property="Background" Value="{DynamicResource AccentBrush}"/><Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="10"/><Setter Property="MinWidth" Value="10"/><Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ScrollBar"><Grid Background="{TemplateBinding Background}"><Track x:Name="PART_Track" IsDirectionReversed="True"><Track.DecreaseRepeatButton><RepeatButton Command="ScrollBar.PageUpCommand" Background="Transparent" BorderThickness="0"/></Track.DecreaseRepeatButton><Track.Thumb><Thumb><Thumb.Template><ControlTemplate TargetType="Thumb"><Border Margin="2,1" Background="#4A4A4A" CornerRadius="3"/></ControlTemplate></Thumb.Template></Thumb></Track.Thumb><Track.IncreaseRepeatButton><RepeatButton Command="ScrollBar.PageDownCommand" Background="Transparent" BorderThickness="0"/></Track.IncreaseRepeatButton></Track></Grid></ControlTemplate></Setter.Value></Setter>
         </Style>
     </Window.Resources>
 
-    <Border CornerRadius="14" Background="#FAFAFA" BorderBrush="#E4E4E7" BorderThickness="1">
+    <Border Margin="1" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1" CornerRadius="18" Background="Transparent">
         <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="56"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="68"/>
-            </Grid.RowDefinitions>
-
-            <!-- TITLE BAR -->
-            <Grid Grid.Row="0" Background="Transparent">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" Orientation="Horizontal" Margin="18,0,0,0" VerticalAlignment="Center">
-                    <Button x:Name="BtnHubBack" Content="Voltar" Style="{StaticResource TextNavBtn}" Margin="0,0,18,0" Visibility="Collapsed"/>
-                    <Image x:Name="LogoImg" Width="22" Height="22" Margin="0,0,10,0"/>
-                    <TextBlock x:Name="LblHubBrand" Text="NeveAI" FontSize="15" FontWeight="SemiBold" Foreground="#111111" VerticalAlignment="Center"/>
-                    <TextBlock x:Name="LblHubMode" Text="  ·  Hub" FontSize="13" Foreground="#71717A" VerticalAlignment="Center"/>
-                </StackPanel>
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
-                    <Button x:Name="BtnMinimize" Content="−" Style="{StaticResource WindowCloseBtn}" Margin="0,0,6,0"/>
-                    <Button x:Name="BtnClose" Content="×" Style="{StaticResource WindowCloseBtn}"/>
-                </StackPanel>
-            </Grid>
-
-            <Grid x:Name="HubHomePanel" Grid.Row="1" Grid.RowSpan="2" Margin="32,24,32,28">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <StackPanel Grid.Row="0" Margin="0,0,0,24">
-                    <TextBlock Text="Neve Hub" FontSize="24" FontWeight="SemiBold" Foreground="#111111"/>
-                    <TextBlock Text="Escolha o que deseja fazer." FontSize="13" Foreground="#71717A" Margin="0,5,0,0"/>
-                </StackPanel>
-
-                <UniformGrid Grid.Row="1" Columns="3" Rows="1" VerticalAlignment="Center" Margin="0,-44,0,0">
-                    <Button x:Name="BtnHubHomeInstall" Style="{StaticResource HubCardBtn}" Height="148" Margin="0,0,12,0">
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Instalar" FontSize="18" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,8"/>
-                            <TextBlock Text="Detecta o hardware e instala o projeto e suas dependências." FontSize="12" Foreground="#52525B" TextWrapping="Wrap" LineHeight="18"/>
+            <Grid.RowDefinitions><RowDefinition Height="44"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Border x:Name="TitleBar" Grid.Row="0" Background="{DynamicResource SidebarBrush}" CornerRadius="17,17,0,0">
+                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <Button x:Name="BtnMinimize" Style="{StaticResource WindowButton}" ToolTip="Minimizar"><Path Width="10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.4" Data="M 0 5 L 10 5"/></Button>
+                        <Button x:Name="BtnMaximize" Style="{StaticResource WindowButton}" ToolTip="Maximizar"><Path Width="10" Height="10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.2" Data="M 0.6 0.6 L 9.4 0.6 L 9.4 9.4 L 0.6 9.4 Z"/></Button>
+                        <Button x:Name="BtnClose" Style="{StaticResource CloseWindowButton}" ToolTip="Fechar"><Path Width="10" Height="10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.4" Data="M 1 1 L 9 9 M 9 1 L 1 9"/></Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition x:Name="SidebarColumn" Width="210"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Border x:Name="SidebarPanel" Grid.Column="0" Background="{DynamicResource SidebarBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" CornerRadius="0,0,0,17">
+                    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                        <StackPanel Margin="20,26,16,24"><TextBlock Text="NeveAI" FontSize="21" FontWeight="Bold"/></StackPanel>
+                        <StackPanel Grid.Row="1">
+                            <Button x:Name="NavOverview" Style="{StaticResource NavigationButton}" Tag="active">
+                                <StackPanel Orientation="Horizontal"><Viewbox Width="21" Height="21"><Path Width="24" Height="24" Fill="Transparent" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Data="M 12 3 L 12 15 M 7 10 L 12 15 L 17 10 M 5 15 L 5 19 A 2 2 0 0 0 7 21 L 17 21 A 2 2 0 0 0 19 19 L 19 15"/></Viewbox><TextBlock Margin="10,0,0,0" VerticalAlignment="Center" FontFamily="Segoe UI" FontSize="16" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Text="Instalar"/></StackPanel>
+                            </Button>
+                            <Button x:Name="NavSettings" Style="{StaticResource NavigationButton}">
+                                <StackPanel Orientation="Horizontal"><Viewbox Width="21" Height="21"><Path Width="24" Height="24" Fill="Transparent" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Data="M 14.7 6.3 A 1 1 0 0 0 14.7 7.7 L 16.3 9.3 A 1 1 0 0 0 17.7 9.3 L 21.47 5.53 A 6 6 0 0 1 13.53 13.47 L 6.62 20.38 A 2.12 2.12 0 0 1 3.62 17.38 L 10.53 10.47 A 6 6 0 0 1 18.47 2.53 Z"/></Viewbox><TextBlock Margin="10,0,0,0" VerticalAlignment="Center" FontFamily="Segoe UI" FontSize="16" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Text="Atualizar"/></StackPanel>
+                            </Button>
+                            <Button x:Name="NavDiagnostics" Style="{StaticResource NavigationButton}">
+                                <StackPanel Orientation="Horizontal"><Viewbox Width="21" Height="21"><Path Width="24" Height="24" Fill="Transparent" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Data="M 3 4 L 21 4 L 21 20 L 3 20 Z M 7 8 L 11 12 L 7 16 M 13 16 L 17 16"/></Viewbox><TextBlock Margin="10,0,0,0" VerticalAlignment="Center" FontFamily="Segoe UI" FontSize="16" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Text="Buildar"/></StackPanel>
+                            </Button>
                         </StackPanel>
-                    </Button>
-
-                    <Button x:Name="BtnHubHomeUpdate" Style="{StaticResource HubCardBtn}" Height="148" Margin="6,0,6,0">
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Atualizar" FontSize="18" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,8"/>
-                            <TextBlock Text="Verifica e instala novas versões da NeveAI e llama.cpp." FontSize="12" Foreground="#52525B" TextWrapping="Wrap" LineHeight="18"/>
-                        </StackPanel>
-                    </Button>
-
-                    <Button x:Name="BtnHubHomeBuild" Style="{StaticResource HubCardBtn}" Height="148" Margin="12,0,0,0">
-                        <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Buildar" FontSize="18" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,8"/>
-                            <TextBlock Text="Compila e publica o projeto." FontSize="12" Foreground="#52525B" TextWrapping="Wrap" LineHeight="18"/>
-                        </StackPanel>
-                    </Button>
-                </UniformGrid>
-            </Grid>
-
-            <!-- BODY (cards swap by visibility) -->
-            <Grid x:Name="InstallBodyHost" Grid.Row="1" Margin="32,8,32,0" Visibility="Collapsed">
+                    </Grid>
+                </Border>
+                <Border Grid.Column="1" Background="{DynamicResource BackgroundBrush}" CornerRadius="0,0,17,0">
+                    <Grid><Grid.RowDefinitions><RowDefinition Height="70"/><RowDefinition Height="*"/><RowDefinition Height="0"/></Grid.RowDefinitions>
+                        <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Background="{DynamicResource BackgroundBrush}"><Grid Margin="28,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel VerticalAlignment="Center"><TextBlock x:Name="LblPageContext" Text="Instalação" FontSize="14" FontWeight="SemiBold"/><TextBlock x:Name="LblPageSubtitle" Text="Detecte o hardware e instale tudo o que a NeveAI precisa." Margin="0,3,0,0" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"/></StackPanel><Grid x:Name="HeaderActions" Grid.Column="1" VerticalAlignment="Center"><StackPanel x:Name="InstallActions" Orientation="Horizontal"><Button x:Name="BtnCancel" Style="{StaticResource PrimaryBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/><Button x:Name="BtnPrimary" Style="{StaticResource AccentActionBtn}" Content="Instalar"/></StackPanel></Grid></Grid></Border>
+                        <Grid x:Name="InstallBodyHost" Grid.Row="1" Margin="32,24,32,0">
 
                 <!-- WELCOME / CONFIG CARD -->
                 <Grid x:Name="ConfigPanel">
@@ -315,14 +219,10 @@ if (-not (Test-Path $LOGO_PATH)) {
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Row="0" Margin="0,0,0,18">
-                        <TextBlock Text="Bem-vindo a NeveAI" FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
-                        <TextBlock Text="Vamos detectar seu hardware e instalar tudo o que é preciso."
-                                   FontSize="13" Foreground="#71717A" Margin="0,4,0,0"/>
-                    </StackPanel>
+                    <StackPanel Grid.Row="0" Visibility="Collapsed"/>
 
-                    <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="20">
-                        <Grid VerticalAlignment="Center">
+                    <Border Grid.Row="1" Style="{StaticResource Section}" VerticalAlignment="Top">
+                        <Grid VerticalAlignment="Center" Margin="0,24,0,24">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="220"/>
                                 <ColumnDefinition Width="*"/>
@@ -333,13 +233,12 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="GPU detectada:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
-                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="LblGpu" Text="Detectando..." FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,12" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="GPU detectada:" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,0,24"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="LblGpu" Text="Detectando..." FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,0,24" TextTrimming="CharacterEllipsis"/>
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Tipo de aceleração:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Tipo de aceleração:" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,0,12"/>
                             <ComboBox  Grid.Row="1" Grid.Column="1" x:Name="CmbBackend" Margin="0,0,0,12">
                                 <ComboBoxItem Content="CPU (sem GPU)"/>
                                 <ComboBoxItem Content="NVIDIA - RTX 50xx (Blackwell, CUDA 13.3)"/>
@@ -353,7 +252,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <ComboBoxItem Content="AMD - Vulkan"/>
                             </ComboBox>
 
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="VRAM (GB):" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="VRAM (GB):" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,0,12"/>
                             <ComboBox  Grid.Row="2" Grid.Column="1" x:Name="CmbVram" Margin="0,0,0,12">
                                 <ComboBoxItem Content="Pular"/>
                                 <ComboBoxItem Content="4 GB"/>
@@ -365,21 +264,8 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <ComboBoxItem Content="32 GB ou mais"/>
                             </ComboBox>
 
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Dependências:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
-                            <CheckBox  Grid.Row="3" Grid.Column="1" x:Name="ChkInstallPython" Content="Instalar Python 3.11" FontSize="13" Margin="0,2,0,12"/>
-
-                            <TextBlock Grid.Row="4" Grid.Column="0" Text="Atalho:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
-                            <CheckBox  Grid.Row="4" Grid.Column="1" x:Name="ChkDesktopShortcut" Content="Adicionar ícone à área de trabalho" FontSize="13" Margin="0,2,0,12"/>
-
-                            <Border Grid.Row="5" Grid.ColumnSpan="2" Background="#FAFAFA" CornerRadius="8" Padding="14,12" Margin="0,8,0,0">
-                                <StackPanel>
-                                    <TextBlock Text="O que será instalado:" FontWeight="SemiBold" FontSize="13" Foreground="#111111" Margin="0,0,0,4"/>
-                                    <TextBlock Text="• llama.cpp e stable-diffusion.cpp (binários mais recentes do GitHub)" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="• Python 3.11 e venv com PyTorch + diffusers + dependências do backend" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="• Pacotes npm e build do frontend" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="• Estrutura de pastas (logs, models, mmproj, data) e .env padrão" FontSize="12" Foreground="#52525B"/>
-                                </StackPanel>
-                            </Border>
+                            <CheckBox Grid.Row="3" Grid.Column="1" x:Name="ChkInstallPython" Content="Instalar Python 3.11" Style="{StaticResource OptionCheckBox}" Margin="0,5,0,14"/>
+                            <CheckBox Grid.Row="4" Grid.Column="1" x:Name="ChkDesktopShortcut" Content="Adicionar ícone à área de trabalho" Style="{StaticResource OptionCheckBox}" Margin="0,0,0,0"/>
                         </Grid>
                     </Border>
                 </Grid>
@@ -392,23 +278,22 @@ if (-not (Test-Path $LOGO_PATH)) {
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                        <TextBlock Text="Instalando..." FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
-                        <TextBlock x:Name="LblStep" Text="Preparando…" FontSize="13" Foreground="#71717A" Margin="0,4,0,0" Visibility="Collapsed"/>
+                    <StackPanel Grid.Row="0">
+                        <TextBlock x:Name="LblStep" Text="Preparando…" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,5,0,0" Visibility="Collapsed"/>
                     </StackPanel>
 
-                    <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="16,14" Margin="0,0,0,14">
+                    <Border Grid.Row="1" Style="{StaticResource Section}" Padding="16,14" Margin="0,0,0,14">
                         <StackPanel>
                             <Grid>
-                                <TextBlock x:Name="LblProgressTxt" Text="0%" FontSize="12" Foreground="#52525B" HorizontalAlignment="Right"/>
-                                <TextBlock x:Name="LblPhase" Text="Iniciando" FontSize="12" Foreground="#52525B"/>
+                                <TextBlock x:Name="LblProgressTxt" Text="0%" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Right"/>
+                                <TextBlock x:Name="LblPhase" Text="Iniciando" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"/>
                             </Grid>
                             <ProgressBar x:Name="Progress" Height="6" Minimum="0" Maximum="100" Value="0" Margin="0,8,0,0"
-                                         Foreground="#111111" Background="#F4F4F5" BorderThickness="0"/>
+                                         Foreground="{DynamicResource AccentBrush}" Background="{DynamicResource SurfaceRaisedBrush}" BorderThickness="0"/>
                         </StackPanel>
                     </Border>
 
-                    <Border Grid.Row="2" Background="#0A0A0A" CornerRadius="10" Padding="14,12">
+                    <Border Grid.Row="2" Background="#000000" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,12">
                         <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
                             <TextBox x:Name="LogBox" Background="Transparent" Foreground="#D4D4D4" BorderThickness="0"
                                      IsReadOnly="True" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"
@@ -419,31 +304,26 @@ if (-not (Test-Path $LOGO_PATH)) {
 
                 <!-- DONE CARD -->
                 <Grid x:Name="DonePanel" Visibility="Collapsed">
-                    <Border Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="32">
+                    <Border Style="{StaticResource Section}" Padding="32" VerticalAlignment="Top">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Border Width="56" Height="56" CornerRadius="28" Background="#10B981" Margin="0,0,0,18">
                                 <TextBlock Text="OK" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                            <TextBlock x:Name="LblDoneTitle" Text="Tudo pronto!" FontSize="22" FontWeight="SemiBold" Foreground="#111111" HorizontalAlignment="Center"/>
-                            <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar o NeveAI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
-                            <Border Background="#FAFAFA" CornerRadius="8" Padding="14,12">
-                                <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="#52525B"/>
+                            <TextBlock x:Name="LblDoneTitle" Text="Tudo pronto!" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                            <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar o NeveAI." FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="0,6,0,18"/>
+                            <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="7" Padding="14,12">
+                                <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
                             </Border>
                         </StackPanel>
                     </Border>
                 </Grid>
 
+                        </Grid>
+                        <Border x:Name="InstallFooterHost" Grid.Row="2" Visibility="Collapsed"/>
+                        <ContentControl x:Name="HubPageHost" Grid.Row="1" Grid.RowSpan="2" Visibility="Collapsed"/>
+                    </Grid>
+                </Border>
             </Grid>
-
-            <!-- FOOTER -->
-            <Border x:Name="InstallFooterHost" Grid.Row="2" BorderBrush="#EEEEEE" BorderThickness="0,1,0,0" Padding="32,0,32,0" Visibility="Collapsed">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Button x:Name="BtnCancel" Style="{StaticResource GhostBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/>
-                    <Button x:Name="BtnPrimary" Style="{StaticResource PrimaryBtn}" Content="Instalar"/>
-                </StackPanel>
-            </Border>
-
-            <ContentControl x:Name="HubPageHost" Grid.Row="1" Grid.RowSpan="2" Visibility="Collapsed"/>
         </Grid>
     </Border>
 </Window>
@@ -466,12 +346,12 @@ if (Test-Path -LiteralPath $WINDOW_ICON_PATH) {
 
 # Atalhos para controles
 $ctl = @{}
-foreach ($name in 'LogoImg','BtnMinimize','BtnClose','LblGpu','CmbBackend','CmbVram','ChkInstallPython','ChkDesktopShortcut',
+foreach ($name in 'TitleBar','BtnMinimize','BtnMaximize','BtnClose','SidebarColumn','SidebarPanel','NavOverview','NavSettings','NavDiagnostics','LblPageContext','LblPageSubtitle','HeaderActions','InstallActions',
+                  'LblGpu','CmbBackend','CmbVram','ChkInstallPython','ChkDesktopShortcut',
                   'ConfigPanel','InstallPanel','DonePanel',
                   'LblStep','LblPhase','LblProgressTxt','Progress','LogBox','LogScroll',
                   'LblDoneTitle','LblDoneSub','LblSummary',
                   'BtnCancel','BtnPrimary',
-                  'LblHubBrand','LblHubMode','BtnHubBack','HubHomePanel','BtnHubHomeInstall','BtnHubHomeUpdate','BtnHubHomeBuild',
                   'InstallBodyHost','InstallFooterHost','HubPageHost') {
     $ctl[$name] = $window.FindName($name)
 }
@@ -504,21 +384,13 @@ $window.Dispatcher.add_UnhandledException({
     $eventArgs.Handled = $true
 })
 
-# Logo
-if (Test-Path $LOGO_PATH) {
-    try {
-        $bmp = New-Object System.Windows.Media.Imaging.BitmapImage
-        $bmp.BeginInit()
-        $bmp.UriSource = New-Object System.Uri($LOGO_PATH, [System.UriKind]::Absolute)
-        $bmp.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-        $bmp.EndInit()
-        $ctl.LogoImg.Source = $bmp
-    } catch {}
-}
-
 # Drag da janela
-$window.Add_MouseLeftButtonDown({
+$ctl.TitleBar.Add_MouseLeftButtonDown({
     param($s, $e)
+    if ($e.ClickCount -eq 2) {
+        $window.WindowState = if ($window.WindowState -eq 'Maximized') { 'Normal' } else { 'Maximized' }
+        return
+    }
     if ($e.ButtonState -eq 'Pressed') { try { $window.DragMove() } catch {} }
 })
 
@@ -643,6 +515,15 @@ function Request-InstallCancel {
 # Botoes basicos
 $ctl.BtnMinimize.Add_Click({
     try { $window.WindowState = [System.Windows.WindowState]::Minimized } catch {}
+})
+$ctl.BtnMaximize.Add_Click({
+    try {
+        $window.WindowState = if ($window.WindowState -eq [System.Windows.WindowState]::Maximized) {
+            [System.Windows.WindowState]::Normal
+        } else {
+            [System.Windows.WindowState]::Maximized
+        }
+    } catch {}
 })
 $ctl.BtnClose.Add_Click({
     if ([string]$window.Tag -eq 'installing') { Request-InstallCancel; return }
@@ -961,7 +842,17 @@ function New-NeveDesktopShortcut([string]$RootPath, [string]$LogPath) {
 # Worker - executa em runspace separado
 # =============================================================================
 $ctl.BtnPrimary.Add_Click({
-    if ($ctl.BtnPrimary.Tag -eq 'done') { $window.Close(); return }
+    if ($ctl.BtnPrimary.Tag -eq 'done') {
+        $ctl.DonePanel.Visibility = 'Collapsed'
+        $ctl.InstallPanel.Visibility = 'Collapsed'
+        $ctl.ConfigPanel.Visibility = 'Visible'
+        $ctl.BtnCancel.Visibility = 'Collapsed'
+        $ctl.BtnPrimary.Content = 'Instalar'
+        $ctl.BtnPrimary.Tag = $null
+        $ctl.Progress.Value = 0
+        $window.Tag = 'idle'
+        return
+    }
     $installPython311 = [bool]$ctl.ChkInstallPython.IsChecked
     $createDesktopShortcut = [bool]$ctl.ChkDesktopShortcut.IsChecked
     if ([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) {
@@ -2354,6 +2245,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
 # =============================================================================
 $script:HubLegacyPages = @{}
 $script:HubLegacyModules = @{}
+$script:HubActionPanels = @{ install = $ctl.InstallActions }
 $script:HubWindow = $window
 $script:HubPageHost = $ctl.HubPageHost
 $script:HubScriptPath = $SCRIPT_PATH
@@ -2812,8 +2704,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
 
-                    <StackPanel Grid.Row="0" Margin="0,0,0,12">
-                        <TextBlock Text="Atualizando…" FontSize="22" FontWeight="SemiBold" Foreground="#111111"/>
+                    <StackPanel Grid.Row="0">
                         <TextBlock x:Name="LblStep" Text="Preparando…" FontSize="13" Foreground="#71717A" Margin="0,4,0,0" Visibility="Collapsed"/>
                     </StackPanel>
 
@@ -2976,6 +2867,52 @@ function Update-PrimaryButtonState {
         $ctl.BtnPrimary.IsEnabled = $false
         $ctl.BtnPrimary.Visibility = 'Collapsed'
     }
+}
+
+function Reset-UpdateSelectionView([bool]$completed) {
+    $completedNeve = $completed -and [bool]$ctl.ChkUpdateNeve.IsChecked
+    $completedLlama = $completed -and [bool]$ctl.ChkUpdateLlama.IsChecked
+
+    if ($completedNeve) {
+        $ctl.LblCurrent.Text = $ctl.LblLatest.Text
+        $ctl.LblStatus.Text = 'Atualizado'
+        $ctl.LblStatus.Foreground = '#10B981'
+        $ctl.ChkUpdateNeve.Visibility = 'Collapsed'
+    }
+    if ($completedLlama) {
+        $ctl.LblLlamaCurrent.Text = $ctl.LblLlamaLatest.Text
+        $ctl.LblLlamaStatus.Text = 'Atualizado'
+        $ctl.LblLlamaStatus.Foreground = '#10B981'
+        $ctl.ChkUpdateLlama.Visibility = 'Collapsed'
+    }
+
+    $ctl.ChkUpdateNeve.IsChecked = $false
+    $ctl.ChkUpdateLlama.IsChecked = $false
+    $ctl.ChkUpdateNeve.IsEnabled = $true
+    $ctl.ChkUpdateLlama.IsEnabled = $true
+    $ctl.BtnLlama.IsEnabled = $true
+    $ctl.BtnCancel.IsEnabled = $false
+    $ctl.BtnCancel.Visibility = 'Collapsed'
+    $ctl.DonePanel.Visibility = 'Collapsed'
+    $ctl.UpdatePanel.Visibility = 'Collapsed'
+    $ctl.CheckPanel.Visibility = 'Visible'
+
+    $available = @($ctl.ChkUpdateNeve, $ctl.ChkUpdateLlama) |
+        Where-Object { $_.Visibility -eq 'Visible' }
+    if ($available.Count -eq 0) {
+        $ctl.LblCheckTitle.Text = 'Você já está atualizado'
+        $ctl.LblCheckSub.Text = 'Nenhuma atualização pendente para a NeveAI ou llama.cpp.'
+    } else {
+        $ctl.LblCheckTitle.Text = if ($available.Count -gt 1) { 'Atualizações disponíveis' } else { 'Atualização disponível' }
+        $ctl.LblCheckSub.Text = if ($available.Count -gt 1) {
+            'Marque uma ou mais atualizações para continuar.'
+        } else {
+            'Uma nova versão está pronta para ser instalada.'
+        }
+    }
+
+    $ctl.BtnPrimary.Tag = $null
+    Update-PrimaryButtonState
 }
 
 $ctl.ChkUpdateNeve.Add_Checked({ Update-PrimaryButtonState })
@@ -3574,9 +3511,10 @@ Update-PrimaryButtonState
 # =============================================================================
 $ctl.BtnPrimary.Add_Click({
     $tag = $ctl.BtnPrimary.Tag
-    if ($tag -eq 'error')  { $script:ExitCode = 1; $window.Close(); return }
-    if ($tag -eq 'close')  { $window.Close(); return }
-    if ($tag -eq 'done')   { $window.Close(); return }
+    if ($tag -in @('error', 'close', 'done')) {
+        Reset-UpdateSelectionView ($tag -eq 'done')
+        return
+    }
     if ($tag -ne 'update') { return }
 
     $updateNeve  = [bool]$ctl.ChkUpdateNeve.IsChecked
@@ -4856,8 +4794,6 @@ if (-not (Test-Path $LOGO_PATH)) {
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="170"/>
@@ -4867,21 +4803,9 @@ if (-not (Test-Path $LOGO_PATH)) {
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Build:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
                             <TextBlock Grid.Row="0" Grid.Column="1" x:Name="LblBuildPath" Text="build" FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,12" TextTrimming="CharacterEllipsis"/>
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Destino:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="LblDeployPath" Text="backend\neveai\frontend" FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,12" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Destino:" FontSize="13" Foreground="#52525B"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="LblDeployPath" Text="backend\neveai\frontend" FontSize="13" FontWeight="SemiBold" Foreground="#111111" TextTrimming="CharacterEllipsis"/>
 
-                            <Border Grid.Row="3" Grid.ColumnSpan="2" Background="#FAFAFA" CornerRadius="8" Padding="14,12" Margin="0,8,0,0">
-                                <StackPanel>
-                                    <TextBlock Text="O que será feito:" FontWeight="SemiBold" FontSize="13" Foreground="#111111" Margin="0,0,0,4"/>
-                                    <TextBlock Text="• Limpar a pasta build antiga" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="• Preparar Node.js/npm portatil" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="• Instalar pacotes npm se estiverem ausentes" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="• Rodar npm run build" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="• Limpar backend\neveai\frontend" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="• Copiar build para o backend" FontSize="12" Foreground="#52525B"/>
-                                    <TextBlock Text="• Conferir o hash do index.html publicado" FontSize="12" Foreground="#52525B"/>
-                                </StackPanel>
-                            </Border>
                         </Grid>
                     </Border>
                 </Grid>
@@ -5404,7 +5328,12 @@ $ctl.BtnClose.Add_Click({ if (-not $script:IsRunning) { $window.Close() } })
 $ctl.BtnCancel.Add_Click({ if (-not $script:IsRunning) { $window.Close() } })
 $ctl.BtnPrimary.Add_Click({
     if ($ctl.BtnPrimary.Tag -eq 'close') {
-        $window.Close()
+        $ctl.DonePanel.Visibility = 'Collapsed'
+        $ctl.WorkPanel.Visibility = 'Collapsed'
+        $ctl.IntroPanel.Visibility = 'Visible'
+        $ctl.BtnCancel.Visibility = 'Collapsed'
+        $ctl.BtnPrimary.Tag = $null
+        $ctl.BtnPrimary.Content = 'Publicar'
     } else {
         Start-BuildDeploy
     }
@@ -5425,9 +5354,30 @@ function Convert-LegacyWindowXamlToHubPage([string]$legacyXaml) {
 	$pageXaml = $pageXaml.Replace('</Window>', '</UserControl>')
 	$pageXaml = $pageXaml.Replace('<Window.Resources>', '<UserControl.Resources>')
 	$pageXaml = $pageXaml.Replace('</Window.Resources>', '</UserControl.Resources>')
-	$pageXaml = $pageXaml.Replace('<Border CornerRadius="14" Background="#FAFAFA" BorderBrush="#E4E4E7" BorderThickness="1">', '<Border Background="#FAFAFA" CornerRadius="0,0,14,14" ClipToBounds="True">')
+	$pageXaml = $pageXaml.Replace('<Border CornerRadius="14" Background="#FAFAFA" BorderBrush="#E4E4E7" BorderThickness="1">', '<Border Background="#000000" CornerRadius="0,0,17,0" ClipToBounds="True">')
 	$rowRegex = [regex]::new('<RowDefinition Height="56"/>')
 	$pageXaml = $rowRegex.Replace($pageXaml, '<RowDefinition Height="0"/>', 1)
+	$footerRowRegex = [regex]::new('<RowDefinition Height="68"/>')
+	$pageXaml = $footerRowRegex.Replace($pageXaml, '<RowDefinition Height="0"/>', 1)
+	# As telas antigas continuam com toda a lógica original, mas herdam a mesma
+	# paleta escura e geometria visual da nova moldura.
+	$pageXaml = $pageXaml.Replace('Background="#FAFAFA"', 'Background="#000000"')
+	$pageXaml = $pageXaml.Replace('Background="White"', 'Background="#171717"')
+	$pageXaml = $pageXaml.Replace('<Setter Property="Background" Value="#111111"/>', '<Setter Property="Background" Value="#202020"/>')
+	$pageXaml = $pageXaml.Replace('<Setter Property="Foreground" Value="White"/>', '<Setter Property="Foreground" Value="#F3F5F7"/>')
+	$pageXaml = $pageXaml.Replace('<Setter Property="Background" Value="#2563EB"/>', '<Setter Property="Background" Value="#202020"/>')
+	$pageXaml = $pageXaml.Replace('<Setter TargetName="bd" Property="Background" Value="#1D4ED8"/>', '<Setter TargetName="bd" Property="Background" Value="#292929"/>')
+	$pageXaml = $pageXaml.Replace('<Setter TargetName="bd" Property="Background" Value="#262626"/>', '<Setter TargetName="bd" Property="Background" Value="#292929"/>')
+	$pageXaml = $pageXaml.Replace('Background="#F4F4F5"', 'Background="#202020"')
+	$pageXaml = $pageXaml.Replace('Background="#0A0A0A"', 'Background="#000000"')
+	$pageXaml = $pageXaml.Replace('BorderBrush="#E4E4E7"', 'BorderBrush="#303030"')
+	$pageXaml = $pageXaml.Replace('BorderBrush="#EEEEEE"', 'BorderBrush="#303030"')
+	$pageXaml = $pageXaml.Replace('BorderBrush="#D4D4D8"', 'BorderBrush="#484848"')
+	$pageXaml = $pageXaml.Replace('Foreground="#111111"', 'Foreground="#F3F5F7"')
+	$pageXaml = $pageXaml.Replace('Foreground="#52525B"', 'Foreground="#A9B1BC"')
+	$pageXaml = $pageXaml.Replace('Foreground="#71717A"', 'Foreground="#8B8B8B"')
+	$pageXaml = $pageXaml.Replace('CornerRadius="10"', 'CornerRadius="8"')
+	$pageXaml = $pageXaml.Replace('CornerRadius="14"', 'CornerRadius="8"')
 	return $pageXaml
 }
 
@@ -5550,28 +5500,102 @@ function Initialize-HubLegacyPage([string]$mode) {
 	$moduleSource = Convert-LegacyScriptToHubModule $source $mode
 	$module = New-Module -Name "NeveHub_$mode" -ScriptBlock ([scriptblock]::Create($moduleSource)) -ArgumentList $window, $ctl.HubPageHost, $script:HubLegacyPages, $mode, $SCRIPT_PATH
 	$script:HubLegacyModules[$mode] = $module
+
+	$actionPanel = New-Object System.Windows.Controls.StackPanel
+	$actionPanel.Orientation = [System.Windows.Controls.Orientation]::Horizontal
+	$actionPanel.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+	$actionPanel.Visibility = [System.Windows.Visibility]::Collapsed
+	$actionNames = if ($mode -eq 'update') { @('BtnLlama', 'BtnCancel', 'BtnPrimary') } else { @('BtnCancel', 'BtnPrimary') }
+	foreach ($actionName in $actionNames) {
+		$button = $script:HubLegacyPages[$mode].FindName($actionName)
+		if (-not $button) { continue }
+		$parent = $button.Parent
+		if ($parent -is [System.Windows.Controls.Panel]) { [void]$parent.Children.Remove($button) }
+		$button.Style = $window.FindResource('PrimaryBtn')
+		$button.Margin = New-Object System.Windows.Thickness(0, 0, 10, 0)
+		$originMode = $mode
+		$button.Add_Click({
+			if (-not (Test-HubActivePageBusy)) { Select-HubPage $originMode }
+		}.GetNewClosure())
+		[void]$actionPanel.Children.Add($button)
+	}
+	if ($actionPanel.Children.Count -gt 0) {
+		$actionPanel.Children[$actionPanel.Children.Count - 1].Margin = New-Object System.Windows.Thickness(0)
+	}
+	[void]$ctl.HeaderActions.Children.Add($actionPanel)
+	$script:HubActionPanels[$mode] = $actionPanel
+
+	# Os títulos das páginas agora vivem no cabeçalho persistente da moldura.
+	try {
+		$page = $script:HubLegacyPages[$mode]
+		if ($mode -eq 'update') {
+			$title = $page.FindName('LblCheckTitle')
+			if ($title -and $title.Parent) { $title.Parent.Visibility = 'Collapsed' }
+			foreach ($panelName in @('CheckPanel', 'DonePanel')) {
+				$panel = $page.FindName($panelName)
+				if ($panel -and $panel.Children.Count -gt 0) {
+					$card = $panel.Children[$panel.Children.Count - 1]
+					$card.VerticalAlignment = 'Top'
+					$card.Margin = New-Object System.Windows.Thickness(0, 16, 0, 0)
+				}
+			}
+			foreach ($checkName in @('ChkUpdateNeve', 'ChkUpdateLlama')) {
+				$check = $page.FindName($checkName)
+				if ($check) { $check.Style = $window.FindResource('OptionCheckBox') }
+			}
+		} elseif ($mode -eq 'build') {
+			$intro = $page.FindName('IntroPanel')
+			if ($intro -and $intro.Children.Count -gt 0) {
+				$intro.Children[0].Visibility = 'Collapsed'
+				$card = $intro.Children[$intro.Children.Count - 1]
+				$card.VerticalAlignment = 'Top'
+				$card.Margin = New-Object System.Windows.Thickness(0, 16, 0, 0)
+			}
+			$done = $page.FindName('DonePanel')
+			if ($done -and $done.Children.Count -gt 0) {
+				$card = $done.Children[$done.Children.Count - 1]
+				$card.VerticalAlignment = 'Top'
+				$card.Margin = New-Object System.Windows.Thickness(0, 16, 0, 0)
+			}
+		}
+	} catch {}
+}
+
+function Show-HubActionPanel([string]$mode) {
+	foreach ($entry in $script:HubActionPanels.GetEnumerator()) {
+		$entry.Value.Visibility = if ($entry.Key -eq $mode) { 'Visible' } else { 'Collapsed' }
+	}
+}
+
+function Update-HubActionButtonStyles {
+	$accentStyle = $window.FindResource('AccentActionBtn')
+	$regularStyle = $window.FindResource('PrimaryBtn')
+	foreach ($panel in $script:HubActionPanels.Values) {
+		foreach ($button in $panel.Children) {
+			if (-not ($button -is [System.Windows.Controls.Button])) { continue }
+			$label = [string]$button.Content
+			$targetStyle = if ($label -in @('Instalar', 'Atualizar', 'Publicar')) { $accentStyle } else { $regularStyle }
+			if ($button.Style -ne $targetStyle) { $button.Style = $targetStyle }
+		}
+	}
 }
 
 function Set-HubHeaderState([string]$mode) {
-	$label = switch ($mode) {
-		'install' { 'Instalar' }
-		'update' { 'Atualizar' }
-		'build' { 'Buildar' }
-		default { 'Hub' }
+	$ctl.LblPageContext.Text = switch ($mode) {
+		'install' { 'Instalação' }
+		'update' { 'Atualização' }
+		'build' { 'Publicação' }
+		default { 'Instalação' }
 	}
-
-	$ctl.LblHubMode.Text = "  ·  $label"
-	if ($mode -eq 'home') {
-		$ctl.BtnHubBack.Visibility = 'Collapsed'
-		$ctl.LogoImg.Visibility = 'Visible'
-		$ctl.LblHubBrand.Visibility = 'Visible'
-		$ctl.LblHubMode.Visibility = 'Visible'
-	} else {
-		$ctl.LogoImg.Visibility = 'Collapsed'
-		$ctl.LblHubBrand.Visibility = 'Collapsed'
-		$ctl.LblHubMode.Visibility = 'Collapsed'
+	$ctl.LblPageSubtitle.Text = switch ($mode) {
+		'install' { 'Detecte o hardware e instale tudo o que a NeveAI precisa.' }
+		'update' { 'Verifique e instale novas versões da NeveAI e do llama.cpp.' }
+		'build' { 'Compile e publique o projeto na pasta do backend.' }
+		default { 'Detecte o hardware e instale tudo o que a NeveAI precisa.' }
 	}
-	Update-HubBackVisibility
+	$ctl.NavOverview.Tag = if ($mode -eq 'install') { 'active' } else { $null }
+	$ctl.NavSettings.Tag = if ($mode -eq 'update') { 'active' } else { $null }
+	$ctl.NavDiagnostics.Tag = if ($mode -eq 'build') { 'active' } else { $null }
 }
 
 function Get-HubLegacyPageControl([string]$mode, [string]$name) {
@@ -5604,37 +5628,18 @@ function Test-HubActivePageBusy {
 	}
 }
 
-function Update-HubBackVisibility {
-	if (-not $ctl.BtnHubBack) { return }
-	if ($script:HubActiveMode -eq 'home' -or (Test-HubActivePageBusy)) {
-		$ctl.BtnHubBack.Visibility = 'Collapsed'
-	} else {
-		$ctl.BtnHubBack.Visibility = 'Visible'
-	}
-}
-
-function Select-HubHome {
-	if (Test-HubActivePageBusy) { return }
-
-	$script:HubActiveMode = 'home'
-	Set-HubHeaderState 'home'
-	$ctl.HubHomePanel.Visibility = 'Visible'
-	$ctl.HubPageHost.Visibility = 'Collapsed'
-	$ctl.InstallBodyHost.Visibility = 'Collapsed'
-	$ctl.InstallFooterHost.Visibility = 'Collapsed'
-}
-
 function Select-HubPage([string]$mode) {
 	if (Test-HubActivePageBusy) { return }
+	if ($mode -eq 'home') { $mode = 'install' }
 
 	$script:HubActiveMode = $mode
 	Set-HubHeaderState $mode
-	$ctl.HubHomePanel.Visibility = 'Collapsed'
 
 	if ($mode -eq 'install') {
 		$ctl.HubPageHost.Visibility = 'Collapsed'
 		$ctl.InstallBodyHost.Visibility = 'Visible'
-		$ctl.InstallFooterHost.Visibility = 'Visible'
+		$ctl.InstallFooterHost.Visibility = 'Collapsed'
+		Show-HubActionPanel 'install'
 		return
 	}
 
@@ -5644,7 +5649,7 @@ function Select-HubPage([string]$mode) {
 
 	try {
 		Initialize-HubLegacyPage $mode
-		Update-HubBackVisibility
+		Show-HubActionPanel $mode
 	} catch {
 		[System.Windows.MessageBox]::Show(
 			"Falha ao abrir a pagina '$mode'.`r`n`r`n$($_.Exception.Message)",
@@ -5656,21 +5661,22 @@ function Select-HubPage([string]$mode) {
 	}
 }
 
-$script:HubBackMonitorTimer = New-Object Windows.Threading.DispatcherTimer
-$script:HubBackMonitorTimer.Interval = [TimeSpan]::FromMilliseconds(150)
-$script:HubBackMonitorTimer.Add_Tick({ Update-HubBackVisibility })
-$script:HubBackMonitorTimer.Start()
-$window.Add_Closed({ try { $script:HubBackMonitorTimer.Stop() } catch {} })
+$script:HubBusyMonitorTimer = New-Object Windows.Threading.DispatcherTimer
+$script:HubBusyMonitorTimer.Interval = [TimeSpan]::FromMilliseconds(150)
+$script:HubBusyMonitorTimer.Add_Tick({
+	$busy = Test-HubActivePageBusy
+	Update-HubActionButtonStyles
+	$ctl.NavOverview.IsEnabled = (-not $busy) -or $script:HubActiveMode -eq 'install'
+	$ctl.NavSettings.IsEnabled = (-not $busy) -or $script:HubActiveMode -eq 'update'
+	$ctl.NavDiagnostics.IsEnabled = (-not $busy) -or $script:HubActiveMode -eq 'build'
+})
+$script:HubBusyMonitorTimer.Start()
+$window.Add_Closed({ try { $script:HubBusyMonitorTimer.Stop() } catch {} })
 
-$ctl.BtnHubBack.Add_Click({ Select-HubHome })
-$ctl.BtnHubHomeInstall.Add_Click({ Select-HubPage 'install' })
-$ctl.BtnHubHomeUpdate.Add_Click({ Select-HubPage 'update' })
-$ctl.BtnHubHomeBuild.Add_Click({ Select-HubPage 'build' })
-if ($StartPage -eq 'home') {
-	Select-HubHome
-} else {
-	Select-HubPage $StartPage
-}
+$ctl.NavOverview.Add_Click({ Select-HubPage 'install' })
+$ctl.NavSettings.Add_Click({ Select-HubPage 'update' })
+$ctl.NavDiagnostics.Add_Click({ Select-HubPage 'build' })
+Select-HubPage $(if ($StartPage -eq 'home') { 'install' } else { $StartPage })
 
 # =============================================================================
 # Mostrar a janela
