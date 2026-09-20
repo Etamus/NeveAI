@@ -364,6 +364,7 @@ $script:InstallControl = [hashtable]::Synchronized(@{
     CancelRequested = $false
     Processes = $script:InstallProcessList
 })
+$script:PendingInstallCleanup = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
 
 $window.Dispatcher.add_UnhandledException({
     param($sender, $eventArgs)
@@ -519,26 +520,50 @@ function Request-InstallCancel([bool]$CloseAfterCancel = $false) {
 
     Stop-RegisteredInstallerProcesses
 
+    $powerShellToStop = $script:InstallerPowerShell
+    $runspaceToDispose = $script:InstallerRunspace
+    $stopResult = $null
     try {
-        if ($script:InstallerPowerShell) { $script:InstallerPowerShell.Stop() }
+        if ($powerShellToStop) { $stopResult = $powerShellToStop.BeginStop($null, $null) }
     } catch {}
-    try {
-        if ($script:InstallerRunspace -and $script:InstallerRunspace.RunspaceStateInfo.State -eq 'Opened') {
-            $script:InstallerRunspace.Close()
-        }
-    } catch {}
-    try { if ($script:InstallerPowerShell) { $script:InstallerPowerShell.Dispose() } } catch {}
-    try { if ($script:InstallerRunspace) { $script:InstallerRunspace.Dispose() } } catch {}
+    if ($powerShellToStop -or $runspaceToDispose) {
+        [void]$script:PendingInstallCleanup.Add([pscustomobject]@{
+            PowerShell = $powerShellToStop
+            Runspace = $runspaceToDispose
+            StopResult = $stopResult
+        })
+    }
 
     $script:InstallerPowerShell = $null
     $script:InstallerRunspace = $null
     $script:InstallerAsyncResult = $null
+    $script:InstallProcessList = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
+    $script:InstallControl = [hashtable]::Synchronized(@{
+        CancelRequested = $false
+        Processes = $script:InstallProcessList
+    })
     $script:NeveAppCloseRequested = $false
     $window.Tag = 'cancelled'
     if ($CloseAfterCancel) {
         try { $window.Close() } catch {}
     } else {
         Restore-InstallSelectionView
+    }
+}
+
+function Complete-PendingInstallCleanup {
+    for ($index = $script:PendingInstallCleanup.Count - 1; $index -ge 0; $index--) {
+        $pending = $script:PendingInstallCleanup[$index]
+        $finished = $null -eq $pending.StopResult -or $pending.StopResult.IsCompleted
+        if (-not $finished) { continue }
+        try {
+            if ($pending.PowerShell -and $pending.StopResult) {
+                $pending.PowerShell.EndStop($pending.StopResult)
+            }
+        } catch {}
+        try { if ($pending.PowerShell) { $pending.PowerShell.Dispose() } } catch {}
+        try { if ($pending.Runspace) { $pending.Runspace.Dispose() } } catch {}
+        $script:PendingInstallCleanup.RemoveAt($index)
     }
 }
 
@@ -2237,11 +2262,12 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
 
     $ps = [PowerShell]::Create()
     $ps.Runspace = $runspace
-    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($installPython311).AddArgument($createDesktopShortcut).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($STATE_FILE).AddArgument($PYTHON_EXE).AddArgument($NODE_EXE).AddArgument($NPM_EXE).AddArgument($INSTALLER_REVISION).AddArgument($SCRIPT_PATH).AddArgument($script:InstallControl)
-    [void]$ps.add_InvocationStateChanged({
+    $installControlForRun = $script:InstallControl
+    [void]$ps.AddScript($worker).AddArgument($cfg).AddArgument($installPython311).AddArgument($createDesktopShortcut).AddArgument($vramGb).AddArgument($detected).AddArgument($ROOT).AddArgument($VENV_DIR).AddArgument($VENV_PY).AddArgument($BACKEND).AddArgument($LOG).AddArgument($STATE_FILE).AddArgument($PYTHON_EXE).AddArgument($NODE_EXE).AddArgument($NPM_EXE).AddArgument($INSTALLER_REVISION).AddArgument($SCRIPT_PATH).AddArgument($installControlForRun)
+    $invocationStateHandler = {
         param($sender, $eventArgs)
         if ($eventArgs.InvocationStateInfo.State -eq 'Failed') {
-            if ($script:InstallControl -and $script:InstallControl.CancelRequested) { return }
+            if ($installControlForRun -and $installControlForRun.CancelRequested) { return }
             $fatal = $eventArgs.InvocationStateInfo.Reason
             $msg = if ($fatal) { $fatal.Message } else { 'Falha fatal no processo de instalação.' }
             try { [System.IO.File]::WriteAllText($STATE_FILE, 'failed', [System.Text.UTF8Encoding]::new($false)) } catch {}
@@ -2262,7 +2288,8 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 })
             } catch {}
         }
-    })
+    }.GetNewClosure()
+    [void]$ps.add_InvocationStateChanged($invocationStateHandler)
     $script:InstallerPowerShell = $ps
     $script:InstallerRunspace = $runspace
     $script:InstallerAsyncResult = $ps.BeginInvoke()
@@ -2813,6 +2840,7 @@ $script:UpdateControl = [hashtable]::Synchronized(@{
 })
 $script:UpdatePowerShell = $null
 $script:UpdateRunspace = $null
+$script:PendingUpdateCleanup = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
 $script:UpdateSelectedNeve = $false
 $script:UpdateSelectedLlama = $false
 
@@ -2975,16 +3003,24 @@ function Request-UpdateCancel {
     $ctl.BtnCancel.IsEnabled = $false
     $ctl.BtnCancel.Content = 'Cancelando...'
     Stop-RegisteredUpdateProcesses
-    try { if ($script:UpdatePowerShell) { $script:UpdatePowerShell.Stop() } } catch {}
-    try {
-        if ($script:UpdateRunspace -and $script:UpdateRunspace.RunspaceStateInfo.State -eq 'Opened') {
-            $script:UpdateRunspace.Close()
-        }
-    } catch {}
-    try { if ($script:UpdatePowerShell) { $script:UpdatePowerShell.Dispose() } } catch {}
-    try { if ($script:UpdateRunspace) { $script:UpdateRunspace.Dispose() } } catch {}
+    $powerShellToStop = $script:UpdatePowerShell
+    $runspaceToDispose = $script:UpdateRunspace
+    $stopResult = $null
+    try { if ($powerShellToStop) { $stopResult = $powerShellToStop.BeginStop($null, $null) } } catch {}
+    if ($powerShellToStop -or $runspaceToDispose) {
+        [void]$script:PendingUpdateCleanup.Add([pscustomobject]@{
+            PowerShell = $powerShellToStop
+            Runspace = $runspaceToDispose
+            StopResult = $stopResult
+        })
+    }
     $script:UpdatePowerShell = $null
     $script:UpdateRunspace = $null
+    $script:UpdateProcessList = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
+    $script:UpdateControl = [hashtable]::Synchronized(@{
+        CancelRequested = $false
+        Processes = $script:UpdateProcessList
+    })
     $script:NeveAppCloseRequested = $false
     $ctl.BtnCancel.Content = 'Cancelar'
     Reset-UpdateSelectionView $false
@@ -2995,6 +3031,22 @@ function Request-UpdateCancel {
         $ctl.ChkUpdateLlama.IsChecked = $true
     }
     Update-PrimaryButtonState
+}
+
+function Complete-PendingUpdateCleanup {
+    for ($index = $script:PendingUpdateCleanup.Count - 1; $index -ge 0; $index--) {
+        $pending = $script:PendingUpdateCleanup[$index]
+        $finished = $null -eq $pending.StopResult -or $pending.StopResult.IsCompleted
+        if (-not $finished) { continue }
+        try {
+            if ($pending.PowerShell -and $pending.StopResult) {
+                $pending.PowerShell.EndStop($pending.StopResult)
+            }
+        } catch {}
+        try { if ($pending.PowerShell) { $pending.PowerShell.Dispose() } } catch {}
+        try { if ($pending.Runspace) { $pending.Runspace.Dispose() } } catch {}
+        $script:PendingUpdateCleanup.RemoveAt($index)
+    }
 }
 
 $ctl.ChkUpdateNeve.Add_Checked({ Update-PrimaryButtonState })
@@ -5797,6 +5849,10 @@ function Select-HubPage([string]$mode) {
 $script:HubBusyMonitorTimer = New-Object Windows.Threading.DispatcherTimer
 $script:HubBusyMonitorTimer.Interval = [TimeSpan]::FromMilliseconds(150)
 $script:HubBusyMonitorTimer.Add_Tick({
+	Complete-PendingInstallCleanup
+	if ($script:HubLegacyModules.ContainsKey('update')) {
+		try { & $script:HubLegacyModules['update'] { Complete-PendingUpdateCleanup } } catch {}
+	}
 	$busy = Test-HubActivePageBusy
 	$installed = Test-HubProjectInstalled
 	Update-HubActionButtonStyles
