@@ -213,7 +213,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                 <Border Grid.Column="1" Background="{DynamicResource BackgroundBrush}" CornerRadius="0,0,17,0">
                     <Grid><Grid.RowDefinitions><RowDefinition Height="70"/><RowDefinition Height="*"/><RowDefinition Height="0"/></Grid.RowDefinitions>
                         <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Background="{DynamicResource BackgroundBrush}"><Grid Margin="28,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel VerticalAlignment="Center"><TextBlock x:Name="LblPageContext" Text="Instalação" FontSize="15" FontWeight="SemiBold"/><TextBlock x:Name="LblPageSubtitle" Text="Detecte o hardware e instale tudo o que a NeveAI precisa." Margin="0,3,0,0" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"/></StackPanel><Grid x:Name="HeaderActions" Grid.Column="1" VerticalAlignment="Center"><StackPanel x:Name="InstallActions" Orientation="Horizontal"><Button x:Name="BtnCancel" Style="{StaticResource CompletionActionBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/><Button x:Name="BtnPrimary" Style="{StaticResource AccentActionBtn}" Content="Instalar"/></StackPanel></Grid></Grid></Border>
-                        <Grid x:Name="InstallBodyHost" Grid.Row="1" Margin="32,24,32,0">
+                        <Grid x:Name="InstallBodyHost" Grid.Row="1" Margin="32,24,32,24">
 
                 <!-- WELCOME / CONFIG CARD -->
                 <Grid x:Name="ConfigPanel">
@@ -483,7 +483,26 @@ function Stop-NeveRunningApp([string]$Reason = 'operação') {
     }
 }
 
-function Request-InstallCancel {
+function Restore-InstallSelectionView {
+    $ctl.InstallPanel.Visibility = 'Collapsed'
+    $ctl.DonePanel.Visibility = 'Collapsed'
+    $ctl.ConfigPanel.Visibility = 'Visible'
+    $ctl.BtnCancel.Visibility = 'Collapsed'
+    $ctl.BtnCancel.IsEnabled = $false
+    $ctl.BtnCancel.Content = 'Cancelar'
+    $ctl.BtnPrimary.Visibility = 'Visible'
+    $ctl.BtnPrimary.IsEnabled = $true
+    $ctl.BtnPrimary.Content = 'Instalar'
+    $ctl.BtnPrimary.Tag = $null
+    $ctl.Progress.Value = 0
+    $ctl.LblProgressTxt.Text = '0%'
+    $ctl.LblPhase.Text = 'Iniciando'
+    $ctl.LogBox.Clear()
+    $ctl.BtnClose.IsEnabled = $true
+    $window.Tag = 'idle'
+}
+
+function Request-InstallCancel([bool]$CloseAfterCancel = $false) {
     if ($script:InstallControl.CancelRequested) { return }
     $script:InstallControl.CancelRequested = $true
     try { [System.IO.File]::WriteAllText($STATE_FILE, 'cancelled', [System.Text.UTF8Encoding]::new($false)) } catch {}
@@ -511,8 +530,16 @@ function Request-InstallCancel {
     try { if ($script:InstallerPowerShell) { $script:InstallerPowerShell.Dispose() } } catch {}
     try { if ($script:InstallerRunspace) { $script:InstallerRunspace.Dispose() } } catch {}
 
+    $script:InstallerPowerShell = $null
+    $script:InstallerRunspace = $null
+    $script:InstallerAsyncResult = $null
+    $script:NeveAppCloseRequested = $false
     $window.Tag = 'cancelled'
-    try { $window.Close() } catch {}
+    if ($CloseAfterCancel) {
+        try { $window.Close() } catch {}
+    } else {
+        Restore-InstallSelectionView
+    }
 }
 
 # Botoes basicos
@@ -529,18 +556,17 @@ $ctl.BtnMaximize.Add_Click({
     } catch {}
 })
 $ctl.BtnClose.Add_Click({
-    if ([string]$window.Tag -eq 'installing') { Request-InstallCancel; return }
+    if ([string]$window.Tag -eq 'installing') { Request-InstallCancel $true; return }
     $window.Close()
 })
 $ctl.BtnCancel.Add_Click({
-    if ([string]$window.Tag -eq 'installing') { Request-InstallCancel; return }
-    $window.Close()
+    if ([string]$window.Tag -eq 'installing') { Request-InstallCancel $false; return }
+    Restore-InstallSelectionView
 })
 $window.Add_Closing({
     param($sender, $eventArgs)
     if ([string]$window.Tag -eq 'installing') {
-        $eventArgs.Cancel = $true
-        Request-InstallCancel
+        Request-InstallCancel $false
     }
 })
 
@@ -2612,7 +2638,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
             </Grid>
 
             <!-- BODY -->
-            <Grid Grid.Row="1" Margin="32,8,32,0">
+            <Grid Grid.Row="1" Margin="32,24,32,24">
 
                 <!-- CHECK PANEL -->
                 <Grid x:Name="CheckPanel">
@@ -2722,7 +2748,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                         </StackPanel>
                     </Border>
 
-                    <Border Grid.Row="2" Background="#0A0A0A" CornerRadius="10" Padding="14,12">
+                    <Border Grid.Row="2" Background="#0A0A0A" BorderBrush="#E4E4E7" BorderThickness="1" CornerRadius="10" Padding="14,12">
                         <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
                             <TextBox x:Name="LogBox" Background="Transparent" Foreground="#D4D4D4" BorderThickness="0"
                                      IsReadOnly="True" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"
@@ -2780,6 +2806,16 @@ foreach ($name in 'LogoImg','BtnClose',
     $ctl[$name] = $window.FindName($name)
 }
 
+$script:UpdateProcessList = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
+$script:UpdateControl = [hashtable]::Synchronized(@{
+    CancelRequested = $false
+    Processes = $script:UpdateProcessList
+})
+$script:UpdatePowerShell = $null
+$script:UpdateRunspace = $null
+$script:UpdateSelectedNeve = $false
+$script:UpdateSelectedLlama = $false
+
 # Logo
 if (Test-Path $LOGO_PATH) {
     try {
@@ -2805,7 +2841,7 @@ $ctl.BtnClose.Add_Click({
     if ($ctl.BtnPrimary.Tag -eq 'error') { $script:ExitCode = 1 }
     $window.Close()
 })
-$ctl.BtnCancel.Add_Click({ $window.Close() })
+$ctl.BtnCancel.Add_Click({ Request-UpdateCancel })
 
 # =============================================================================
 # Helpers de UI (chamáveis fora da thread principal via Dispatcher)
@@ -2918,6 +2954,49 @@ function Reset-UpdateSelectionView([bool]$completed) {
     Update-PrimaryButtonState
 }
 
+function Stop-RegisteredUpdateProcesses {
+    foreach ($process in @($script:UpdateControl.Processes)) {
+        try {
+            if ($process -and -not $process.HasExited) { $process.Kill() }
+        } catch {}
+    }
+    try { $script:UpdateControl.Processes.Clear() } catch {}
+}
+
+function Request-UpdateCancel {
+    if ($ctl.UpdatePanel.Visibility -ne 'Visible') {
+        Reset-UpdateSelectionView $false
+        return
+    }
+
+    $restoreNeve = $script:UpdateSelectedNeve
+    $restoreLlama = $script:UpdateSelectedLlama
+    $script:UpdateControl.CancelRequested = $true
+    $ctl.BtnCancel.IsEnabled = $false
+    $ctl.BtnCancel.Content = 'Cancelando...'
+    Stop-RegisteredUpdateProcesses
+    try { if ($script:UpdatePowerShell) { $script:UpdatePowerShell.Stop() } } catch {}
+    try {
+        if ($script:UpdateRunspace -and $script:UpdateRunspace.RunspaceStateInfo.State -eq 'Opened') {
+            $script:UpdateRunspace.Close()
+        }
+    } catch {}
+    try { if ($script:UpdatePowerShell) { $script:UpdatePowerShell.Dispose() } } catch {}
+    try { if ($script:UpdateRunspace) { $script:UpdateRunspace.Dispose() } } catch {}
+    $script:UpdatePowerShell = $null
+    $script:UpdateRunspace = $null
+    $script:NeveAppCloseRequested = $false
+    $ctl.BtnCancel.Content = 'Cancelar'
+    Reset-UpdateSelectionView $false
+    if ($restoreNeve -and $ctl.ChkUpdateNeve.Visibility -eq 'Visible') {
+        $ctl.ChkUpdateNeve.IsChecked = $true
+    }
+    if ($restoreLlama -and $ctl.ChkUpdateLlama.Visibility -eq 'Visible') {
+        $ctl.ChkUpdateLlama.IsChecked = $true
+    }
+    Update-PrimaryButtonState
+}
+
 $ctl.ChkUpdateNeve.Add_Checked({ Update-PrimaryButtonState })
 $ctl.ChkUpdateNeve.Add_Unchecked({ Update-PrimaryButtonState })
 $ctl.ChkUpdateLlama.Add_Checked({ Update-PrimaryButtonState })
@@ -2927,6 +3006,10 @@ $ctl.ChkUpdateLlama.Add_Unchecked({ Update-PrimaryButtonState })
 # Worker separado: atualizacao opcional do llama.cpp
 # =============================================================================
 $ctl.BtnLlama.Add_Click({
+    $script:UpdateSelectedNeve = [bool]$ctl.ChkUpdateNeve.IsChecked
+    $script:UpdateSelectedLlama = [bool]$ctl.ChkUpdateLlama.IsChecked
+    $script:UpdateControl.CancelRequested = $false
+    try { $script:UpdateControl.Processes.Clear() } catch {}
     $ctl.CheckPanel.Visibility  = 'Collapsed'
     $ctl.DonePanel.Visibility   = 'Collapsed'
     $ctl.UpdatePanel.Visibility = 'Visible'
@@ -2938,7 +3021,8 @@ $ctl.BtnLlama.Add_Click({
     $ctl.BtnPrimary.IsEnabled = $false
     $ctl.BtnLlama.IsEnabled   = $false
     $ctl.BtnCancel.Visibility = 'Visible'
-    $ctl.BtnCancel.IsEnabled  = $false
+    $ctl.BtnCancel.IsEnabled  = $true
+    $ctl.BtnCancel.Content    = 'Cancelar'
 
     Stop-NeveRunningApp 'Atualizar llama.cpp'
 
@@ -2948,7 +3032,7 @@ $ctl.BtnLlama.Add_Click({
     $argUa        = $UA
 
     $worker = {
-        param($ROOT, $LOG, $LLAMA_API_RELEASES, $UA)
+        param($ROOT, $LOG, $LLAMA_API_RELEASES, $UA, $UPDATE_CONTROL)
 
         Set-Location -LiteralPath $ROOT
 
@@ -3325,6 +3409,7 @@ $ctl.BtnLlama.Add_Click({
                 $script:Ctl.BtnCancel.IsEnabled  = $false
             })
         } catch {
+            if ($UPDATE_CONTROL -and $UPDATE_CONTROL.CancelRequested) { return }
             $errMsg = "$_"
             L "[X] FALHA: $errMsg" 'err'
             $script:Window.Dispatcher.Invoke([Action]{
@@ -3362,6 +3447,9 @@ $ctl.BtnLlama.Add_Click({
     [void]$ps.AddArgument($argLog)
     [void]$ps.AddArgument($argLlamaApi)
     [void]$ps.AddArgument($argUa)
+    [void]$ps.AddArgument($script:UpdateControl)
+    $script:UpdatePowerShell = $ps
+    $script:UpdateRunspace = $rs
     [void]$ps.BeginInvoke()
 })
 
@@ -3524,12 +3612,17 @@ $ctl.BtnPrimary.Add_Click({
     $updateLlama = [bool]$ctl.ChkUpdateLlama.IsChecked
     if (-not $updateNeve -and -not $updateLlama) { return }
 
+    $script:UpdateSelectedNeve = $updateNeve
+    $script:UpdateSelectedLlama = $updateLlama
+    $script:UpdateControl.CancelRequested = $false
+    try { $script:UpdateControl.Processes.Clear() } catch {}
     $ctl.CheckPanel.Visibility   = 'Collapsed'
     $ctl.UpdatePanel.Visibility  = 'Visible'
     $ctl.BtnPrimary.IsEnabled = $false
     $ctl.BtnLlama.IsEnabled   = $false
     $ctl.BtnCancel.Visibility = 'Visible'
-    $ctl.BtnCancel.IsEnabled  = $false
+    $ctl.BtnCancel.IsEnabled  = $true
+    $ctl.BtnCancel.Content    = 'Cancelar'
     $ctl.ChkUpdateNeve.IsEnabled = $false
     $ctl.ChkUpdateLlama.IsEnabled = $false
 
@@ -3547,7 +3640,7 @@ $ctl.BtnPrimary.Add_Click({
     $argUa           = $UA
 
     $worker = {
-        param($updateNeve, $updateLlama, $latestTag, $zipUrl, $ROOT, $LOG, $VERSION_FILE, $currentVersion, $LLAMA_API_RELEASES, $UA)
+        param($updateNeve, $updateLlama, $latestTag, $zipUrl, $ROOT, $LOG, $VERSION_FILE, $currentVersion, $LLAMA_API_RELEASES, $UA, $UPDATE_CONTROL)
 
         Set-Location -LiteralPath $ROOT
 
@@ -3700,6 +3793,9 @@ $ctl.BtnPrimary.Add_Click({
                 throw "Falha ao iniciar '$exe' para '$desc': $($_.Exception.Message)"
             }
             if ($null -eq $p) { throw "Falha ao iniciar '$exe' para '$desc': Process.Start retornou nulo." }
+            if ($UPDATE_CONTROL -and $UPDATE_CONTROL.Processes) {
+                [void]$UPDATE_CONTROL.Processes.Add($p)
+            }
 
             # stdout e stderr precisam ser drenados ao mesmo tempo. Vite/Svelte escreve
             # muitos avisos em stderr durante "transforming..." e enche o pipe se apenas
@@ -3712,6 +3808,10 @@ $ctl.BtnPrimary.Add_Click({
             $startedAt = Get-Date
 
             while (-not ($stdoutDone -and $stderrDone)) {
+                if ($UPDATE_CONTROL -and $UPDATE_CONTROL.CancelRequested) {
+                    try { if (-not $p.HasExited) { $p.Kill() } } catch {}
+                    throw [System.OperationCanceledException]::new('Atualização cancelada pelo usuário.')
+                }
                 $readLine = $false
 
                 if (-not $stdoutDone -and $stdoutTask.IsCompleted) {
@@ -3757,6 +3857,9 @@ $ctl.BtnPrimary.Add_Click({
 
             $p.WaitForExit()
             $exitCode = $p.ExitCode
+            if ($UPDATE_CONTROL -and $UPDATE_CONTROL.Processes) {
+                [void]$UPDATE_CONTROL.Processes.Remove($p)
+            }
             $p.Dispose()
             return $exitCode
         }
@@ -4598,6 +4701,7 @@ $ctl.BtnPrimary.Add_Click({
                 $script:Ctl.BtnCancel.IsEnabled  = $false
             })
         } catch {
+            if ($UPDATE_CONTROL -and $UPDATE_CONTROL.CancelRequested) { return }
             $errMsg = "$_"
             L "[X] FALHA: $errMsg" 'err'
             $script:Window.Dispatcher.Invoke([Action]{
@@ -4637,6 +4741,9 @@ $ctl.BtnPrimary.Add_Click({
     [void]$ps.AddArgument($argCurrent)
     [void]$ps.AddArgument($argLlamaApi)
     [void]$ps.AddArgument($argUa)
+    [void]$ps.AddArgument($script:UpdateControl)
+    $script:UpdatePowerShell = $ps
+    $script:UpdateRunspace = $rs
     [void]$ps.BeginInvoke()
 })
 
@@ -5635,12 +5742,28 @@ function Test-HubActivePageBusy {
 		default {
 			return $false
 		}
-	}
+    }
+}
+
+function Test-HubProjectInstalled {
+    $requiredPaths = @(
+        (Join-Path $ROOT '.env'),
+        (Join-Path $ROOT 'backend\neveai\venv\Scripts\python.exe'),
+        (Join-Path $ROOT 'node_modules'),
+        (Join-Path $ROOT 'backend\neveai\frontend\index.html')
+    )
+    foreach ($path in $requiredPaths) {
+        if (-not (Test-Path -LiteralPath $path)) { return $false }
+    }
+    return $true
 }
 
 function Select-HubPage([string]$mode) {
-	if (Test-HubActivePageBusy) { return }
-	if ($mode -eq 'home') { $mode = 'install' }
+    if (Test-HubActivePageBusy) { return }
+    if ($mode -eq 'home') { $mode = 'install' }
+    if ($mode -in @('update', 'build') -and -not (Test-HubProjectInstalled)) {
+        $mode = 'install'
+    }
 
 	$script:HubActiveMode = $mode
 	Set-HubHeaderState $mode
@@ -5675,10 +5798,14 @@ $script:HubBusyMonitorTimer = New-Object Windows.Threading.DispatcherTimer
 $script:HubBusyMonitorTimer.Interval = [TimeSpan]::FromMilliseconds(150)
 $script:HubBusyMonitorTimer.Add_Tick({
 	$busy = Test-HubActivePageBusy
+	$installed = Test-HubProjectInstalled
 	Update-HubActionButtonStyles
 	$ctl.NavOverview.IsEnabled = (-not $busy) -or $script:HubActiveMode -eq 'install'
-	$ctl.NavSettings.IsEnabled = (-not $busy) -or $script:HubActiveMode -eq 'update'
-	$ctl.NavDiagnostics.IsEnabled = (-not $busy) -or $script:HubActiveMode -eq 'build'
+	$ctl.NavSettings.IsEnabled = $installed -and ((-not $busy) -or $script:HubActiveMode -eq 'update')
+	$ctl.NavDiagnostics.IsEnabled = $installed -and ((-not $busy) -or $script:HubActiveMode -eq 'build')
+	$blockedHint = if ($installed) { $null } else { 'Conclua a instalação antes de acessar esta aba.' }
+	$ctl.NavSettings.ToolTip = $blockedHint
+	$ctl.NavDiagnostics.ToolTip = $blockedHint
 })
 $script:HubBusyMonitorTimer.Start()
 $window.Add_Closed({ try { $script:HubBusyMonitorTimer.Stop() } catch {} })

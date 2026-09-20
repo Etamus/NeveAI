@@ -42,7 +42,7 @@ instalar.bat → Instalar
 ```
 
 <h1 align="center">
-<img width="975" alt="11" src="https://github.com/user-attachments/assets/33450e6a-625d-451b-b334-4cace31bf259" />
+<img width="975" alt="11" src="https://github.com/user-attachments/assets/babf4791-8d03-4ebe-9156-72686cc4cf7c" />
 </h1>
 
 O instalador realiza automaticamente as seguintes ações:
@@ -256,7 +256,7 @@ instalar.bat → Buildar
 ```
 
 <h1 align="center">
-<img width="976" alt="33" src="https://github.com/user-attachments/assets/4306a21b-09fb-4898-91a0-a4c780c142cb" />
+<img width="976" alt="33" src="https://github.com/user-attachments/assets/0185af79-8e7f-4307-980a-d783eeb4b86a" />
 </h1>
 
 ### Dev mode (hot reload)
