@@ -3141,11 +3141,17 @@ FILE_GENERATION_FORMAT_GUIDANCE = {
     ),
     "docx": (
         "Preserve headings, paragraphs, lists, and tables that carry unique information. "
-        "Reorganize only when it improves the requested result."
+        "Reorganize only when it improves the requested result. Reconstruct natural paragraphs "
+        "when extraction inserted visual line breaks, and return clean document text rather than "
+        "serialized parser data."
     ),
     "pdf": (
         "Create a complete, readable document with all unique source information requested. "
-        "Do not invent an ending, conclusion, or new facts merely because the user calls it a final file."
+        "Use a clean Markdown-style document structure with appropriate headings, paragraphs, and "
+        "lists so the PDF renderer can produce a polished result. Reconstruct natural paragraphs "
+        "when extraction inserted visual line breaks. Never reproduce JSON, parser fields, source "
+        "wrappers, or page-extraction metadata. Do not invent an ending, conclusion, or new facts "
+        "merely because the user calls it a final file."
     ),
     "srt": (
         "Return plain subtitle text using the .srt extension. Apply subtitle timestamp and cue-number "
@@ -3308,6 +3314,82 @@ def _read_native_file_generation_content(path: str, fallback: str) -> str:
     return fallback
 
 
+def _format_native_file_generation_source(name: str, content: str) -> str:
+    """Convert native extractor JSON into stable, chunk-safe model input."""
+    suffix = Path(str(name or "")).suffix.casefold()
+    if suffix not in {".pdf", ".docx", ".xlsx", ".pptx"}:
+        return content
+
+    try:
+        payload = json.loads(str(content or ""))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return content
+    if not isinstance(payload, dict):
+        return content
+
+    if suffix == ".pdf":
+        pages = payload.get("pages") or []
+        return "\n\n".join(
+            str(page.get("text") or "").strip()
+            for page in pages
+            if isinstance(page, dict) and str(page.get("text") or "").strip()
+        )
+
+    if suffix == ".docx":
+        sections = [
+            str(paragraph).strip()
+            for paragraph in (payload.get("paragraphs") or [])
+            if str(paragraph).strip()
+        ]
+        for table_index, table in enumerate(payload.get("tables") or [], start=1):
+            rows = [
+                json.dumps(row, ensure_ascii=False, default=str)
+                for row in table
+                if isinstance(row, list)
+            ]
+            if rows:
+                sections.append(f"[[TABLE {table_index}]]\n" + "\n".join(rows))
+        return "\n\n".join(sections)
+
+    if suffix == ".xlsx":
+        sections = []
+        for sheet in payload.get("sheets") or []:
+            if not isinstance(sheet, dict):
+                continue
+            sheet_name = str(sheet.get("name") or "Planilha").strip()
+            rows = [
+                json.dumps(row, ensure_ascii=False, default=str)
+                for row in (sheet.get("rows") or [])
+                if isinstance(row, list)
+            ]
+            sections.append(
+                f"[[WORKSHEET: {sheet_name}]]"
+                + (("\n" + "\n".join(rows)) if rows else "")
+            )
+        return "\n\n".join(sections)
+
+    sections = []
+    for slide in payload.get("slides") or []:
+        if not isinstance(slide, dict):
+            continue
+        slide_number = slide.get("number") or len(sections) + 1
+        blocks = []
+        for block in slide.get("blocks") or []:
+            if isinstance(block, dict) and isinstance(block.get("table"), list):
+                blocks.extend(
+                    json.dumps(row, ensure_ascii=False, default=str)
+                    for row in block["table"]
+                    if isinstance(row, list)
+                )
+            elif str(block).strip():
+                blocks.append(str(block).strip())
+        sections.append(
+            f"[[SLIDE {slide_number}]]"
+            + (("\n" + "\n".join(blocks)) if blocks else "")
+        )
+    return "\n\n".join(sections)
+
+
 def _get_file_generation_source_payloads(
     files: list[dict], user: UserModel
 ) -> list[dict]:
@@ -3360,15 +3442,15 @@ def _strip_subtitle_source_metadata(content: str) -> str:
 def _prepare_file_generation_source_payloads(
     source_payloads: list[dict], plan: dict
 ) -> list[dict]:
-    if not plan.get("strip_source_metadata"):
-        return source_payloads
-
     prepared = []
     for source in source_payloads:
         suffix = Path(str(source.get("name") or "")).suffix.casefold()
         content = str(source.get("content") or "")
-        if suffix in {".srt", ".vtt"}:
+        if plan.get("strip_source_metadata") and suffix in {".srt", ".vtt"}:
             content = _strip_subtitle_source_metadata(content)
+        content = _format_native_file_generation_source(
+            str(source.get("name") or ""), content
+        )
         prepared.append({**source, "content": content})
     return prepared
 
@@ -4086,6 +4168,12 @@ def _file_content_units(content: str) -> list[str]:
     units = []
     for line in str(content or "").splitlines():
         line = re.sub(r"^\s*columns?:\s*", "", line, flags=re.IGNORECASE).strip()
+        if re.fullmatch(
+            r"\[\[(?:TABLE|WORKSHEET|SLIDE)(?::|\s).*\]\]",
+            line,
+            re.IGNORECASE,
+        ):
+            continue
         if len(_normalize_file_coverage_text(line)) >= 4:
             units.append(line)
     if not units and str(content or "").strip():
@@ -4152,6 +4240,17 @@ def _get_file_generation_coverage_issues(
         issues.append("O corpo final contém raciocínio interno em vez do documento solicitado.")
 
     if not plan.get("preserve_all_unique_content"):
+        return issues
+
+    # A semantic narrative transformation is expected to change wording, grouping,
+    # headings, and paragraph boundaries. Exact line-by-line coverage rejects valid
+    # merges for superficial reasons and then regenerates the entire document. The
+    # semantic audit below verifies facts and the requested objective more reliably.
+    semantic_transformations = {
+        str(item).casefold()
+        for item in (plan.get("semantic_transformations") or [])
+    }
+    if output_format in FILE_GENERATION_NARRATIVE_FORMATS and semantic_transformations:
         return issues
 
     normalized_sources_used = {
@@ -5727,6 +5826,68 @@ def load_messages_from_db(chat_id: str, message_id: str) -> Optional[list[dict]]
     ]
 
 
+def _get_file_generation_message_scope(
+    messages: list[dict],
+) -> tuple[list[dict], list[dict]]:
+    """Return files from the active user turn and the nearest earlier file-bearing turn."""
+    current_user_index = next(
+        (
+            index
+            for index in range(len(messages) - 1, -1, -1)
+            if messages[index].get("role") == "user"
+        ),
+        -1,
+    )
+    if current_user_index < 0:
+        return [], []
+
+    current_files = [
+        item
+        for item in (messages[current_user_index].get("files") or [])
+        if isinstance(item, dict)
+    ]
+    previous_files = []
+    for message in reversed(messages[:current_user_index]):
+        candidates = [
+            item
+            for item in (message.get("files") or [])
+            if isinstance(item, dict)
+        ]
+        if candidates:
+            previous_files = candidates
+            break
+    return current_files, previous_files
+
+
+def _select_file_generation_files(
+    all_files: list[dict],
+    current_turn_files: list[dict],
+    previous_turn_files: list[dict],
+    allow_all_files_fallback: bool = True,
+) -> list[dict]:
+    """Bind generation to one message's attachments instead of chat-wide history."""
+    selected = current_turn_files or previous_turn_files
+    if not selected and allow_all_files_fallback:
+        selected = all_files
+    if not selected:
+        return []
+
+    canonical_by_id = {
+        str(item.get("id")): item
+        for item in (all_files or [])
+        if isinstance(item, dict) and item.get("id")
+    }
+    scoped = []
+    seen = set()
+    for item in selected:
+        identity = str(item.get("id") or item.get("url") or item.get("name") or "")
+        if not identity or identity in seen:
+            continue
+        seen.add(identity)
+        scoped.append(canonical_by_id.get(identity, item))
+    return scoped
+
+
 def process_messages_with_output(messages: list[dict]) -> list[dict]:
     """
     Process messages with OR-aligned output items for LLM consumption.
@@ -5786,6 +5947,11 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     metadata["reasoning_extended"] = form_data.get("reasoning_extended", False)
     log.debug(f"form_data: {form_data}")
 
+    current_turn_files, previous_turn_files = _get_file_generation_message_scope(
+        form_data.get("messages", [])
+    )
+    file_generation_scope_from_db = False
+
     # Load messages from DB when available â€” DB preserves structured 'output' items
     # which the frontend strips, causing tool calls to be merged into content.
     chat_id = metadata.get("chat_id")
@@ -5794,6 +5960,10 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     if chat_id and parent_message_id and not chat_id.startswith("local:"):
         db_messages = load_messages_from_db(chat_id, parent_message_id)
         if db_messages:
+            file_generation_scope_from_db = True
+            current_turn_files, previous_turn_files = _get_file_generation_message_scope(
+                db_messages
+            )
             system_message = get_system_message(form_data.get("messages", []))
             form_data["messages"] = (
                 [system_message, *db_messages] if system_message else db_messages
@@ -6121,6 +6291,23 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         # Remove duplicate files based on their content
         files = list({json.dumps(f, sort_keys=True): f for f in files}.values())
 
+    file_generation_files = _select_file_generation_files(
+        files or [],
+        current_turn_files,
+        previous_turn_files,
+        allow_all_files_fallback=not file_generation_scope_from_db,
+    )
+    if features.get("file_generation"):
+        log.info(
+            "File generation attachment scope: current=%d previous=%d selected=%s",
+            len(current_turn_files),
+            len(previous_turn_files),
+            [
+                str(item.get("name") or item.get("id") or "Arquivo")
+                for item in file_generation_files
+            ],
+        )
+
     metadata = {
         **metadata,
         "tool_ids": tool_ids,
@@ -6420,7 +6607,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 user,
                 models,
                 prompt,
-                files,
+                file_generation_files,
                 bool(features.get("file_generation")),
             )
         except Exception as error:

@@ -1958,6 +1958,7 @@ NEVE_DOWNLOAD_PERSIST_INTERVAL = 1.0
 NEVE_DOWNLOAD_CHUNK_SIZE = 8 * 1024 * 1024
 NEVE_DOWNLOAD_PROGRESS_INTERVAL = 0.25
 NEVE_DOWNLOAD_PROGRESS_BYTES = 8 * 1024 * 1024
+NEVE_DOWNLOAD_XET_MIN_SIZE = 64 * 1024 * 1024
 NEVE_DOWNLOAD_HEADERS = {
     "User-Agent": "NeveAI/1.0",
     "Accept-Encoding": "identity",
@@ -2330,6 +2331,208 @@ def _parse_content_range_total(value: Optional[str]) -> int:
     return int(match.group(1)) if match else 0
 
 
+_HF_XET_DOWNLOAD_WORKER = r"""
+import sys
+from huggingface_hub import hf_hub_download
+from tqdm.auto import tqdm
+
+repo_id, repo_path, local_root, user_agent = sys.argv[1:5]
+
+class Progress(tqdm):
+    def __init__(self, *args, **kwargs):
+        kwargs["disable"] = True
+        super().__init__(*args, **kwargs)
+        self.n = 0
+        self.transfer_n = 0
+
+    def report(self):
+        print(f"NEVE_XET_PROGRESS:{max(int(self.n), self.transfer_n)}", flush=True)
+
+    def update(self, n=1):
+        self.n += n
+        self.report()
+        return True
+
+    def update_transfer(self, n=1):
+        self.transfer_n += n
+        self.report()
+        return True
+
+    def set_postfix_str(self, *args, **kwargs):
+        return None
+
+    def set_transfer_postfix_str(self, *args, **kwargs):
+        return None
+
+    def close(self):
+        return None
+
+path = hf_hub_download(
+    repo_id=repo_id,
+    filename=repo_path,
+    local_dir=local_root,
+    user_agent=user_agent,
+    tqdm_class=Progress,
+)
+print(f"NEVE_XET_DONE:{path}", flush=True)
+"""
+
+
+async def _terminate_xet_process(process: asyncio.subprocess.Process):
+    if process.returncode is not None:
+        return
+    process.terminate()
+    try:
+        await asyncio.wait_for(process.wait(), timeout=2.0)
+    except asyncio.TimeoutError:
+        process.kill()
+        await process.wait()
+
+
+def _cleanup_new_xet_incomplete_files(local_root: Path, existing: set[Path]):
+    cache_dir = local_root / ".cache" / "huggingface" / "download"
+    if not cache_dir.is_dir():
+        return
+    for path in cache_dir.rglob("*.incomplete"):
+        if path in existing:
+            continue
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            log.warning("Failed to remove interrupted hf-xet file: %s", path)
+
+
+async def _xet_download_file(
+    task_id: str,
+    repo_id: str,
+    repo_path: str,
+    dest_path: Path,
+    file_index: int,
+    file_total: int,
+    expected_size: int,
+) -> bool:
+    """Download through Hugging Face Xet. Return False when fallback is needed."""
+    if expected_size < NEVE_DOWNLOAD_XET_MIN_SIZE:
+        return False
+
+    try:
+        __import__("hf_xet")
+        __import__("huggingface_hub")
+    except ImportError:
+        return False
+
+    repo_parts = Path(repo_path).parts
+    local_root = dest_path
+    for _ in repo_parts:
+        local_root = local_root.parent
+
+    _set_task(
+        task_id,
+        status="downloading",
+        current_file=repo_path,
+        file_index=file_index,
+        file_total=file_total,
+        downloaded=0,
+        total=expected_size,
+        progress=0.0,
+        current_tmp_path=None,
+        current_dest_path=str(dest_path),
+        resumed=False,
+        transfer_backend="xet",
+    )
+    cache_dir = local_root / ".cache" / "huggingface" / "download"
+    existing_incomplete = set(cache_dir.rglob("*.incomplete")) if cache_dir.is_dir() else set()
+    process = None
+    output_lines: list[str] = []
+    try:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-I",
+            "-c",
+            _HF_XET_DOWNLOAD_WORKER,
+            repo_id,
+            repo_path,
+            str(local_root),
+            NEVE_DOWNLOAD_HEADERS["User-Agent"],
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        last_progress_update = time.monotonic()
+        last_progress_bytes = 0
+        downloaded_path = None
+
+        while True:
+            if _is_download_cancel_requested(task_id):
+                await _terminate_xet_process(process)
+                raise _DownloadCancelled()
+
+            try:
+                line_bytes = await asyncio.wait_for(process.stdout.readline(), timeout=0.1)
+            except asyncio.TimeoutError:
+                if process.returncode is not None:
+                    break
+                continue
+
+            if not line_bytes:
+                if process.returncode is not None:
+                    break
+                await asyncio.sleep(0)
+                continue
+
+            line = line_bytes.decode("utf-8", errors="replace").strip()
+            if line.startswith("NEVE_XET_PROGRESS:"):
+                try:
+                    downloaded = min(int(line.rsplit(":", 1)[1]), expected_size)
+                except (TypeError, ValueError):
+                    continue
+                now = time.monotonic()
+                if (
+                    now - last_progress_update >= NEVE_DOWNLOAD_PROGRESS_INTERVAL
+                    or downloaded - last_progress_bytes >= NEVE_DOWNLOAD_PROGRESS_BYTES
+                ):
+                    _set_task(
+                        task_id,
+                        downloaded=downloaded,
+                        total=expected_size,
+                        progress=(downloaded / expected_size) if expected_size > 0 else 0.0,
+                    )
+                    last_progress_update = now
+                    last_progress_bytes = downloaded
+            elif line.startswith("NEVE_XET_DONE:"):
+                downloaded_path = Path(line.removeprefix("NEVE_XET_DONE:"))
+            elif line:
+                output_lines.append(line)
+
+        return_code = await process.wait()
+        _raise_if_download_cancelled(task_id)
+        if return_code != 0:
+            details = " | ".join(output_lines[-4:])
+            raise RuntimeError(f"hf-xet terminou com codigo {return_code}: {details}")
+        if downloaded_path is None:
+            raise RuntimeError("hf-xet nao informou o arquivo concluido")
+        if downloaded_path.resolve() != dest_path.resolve():
+            raise RuntimeError(f"Destino inesperado retornado pelo Hugging Face: {downloaded_path}")
+        return dest_path.is_file()
+    except _DownloadCancelled:
+        if process is not None:
+            await _terminate_xet_process(process)
+        _cleanup_new_xet_incomplete_files(local_root, existing_incomplete)
+        raise
+    except Exception:
+        if process is not None:
+            await _terminate_xet_process(process)
+        _cleanup_new_xet_incomplete_files(local_root, existing_incomplete)
+        if _is_download_cancel_requested(task_id):
+            raise _DownloadCancelled()
+        log.warning(
+            "hf-xet failed for %s/%s; falling back to resumable HTTP",
+            repo_id,
+            repo_path,
+            exc_info=True,
+        )
+        return False
+
+
 async def _stream_download_file(
     task_id: str,
     repo_id: str,
@@ -2371,6 +2574,45 @@ async def _stream_download_file(
             )
             return
         dest_path.unlink()
+
+    used_xet = False
+    if not tmp_path.exists():
+        used_xet = await _xet_download_file(
+            task_id,
+            repo_id,
+            repo_path,
+            dest_path,
+            file_index,
+            file_total,
+            expected_size,
+        )
+
+    if used_xet:
+        _raise_if_download_cancelled(task_id)
+        if expected_size > 0 and dest_path.stat().st_size != expected_size:
+            dest_path.unlink(missing_ok=True)
+            raise RuntimeError(
+                f"Tamanho invÃƒÂ¡lido para {repo_path}: "
+                f"{dest_path.stat().st_size if dest_path.exists() else 0} de {expected_size} bytes"
+            )
+        actual_sha256 = _sha256_file(dest_path) if expected_sha256 else None
+        if expected_sha256 and actual_sha256 != expected_sha256:
+            dest_path.unlink(missing_ok=True)
+            raise RuntimeError(f"Checksum invÃƒÂ¡lido para {repo_path}")
+        task = _get_task(task_id)
+        downloaded_paths = list(task.get("downloaded_paths", []) or [])
+        if str(dest_path) not in downloaded_paths:
+            downloaded_paths.append(str(dest_path))
+        _set_task(
+            task_id,
+            downloaded_paths=downloaded_paths,
+            verified=True,
+            checksum=actual_sha256 or expected_sha256,
+            downloaded=expected_size or dest_path.stat().st_size,
+            total=expected_size or dest_path.stat().st_size,
+            progress=1.0,
+        )
+        return
 
     async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client:
         resume_from = tmp_path.stat().st_size if tmp_path.exists() else 0
@@ -2427,6 +2669,7 @@ async def _stream_download_file(
                 current_dest_path=str(dest_path),
                 resumed=resume_from > 0,
                 expected_checksum=expected_sha256,
+                transfer_backend="http",
             )
             with open(tmp_path, file_mode) as f:
                 async for chunk in r.aiter_bytes(chunk_size=NEVE_DOWNLOAD_CHUNK_SIZE):

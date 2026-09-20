@@ -212,7 +212,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                 </Border>
                 <Border Grid.Column="1" Background="{DynamicResource BackgroundBrush}" CornerRadius="0,0,17,0">
                     <Grid><Grid.RowDefinitions><RowDefinition Height="70"/><RowDefinition Height="*"/><RowDefinition Height="0"/></Grid.RowDefinitions>
-                        <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Background="{DynamicResource BackgroundBrush}"><Grid Margin="28,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel VerticalAlignment="Center"><TextBlock x:Name="LblPageContext" Text="Instalação" FontSize="15" FontWeight="SemiBold"/><TextBlock x:Name="LblPageSubtitle" Text="Detecte o hardware e instale tudo o que a NeveAI precisa." Margin="0,3,0,0" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"/></StackPanel><Grid x:Name="HeaderActions" Grid.Column="1" VerticalAlignment="Center"><StackPanel x:Name="InstallActions" Orientation="Horizontal"><Button x:Name="BtnCancel" Style="{StaticResource PrimaryBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/><Button x:Name="BtnPrimary" Style="{StaticResource AccentActionBtn}" Content="Instalar"/></StackPanel></Grid></Grid></Border>
+                        <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Background="{DynamicResource BackgroundBrush}"><Grid Margin="28,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel VerticalAlignment="Center"><TextBlock x:Name="LblPageContext" Text="Instalação" FontSize="15" FontWeight="SemiBold"/><TextBlock x:Name="LblPageSubtitle" Text="Detecte o hardware e instale tudo o que a NeveAI precisa." Margin="0,3,0,0" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"/></StackPanel><Grid x:Name="HeaderActions" Grid.Column="1" VerticalAlignment="Center"><StackPanel x:Name="InstallActions" Orientation="Horizontal"><Button x:Name="BtnCancel" Style="{StaticResource CompletionActionBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/><Button x:Name="BtnPrimary" Style="{StaticResource AccentActionBtn}" Content="Instalar"/></StackPanel></Grid></Grid></Border>
                         <Grid x:Name="InstallBodyHost" Grid.Row="1" Margin="32,24,32,0">
 
                 <!-- WELCOME / CONFIG CARD -->
@@ -5580,7 +5580,7 @@ function Update-HubActionButtonStyles {
 			$label = [string]$button.Content
 			$targetStyle = if ($label -in @('Instalar', 'Atualizar', 'Publicar')) {
 				$accentStyle
-			} elseif ($label -in @('Concluir', 'Fechar')) {
+			} elseif ($label -in @('Cancelar', 'Concluir', 'Fechar')) {
 				$completionStyle
 			} else {
 				$regularStyle
