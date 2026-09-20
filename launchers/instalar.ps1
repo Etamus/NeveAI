@@ -137,8 +137,8 @@ if (-not (Test-Path $LOGO_PATH)) {
 
         <Style x:Key="PrimaryBtn" TargetType="Button">
             <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="18,9"/><Setter Property="MinWidth" Value="96"/><Setter Property="Height" Value="36"/>
-            <Setter Property="FontSize" Value="13"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="18,0"/><Setter Property="MinWidth" Value="96"/><Setter Property="Height" Value="36"/>
+            <Setter Property="FontSize" Value="15"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="HorizontalContentAlignment" Value="Center"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/></Trigger><Trigger Property="IsPressed" Value="True"><Setter TargetName="bd" Property="Opacity" Value="0.8"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="bd" Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
         </Style>
         <Style x:Key="AccentActionBtn" TargetType="Button" BasedOn="{StaticResource PrimaryBtn}">
@@ -148,6 +148,9 @@ if (-not (Test-Path $LOGO_PATH)) {
         <Style x:Key="GhostBtn" TargetType="Button" BasedOn="{StaticResource PrimaryBtn}">
             <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="bd" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="bd" Property="Opacity" Value="0.4"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style x:Key="CompletionActionBtn" TargetType="Button" BasedOn="{StaticResource PrimaryBtn}">
+            <Setter Property="BorderThickness" Value="0"/>
         </Style>
         <Style x:Key="WindowButton" TargetType="Button">
             <Setter Property="Width" Value="46"/><Setter Property="Height" Value="44"/><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Cursor" Value="Hand"/>
@@ -209,7 +212,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                 </Border>
                 <Border Grid.Column="1" Background="{DynamicResource BackgroundBrush}" CornerRadius="0,0,17,0">
                     <Grid><Grid.RowDefinitions><RowDefinition Height="70"/><RowDefinition Height="*"/><RowDefinition Height="0"/></Grid.RowDefinitions>
-                        <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Background="{DynamicResource BackgroundBrush}"><Grid Margin="28,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel VerticalAlignment="Center"><TextBlock x:Name="LblPageContext" Text="Instalação" FontSize="14" FontWeight="SemiBold"/><TextBlock x:Name="LblPageSubtitle" Text="Detecte o hardware e instale tudo o que a NeveAI precisa." Margin="0,3,0,0" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}"/></StackPanel><Grid x:Name="HeaderActions" Grid.Column="1" VerticalAlignment="Center"><StackPanel x:Name="InstallActions" Orientation="Horizontal"><Button x:Name="BtnCancel" Style="{StaticResource PrimaryBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/><Button x:Name="BtnPrimary" Style="{StaticResource AccentActionBtn}" Content="Instalar"/></StackPanel></Grid></Grid></Border>
+                        <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Background="{DynamicResource BackgroundBrush}"><Grid Margin="28,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel VerticalAlignment="Center"><TextBlock x:Name="LblPageContext" Text="Instalação" FontSize="15" FontWeight="SemiBold"/><TextBlock x:Name="LblPageSubtitle" Text="Detecte o hardware e instale tudo o que a NeveAI precisa." Margin="0,3,0,0" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"/></StackPanel><Grid x:Name="HeaderActions" Grid.Column="1" VerticalAlignment="Center"><StackPanel x:Name="InstallActions" Orientation="Horizontal"><Button x:Name="BtnCancel" Style="{StaticResource PrimaryBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/><Button x:Name="BtnPrimary" Style="{StaticResource AccentActionBtn}" Content="Instalar"/></StackPanel></Grid></Grid></Border>
                         <Grid x:Name="InstallBodyHost" Grid.Row="1" Margin="32,24,32,0">
 
                 <!-- WELCOME / CONFIG CARD -->
@@ -5570,11 +5573,18 @@ function Show-HubActionPanel([string]$mode) {
 function Update-HubActionButtonStyles {
 	$accentStyle = $window.FindResource('AccentActionBtn')
 	$regularStyle = $window.FindResource('PrimaryBtn')
+	$completionStyle = $window.FindResource('CompletionActionBtn')
 	foreach ($panel in $script:HubActionPanels.Values) {
 		foreach ($button in $panel.Children) {
 			if (-not ($button -is [System.Windows.Controls.Button])) { continue }
 			$label = [string]$button.Content
-			$targetStyle = if ($label -in @('Instalar', 'Atualizar', 'Publicar')) { $accentStyle } else { $regularStyle }
+			$targetStyle = if ($label -in @('Instalar', 'Atualizar', 'Publicar')) {
+				$accentStyle
+			} elseif ($label -in @('Concluir', 'Fechar')) {
+				$completionStyle
+			} else {
+				$regularStyle
+			}
 			if ($button.Style -ne $targetStyle) { $button.Style = $targetStyle }
 		}
 	}
