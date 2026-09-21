@@ -28,6 +28,7 @@
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import ImageIcon from '$lib/components/icons/Image.svelte';
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
+	import Video from '$lib/components/icons/Video.svelte';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Notes from './InputMenu/Notes.svelte';
@@ -68,6 +69,9 @@
 	export let stableDiffusionEnabled = false;
 	export let showMusicGenerationButton = false;
 	export let musicGenerationEnabled = false;
+	export let showVideoGenerationButton = false;
+	export let videoGenerationEnabled = false;
+	export let onNativeIntegrationChange: Function = () => {};
 	export let onShowValves: Function = () => {};
 
 	let show = false;
@@ -77,7 +81,8 @@
 		deepSearchEnabled ||
 		imageGenerationEnabled ||
 		stableDiffusionEnabled ||
-		musicGenerationEnabled;
+		musicGenerationEnabled ||
+		videoGenerationEnabled;
 	$: effectiveFileGenerationEnabled = fileGenerationEnabled && !fileGenerationBlocked;
 
 	$: if (show) {
@@ -120,7 +125,8 @@
 		| 'image_generation'
 		| 'code_execution'
 		| 'stable_diffusion'
-		| 'music_generation';
+		| 'music_generation'
+		| 'video_generation';
 
 	const clearNativeIntegrations = () => {
 		webSearchEnabled = false;
@@ -129,6 +135,7 @@
 		codeExecutionEnabled = false;
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
+		videoGenerationEnabled = false;
 	};
 
 	const closeIntegrationsMenu = () => {
@@ -155,6 +162,8 @@
 				return stableDiffusionEnabled;
 			case 'music_generation':
 				return musicGenerationEnabled;
+			case 'video_generation':
+				return videoGenerationEnabled;
 		}
 	};
 
@@ -165,6 +174,7 @@
 		selectedFilterIds = [];
 
 		if (!enable) {
+			onNativeIntegrationChange(null);
 			closeIntegrationsMenu();
 			return;
 		}
@@ -188,8 +198,12 @@
 			case 'music_generation':
 				musicGenerationEnabled = true;
 				break;
+			case 'video_generation':
+				videoGenerationEnabled = true;
+				break;
 		}
 
+		onNativeIntegrationChange(integration);
 		closeIntegrationsMenu();
 	};
 
@@ -201,6 +215,7 @@
 		}
 
 		clearNativeIntegrations();
+		onNativeIntegrationChange(null);
 		selectedToolIds = [];
 		selectedFilterIds = [filterId];
 		closeIntegrationsMenu();
@@ -214,6 +229,7 @@
 		}
 
 		clearNativeIntegrations();
+		onNativeIntegrationChange(null);
 		selectedFilterIds = [];
 		selectedToolIds = [toolId];
 		closeIntegrationsMenu();
@@ -266,8 +282,8 @@
 
 	<div slot="content">
 		<DropdownMenu.Content
-			class="w-full max-w-[255px] rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-md max-h-72 overflow-y-auto overflow-x-hidden scrollbar-thin"
-			style="font-family: 'Segoe UI', sans-serif;"
+			class="w-full max-w-[255px] rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-md"
+			style="font-family: 'Segoe UI', sans-serif; max-height: none !important; overflow: visible !important;"
 			sideOffset={4}
 			alignOffset={8}
 			side="bottom"
@@ -478,7 +494,7 @@
 						{/if}
 					{/if}
 
-					{#if showWebSearchButton || showImageGenerationButton || showCodeExecutionButton || showFileGenerationButton || showStableDiffusionButton || showMusicGenerationButton || (toggleFilters && toggleFilters.length > 0) || (tools && Object.keys(tools).length > 0)}
+					{#if showWebSearchButton || showImageGenerationButton || showCodeExecutionButton || showFileGenerationButton || showStableDiffusionButton || showMusicGenerationButton || showVideoGenerationButton || (toggleFilters && toggleFilters.length > 0) || (tools && Object.keys(tools).length > 0)}
 						<hr class="my-1 border-gray-200 dark:border-gray-700 mx-auto w-[90%]" />
 					{/if}
 
@@ -618,6 +634,20 @@
 									</div>
 								</div>
 								<div class="size-4 shrink-0">{#if stableDiffusionEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
+							</button>
+						</Tooltip>
+					{/if}
+
+					{#if showVideoGenerationButton}
+						<Tooltip content="" placement="top-start">
+							<button class="my-px flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(videoGenerationEnabled)}" aria-pressed={videoGenerationEnabled} on:click={() => toggleNativeIntegration('video_generation')}>
+								<div class="flex-1 truncate">
+									<div class="flex flex-1 gap-2 items-center">
+										<div class="shrink-0"><Video className="size-4" strokeWidth="1.5" /></div>
+										<div class="truncate">{$i18n.t('Criar vídeo')}</div>
+									</div>
+								</div>
+								<div class="size-4 shrink-0">{#if videoGenerationEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
 							</button>
 						</Tooltip>
 					{/if}

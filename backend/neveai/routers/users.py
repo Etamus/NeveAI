@@ -236,6 +236,7 @@ class FeaturesPermissions(BaseModel):
     memories: bool = True
     stable_diffusion: bool = True
     music_generation: bool = True
+    video_generation: bool = True
 
 
 class SettingsPermissions(BaseModel):

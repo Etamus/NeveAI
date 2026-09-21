@@ -8,6 +8,7 @@
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import ImageIcon from '$lib/components/icons/Image.svelte';
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
+	import Video from '$lib/components/icons/Video.svelte';
 	import { marked } from 'marked';
 
 	type I18nStore = Readable<{ t: (key: string) => string }>;
@@ -38,6 +39,10 @@
 		music_generation: {
 			label: $i18n.t('Criar música'),
 			description: $i18n.t('Modelo inicia com geração de música por padrão')
+		},
+		video_generation: {
+			label: $i18n.t('Criar vídeo'),
+			description: $i18n.t('Modelo inicia com geração local de vídeo por padrão')
 		}
 	};
 
@@ -47,6 +52,7 @@
 		'code_execution',
 		'image_generation',
 		'stable_diffusion',
+		'video_generation',
 		'music_generation'
 	];
 	export let featureIds: string[] = [];
@@ -147,6 +153,8 @@
 							<ImageIcon className="size-4" strokeWidth="1.5" />
 						{:else if feature === 'music_generation'}
 							<MusicNote className="size-4" strokeWidth="1.5" />
+						{:else if feature === 'video_generation'}
+							<Video className="size-4" strokeWidth="1.5" />
 						{/if}
 					</div>
 					<div class="min-w-0 py-0.5 text-sm text-gray-700 dark:text-gray-300">

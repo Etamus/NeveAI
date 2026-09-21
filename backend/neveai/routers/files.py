@@ -73,8 +73,16 @@ def _clear_directory_contents(directory: Path) -> None:
 def _clear_generated_media_cache() -> None:
     from neveai.routers.music_generation import ACE_STEP_TEMP_DIR
     from neveai.routers.stable_diffusion import IMAGE_INPUT_DIR, IMAGE_OUTPUT_DIR
+    from neveai.routers.video_generation import COMFYUI_INPUT, COMFYUI_OUTPUT, COMFYUI_TEMP
 
-    for directory in (IMAGE_OUTPUT_DIR, IMAGE_INPUT_DIR, ACE_STEP_TEMP_DIR):
+    for directory in (
+        IMAGE_OUTPUT_DIR,
+        IMAGE_INPUT_DIR,
+        ACE_STEP_TEMP_DIR,
+        COMFYUI_OUTPUT,
+        COMFYUI_INPUT,
+        COMFYUI_TEMP,
+    ):
         _clear_directory_contents(directory)
 
 ############################

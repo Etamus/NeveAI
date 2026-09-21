@@ -7,6 +7,7 @@
 	import Photo from '$lib/components/icons/Photo.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
+	import Video from '$lib/components/icons/Video.svelte';
 	import Github from '$lib/components/icons/Github.svelte';
 	import DocumentPage from '$lib/components/icons/DocumentPage.svelte';
 	import { t } from 'i18next';
@@ -16,6 +17,12 @@
 
 	$: statusAction = String(status?.action ?? '').toLowerCase();
 	$: statusDescription = String(status?.description ?? '').toLowerCase();
+	$: statusLabel =
+		status?.description === 'Imagem gerada'
+			? 'Imagem criada'
+			: status?.description === 'Video criado'
+				? 'Vídeo criado'
+				: status?.description;
 	$: isGitHubStatus =
 		statusAction.includes('github_repository') || status?.source_type === 'github_repository';
 	$: isFileSourceStatus = status?.source_type === 'file';
@@ -32,6 +39,10 @@
 		statusAction.includes('music_generation') ||
 		statusDescription.includes('música') ||
 		statusDescription.includes('musica');
+	$: isVideoStatus =
+		statusAction.includes('video_generation') ||
+		statusDescription.includes('vídeo') ||
+		statusDescription.includes('video');
 	$: isFileGenerationStatus = statusAction.includes('file_generation');
 </script>
 
@@ -49,7 +60,7 @@
 					{:else if status?.description === 'Generating search query'}
 						{$i18n.t('Generating search query')}
 					{:else}
-						{status?.description}
+						{statusLabel}
 					{/if}
 				</span>
 			</WebSearchResults>
@@ -64,7 +75,9 @@
 						<span
 							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
 						>
-							{#if isMusicStatus}
+							{#if isVideoStatus}
+								<Video className="size-3.5" strokeWidth="1.6" />
+							{:else if isMusicStatus}
 								<MusicNote className="size-3.5" strokeWidth="1.6" />
 							{:else if isImageStatus}
 								<Photo className="size-3.5" strokeWidth="1.6" />
@@ -91,7 +104,7 @@
 							{:else if status?.description === 'Searching the web'}
 								{$i18n.t('Searching the web')}
 							{:else}
-								{status?.description}
+							{statusLabel}
 							{/if}
 						</span>
 					</div>
@@ -121,7 +134,9 @@
 						<span
 							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
 						>
-							{#if isMusicStatus}
+							{#if isVideoStatus}
+								<Video className="size-3.5" strokeWidth="1.6" />
+							{:else if isMusicStatus}
 								<MusicNote className="size-3.5" strokeWidth="1.6" />
 							{:else if isImageStatus}
 								<Photo className="size-3.5" strokeWidth="1.6" />
@@ -245,6 +260,8 @@
 								<Github className="size-3.5" />
 							{:else if isFileSourceStatus || isFileGenerationStatus}
 								<DocumentPage className="size-3.5" strokeWidth="1.6" />
+							{:else if isVideoStatus}
+								<Video className="size-3.5" strokeWidth="1.6" />
 							{:else if isMusicStatus}
 								<MusicNote className="size-3.5" strokeWidth="1.6" />
 							{:else if isImageStatus}
@@ -272,7 +289,7 @@
 							{:else if status?.description === 'Searching the web'}
 								{$i18n.t('Searching the web')}
 							{:else}
-								{status?.description}
+							{statusLabel}
 							{/if}
 						</span>
 					</div>

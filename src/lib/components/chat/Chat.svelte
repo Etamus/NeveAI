@@ -182,9 +182,19 @@
 	let stableDiffusionEnabled = false;
 	let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
 	let musicGenerationEnabled = false;
-	let previousMediaGenerationEnabled = stableDiffusionEnabled || musicGenerationEnabled;
+	let videoGenerationEnabled = false;
+	let videoGenerationResolution: '480p' | '544p' = '480p';
+	let videoGenerationDuration: '5s' | '8s' = '5s';
+	let videoPreferencesReady = false;
+	$: if (videoPreferencesReady) {
+		localStorage.setItem('neveai.videoResolution', videoGenerationResolution);
+		localStorage.setItem('neveai.videoDuration', videoGenerationDuration);
+	}
+	let previousMediaGenerationEnabled = stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
+	let previousVideoGenerationEnabled = videoGenerationEnabled;
 	let stableDiffusionStandbyModel: LocalModel | null = null;
 	let restoringStableDiffusionStandbyModel = false;
+	let placingVideoModelInStandby = false;
 	let thinkingEnabled = true;
 	let thinkingExtendedEnabled = true;
 
@@ -430,7 +440,7 @@
 
 	const restoreStableDiffusionStandbyModel = async () => {
 		if (restoringStableDiffusionStandbyModel || !stableDiffusionStandbyModel) return;
-		if (stableDiffusionEnabled || musicGenerationEnabled || hasActiveChatResponse()) return;
+		if (stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled || hasActiveChatResponse()) return;
 
 		const standbyModel = stableDiffusionStandbyModel;
 		restoringStableDiffusionStandbyModel = true;
@@ -493,12 +503,44 @@
 		}
 	};
 
+	const putVideoGenerationModelInStandby = async () => {
+		if (placingVideoModelInStandby || !videoGenerationEnabled || hasActiveChatResponse()) return;
+
+		placingVideoModelInStandby = true;
+		modelLoading = true;
+		try {
+			const loadedModels = await getLoadedLocalModels(localStorage.token);
+			if (!videoGenerationEnabled) return;
+
+			const currentlyLoaded = loadedModels[0] ?? null;
+			if (!currentlyLoaded) return;
+
+			stableDiffusionStandbyModel ??= currentlyLoaded;
+			await unloadLocalModel(localStorage.token, currentlyLoaded.id);
+			models.set(await getModels(localStorage.token, null, false, true));
+		} catch (err: any) {
+			console.error('Failed to put the local model in video generation standby:', err);
+			showLocalModelLoadError(err);
+		} finally {
+			placingVideoModelInStandby = false;
+			modelLoading = false;
+			if (!videoGenerationEnabled) void restoreStableDiffusionStandbyModel();
+		}
+	};
+
 	$: {
-		const mediaGenerationEnabled = stableDiffusionEnabled || musicGenerationEnabled;
+		const mediaGenerationEnabled = stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
 		if (previousMediaGenerationEnabled && !mediaGenerationEnabled) {
 			void restoreStableDiffusionStandbyModel();
 		}
 		previousMediaGenerationEnabled = mediaGenerationEnabled;
+	}
+
+	$: {
+		if (!previousVideoGenerationEnabled && videoGenerationEnabled) {
+			void putVideoGenerationModelInStandby();
+		}
+		previousVideoGenerationEnabled = videoGenerationEnabled;
 	}
 
 	function openVisionModal(modelName: string): Promise<boolean> {
@@ -526,7 +568,12 @@
 	}
 
 	// Message queue for storing messages while generating
-	let messageQueue: { id: string; prompt: string; files: any[] }[] = [];
+	let messageQueue: {
+		id: string;
+		prompt: string;
+		files: any[];
+		features?: Record<string, any> | null;
+	}[] = [];
 
 	$: if (chatIdProp) {
 		navigateHandler();
@@ -554,6 +601,7 @@
 		fileGenerationEnabled = getFileGenerationPreference(false);
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
+		videoGenerationEnabled = false;
 
 		const storageChatInput = sessionStorage.getItem(
 			`chat-input${chatIdProp ? `-${chatIdProp}` : ''}`
@@ -584,7 +632,7 @@
 							files = restoredQueue.flatMap((m) => m.files);
 							await tick();
 							const combinedPrompt = restoredQueue.map((m) => m.prompt).join('\n\n');
-							await submitPrompt(combinedPrompt);
+							await submitPrompt(combinedPrompt, { features: restoredQueue.at(0)?.features ?? null });
 						} else {
 							// Has pending tasks - show as queued (chatCompletedHandler will process)
 							messageQueue = restoredQueue;
@@ -611,6 +659,7 @@
 						);
 						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
 						musicGenerationEnabled = input.musicGenerationEnabled ?? false;
+						videoGenerationEnabled = input.videoGenerationEnabled ?? false;
 						normalizeExclusiveFeatureToggles();
 						thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
 					}
@@ -679,6 +728,7 @@
 		fileGenerationEnabled = getFileGenerationPreference(false);
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
+		videoGenerationEnabled = false;
 		params = {};
 
 		if (selectedModelIds.filter((id) => id).length > 0) {
@@ -692,7 +742,8 @@
 		| 'image_generation'
 		| 'code_execution'
 		| 'stable_diffusion'
-		| 'music_generation';
+		| 'music_generation'
+		| 'video_generation';
 
 	const normalizeExclusiveFeatureToggles = (preferred?: ChatIntegrationId) => {
 		const enabledIntegrations: ChatIntegrationId[] = [
@@ -701,7 +752,8 @@
 			imageGenerationEnabled ? 'image_generation' : null,
 			codeExecutionEnabled ? 'code_execution' : null,
 			stableDiffusionEnabled ? 'stable_diffusion' : null,
-			musicGenerationEnabled ? 'music_generation' : null
+			musicGenerationEnabled ? 'music_generation' : null,
+			videoGenerationEnabled ? 'video_generation' : null
 		].filter(Boolean) as ChatIntegrationId[];
 
 		if (enabledIntegrations.length > 0) {
@@ -715,6 +767,7 @@
 			codeExecutionEnabled = keep === 'code_execution';
 			stableDiffusionEnabled = keep === 'stable_diffusion';
 			musicGenerationEnabled = keep === 'music_generation';
+			videoGenerationEnabled = keep === 'video_generation';
 			selectedToolIds = [];
 			selectedFilterIds = [];
 			return;
@@ -729,6 +782,18 @@
 		if (selectedToolIds.length > 1) {
 			selectedToolIds = [selectedToolIds.at(-1)];
 		}
+	};
+
+	const setNativeIntegration = (integration: ChatIntegrationId | null) => {
+		webSearchEnabled = integration === 'web_search';
+		deepSearchEnabled = integration === 'deep_search';
+		imageGenerationEnabled = integration === 'image_generation';
+		codeExecutionEnabled = integration === 'code_execution';
+		stableDiffusionEnabled = integration === 'stable_diffusion';
+		musicGenerationEnabled = integration === 'music_generation';
+		videoGenerationEnabled = integration === 'video_generation';
+		selectedToolIds = [];
+		selectedFilterIds = [];
 	};
 
 	const setDefaults = async () => {
@@ -804,6 +869,13 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.music_generation)
 				) {
 					musicGenerationEnabled = model.info.meta.defaultFeatureIds?.includes('music_generation') ?? false;
+				}
+
+				if (
+					$config?.features?.enable_video_generation &&
+					($user?.role === 'admin' || $user?.permissions?.features?.video_generation)
+				) {
+					videoGenerationEnabled = model.info.meta.defaultFeatureIds?.includes('video_generation') ?? false;
 				}
 			}
 
@@ -903,7 +975,17 @@
 			if (message) {
 				if (type === 'status') {
 					if (message?.statusHistory) {
-						message.statusHistory.push(data);
+						const lastStatus = message.statusHistory.at(-1);
+						if (
+							data?.progress !== undefined &&
+							['stable_diffusion', 'video_generation'].includes(data?.action) &&
+							lastStatus?.action === data?.action &&
+							lastStatus?.done !== true
+						) {
+							message.statusHistory[message.statusHistory.length - 1] = data;
+						} else {
+							message.statusHistory.push(data);
+						}
 					} else {
 						message.statusHistory = [data];
 					}
@@ -1803,6 +1885,11 @@
 		stableDiffusionQuality = localStorage.getItem('neveai.imageQuality') === 'neve_image_2'
 			? 'neve_image_2'
 			: 'neve_image';
+		videoGenerationResolution = localStorage.getItem('neveai.videoResolution') === '544p'
+			? '544p'
+			: '480p';
+		videoGenerationDuration = localStorage.getItem('neveai.videoDuration') === '8s' ? '8s' : '5s';
+		videoPreferencesReady = true;
 		loading = true;
 		console.log('mounted');
 		stopChatRenderDebug = startChatRenderDebug();
@@ -1895,6 +1982,7 @@
 				fileGenerationEnabled = getFileGenerationPreference(false);
 				stableDiffusionEnabled = false;
 				musicGenerationEnabled = false;
+				videoGenerationEnabled = false;
 
 				try {
 					const input = JSON.parse(storageChatInput);
@@ -1913,6 +2001,7 @@
 						);
 						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
 						musicGenerationEnabled = input.musicGenerationEnabled ?? false;
+						videoGenerationEnabled = input.videoGenerationEnabled ?? false;
 						normalizeExclusiveFeatureToggles();
 						thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
 					}
@@ -3249,12 +3338,13 @@
 
 		taskIds = null;
 
-		if (!stableDiffusionEnabled && !musicGenerationEnabled) {
+		if (!stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled) {
 			await restoreStableDiffusionStandbyModel();
 		}
 
 		// Process message queue - combine all queued messages and submit at once
 		if (messageQueue.length > 0) {
+			const queuedFeatures = messageQueue.at(0)?.features ?? null;
 			const combinedPrompt = messageQueue.map((m) => m.prompt).join('\n\n');
 			const combinedFiles = messageQueue.flatMap((m) => m.files);
 			messageQueue = [];
@@ -3262,7 +3352,7 @@
 			// Set the files and submit
 			files = combinedFiles;
 			await tick();
-			await submitPrompt(combinedPrompt);
+			await submitPrompt(combinedPrompt, { features: queuedFeatures });
 		}
 	};
 
@@ -3790,6 +3880,11 @@
 	};
 
 	const ensureLocalModelsReady = async (modelIds: string[]) => {
+		if (videoGenerationEnabled) {
+			await putVideoGenerationModelInStandby();
+			return true;
+		}
+
 		for (const selectedModelId of modelIds) {
 			const localSelection = resolveLocalModelSelection(selectedModelId);
 			if (!localSelection?.model) {
@@ -3801,7 +3896,7 @@
 				const loadedModels = await getLoadedLocalModels(localStorage.token);
 				const loadedModel = loadedModels.find((lm) => lm.id === modelId) ?? null;
 
-				const mediaGenerationRequested = stableDiffusionEnabled || musicGenerationEnabled;
+				const mediaGenerationRequested = stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
 				if (mediaGenerationRequested) {
 					stableDiffusionStandbyModel = loadedModel ?? loadedModels[0] ?? stableDiffusionStandbyModel;
 				}
@@ -3875,8 +3970,18 @@
 		return true;
 	};
 
-	const submitPrompt = async (userPrompt, { _raw = false } = {}) => {
+	const submitPrompt = async (
+		userPrompt,
+		{ _raw = false, features = null }: { _raw?: boolean; features?: Record<string, any> | null } = {}
+	) => {
 		console.log('submitPrompt', userPrompt, $chatId);
+		normalizeExclusiveFeatureToggles();
+		// Keep the user's selected integration stable across asynchronous model
+		// checks and the route change performed when the first message is sent.
+		const requestFeatures = features ?? structuredClone(getFeatures());
+		if (requestFeatures.video_generation) {
+			await putVideoGenerationModelInStandby();
+		}
 
 		const _selectedModels = selectedModels.map((modelId) =>
 			$models.map((m) => m.id).includes(modelId) ? modelId : ''
@@ -3897,6 +4002,7 @@
 
 		// ── LlamaCpp model-loaded check ──────────────────────────────
 		for (const selectedModelId of selectedModels) {
+			if (requestFeatures.video_generation) break;
 			const localSelection = resolveLocalModelSelection(selectedModelId);
 			if (localSelection?.model) {
 				const { model, modelId } = localSelection;
@@ -3904,7 +4010,11 @@
 					const loadedModels = await getLoadedLocalModels(localStorage.token);
 					const loadedModel = loadedModels.find((lm) => lm.id === modelId) ?? null;
 
-					const mediaGenerationRequested = stableDiffusionEnabled || musicGenerationEnabled;
+					const mediaGenerationRequested = Boolean(
+						requestFeatures.stable_diffusion ||
+						requestFeatures.music_generation ||
+						requestFeatures.video_generation
+					);
 					if (mediaGenerationRequested) {
 						stableDiffusionStandbyModel = loadedModel ?? loadedModels[0] ?? stableDiffusionStandbyModel;
 					}
@@ -4007,7 +4117,8 @@
 					{
 						id: uuidv4(),
 						prompt: userPrompt,
-						files: _files
+						files: _files,
+						features: requestFeatures
 					}
 				];
 				// Clear input
@@ -4084,7 +4195,7 @@
 
 		saveSessionSelectedModels();
 
-		await sendMessage(history, userMessageId, { newChat: true });
+		await sendMessage(history, userMessageId, { newChat: true, features: requestFeatures });
 	};
 
 	const sendMessage = async (
@@ -4094,14 +4205,20 @@
 			messages = null,
 			modelId = null,
 			modelIdx = null,
-			newChat = false
+			newChat = false,
+			features = null
 		}: {
 			messages?: any[] | null;
 			modelId?: string | null;
 			modelIdx?: number | null;
 			newChat?: boolean;
+			features?: Record<string, any> | null;
 		} = {}
 	) => {
+		// Creating the first persisted chat can trigger a navigation/state restore
+		// before the request is sent. Freeze the selected integration beforehand.
+		normalizeExclusiveFeatureToggles();
+		const requestFeatures = features ?? structuredClone(getFeatures());
 		let _chatId = JSON.parse(JSON.stringify($chatId));
 		_history = structuredClone(_history);
 
@@ -4189,8 +4306,9 @@
 					if (
 						hasImages &&
 						!(model.info?.meta?.capabilities?.vision ?? true) &&
-						!imageGenerationEnabled &&
-						!stableDiffusionEnabled
+						!requestFeatures?.image_generation &&
+						!requestFeatures?.stable_diffusion &&
+						!requestFeatures?.video_generation
 					) {
 						toast.error(
 							$i18n.t('Model {{modelName}} is not vision capable', {
@@ -4210,7 +4328,8 @@
 							: createMessagesList(_history, responseMessageId),
 						_history,
 						responseMessageId,
-						_chatId
+						_chatId,
+						requestFeatures
 					);
 
 					if (chatEventEmitter) clearInterval(chatEventEmitter);
@@ -4232,6 +4351,7 @@
 			!codeExecutionEnabled &&
 			!stableDiffusionEnabled &&
 			!musicGenerationEnabled &&
+			!videoGenerationEnabled &&
 			selectedToolIds.length === 0 &&
 			selectedFilterIds.length === 0;
 
@@ -4264,7 +4384,8 @@
 					!deepSearchEnabled &&
 					!imageGenerationEnabled &&
 					!stableDiffusionEnabled &&
-					!musicGenerationEnabled,
+					!musicGenerationEnabled &&
+					!videoGenerationEnabled,
 				stable_diffusion:
 					$config?.features?.enable_stable_diffusion &&
 					($user?.role === 'admin' || $user?.permissions?.features?.stable_diffusion)
@@ -4275,7 +4396,14 @@
 					$config?.features?.enable_music_generation &&
 					($user?.role === 'admin' || $user?.permissions?.features?.music_generation)
 						? musicGenerationEnabled
-						: false
+						: false,
+				video_generation:
+					$config?.features?.enable_video_generation &&
+					($user?.role === 'admin' || $user?.permissions?.features?.video_generation)
+						? videoGenerationEnabled
+						: false,
+				video_generation_resolution: videoGenerationResolution,
+				video_generation_duration: videoGenerationDuration
 			};
 
 		const currentModels = atSelectedModel?.id ? [atSelectedModel.id] : selectedModels;
@@ -4417,7 +4545,14 @@
 		});
 	};
 
-	const sendMessageSocket = async (model, _messages, _history, responseMessageId, _chatId) => {
+	const sendMessageSocket = async (
+		model,
+		_messages,
+		_history,
+		responseMessageId,
+		_chatId,
+		requestFeatures: Record<string, any> | null = null
+	) => {
 		const responseMessage = _history.messages[responseMessageId];
 		const userMessage = _history.messages[responseMessage.parentId];
 
@@ -4633,7 +4768,7 @@
 					// Direct terminal servers — always included when enabled (not routed through selectedToolIds)
 					...($terminalServers ?? []).filter((t) => !t.id)
 				],
-				features: getFeatures(),
+				features: requestFeatures ?? getFeatures(),
 				variables: {
 					...getPromptVariables(
 						$user?.name,
@@ -4808,6 +4943,16 @@
 			}).catch(() => null);
 		}
 
+		if (videoGenerationEnabled) {
+			void fetch(`${NEVEAI_API_BASE_URL}/video-generation/cancel`, {
+				method: 'POST',
+				headers: {
+					Accept: 'application/json',
+					...(localStorage.token && { Authorization: `Bearer ${localStorage.token}` })
+				}
+			}).catch(() => null);
+		}
+
 		if (taskIds) {
 			for (const taskId of taskIds) {
 				const res = await stopTask(localStorage.token, taskId).catch((error) => {
@@ -4886,8 +5031,10 @@
 				}
 
 				const generatedAction = message?.statusHistory?.some(
-					(status: any) => status.action === 'music_generation'
+					(status: any) => status.action === 'video_generation'
 				)
+					? 'video_generation'
+					: message?.statusHistory?.some((status: any) => status.action === 'music_generation')
 					? 'music_generation'
 					: message?.statusHistory?.some((status: any) => status.action === 'stable_diffusion')
 						? 'stable_diffusion'
@@ -4895,16 +5042,27 @@
 				const previousMediaState = {
 					stableDiffusionEnabled,
 					musicGenerationEnabled,
-					stableDiffusionQuality
+					videoGenerationEnabled,
+					stableDiffusionQuality,
+					videoGenerationResolution,
+					videoGenerationDuration
 				};
 
 				if (generatedAction) {
 					stableDiffusionEnabled = generatedAction === 'stable_diffusion';
 					musicGenerationEnabled = generatedAction === 'music_generation';
+					videoGenerationEnabled = generatedAction === 'video_generation';
 					if (generatedAction === 'stable_diffusion') {
 						stableDiffusionQuality =
 							message?.statusHistory?.find((status: any) => status.action === 'stable_diffusion')
 								?.quality ?? stableDiffusionQuality;
+					}
+					if (generatedAction === 'video_generation') {
+						const videoStatus = message?.statusHistory?.find(
+							(status: any) => status.action === 'video_generation'
+						);
+						videoGenerationResolution = videoStatus?.resolution ?? videoGenerationResolution;
+						videoGenerationDuration = videoStatus?.duration ?? videoGenerationDuration;
 					}
 				}
 
@@ -4962,7 +5120,10 @@
 					if (generatedAction) {
 						stableDiffusionEnabled = previousMediaState.stableDiffusionEnabled;
 						musicGenerationEnabled = previousMediaState.musicGenerationEnabled;
+						videoGenerationEnabled = previousMediaState.videoGenerationEnabled;
 						stableDiffusionQuality = previousMediaState.stableDiffusionQuality;
+						videoGenerationResolution = previousMediaState.videoGenerationResolution;
+						videoGenerationDuration = previousMediaState.videoGenerationDuration;
 					}
 				}
 			}
@@ -5118,7 +5279,7 @@
 		let _chatId = $chatId;
 
 		if (!$temporaryChatEnabled) {
-			const initialTitle = stableDiffusionEnabled || musicGenerationEnabled
+			const initialTitle = stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled
 				? getInitialImageChatTitle(history) || $i18n.t('New Chat')
 				: $i18n.t('New Chat');
 
@@ -5456,6 +5617,10 @@
 									bind:stableDiffusionEnabled
 									bind:stableDiffusionQuality
 									bind:musicGenerationEnabled
+									bind:videoGenerationEnabled
+									bind:videoGenerationResolution
+									bind:videoGenerationDuration
+									onNativeIntegrationChange={setNativeIntegration}
 									bind:thinkingEnabled
 									bind:thinkingExtendedEnabled
 									bind:atSelectedModel
@@ -5479,7 +5644,7 @@
 											// Set files and submit
 											files = item.files;
 											await tick();
-											await submitPrompt(item.prompt);
+											await submitPrompt(item.prompt, { features: item.features ?? null });
 										}
 									}}
 									onQueueEdit={(id) => {
@@ -5535,6 +5700,10 @@
 									bind:stableDiffusionEnabled
 									bind:stableDiffusionQuality
 									bind:musicGenerationEnabled
+									bind:videoGenerationEnabled
+									bind:videoGenerationResolution
+									bind:videoGenerationDuration
+									onNativeIntegrationChange={setNativeIntegration}
 									bind:thinkingEnabled
 									bind:thinkingExtendedEnabled
 									bind:atSelectedModel

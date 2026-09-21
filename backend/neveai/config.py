@@ -1547,6 +1547,10 @@ USER_PERMISSIONS_FEATURES_MUSIC_GENERATION = (
     os.environ.get("USER_PERMISSIONS_FEATURES_MUSIC_GENERATION", "True").lower() == "true"
 )
 
+USER_PERMISSIONS_FEATURES_VIDEO_GENERATION = (
+    os.environ.get("USER_PERMISSIONS_FEATURES_VIDEO_GENERATION", "True").lower() == "true"
+)
+
 
 USER_PERMISSIONS_SETTINGS_INTERFACE = (
     os.environ.get("USER_PERMISSIONS_SETTINGS_INTERFACE", "True").lower() == "true"
@@ -1620,6 +1624,7 @@ DEFAULT_USER_PERMISSIONS = {
         "memories": USER_PERMISSIONS_FEATURES_MEMORIES,
         "stable_diffusion": USER_PERMISSIONS_FEATURES_STABLE_DIFFUSION,
         "music_generation": USER_PERMISSIONS_FEATURES_MUSIC_GENERATION,
+        "video_generation": USER_PERMISSIONS_FEATURES_VIDEO_GENERATION,
     },
     "settings": {
         "interface": USER_PERMISSIONS_SETTINGS_INTERFACE,
@@ -3949,6 +3954,12 @@ ENABLE_MUSIC_GENERATION = PersistentConfig(
     "ENABLE_MUSIC_GENERATION",
     "music_generation.enable",
     os.environ.get("ENABLE_MUSIC_GENERATION", "true").lower() == "true",
+)
+
+ENABLE_VIDEO_GENERATION = PersistentConfig(
+    "ENABLE_VIDEO_GENERATION",
+    "video_generation.enable",
+    os.environ.get("ENABLE_VIDEO_GENERATION", "true").lower() == "true",
 )
 
 STABLE_DIFFUSION_MODEL = PersistentConfig(

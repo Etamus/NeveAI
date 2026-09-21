@@ -393,7 +393,7 @@ class AceStepRuntime:
             }
         )
 
-        await progress("Iniciando o gerador de música...")
+        await progress("Iniciando o criador de música...")
         self._process = await asyncio.create_subprocess_exec(
             str(_runtime_python()),
             "-m",
@@ -556,9 +556,9 @@ class AceStepRuntime:
                             if match:
                                 percent = round(float(match.group(1).replace(",", ".")))
                         description = (
-                            f"Gerando música... {max(0, min(percent, 100))}%"
+                            f"Criando música... {max(0, min(percent, 100))}%"
                             if percent is not None
-                            else "Gerando música..."
+                            else "Criando música..."
                         )
                         if description and description != last_description:
                             last_description = description

@@ -288,6 +288,7 @@ type Config = {
 		enable_image_generation: boolean;
 		enable_stable_diffusion?: boolean;
 		enable_music_generation?: boolean;
+		enable_video_generation?: boolean;
 		enable_admin_export: boolean;
 		enable_admin_chat_access: boolean;
 		enable_admin_analytics: boolean;

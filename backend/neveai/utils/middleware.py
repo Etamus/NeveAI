@@ -2290,18 +2290,23 @@ async def chat_stable_diffusion_handler(
         metadata.get("parent_message"),
     )
     quality = "neve_image_2" if (extra_params.get("__features__") or {}).get("stable_diffusion_quality") == "neve_image_2" else "neve_image"
+    generation_description = "Editando imagem..." if init_image_reference else "Criando imagem..."
 
-    await __event_emitter__(
-        {
-            "type": "status",
-            "data": {
-                "action": "stable_diffusion",
-                "description": "Editando imagem..." if init_image_reference else "Gerando imagem...",
-                "quality": quality,
-                "done": False,
-            },
-        }
-    )
+    async def emit_image_progress(progress: int) -> None:
+        await __event_emitter__(
+            {
+                "type": "status",
+                "data": {
+                    "action": "stable_diffusion",
+                    "description": generation_description,
+                    "quality": quality,
+                    "progress": min(100, max(0, int(progress))),
+                    "done": False,
+                },
+            }
+        )
+
+    await emit_image_progress(0)
 
     try:
         from neveai.routers.stable_diffusion import _sd_pipeline, normalize_sd_model_id
@@ -2338,6 +2343,7 @@ async def chat_stable_diffusion_handler(
                 guidance_scale=guidance_scale,
                 init_image_reference=init_image_reference,
                 user_id=getattr(user, "id", None),
+                progress_callback=emit_image_progress,
             )
 
             await __event_emitter__(
@@ -2345,8 +2351,9 @@ async def chat_stable_diffusion_handler(
                     "type": "status",
                     "data": {
                         "action": "stable_diffusion",
-                        "description": "Imagem editada" if init_image_reference else "Imagem gerada",
+                        "description": "Imagem editada" if init_image_reference else "Imagem criada",
                         "quality": quality,
+                        "progress": 100,
                         "done": True,
                     },
                 }
@@ -2396,7 +2403,9 @@ async def chat_stable_diffusion_handler(
             {
                 "type": "status",
                 "data": {
+                    "action": "stable_diffusion",
                     "description": f"Failed to generate image: {str(e)}",
+                    "quality": quality,
                     "done": True,
                     "error": True,
                 },
@@ -2432,7 +2441,7 @@ async def chat_music_generation_handler(
 
     async def emit_progress(description: str) -> None:
         nonlocal last_status
-        description = str(description or "Gerando música...").strip()
+        description = str(description or "Criando música...").strip()
         if not description or description == last_status:
             return
         last_status = description
@@ -2447,7 +2456,7 @@ async def chat_music_generation_handler(
             }
         )
 
-    await emit_progress("Preparando a geração de música...")
+    await emit_progress("Preparando a criação de música...")
 
     try:
         if not request.app.state.config.ENABLE_MUSIC_GENERATION:
@@ -2580,6 +2589,230 @@ async def chat_music_generation_handler(
                 "data": {"done": True, "content": ""},
             }
         )
+
+    return form_data
+
+
+async def chat_video_generation_handler(
+    request: Request, form_data: dict, extra_params: dict, user
+):
+    """Generate a local MiniMax H3 video without entering the normal LLM response path."""
+    metadata = extra_params.get("__metadata__", {})
+    __event_emitter__ = extra_params.get("__event_emitter__")
+    if not __event_emitter__:
+        return form_data
+
+    prompt = _collect_stable_diffusion_prompt(
+        form_data.get("messages", []),
+        metadata.get("parent_message"),
+    )
+    image_reference = _collect_stable_diffusion_init_image_reference(
+        form_data.get("messages", []),
+        metadata.get("parent_message"),
+    )
+    video_features = extra_params.get("__features__") or {}
+    resolution = (
+        "544p" if video_features.get("video_generation_resolution") == "544p" else "480p"
+    )
+    duration = "8s" if video_features.get("video_generation_duration") == "8s" else "5s"
+    width, height = (960, 544) if resolution == "544p" else (848, 480)
+    frames = 196 if duration == "8s" else 124
+    last_status = ""
+    last_progress = -1
+
+    async def emit_progress(description: str, progress: Optional[int] = None) -> None:
+        nonlocal last_status, last_progress
+        description = str(description or "Criando vídeo...").strip()
+        normalized_progress = (
+            min(100, max(0, int(progress))) if progress is not None else None
+        )
+        if (
+            not description
+            or (
+                description == last_status
+                and (normalized_progress is None or normalized_progress == last_progress)
+            )
+        ):
+            return
+        last_status = description
+        if normalized_progress is not None:
+            last_progress = normalized_progress
+        await __event_emitter__(
+            {
+                "type": "status",
+                "data": {
+                    "action": "video_generation",
+                    "description": description,
+                    "resolution": resolution,
+                    "duration": duration,
+                    **(
+                        {"progress": normalized_progress}
+                        if normalized_progress is not None
+                        else {}
+                    ),
+                    "done": False,
+                },
+            }
+        )
+
+    await emit_progress("Preparando a criação de vídeo...", 0)
+    runtime = None
+    cancelled = False
+    try:
+        if not request.app.state.config.ENABLE_VIDEO_GENERATION:
+            raise RuntimeError("A geracao de video esta desativada.")
+        if not has_permission(
+            user.id,
+            "features.video_generation",
+            request.app.state.config.USER_PERMISSIONS,
+        ):
+            raise RuntimeError("Voce nao tem permissao para gerar videos.")
+
+        from neveai.routers.llamacpp import model_manager
+        from neveai.routers.stable_diffusion import _prepare_init_image_sync
+        from neveai.routers.video_generation import minimax_h3_runtime
+
+        runtime = minimax_h3_runtime
+        async with runtime.session_lock:
+            # Downloads and environment preparation do not need VRAM. Keep the chat
+            # model available until every disk/network prerequisite is ready.
+            await runtime.prepare(emit_progress)
+
+            input_image = None
+            if image_reference:
+                prepared = await asyncio.to_thread(
+                    _prepare_init_image_sync,
+                    image_reference,
+                    getattr(user, "id", None),
+                )
+                try:
+                    input_image = (
+                        "neve-h3-reference.png",
+                        await asyncio.to_thread(prepared.path.read_bytes),
+                        "image/png",
+                    )
+                finally:
+                    try:
+                        prepared.path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+
+            await emit_progress("Liberando memória de vídeo...")
+            await model_manager.standby()
+            try:
+                generated = await runtime.generate(
+                    prompt,
+                    emit_progress,
+                    image=input_image,
+                    width=width,
+                    height=height,
+                    frames=frames,
+                )
+            finally:
+                # Terminating the isolated worker releases its CUDA context even
+                # when ComfyUI or a custom node fails halfway through the graph.
+                await runtime.stop()
+
+        video_data = generated["video"]
+        content_type = generated.get("content_type") or "video/mp4"
+        extension = {
+            "video/mp4": "mp4",
+            "video/webm": "webm",
+            "video/quicktime": "mov",
+            "video/x-matroska": "mkv",
+        }.get(content_type, Path(generated.get("filename") or "video.mp4").suffix.lstrip(".") or "mp4")
+        filename = f"video-neve-{uuid4().hex[:8]}.{extension}"
+        upload = UploadFile(
+            file=io.BytesIO(video_data),
+            filename=filename,
+            headers={"content-type": content_type},
+        )
+        file_item = upload_file_handler(
+            request,
+            file=upload,
+            metadata={
+                "source": "minimax-h3-fl2va-w4a8",
+                "prompt": prompt,
+                "width": width,
+                "height": height,
+                "frames": frames,
+                "fps": 24,
+                "steps": 8,
+                "image_to_video": bool(image_reference),
+            },
+            process=False,
+            user=user,
+        )
+        video_url = str(request.app.url_path_for("get_file_content_by_id", id=file_item.id))
+
+        await __event_emitter__(
+            {
+                "type": "status",
+                "data": {
+                    "action": "video_generation",
+                    "description": "Vídeo criado",
+                    "resolution": resolution,
+                    "duration": duration,
+                    "progress": 100,
+                    "done": True,
+                },
+            }
+        )
+        await __event_emitter__(
+            {
+                "type": "files",
+                "data": {
+                    "files": [
+                        {
+                            "id": file_item.id,
+                            "type": "video",
+                            "url": video_url,
+                            "name": filename,
+                            "content_type": content_type,
+                            "size": len(video_data),
+                        }
+                    ]
+                },
+            }
+        )
+        await __event_emitter__(
+            {"type": "chat:completion", "data": {"done": True, "content": ""}}
+        )
+        metadata["skip_llm"] = True
+    except asyncio.CancelledError:
+        cancelled = True
+        metadata["skip_llm"] = True
+        raise
+    except Exception as exc:
+        log.exception("Video generation failed")
+        metadata["skip_llm"] = True
+        error_message = str(exc).splitlines()[0] if str(exc).strip() else "Falha desconhecida."
+        await __event_emitter__(
+            {
+                "type": "status",
+                "data": {
+                    "action": "video_generation",
+                    "description": f"Falha ao criar video: {error_message}",
+                    "resolution": resolution,
+                    "duration": duration,
+                    "done": True,
+                    "error": True,
+                },
+            }
+        )
+        await __event_emitter__(
+            {"type": "chat:completion", "data": {"done": True, "content": ""}}
+        )
+    finally:
+        # Covers cancellation during preparation/startup as well as failures
+        # before the inner generation cleanup is reached.
+        if runtime is not None:
+            try:
+                await asyncio.shield(runtime.stop())
+            except Exception as exc:
+                log.warning("Video handler: failed to stop worker: %s", exc)
+        if cancelled:
+            log.info("MiniMax H3 generation cancelled and resources released.")
 
     return form_data
 
@@ -6138,6 +6371,27 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         raise Exception(f"{e}")
 
     features = form_data.pop("features", None) or {}
+    submitted_features = metadata.get("features", {}) or {}
+    if submitted_features.get("video_generation"):
+        # Preserve the user's explicit video choice even if an inlet/filter
+        # rebuilt the payload. Video owns the request and is mutually exclusive.
+        features["video_generation"] = True
+        features["video_generation_resolution"] = submitted_features.get(
+            "video_generation_resolution", "480p"
+        )
+        features["video_generation_duration"] = submitted_features.get(
+            "video_generation_duration", "5s"
+        )
+        for feature_id in (
+            "web_search",
+            "deep_search",
+            "image_generation",
+            "code_execution",
+            "file_generation",
+            "stable_diffusion",
+            "music_generation",
+        ):
+            features[feature_id] = False
     extra_params["__features__"] = features
     request.state.deep_search_enabled = bool(features.get("deep_search"))
     if features:
@@ -6186,6 +6440,11 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
         if "music_generation" in features and features["music_generation"]:
             form_data = await chat_music_generation_handler(
+                request, form_data, extra_params, user
+            )
+
+        if "video_generation" in features and features["video_generation"]:
+            form_data = await chat_video_generation_handler(
                 request, form_data, extra_params, user
             )
 

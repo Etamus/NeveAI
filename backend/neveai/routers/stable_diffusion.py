@@ -25,7 +25,7 @@ import zipfile
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -37,6 +37,8 @@ from neveai.utils.auth import get_admin_user, get_verified_user
 
 log = logging.getLogger(__name__)
 router = APIRouter()
+
+ImageProgressCallback = Callable[[int], Awaitable[None]]
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 SD_CPP_DIR = BACKEND_DIR / "bin" / "stable-diffusion-cpp"
@@ -769,10 +771,17 @@ class _ZImageTurboPipeline:
                 self._quality = "neve_image"
                 self._edit_mode = False
 
-    async def run(self, model_id: str, hf_token: Optional[str], quality: str, **kwargs) -> str:
+    async def run(
+        self,
+        model_id: str,
+        hf_token: Optional[str],
+        quality: str,
+        progress_callback: Optional[ImageProgressCallback] = None,
+        **kwargs,
+    ) -> str:
         async with self._request_lock:
             await self.load(model_id, hf_token=hf_token, quality=quality, edit=bool(kwargs.get("init_image_reference")))
-            return await self.generate(**kwargs)
+            return await self.generate(progress_callback=progress_callback, **kwargs)
 
     async def generate(
         self,
@@ -783,6 +792,7 @@ class _ZImageTurboPipeline:
         guidance_scale: float = DEFAULT_CFG_SCALE,
         init_image_reference: Optional[str] = None,
         user_id: Optional[str] = None,
+        progress_callback: Optional[ImageProgressCallback] = None,
     ) -> str:
         if not self.is_loaded or self._resources is None:
             raise RuntimeError("Z-Image image runtime nao carregado")
@@ -860,8 +870,50 @@ class _ZImageTurboPipeline:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
+
+                stdout_chunks: list[bytes] = []
+                stderr_chunks: list[bytes] = []
+                last_progress = -1
+
+                async def read_stream(
+                    stream: Optional[asyncio.StreamReader], chunks: list[bytes]
+                ) -> None:
+                    nonlocal last_progress
+                    if stream is None:
+                        return
+                    carry = ""
+                    while True:
+                        chunk = await stream.read(2048)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                        carry = (carry + chunk.decode("utf-8", errors="replace"))[-1024:]
+                        for match in re.finditer(r"(?<!\d)(\d+)\s*/\s*(\d+)(?!\d)", carry):
+                            current = int(match.group(1))
+                            total = int(match.group(2))
+                            if total != steps or current < 0 or current > total:
+                                continue
+                            percent = min(95, max(1, round((current / total) * 95)))
+                            if percent <= last_progress:
+                                continue
+                            last_progress = percent
+                            if progress_callback is not None:
+                                try:
+                                    await progress_callback(percent)
+                                except Exception as exc:
+                                    log.debug("Image progress callback failed: %s", exc)
+
+                async def communicate_with_progress() -> None:
+                    await asyncio.gather(
+                        read_stream(process.stdout, stdout_chunks),
+                        read_stream(process.stderr, stderr_chunks),
+                        process.wait(),
+                    )
+
                 try:
-                    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=SD_CLI_TIMEOUT_SECONDS)
+                    await asyncio.wait_for(
+                        communicate_with_progress(), timeout=SD_CLI_TIMEOUT_SECONDS
+                    )
                 except asyncio.TimeoutError:
                     process.kill()
                     await process.wait()
@@ -876,7 +928,7 @@ class _ZImageTurboPipeline:
                 except Exception as e:
                     log.debug("Nao foi possivel remover imagem temporaria de img2img: %s", e)
 
-        output = (stdout or b"") + b"\n" + (stderr or b"")
+        output = b"".join(stdout_chunks) + b"\n" + b"".join(stderr_chunks)
         output_text = output.decode("utf-8", errors="replace")
         if process.returncode != 0:
             raise RuntimeError(f"stable-diffusion.cpp falhou (codigo {process.returncode}): {output_text[-4000:]}")

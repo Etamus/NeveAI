@@ -62,7 +62,8 @@ export const DEFAULT_PERMISSIONS = {
 		code_interpreter: true,
 		memories: true,
 		stable_diffusion: true,
-		music_generation: true
+		music_generation: true,
+		video_generation: true
 	},
 	settings: {
 		interface: true

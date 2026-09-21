@@ -85,6 +85,7 @@
 	import ImageIcon from '../icons/Image.svelte';
 	import CheckCircle from '../icons/CheckCircle.svelte';
 	import MusicNote from '../icons/MusicNote.svelte';
+	import Video from '../icons/Video.svelte';
 	import Wrench from '../icons/Wrench.svelte';
 	import Sparkles from '../icons/Sparkles.svelte';
 
@@ -146,11 +147,29 @@
 	export let stableDiffusionEnabled = false;
 	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
 	export let musicGenerationEnabled = false;
+	export let videoGenerationEnabled = false;
+	export let videoGenerationResolution: '480p' | '544p' = '480p';
+	export let videoGenerationDuration: '5s' | '8s' = '5s';
+	export let onNativeIntegrationChange: Function = () => {};
 	export let thinkingEnabled = true;
 	export let thinkingExtendedEnabled = true;
 
 	let previousFileGenerationEnabled = fileGenerationEnabled;
 	let previousAttachmentFingerprint = '';
+	let videoPreferencesMounted = false;
+	let videoPreferencesChatId: string | null = null;
+
+	const restoreVideoPreferences = () => {
+		videoGenerationResolution = localStorage.getItem('neveai.videoResolution') === '544p'
+			? '544p'
+			: '480p';
+		videoGenerationDuration = localStorage.getItem('neveai.videoDuration') === '8s' ? '8s' : '5s';
+	};
+
+	$: if (videoPreferencesMounted && videoPreferencesChatId !== $chatId) {
+		videoPreferencesChatId = $chatId;
+		restoreVideoPreferences();
+	}
 
 	$: {
 		const attachmentFingerprint = files
@@ -196,7 +215,12 @@
 
 	let showTerminalMenu = false;
 
-	export let messageQueue: { id: string; prompt: string; files: any[] }[] = [];
+	export let messageQueue: {
+		id: string;
+		prompt: string;
+		files: any[];
+		features?: Record<string, any> | null;
+	}[] = [];
 	export let onQueueSendNow: (id: string) => void = () => {};
 	export let onQueueEdit: (id: string) => void = () => {};
 	export let onQueueDelete: (id: string) => void = () => {};
@@ -233,6 +257,9 @@
 		stableDiffusionEnabled,
 		stableDiffusionQuality,
 		musicGenerationEnabled,
+		videoGenerationEnabled,
+		videoGenerationResolution,
+		videoGenerationDuration,
 		thinkingEnabled,
 		thinkingExtendedEnabled
 	});
@@ -247,6 +274,7 @@
 		!codeExecutionEnabled &&
 		!stableDiffusionEnabled &&
 		!musicGenerationEnabled &&
+		!videoGenerationEnabled &&
 		(selectedToolIds ?? []).length === 0 &&
 		(selectedFilterIds ?? []).length === 0 &&
 		!isInputMultiline;
@@ -560,6 +588,12 @@
 	let loaded = false;
 	let showThinkingDropdown = false;
 	let showImageQualityDropdown = false;
+	let showVideoResolutionDropdown = false;
+	let showVideoDurationDropdown = false;
+	$: if (!videoGenerationEnabled) {
+		showVideoResolutionDropdown = false;
+		showVideoDurationDropdown = false;
+	}
 	const THINKING_MODE_STORAGE_KEY = 'neveai.globalThinkingEnabled';
 	const THINKING_EXTENDED_STORAGE_KEY = 'neveai.thinkingExtendedEnabled';
 	let appliedThinkingModeKey = '';
@@ -694,6 +728,11 @@
 		$config?.features?.enable_music_generation &&
 		($_user.role === 'admin' || $_user?.permissions?.features?.music_generation);
 
+	let showVideoGenerationButton = false;
+	$: showVideoGenerationButton =
+		$config?.features?.enable_video_generation &&
+		($_user.role === 'admin' || $_user?.permissions?.features?.video_generation);
+
 	let showThinkingButton = false;
 	let thinkingModeModelKey = '';
 	$: showThinkingButton = selectedModels.length > 0;
@@ -762,7 +801,7 @@
 		}
 
 		const isImageFile = file?.type?.startsWith('image/') ?? false;
-		if ((!isImageFile || !stableDiffusionEnabled) && fileUploadCapableModels.length !== selectedModels.length) {
+		if ((!isImageFile || (!stableDiffusionEnabled && !videoGenerationEnabled)) && fileUploadCapableModels.length !== selectedModels.length) {
 			toast.error($i18n.t('Model(s) do not support file upload'));
 			return null;
 		}
@@ -905,7 +944,7 @@
 			}
 
 			if (file['type'].startsWith('image/')) {
-				if (visionCapableModels.length === 0 && !stableDiffusionEnabled) {
+				if (visionCapableModels.length === 0 && !stableDiffusionEnabled && !videoGenerationEnabled) {
 					toast.error($i18n.t('Selected model(s) do not support image inputs'));
 					return;
 				}
@@ -1160,6 +1199,10 @@
 	};
 
 	onMount(() => {
+		videoPreferencesMounted = true;
+		videoPreferencesChatId = $chatId;
+		restoreVideoPreferences();
+
 		suggestions = [
 			{
 				char: '@',
@@ -1309,6 +1352,12 @@
 <svelte:window on:click={(e) => {
 	if (showImageQualityDropdown && !(e.target as HTMLElement).closest('#image-quality-dropdown-container')) {
 		showImageQualityDropdown = false;
+	}
+	if (showVideoResolutionDropdown && !(e.target as HTMLElement).closest('#video-resolution-dropdown-container')) {
+		showVideoResolutionDropdown = false;
+	}
+	if (showVideoDurationDropdown && !(e.target as HTMLElement).closest('#video-duration-dropdown-container')) {
+		showVideoDurationDropdown = false;
 	}
 	if (showThinkingDropdown) {
 		const container = document.getElementById('thinking-dropdown-container');
@@ -1509,7 +1558,7 @@
 														alt=""
 														imageClassName="size-8 rounded-lg object-cover"
 													/>
-													{#if !stableDiffusionEnabled && (atSelectedModel ? visionCapableModels.length === 0 : selectedModels.length !== visionCapableModels.length)}
+												{#if !stableDiffusionEnabled && !videoGenerationEnabled && (atSelectedModel ? visionCapableModels.length === 0 : selectedModels.length !== visionCapableModels.length)}
 														<Tooltip
 															className=" absolute top-1 left-1"
 															content={$i18n.t('{{ models }}', {
@@ -1646,6 +1695,7 @@
 								{showFileGenerationButton}
 								{showStableDiffusionButton}
 								{showMusicGenerationButton}
+								{showVideoGenerationButton}
 								bind:selectedToolIds
 								bind:selectedFilterIds
 								bind:webSearchEnabled
@@ -1655,6 +1705,8 @@
 								bind:fileGenerationEnabled
 								bind:stableDiffusionEnabled
 								bind:musicGenerationEnabled
+								bind:videoGenerationEnabled
+								{onNativeIntegrationChange}
 								onShowValves={(e) => {
 									const { type, id } = e;
 									selectedValvesType = type;
@@ -1831,12 +1883,13 @@
 															console.log('Escape');
 															atSelectedModel = undefined;
 															selectedToolIds = [];
-																	selectedFilterIds = [];
+															selectedFilterIds = [];
 
-																	webSearchEnabled = false;
-																	imageGenerationEnabled = false;
-																		stableDiffusionEnabled = false;
-																		musicGenerationEnabled = false;
+															webSearchEnabled = false;
+															imageGenerationEnabled = false;
+															stableDiffusionEnabled = false;
+															musicGenerationEnabled = false;
+															videoGenerationEnabled = false;
 															}
 													}}
 													on:paste={handleChatInputPaste}
@@ -1990,6 +2043,7 @@
 									{showFileGenerationButton}
 									{showStableDiffusionButton}
 									{showMusicGenerationButton}
+									{showVideoGenerationButton}
 									bind:selectedToolIds
 									bind:selectedFilterIds
 									bind:webSearchEnabled
@@ -1999,6 +2053,8 @@
 									bind:fileGenerationEnabled
 									bind:stableDiffusionEnabled
 									bind:musicGenerationEnabled
+									bind:videoGenerationEnabled
+									{onNativeIntegrationChange}
 									onShowValves={(e) => {
 										const { type, id } = e;
 										selectedValvesType = type;
@@ -2212,13 +2268,84 @@
 											</button>
 										{/if}
 
+										{#if videoGenerationEnabled}
+											<button
+												on:click|preventDefault={() => {
+													videoGenerationEnabled = false;
+													onNativeIntegrationChange(null);
+												}}
+												type="button"
+											class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-amber-600 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-700/10"
+											>
+												<div class="relative size-4 shrink-0 flex items-center justify-center">
+													<span class="group-hover:hidden flex items-center justify-center">
+														<Video className="size-4" strokeWidth="1.75" />
+													</span>
+													<span class="hidden group-hover:flex items-center justify-center">
+														<XMark className="size-4" strokeWidth="1.75" />
+													</span>
+												</div>
+											<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Vídeo</span>
+										</button>
+
+										<div class="relative shrink-0" id="video-resolution-dropdown-container">
+											<button
+												type="button"
+												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+												aria-label="Resolução do vídeo"
+												aria-expanded={showVideoResolutionDropdown}
+												on:click|preventDefault={() => {
+													showVideoDurationDropdown = false;
+													showVideoResolutionDropdown = !showVideoResolutionDropdown;
+												}}
+											>
+												<span>{videoGenerationResolution}</span>
+												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showVideoResolutionDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
+											</button>
+											{#if showVideoResolutionDropdown}
+												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
+													{#each ['480p', '544p'] as resolution}
+														<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { videoGenerationResolution = resolution as '480p' | '544p'; localStorage.setItem('neveai.videoResolution', videoGenerationResolution); showVideoResolutionDropdown = false; }}>
+															<span>{resolution}</span>{#if videoGenerationResolution === resolution}<CheckCircle strokeWidth="1.7" />{/if}
+														</button>
+													{/each}
+												</div>
+											{/if}
+										</div>
+
+										<div class="relative shrink-0" id="video-duration-dropdown-container">
+											<button
+												type="button"
+												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+												aria-label="Duração do vídeo"
+												aria-expanded={showVideoDurationDropdown}
+												on:click|preventDefault={() => {
+													showVideoResolutionDropdown = false;
+													showVideoDurationDropdown = !showVideoDurationDropdown;
+												}}
+											>
+												<span>{videoGenerationDuration}</span>
+												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showVideoDurationDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
+											</button>
+											{#if showVideoDurationDropdown}
+												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-28 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
+													{#each ['5s', '8s'] as durationOption}
+														<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { videoGenerationDuration = durationOption as '5s' | '8s'; localStorage.setItem('neveai.videoDuration', videoGenerationDuration); showVideoDurationDropdown = false; }}>
+															<span>{durationOption}</span>{#if videoGenerationDuration === durationOption}<CheckCircle strokeWidth="1.7" />{/if}
+														</button>
+													{/each}
+												</div>
+											{/if}
+										</div>
+									{/if}
+
 									</div>
 								</div>
 								<div class="self-end flex space-x-1 mr-1 shrink-0 gap-[0.5px]">
 									{#if generating || (history?.currentId && history?.messages[history.currentId]?.done !== true) || uploadPending}
 										<Tooltip content={$i18n.t('Stop')}>
 											<button
-												class="bg-white hover:bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-800 transition rounded-full p-1.5"
+												class="grid size-8 shrink-0 place-items-center rounded-full bg-white p-0 text-gray-800 transition hover:bg-gray-100 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-800"
 												type="button"
 												on:click={() => {
 													stopResponse();
@@ -2228,13 +2355,10 @@
 													xmlns="http://www.w3.org/2000/svg"
 													viewBox="0 0 24 24"
 													fill="currentColor"
-													class="size-5"
+													class="block size-5 -translate-x-[0.5px]"
 												>
-													<path
-														fill-rule="evenodd"
-														d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm6-2.438c0-.724.588-1.312 1.313-1.312h4.874c.725 0 1.313.588 1.313 1.313v4.874c0 .725-.588 1.313-1.313 1.313H9.564a1.312 1.312 0 01-1.313-1.313V9.564z"
-														clip-rule="evenodd"
-													/>
+													<circle cx="12" cy="12" r="9.75" />
+													<rect x="8.25" y="8.25" width="7.5" height="7.5" rx="1.15" class="text-white dark:text-gray-700" fill="currentColor" />
 												</svg>
 											</button>
 										</Tooltip>
@@ -2388,16 +2512,16 @@
 											<Tooltip content={uploadPending ? $i18n.t('Waiting for upload...') : $i18n.t('Send message')}>
 												<button
 													id="send-message-button"
-													class="{!sendDisabled && (prompt !== '' || files.length > 0 || uploadPending)
+													class="grid size-8 shrink-0 place-items-center p-0 {!sendDisabled && (prompt !== '' || files.length > 0 || uploadPending)
 														? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 '
-														: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full p-1.5 self-center"
+														: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full self-center"
 													type="submit"
 													disabled={sendDisabled || (prompt === '' && files.length === 0) || uploadPending}
 												>
 													{#if uploadPending}
 														<Spinner className="size-5" />
 													{:else}
-														<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-5">
+														<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="block size-5 -translate-x-px">
 															<path fill-rule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clip-rule="evenodd" />
 														</svg>
 													{/if}

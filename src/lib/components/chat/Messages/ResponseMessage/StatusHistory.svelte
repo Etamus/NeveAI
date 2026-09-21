@@ -35,6 +35,15 @@
 		(item) => item?.hidden !== true && !isQueryingStatus(item)
 	);
 	$: status = visibleHistory.at(-1) ?? null;
+	$: isCompletedVisualStatus =
+		status?.done === true &&
+		['stable_diffusion', 'video_generation', 'music_generation'].includes(
+			String(status?.action ?? '').toLowerCase()
+		);
+
+	$: if (isCompletedVisualStatus) {
+		showHistory = false;
+	}
 
 	$: if (
 		statusHistory.length !== history.length ||
@@ -48,11 +57,12 @@
 	{#if status?.hidden !== true}
 		<div class="flex flex-col w-full">
 			<button
-				class="w-full"
+				class="w-full {isCompletedVisualStatus ? 'cursor-default' : ''}"
 				aria-label={$i18n.t('Toggle status history')}
-				aria-expanded={showHistory}
+				aria-expanded={isCompletedVisualStatus ? false : showHistory}
+				disabled={isCompletedVisualStatus}
 				on:click={() => {
-					showHistory = !showHistory;
+					if (!isCompletedVisualStatus) showHistory = !showHistory;
 				}}
 			>
 				<div class="flex items-start gap-2">
@@ -60,7 +70,7 @@
 				</div>
 			</button>
 
-			{#if showHistory}
+			{#if showHistory && !isCompletedVisualStatus}
 				<div class="flex flex-row">
 					{#if visibleHistory.length > 1}
 						<div class="w-full">

@@ -100,6 +100,7 @@ from neveai.routers import (
     terminals,
     stable_diffusion,
     music_generation,
+    video_generation,
 )
 
 from neveai.routers.retrieval import (
@@ -192,6 +193,7 @@ from neveai.config import (
     # Stable Diffusion Local
     ENABLE_STABLE_DIFFUSION,
     ENABLE_MUSIC_GENERATION,
+    ENABLE_VIDEO_GENERATION,
     STABLE_DIFFUSION_MODEL,
     STABLE_DIFFUSION_HF_TOKEN,
     STABLE_DIFFUSION_WIDTH,
@@ -1323,6 +1325,7 @@ app.state.config.IMAGES_EDIT_COMFYUI_WORKFLOW_NODES = IMAGES_EDIT_COMFYUI_WORKFL
 
 app.state.config.ENABLE_STABLE_DIFFUSION = ENABLE_STABLE_DIFFUSION
 app.state.config.ENABLE_MUSIC_GENERATION = ENABLE_MUSIC_GENERATION
+app.state.config.ENABLE_VIDEO_GENERATION = ENABLE_VIDEO_GENERATION
 app.state.config.STABLE_DIFFUSION_MODEL = STABLE_DIFFUSION_MODEL
 app.state.config.STABLE_DIFFUSION_HF_TOKEN = STABLE_DIFFUSION_HF_TOKEN
 app.state.config.STABLE_DIFFUSION_WIDTH = STABLE_DIFFUSION_WIDTH
@@ -1608,6 +1611,7 @@ app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
 app.include_router(images.router, prefix="/api/v1/images", tags=["images"])
 app.include_router(stable_diffusion.router, prefix="/api/v1/stable-diffusion", tags=["stable-diffusion"])
 app.include_router(music_generation.router, prefix="/api/v1/music-generation", tags=["music-generation"])
+app.include_router(video_generation.router, prefix="/api/v1/video-generation", tags=["video-generation"])
 
 app.include_router(audio.router, prefix="/api/v1/audio", tags=["audio"])
 app.include_router(retrieval.router, prefix="/api/v1/retrieval", tags=["retrieval"])
@@ -2190,6 +2194,7 @@ async def get_app_config(request: Request):
                     "enable_image_generation": app.state.config.ENABLE_IMAGE_GENERATION,
                     "enable_stable_diffusion": app.state.config.ENABLE_STABLE_DIFFUSION,
                     "enable_music_generation": app.state.config.ENABLE_MUSIC_GENERATION,
+                    "enable_video_generation": app.state.config.ENABLE_VIDEO_GENERATION,
                     "enable_autocomplete_generation": app.state.config.ENABLE_AUTOCOMPLETE_GENERATION,
                     "enable_community_sharing": app.state.config.ENABLE_COMMUNITY_SHARING,
                     "enable_message_rating": app.state.config.ENABLE_MESSAGE_RATING,

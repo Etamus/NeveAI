@@ -56,6 +56,8 @@
 	export let stableDiffusionEnabled = false;
 	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
 	export let musicGenerationEnabled = false;
+	export let videoGenerationEnabled = false;
+	export let onNativeIntegrationChange: Function = () => {};
 	export let thinkingEnabled = true;
 	export let thinkingExtendedEnabled = true;
 
@@ -137,6 +139,8 @@
 					bind:stableDiffusionEnabled
 					bind:stableDiffusionQuality
 					bind:musicGenerationEnabled
+					bind:videoGenerationEnabled
+					{onNativeIntegrationChange}
 					bind:thinkingEnabled
 					bind:thinkingExtendedEnabled
 					bind:atSelectedModel

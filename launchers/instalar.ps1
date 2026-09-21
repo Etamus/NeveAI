@@ -1558,7 +1558,7 @@ $ctl.BtnPrimary.Add_Click({
             P 8 'Criando estrutura de pastas'
             foreach ($d in @('logs','logs\webview2','logs\browser-app','models','mmproj',
                              'backend\data','backend\data\uploads','backend\data\vector_db',
-                             'backend\data\cache','backend\data\cache\music_generation','backend\data\tools',
+                             'backend\data\cache','backend\data\cache\music_generation','backend\data\cache\video_generation','backend\data\tools',
                              'backend\neveai\frontend')) {
                 $p = Join-Path $ROOT $d
                 if (-not (Test-Path $p)) { New-Item $p -ItemType Directory -Force | Out-Null }
@@ -1570,6 +1570,7 @@ $ctl.BtnPrimary.Add_Click({
                 'backend\requirements-runtime.txt',
                 'backend\neveai\main.py',
                 'backend\neveai\routers\music_generation.py',
+                'backend\neveai\routers\video_generation.py',
                 'backend\neveai\models\users.py',
                 'backend\neveai\models\models.py',
                 'backend\neveai\utils\auth.py'
@@ -1598,6 +1599,7 @@ ENABLE_OLLAMA_API=False
 ENABLE_OPENAI_API=False
 ENABLE_WEB_SEARCH=False
 ENABLE_IMAGE_GENERATION=False
+ENABLE_VIDEO_GENERATION=True
 ENABLE_WEBSOCKET_SUPPORT=True
 ENABLE_COMMUNITY_SHARING=False
 ENABLE_MESSAGE_RATING=False
@@ -2904,6 +2906,7 @@ function Test-NeveAppIntegrity([string]$root) {
         @{ Path = 'backend\neveai\__init__.py'; Label = 'pacote backend' },
         @{ Path = 'backend\neveai\main.py'; Label = 'backend main.py' },
         @{ Path = 'backend\neveai\routers\music_generation.py'; Label = 'geração musical' },
+        @{ Path = 'backend\neveai\routers\video_generation.py'; Label = 'geração de vídeo' },
         @{ Path = 'backend\neveai\models\users.py'; Label = 'backend\neveai\models\users.py' },
         @{ Path = 'backend\neveai\models\models.py'; Label = 'backend\neveai\models\models.py' },
         @{ Path = 'backend\neveai\models\auths.py'; Label = 'backend\neveai\models\auths.py' },
@@ -4045,6 +4048,7 @@ $ctl.BtnPrimary.Add_Click({
                 @{ Path = 'backend\neveai\__init__.py'; Label = 'pacote backend' },
                 @{ Path = 'backend\neveai\main.py'; Label = 'backend main.py' },
                 @{ Path = 'backend\neveai\routers\music_generation.py'; Label = 'geração musical' },
+                @{ Path = 'backend\neveai\routers\video_generation.py'; Label = 'geração de vídeo' },
                 @{ Path = 'backend\neveai\models\users.py'; Label = 'backend\neveai\models\users.py' },
                 @{ Path = 'backend\neveai\models\models.py'; Label = 'backend\neveai\models\models.py' },
                 @{ Path = 'backend\neveai\models\auths.py'; Label = 'backend\neveai\models\auths.py' },

@@ -786,6 +786,7 @@
 								'deep_search',
 								'code_execution',
 								'stable_diffusion',
+								'video_generation',
 								'music_generation'
 							]}
 								bind:featureIds={defaultFeatureIds}

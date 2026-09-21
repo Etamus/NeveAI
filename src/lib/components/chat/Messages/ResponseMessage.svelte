@@ -61,6 +61,8 @@
 	import StatusHistory from './ResponseMessage/StatusHistory.svelte';
 	import FullHeightIframe from '$lib/components/common/FullHeightIframe.svelte';
 	import GeneratedMusicPlayer from './GeneratedMusicPlayer.svelte';
+	import GeneratedVideoPlayer from './GeneratedVideoPlayer.svelte';
+	import GeneratedMediaProgress from './GeneratedMediaProgress.svelte';
 
 	interface MessageType {
 		id: string;
@@ -80,6 +82,9 @@
 			done: boolean;
 			action: string;
 			description: string;
+			progress?: number;
+			quality?: string;
+			error?: boolean;
 			urls?: string[];
 			query?: string;
 		}[];
@@ -196,7 +201,30 @@
 			(file) => file.type === 'audio' || (file?.content_type ?? '').startsWith('audio/')
 		) && message?.statusHistory?.some((status) => status.action === 'music_generation')
 	);
-	$: isGeneratedMediaResponse = isGeneratedImageResponse || isGeneratedMusicResponse;
+	$: isGeneratedVideoResponse = Boolean(
+		message?.files?.some(
+			(file) => file.type === 'video' || (file?.content_type ?? '').startsWith('video/')
+		) && message?.statusHistory?.some((status) => status.action === 'video_generation')
+	);
+	$: isGeneratedMediaResponse =
+		isGeneratedImageResponse || isGeneratedMusicResponse || isGeneratedVideoResponse;
+	$: latestVisualGenerationStatus = [...(message?.statusHistory ?? [])]
+		.reverse()
+		.find((status) => ['stable_diffusion', 'video_generation'].includes(status?.action));
+	$: visualGenerationFileReady = Boolean(
+		latestVisualGenerationStatus?.action === 'video_generation'
+			? message?.files?.some(
+					(file) => file.type === 'video' || (file?.content_type ?? '').startsWith('video/')
+				)
+			: message?.files?.some(
+					(file) => file.type === 'image' || (file?.content_type ?? '').startsWith('image/')
+				)
+	);
+	$: showVisualGenerationProgress = Boolean(
+		latestVisualGenerationStatus &&
+			!latestVisualGenerationStatus.error &&
+			!visualGenerationFileReady
+	);
 
 	const copyToClipboard = async (text) => {
 		text = removeAllDetails(text);
@@ -653,18 +681,31 @@
 							</div>
 						{/if}
 
-						{#if message?.files && message.files.some((file) => file.type === 'image' || file.type === 'audio' || (file?.content_type ?? '').startsWith('image/') || (file?.content_type ?? '').startsWith('audio/'))}
+						{#if showVisualGenerationProgress}
+							<div class="my-2 w-full">
+								<GeneratedMediaProgress
+									kind={latestVisualGenerationStatus.action === 'video_generation' ? 'video' : 'image'}
+									progress={latestVisualGenerationStatus.progress ??
+										(latestVisualGenerationStatus.done ? 100 : 0)}
+									widescreen={latestVisualGenerationStatus.quality === 'neve_image_2'}
+								/>
+							</div>
+						{/if}
+
+						{#if message?.files && message.files.some((file) => file.type === 'image' || file.type === 'audio' || file.type === 'video' || (file?.content_type ?? '').startsWith('image/') || (file?.content_type ?? '').startsWith('audio/') || (file?.content_type ?? '').startsWith('video/'))}
 							<div
 								class="my-1 w-full flex overflow-x-auto gap-2 flex-wrap"
 								dir={$settings?.chatDirection ?? 'auto'}
 							>
-								{#each message.files.filter((file) => file.type === 'image' || file.type === 'audio' || (file?.content_type ?? '').startsWith('image/') || (file?.content_type ?? '').startsWith('audio/')) as file}
-									<div>
+								{#each message.files.filter((file) => file.type === 'image' || file.type === 'audio' || file.type === 'video' || (file?.content_type ?? '').startsWith('image/') || (file?.content_type ?? '').startsWith('audio/') || (file?.content_type ?? '').startsWith('video/')) as file}
+									<div class={file.type === 'video' || (file?.content_type ?? '').startsWith('video/') ? 'w-full' : ''}>
 										{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
 											<Image
 												src={file.url}
 												alt={message.content}
-												imageClassName={message?.statusHistory?.some((status) => status.action === 'stable_diffusion')
+												imageClassName={message?.statusHistory?.some(
+													(status) => status.action === 'stable_diffusion'
+												)
 													? 'block max-h-[26rem] max-w-full sm:max-w-[26rem] rounded-lg'
 													: 'rounded-lg'}
 											/>
@@ -689,6 +730,12 @@
 													></audio>
 												</div>
 											{/if}
+										{:else if file.type === 'video' || (file?.content_type ?? '').startsWith('video/')}
+											<GeneratedVideoPlayer
+												src={file.url}
+												fileId={file.id ?? null}
+												name={file.name ?? 'video.mp4'}
+											/>
 										{/if}
 									</div>
 								{/each}
@@ -920,7 +967,7 @@
 									</button>
 								</div>
 							{/if}
-							{#if message.done && !readOnly && !isGeneratedMusicResponse}
+							{#if message.done && !readOnly && !isGeneratedMusicResponse && !isGeneratedVideoResponse}
 								<Tooltip content={$i18n.t('Copy')} placement="bottom">
 									<button
 										aria-label={$i18n.t('Copy')}
