@@ -5446,7 +5446,7 @@ async def chat_completion_files_handler(
             cached_queries = getattr(request.state, "cached_queries", None)
             if cached_queries:
                 queries = cached_queries
-            elif deep_search_enabled or regular_files_only:
+            elif deep_search_enabled or regular_files_only or github_repositories_only:
                 queries = [primary_query]
             else:
                 try:

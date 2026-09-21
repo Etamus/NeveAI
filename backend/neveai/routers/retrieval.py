@@ -56,6 +56,7 @@ from neveai.retrieval.github import (
     load_repository_manifest,
     normalize_github_repository_url,
     refresh_repository_manifest,
+    repository_manifest_has_current_schema,
     repository_manifest_is_fresh,
     save_repository_manifest,
 )
@@ -1944,6 +1945,7 @@ async def index_github_repository(request: Request, url: str, user=None) -> dict
         if (
             collection_exists
             and manifest
+            and repository_manifest_has_current_schema(manifest)
             and manifest.get("archive_sha256") == snapshot.archive_sha256
         ):
             refresh_repository_manifest(reference, manifest)

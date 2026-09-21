@@ -28,6 +28,7 @@ MAX_CHUNK_LINES = 120
 MAX_CHUNK_CHARS = 6_000
 CHUNK_OVERLAP_LINES = 15
 CACHE_TTL_SECONDS = 30 * 60
+MANIFEST_SCHEMA_VERSION = 2
 
 IGNORED_DIRECTORIES = {
     ".git",
@@ -260,8 +261,14 @@ def load_repository_manifest(reference: GitHubRepositoryReference) -> dict | Non
     return manifest
 
 
+def repository_manifest_has_current_schema(manifest: dict | None) -> bool:
+    return bool(
+        manifest and manifest.get("schema_version") == MANIFEST_SCHEMA_VERSION
+    )
+
+
 def repository_manifest_is_fresh(manifest: dict | None) -> bool:
-    if not manifest:
+    if not repository_manifest_has_current_schema(manifest):
         return False
     try:
         return time.time() - float(manifest.get("indexed_at", 0)) < CACHE_TTL_SECONDS
@@ -271,6 +278,7 @@ def repository_manifest_is_fresh(manifest: dict | None) -> bool:
 
 def save_repository_manifest(snapshot: GitHubRepositorySnapshot) -> None:
     manifest = {
+        "schema_version": MANIFEST_SCHEMA_VERSION,
         "url": snapshot.reference.url,
         "label": snapshot.reference.label,
         "collection_name": snapshot.reference.collection_name,
