@@ -190,6 +190,7 @@ export const searchFiles = async (
 
 	const res = await fetch(`${NEVEAI_API_BASE_URL}/files/search?${searchParams.toString()}`, {
 		method: 'GET',
+		cache: 'no-store',
 		headers: {
 			Accept: 'application/json',
 			'Content-Type': 'application/json',

@@ -181,7 +181,7 @@
 	let fileGenerationEnabled = getFileGenerationPreference(false);
 	let stableDiffusionEnabled = false;
 	let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
-	let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'analog' = 'none';
+	let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'arcane' = 'none';
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
 	let videoGenerationResolution: '480p' | '544p' = '480p';
@@ -1887,7 +1887,7 @@
 			? 'neve_image_2'
 			: 'neve_image';
 		const savedImageStyle = localStorage.getItem('neveai.imageStyle');
-		stableDiffusionStyle = ['realistic', 'minimalist', 'fantasy', 'surreal', 'conceptual', 'comics', 'analog'].includes(
+		stableDiffusionStyle = ['realistic', 'minimalist', 'fantasy', 'surreal', 'conceptual', 'comics', 'arcane'].includes(
 			savedImageStyle ?? ''
 		)
 			? (savedImageStyle as typeof stableDiffusionStyle)

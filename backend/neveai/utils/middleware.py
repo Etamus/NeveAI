@@ -2311,7 +2311,7 @@ async def chat_stable_diffusion_handler(
 
     async def emit_image_progress(progress: int) -> None:
         nonlocal last_progress
-        last_progress = min(100, max(0, int(progress)))
+        last_progress = max(last_progress, min(100, max(0, int(progress))))
         await __event_emitter__(
             {
                 "type": "status",
@@ -2376,6 +2376,38 @@ async def chat_stable_diffusion_handler(
                 dimensions_callback=emit_image_dimensions,
             )
 
+            header, encoded_image = data_uri.split(",", 1)
+            content_type = header[5:].split(";", 1)[0] or "image/png"
+            image_data = base64.b64decode(encoded_image)
+            extension = {
+                "image/png": "png",
+                "image/jpeg": "jpg",
+                "image/webp": "webp",
+            }.get(content_type, "png")
+            filename = f"imagem-neve-{uuid4().hex[:8]}.{extension}"
+            upload = UploadFile(
+                file=io.BytesIO(image_data),
+                filename=filename,
+                headers={"content-type": content_type},
+            )
+            file_item = upload_file_handler(
+                request,
+                file=upload,
+                metadata={
+                    "source": "z-image-turbo",
+                    "prompt": image_prompt,
+                    "quality": quality,
+                    "style": style,
+                    "width": progress_width,
+                    "height": progress_height,
+                },
+                process=False,
+                user=user,
+            )
+            image_url = str(
+                request.app.url_path_for("get_file_content_by_id", id=file_item.id)
+            )
+
             await __event_emitter__(
                 {
                     "type": "status",
@@ -2398,8 +2430,12 @@ async def chat_stable_diffusion_handler(
                     "data": {
                         "files": [
                             {
+                                "id": file_item.id,
                                 "type": "image",
-                                "url": data_uri,
+                                "url": image_url,
+                                "name": filename,
+                                "content_type": content_type,
+                                "size": len(image_data),
                             }
                         ]
                     },
@@ -2663,6 +2699,8 @@ async def chat_video_generation_handler(
         normalized_progress = (
             min(100, max(0, int(progress))) if progress is not None else None
         )
+        if normalized_progress is not None:
+            normalized_progress = max(last_progress, normalized_progress)
         if (
             not description
             or (

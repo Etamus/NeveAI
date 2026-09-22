@@ -55,7 +55,7 @@
 	export let deepSearchEnabled = false;
 	export let stableDiffusionEnabled = false;
 	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
-	export let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'analog' = 'none';
+	export let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'arcane' = 'none';
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
 	export let onNativeIntegrationChange: Function = () => {};

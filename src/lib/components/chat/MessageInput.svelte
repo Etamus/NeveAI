@@ -146,7 +146,7 @@
 	export let fileGenerationEnabled = false;
 	export let stableDiffusionEnabled = false;
 	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
-	export let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'analog' = 'none';
+	export let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'arcane' = 'none';
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
 	export let videoGenerationResolution: '480p' | '544p' = '480p';
@@ -2270,7 +2270,7 @@
 													showImageStyleDropdown = !showImageStyleDropdown;
 												}}
 											>
-												<span>{({ none: 'Sem estilo', realistic: 'Realista', minimalist: 'Minimalista', fantasy: 'Fantasia', surreal: 'Surreal', conceptual: 'Conceitual', comics: 'Quadrinhos', analog: 'Analógico' } as Record<string, string>)[stableDiffusionStyle]}</span>
+												<span>{({ none: 'Sem estilo', realistic: 'Realista', minimalist: 'Minimalista', fantasy: 'Fantasia', surreal: 'Surreal', conceptual: 'Conceitual', comics: 'Quadrinhos', arcane: 'Arcano' } as Record<string, string>)[stableDiffusionStyle]}</span>
 												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageStyleDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
 											</button>
 											{#if showImageStyleDropdown}
@@ -2283,8 +2283,8 @@
 														{ id: 'surreal', label: 'Surreal' },
 														{ id: 'conceptual', label: 'Conceitual' },
 														{ id: 'comics', label: 'Quadrinhos' },
-														{ id: 'analog', label: 'Analógico' }
-											] as style}
+																{ id: 'arcane', label: 'Arcano' }
+															] as style}
 												{#if style.id === 'realistic'}
 													<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[90%]" />
 												{/if}
@@ -2323,7 +2323,7 @@
 													onNativeIntegrationChange(null);
 												}}
 												type="button"
-											class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-amber-600 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-700/10"
+											class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/10"
 											>
 												<div class="relative size-4 shrink-0 flex items-center justify-center">
 													<span class="group-hover:hidden flex items-center justify-center">

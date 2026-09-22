@@ -39,6 +39,7 @@
 
 	let isPDF = false;
 	let isAudio = false;
+	let isVideo = false;
 	let isImage = false;
 	let isExcel = false;
 	let isDocx = false;
@@ -119,13 +120,29 @@
 			item.name.toLowerCase().endsWith('.php') ||
 			item.name.toLowerCase().endsWith('.rb'));
 
+	$: mediaContentType = (
+		item?.meta?.content_type ??
+		item?.content_type ??
+		item?.file?.meta?.content_type ??
+		''
+	).toLowerCase();
+	$: mediaFileName = (item?.name ?? item?.filename ?? item?.file?.filename ?? '').toLowerCase();
+
+	$: isVideo =
+		mediaContentType.startsWith('video/') ||
+		['.mp4', '.mov', '.mkv', '.avi', '.m4v', '.webm'].some((extension) =>
+			mediaFileName.endsWith(extension)
+		);
+
 	$: isAudio =
-		(item?.meta?.content_type ?? '').startsWith('audio/') ||
+		mediaContentType.startsWith('audio/') ||
 		(item?.name && item?.name.toLowerCase().endsWith('.mp3')) ||
 		(item?.name && item?.name.toLowerCase().endsWith('.wav')) ||
 		(item?.name && item?.name.toLowerCase().endsWith('.ogg')) ||
 		(item?.name && item?.name.toLowerCase().endsWith('.m4a')) ||
-		(item?.name && item?.name.toLowerCase().endsWith('.webm'));
+		(item?.name && item?.name.toLowerCase().endsWith('.flac')) ||
+		(item?.name && item?.name.toLowerCase().endsWith('.aac')) ||
+		(item?.name && item?.name.toLowerCase().endsWith('.opus'));
 
 	$: isImage =
 		(item?.meta?.content_type ?? '').startsWith('image/') ||
@@ -247,7 +264,7 @@
 	};
 
 	const loadContent = async () => {
-		selectedTab = item?.generated ? 'preview' : '';
+		selectedTab = item?.generated || isAudio || isVideo ? 'preview' : '';
 		expandedContent = false;
 		if (item?.type === 'collection') {
 			loading = true;
@@ -437,7 +454,7 @@ $: if (show) {
 
 		<div class="flex-1 min-h-0 flex flex-col overflow-hidden">
 			{#if !loading}
-				{#if !item?.generated && (isAudio || isPDF || isExcel || isCode || isMarkdown || isDocx || isPptx)}
+				{#if !item?.generated && !isAudio && !isVideo && (isPDF || isExcel || isCode || isMarkdown || isDocx || isPptx)}
 					<div
 						class="shrink-0 flex mb-2.5 scrollbar-none overflow-x-auto w-full border-b border-gray-50 dark:border-gray-850/30 text-center text-sm font-medium bg-transparent dark:text-gray-200"
 					>
@@ -464,7 +481,7 @@ $: if (show) {
 				{/if}
 
 				<div
-					class="flex-1 min-h-0 {selectedTab === 'preview' && isPDF
+					class="flex-1 min-h-0 {(selectedTab === 'preview' && isPDF) || isVideo
 						? 'overflow-hidden'
 						: 'overflow-auto'}"
 				>
@@ -502,6 +519,26 @@ $: if (show) {
 									draggable="false"
 								/>
 							</div>
+						</div>
+					{:else if isAudio}
+						<div class="flex h-full w-full items-center justify-center px-1">
+							<audio
+								src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
+								class="w-full border-0 rounded-lg"
+								controls
+								playsinline
+								preload="metadata"
+							/>
+						</div>
+					{:else if isVideo}
+						<div class="flex h-full w-full items-center justify-center overflow-hidden">
+							<video
+								src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
+								class="block max-h-full max-w-full rounded-lg object-contain"
+								controls
+								playsinline
+								preload="metadata"
+							></video>
 						</div>
 					{:else if selectedTab === ''}
 						{#if item?.file?.data}
@@ -566,14 +603,7 @@ $: if (show) {
 							{/if}
 						{/if}
 					{:else if selectedTab === 'preview'}
-						{#if isAudio}
-							<audio
-								src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
-								class="w-full border-0 rounded-lg mb-2"
-								controls
-								playsinline
-							/>
-						{:else if isPDF}
+						{#if isPDF}
 							<PDFViewer
 								url={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
 								className="w-full h-full border-0 rounded-lg"

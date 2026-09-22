@@ -523,7 +523,7 @@ for repo_id, filename, local_dir in items:
         for directory in (COMFYUI_INPUT, COMFYUI_OUTPUT, COMFYUI_TEMP, VIDEO_HF_CACHE):
             directory.mkdir(parents=True, exist_ok=True)
 
-        await progress("Iniciando a criação de video...")
+        await progress("Iniciando a criação de video...", 3)
         await self._apply_safe_power_limit()
         env = os.environ.copy()
         env.update(
@@ -567,8 +567,9 @@ for repo_id, filename, local_dir in items:
         self._log_task = asyncio.create_task(self._capture_output(process))
         self._thermal_guard_task = asyncio.create_task(self._thermal_guard())
         base_url = f"http://127.0.0.1:{self._port}"
+        startup_progress = 3
         async with httpx.AsyncClient(timeout=2.0) as client:
-            for _ in range(600):
+            for attempt in range(600):
                 if self._cancel_requested:
                     raise asyncio.CancelledError
                 if process.returncode is not None:
@@ -582,9 +583,13 @@ for repo_id, filename, local_dir in items:
                 try:
                     response = await client.get(f"{base_url}/system_stats")
                     if response.is_success:
+                        await progress("Iniciando a criação de video...", 14)
                         return base_url
                 except httpx.HTTPError:
                     pass
+                if attempt and attempt % 4 == 0 and startup_progress < 13:
+                    startup_progress += 1
+                    await progress("Iniciando a criação de video...", startup_progress)
                 await asyncio.sleep(0.5)
         raise RuntimeError("O gerador de video nao respondeu dentro do tempo esperado.")
 
@@ -737,7 +742,7 @@ for repo_id, filename, local_dir in items:
                 await progress("Preparando a imagem de referencia...")
                 input_image = await self._upload_image(client, image)
 
-            await progress("Gerando o conditioning...", 0)
+            await progress("Gerando o conditioning...", 15)
             workflow = self._build_workflow(
                 prompt,
                 random.randint(0, 2**63 - 1),
@@ -774,9 +779,29 @@ for repo_id, filename, local_dir in items:
                     raise RuntimeError("O ComfyUI nao retornou um identificador de tarefa.")
 
                 started = asyncio.get_running_loop().time()
-                best_progress = 0
+                best_progress = 18
+                current_node = ""
+                last_progress_at = asyncio.get_running_loop().time()
                 next_history_check = 0.0
                 await progress("Criando o vídeo...", best_progress)
+                node_progress_bounds = {
+                    "1": (18, 20),
+                    "2": (20, 22),
+                    "3": (22, 24),
+                    "4": (24, 29),
+                    "5": (29, 31),
+                    "6": (31, 34),
+                    "7": (34, 36),
+                    "8": (36, 38),
+                    "9": (38, 39),
+                    "10": (39, 40),
+                    "11": (40, 42),
+                    "12": (42, 89),
+                    "13": (89, 91),
+                    "14": (91, 97),
+                    "15": (97, 98),
+                    "16": (98, 99),
+                }
                 while asyncio.get_running_loop().time() - started < GENERATION_TIMEOUT_SECONDS:
                     if self._cancel_requested:
                         raise asyncio.CancelledError
@@ -796,15 +821,38 @@ for repo_id, filename, local_dir in items:
                                 event = json.loads(message.data)
                                 event_data = event.get("data") or {}
                                 event_prompt_id = str(event_data.get("prompt_id") or "")
-                                if event.get("type") == "progress" and (
+                                event_type = str(event.get("type") or "")
+                                if event_type == "executing" and (
+                                    not event_prompt_id or event_prompt_id == self._prompt_id
+                                ):
+                                    current_node = str(event_data.get("node") or "")
+                                    bounds = node_progress_bounds.get(current_node)
+                                    if bounds and bounds[0] > best_progress:
+                                        best_progress = bounds[0]
+                                        last_progress_at = asyncio.get_running_loop().time()
+                                        await progress("Criando o vídeo...", best_progress)
+                                if event_type == "progress" and (
                                     not event_prompt_id or event_prompt_id == self._prompt_id
                                 ):
                                     value = int(event_data.get("value") or 0)
                                     maximum = int(event_data.get("max") or 0)
+                                    progress_node = str(event_data.get("node") or current_node)
+                                    bounds = node_progress_bounds.get(progress_node, (best_progress, 98))
                                     if maximum > 0:
-                                        measured = min(95, max(1, round((value / maximum) * 95)))
+                                        measured = min(
+                                            bounds[1],
+                                            max(
+                                                bounds[0],
+                                                bounds[0]
+                                                + round(
+                                                    (value / maximum)
+                                                    * (bounds[1] - bounds[0])
+                                                ),
+                                            ),
+                                        )
                                         if measured > best_progress:
                                             best_progress = measured
+                                            last_progress_at = asyncio.get_running_loop().time()
                                             await progress(
                                                 "Criando o vídeo...",
                                                 best_progress,
@@ -818,6 +866,14 @@ for repo_id, filename, local_dir in items:
                         await asyncio.sleep(0.25)
 
                     now = asyncio.get_running_loop().time()
+                    if now - last_progress_at >= 1.0 and best_progress < 99:
+                        phase_ceiling = node_progress_bounds.get(
+                            current_node, (best_progress, 41)
+                        )[1]
+                        if best_progress < phase_ceiling:
+                            best_progress += 1
+                            last_progress_at = now
+                            await progress("Criando o vídeo...", best_progress)
                     if now < next_history_check:
                         continue
                     next_history_check = now + 2

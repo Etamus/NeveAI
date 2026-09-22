@@ -157,28 +157,34 @@ ZIMAGE_STYLE_SPECS = {
         prompt_prefix="DBRZ",
     ),
     "conceptual": _ZImageStyle(
-        download_urls=("https://civitai.com/api/download/models/2921054",),
+        download_urls=(
+            "https://huggingface.co/ThirdTimesTheCiarc/stylish/resolve/main/832858/2921054/Anime_art_v7_E10.safetensors?download=true",
+            "https://civitai.com/api/download/models/2921054",
+        ),
         filename="neve-conceptual.safetensors",
         sha256="561f707182a2881da2f656d0ce64399386ce0438fbe8c1c4d350f04a1af17f61",
         weight=0.7,
         prompt_prefix="Bradhamel art style",
     ),
     "comics": _ZImageStyle(
-        download_urls=("https://civitai.com/api/download/models/2961085",),
+        download_urls=(
+            "https://huggingface.co/ThirdTimesTheCiarc/stylish/resolve/main/1764315/2961085/Comic%20Book%20V4T3_E10.safetensors?download=true",
+            "https://civitai.com/api/download/models/2961085",
+        ),
         filename="neve-comics.safetensors",
         sha256="33eef7470d18b25c578c235f27d118252e265e578f38b1e1f888222e89097182",
         weight=0.75,
         prompt_prefix="Bradhamel art style, comic book illustration",
     ),
-    "analog": _ZImageStyle(
+    "arcane": _ZImageStyle(
         download_urls=(
-            "https://huggingface.co/atMrMattV/Visione/resolve/main/models/styles/HI8.safetensors?download=true",
-            "https://civitai.com/api/download/models/2456725",
+            "https://huggingface.co/UnifiedHorusRA/Theslicedbread2/resolve/main/Arcane_Style_LORA_Z-Image/ZImageTurbo/ArcanstyleZ2.safetensors?download=true",
+            "https://civitai.com/api/download/models/3259905?fileId=3143187",
         ),
-        filename="neve-analog.safetensors",
-        sha256="51f37cfe4466ed57ed04e1690dd6b3c409f1dc76c31d3dff7148ff002f5cb00a",
-        weight=0.9,
-        prompt_prefix="2000s analog amateur photography",
+        filename="neve-arcane.safetensors",
+        sha256="fa743e979716bddd0cee41fea2ab46e9398bc7a98810bfd6695cdb75f5008e03",
+        weight=1.0,
+        prompt_prefix="Arcane style, painterly stylized 3D animation",
     ),
 }
 
@@ -632,10 +638,22 @@ _SINGULAR_SUBJECT_RE = re.compile(
     r"animal|criatura)\b",
     flags=re.IGNORECASE,
 )
-_LANDSCAPE_PROMPT_RE = re.compile(
+_EXPLICIT_LANDSCAPE_PROMPT_RE = re.compile(
     r"\b(?:landscape|panorama|panoramic|wide shot|wide-angle|widescreen|cityscape|"
     r"battlefield|battle|war|war scene|paisagem|panorama|panoramica|plano aberto|"
     r"grande angular|cidade|guerra|batalha|campo de batalha|cena de guerra)\b",
+    flags=re.IGNORECASE,
+)
+_SCENE_LANDSCAPE_PROMPT_RE = re.compile(
+    r"\b(?:street|road|avenue|highway|bridge|railway|airport|harbor|room|interior|"
+    r"exterior|building|house|castle|village|forest|mountain|valley|beach|ocean|"
+    r"river|lake|field|desert|park|stadium|car|vehicle|truck|bus|motorcycle|"
+    r"bicycle|train|airplane|aircraft|boat|ship|spaceship|driving|flying|sailing|"
+    r"rua|estrada|avenida|rodovia|ponte|ferrovia|aeroporto|porto|sala|interior|"
+    r"exterior|pr[eé]dio|casa|castelo|vila|floresta|montanha|vale|praia|oceano|"
+    r"rio|lago|campo|deserto|parque|est[aá]dio|carro|ve[ií]culo|caminh[aã]o|"
+    r"[oô]nibus|moto|bicicleta|trem|avi[aã]o|aeronave|barco|navio|nave|"
+    r"dirigindo|voando|navegando)\b",
     flags=re.IGNORECASE,
 )
 _PORTRAIT_PROMPT_RE = re.compile(
@@ -655,9 +673,13 @@ def _protect_single_subject_composition(prompt: str, source_prompt: str) -> str:
 
 
 def _quality_image_dimensions(prompt: str) -> tuple[int, int]:
-    if _LANDSCAPE_PROMPT_RE.search(prompt):
+    if _EXPLICIT_LANDSCAPE_PROMPT_RE.search(prompt):
         return QUALITY_IMAGE_WIDTH, QUALITY_IMAGE_HEIGHT
-    if _PORTRAIT_PROMPT_RE.search(prompt) or _SINGULAR_SUBJECT_RE.search(prompt):
+    if _PORTRAIT_PROMPT_RE.search(prompt):
+        return QUALITY_IMAGE_PORTRAIT_WIDTH, QUALITY_IMAGE_PORTRAIT_HEIGHT
+    if _SCENE_LANDSCAPE_PROMPT_RE.search(prompt):
+        return QUALITY_IMAGE_WIDTH, QUALITY_IMAGE_HEIGHT
+    if _SINGULAR_SUBJECT_RE.search(prompt):
         return QUALITY_IMAGE_PORTRAIT_WIDTH, QUALITY_IMAGE_PORTRAIT_HEIGHT
     return QUALITY_IMAGE_SQUARE, QUALITY_IMAGE_SQUARE
 
@@ -1024,12 +1046,33 @@ class _ZImageTurboPipeline:
             quality = "neve_image_2" if quality == "neve_image_2" else "neve_image"
             style = normalize_image_style(style) if quality == "neve_image_2" else "none"
             use_mageflow = bool(kwargs.get("init_image_reference")) and style == "none"
-            await self.load(
-                model_id,
-                hf_token=hf_token,
-                quality=quality,
-                edit=use_mageflow,
+            load_task = asyncio.create_task(
+                self.load(
+                    model_id,
+                    hf_token=hf_token,
+                    quality=quality,
+                    edit=use_mageflow,
+                )
             )
+            try:
+                loading_progress = 1
+                if progress_callback is not None:
+                    await progress_callback(loading_progress)
+                while not load_task.done():
+                    done, _ = await asyncio.wait({load_task}, timeout=1.0)
+                    if done:
+                        break
+                    loading_progress = min(20, loading_progress + 1)
+                    if progress_callback is not None:
+                        await progress_callback(loading_progress)
+                await load_task
+            except BaseException:
+                if not load_task.done():
+                    load_task.cancel()
+                    await asyncio.gather(load_task, return_exceptions=True)
+                raise
+            if progress_callback is not None:
+                await progress_callback(max(21, loading_progress))
             return await self.generate(
                 hf_token=hf_token,
                 style=style,
@@ -1055,20 +1098,28 @@ class _ZImageTurboPipeline:
         if not self.is_loaded or self._resources is None:
             raise RuntimeError("Z-Image image runtime nao carregado")
 
+        if progress_callback is not None:
+            await progress_callback(22)
         prompt = await _prepare_image_prompt(prompt, hf_token)
         if not prompt:
             raise RuntimeError("Prompt vazio para geracao de imagem")
+        if progress_callback is not None:
+            await progress_callback(26)
 
         style = normalize_image_style(style)
         style_spec = ZIMAGE_STYLE_SPECS.get(style)
         style_lora = None
         if style_spec is not None:
+            if progress_callback is not None:
+                await progress_callback(27)
             style_lora = await asyncio.get_event_loop().run_in_executor(
                 None, _ensure_style_lora, style, hf_token
             )
             if style_spec.prompt_prefix:
                 prompt = f"{style_spec.prompt_prefix}, {prompt}"
             prompt = f"{prompt} <lora:{style_lora.stem}:{style_spec.weight:g}>"
+        if progress_callback is not None:
+            await progress_callback(30)
 
         init_image = await _prepare_init_image(init_image_reference, user_id=user_id)
 
@@ -1087,6 +1138,8 @@ class _ZImageTurboPipeline:
                 )
         if dimensions_callback is not None:
             await dimensions_callback(width, height)
+        if progress_callback is not None:
+            await progress_callback(33)
         steps = 4 if self._edit_mode else _clamp_int(steps, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS, 1, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS)
         cfg = _cfg_scale(guidance_scale)
         seed = random.randint(0, 2**31 - 1)
@@ -1153,7 +1206,7 @@ class _ZImageTurboPipeline:
 
                 stdout_chunks: list[bytes] = []
                 stderr_chunks: list[bytes] = []
-                last_progress = -1
+                last_progress = 33
 
                 async def read_stream(
                     stream: Optional[asyncio.StreamReader], chunks: list[bytes]
@@ -1173,7 +1226,10 @@ class _ZImageTurboPipeline:
                             total = int(match.group(2))
                             if total != steps or current < 0 or current > total:
                                 continue
-                            percent = min(95, max(1, round((current / total) * 95)))
+                            percent = min(
+                                91,
+                                max(34, 34 + round((current / total) * 57)),
+                            )
                             if percent <= last_progress:
                                 continue
                             last_progress = percent
@@ -1184,10 +1240,25 @@ class _ZImageTurboPipeline:
                                     log.debug("Image progress callback failed: %s", exc)
 
                 async def communicate_with_progress() -> None:
+                    async def pulse_progress() -> None:
+                        nonlocal last_progress
+                        while process.returncode is None:
+                            await asyncio.sleep(1.0)
+                            if process.returncode is not None:
+                                break
+                            if last_progress < 98:
+                                last_progress += 1
+                                if progress_callback is not None:
+                                    try:
+                                        await progress_callback(last_progress)
+                                    except Exception as exc:
+                                        log.debug("Image progress pulse failed: %s", exc)
+
                     await asyncio.gather(
                         read_stream(process.stdout, stdout_chunks),
                         read_stream(process.stderr, stderr_chunks),
                         process.wait(),
+                        pulse_progress(),
                     )
 
                 try:
@@ -1216,6 +1287,8 @@ class _ZImageTurboPipeline:
         if not output_path.exists() or output_path.stat().st_size <= 0:
             raise RuntimeError(f"stable-diffusion.cpp terminou sem gerar a imagem: {output_text[-4000:]}")
 
+        if progress_callback is not None:
+            await progress_callback(99)
         raw = output_path.read_bytes()
         b64 = base64.b64encode(raw).decode("utf-8")
         return f"data:image/png;base64,{b64}"
