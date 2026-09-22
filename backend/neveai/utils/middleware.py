@@ -2290,9 +2290,28 @@ async def chat_stable_diffusion_handler(
         metadata.get("parent_message"),
     )
     quality = "neve_image_2" if (extra_params.get("__features__") or {}).get("stable_diffusion_quality") == "neve_image_2" else "neve_image"
+    from neveai.routers.stable_diffusion import (
+        _quality_image_dimensions,
+        normalize_image_style,
+    )
+
+    style = normalize_image_style(
+        (extra_params.get("__features__") or {}).get("stable_diffusion_style")
+    )
     generation_description = "Editando imagem..." if init_image_reference else "Criando imagem..."
+    progress_width = int(request.app.state.config.STABLE_DIFFUSION_WIDTH)
+    progress_height = int(request.app.state.config.STABLE_DIFFUSION_HEIGHT)
+    if quality == "neve_image_2":
+        progress_width, progress_height = (
+            (960, 960)
+            if init_image_reference
+            else _quality_image_dimensions(image_prompt)
+        )
+    last_progress = 0
 
     async def emit_image_progress(progress: int) -> None:
+        nonlocal last_progress
+        last_progress = min(100, max(0, int(progress)))
         await __event_emitter__(
             {
                 "type": "status",
@@ -2300,11 +2319,20 @@ async def chat_stable_diffusion_handler(
                     "action": "stable_diffusion",
                     "description": generation_description,
                     "quality": quality,
-                    "progress": min(100, max(0, int(progress))),
+                    "style": style,
+                    "width": progress_width,
+                    "height": progress_height,
+                    "progress": last_progress,
                     "done": False,
                 },
             }
         )
+
+    async def emit_image_dimensions(width: int, height: int) -> None:
+        nonlocal progress_width, progress_height
+        progress_width = int(width)
+        progress_height = int(height)
+        await emit_image_progress(last_progress)
 
     await emit_image_progress(0)
 
@@ -2336,6 +2364,7 @@ async def chat_stable_diffusion_handler(
                 model_id=model_id,
                 hf_token=hf_token,
                 quality=quality,
+                style=style,
                 prompt=image_prompt,
                 width=width,
                 height=height,
@@ -2344,6 +2373,7 @@ async def chat_stable_diffusion_handler(
                 init_image_reference=init_image_reference,
                 user_id=getattr(user, "id", None),
                 progress_callback=emit_image_progress,
+                dimensions_callback=emit_image_dimensions,
             )
 
             await __event_emitter__(
@@ -2353,6 +2383,9 @@ async def chat_stable_diffusion_handler(
                         "action": "stable_diffusion",
                         "description": "Imagem editada" if init_image_reference else "Imagem criada",
                         "quality": quality,
+                        "style": style,
+                        "width": progress_width,
+                        "height": progress_height,
                         "progress": 100,
                         "done": True,
                     },
@@ -2406,6 +2439,7 @@ async def chat_stable_diffusion_handler(
                     "action": "stable_diffusion",
                     "description": f"Failed to generate image: {str(e)}",
                     "quality": quality,
+                    "style": style,
                     "done": True,
                     "error": True,
                 },
@@ -2615,7 +2649,10 @@ async def chat_video_generation_handler(
         "544p" if video_features.get("video_generation_resolution") == "544p" else "480p"
     )
     duration = "8s" if video_features.get("video_generation_duration") == "8s" else "5s"
-    width, height = (960, 544) if resolution == "544p" else (848, 480)
+    # MiniMax H3 reference images are encoded into 2x2 latent patches, so both
+    # canvas axes must be divisible by 32. 864x480 is the closest compatible
+    # 16:9-style canvas for the 480p option.
+    width, height = (960, 544) if resolution == "544p" else (864, 480)
     frames = 196 if duration == "8s" else 124
     last_status = ""
     last_progress = -1
@@ -6372,6 +6409,15 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     features = form_data.pop("features", None) or {}
     submitted_features = metadata.get("features", {}) or {}
+    if submitted_features.get("stable_diffusion"):
+        # Keep the explicit image model/style choice if an inlet rebuilt the payload.
+        features["stable_diffusion"] = True
+        features["stable_diffusion_quality"] = submitted_features.get(
+            "stable_diffusion_quality", "neve_image"
+        )
+        features["stable_diffusion_style"] = submitted_features.get(
+            "stable_diffusion_style", "none"
+        )
     if submitted_features.get("video_generation"):
         # Preserve the user's explicit video choice even if an inlet/filter
         # rebuilt the payload. Video owns the request and is mutually exclusive.

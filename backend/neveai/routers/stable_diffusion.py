@@ -12,18 +12,21 @@ Modelo   : leejet/Z-Image-Turbo-GGUF / z_image_turbo-Q4_0.gguf
 import asyncio
 import base64
 import fnmatch
+import hashlib
 import io
 import json
 import logging
 import os
 import random
 import re
+import shutil
+import subprocess
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
@@ -39,6 +42,7 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 ImageProgressCallback = Callable[[int], Awaitable[None]]
+ImageDimensionsCallback = Callable[[int, int], Awaitable[None]]
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 SD_CPP_DIR = BACKEND_DIR / "bin" / "stable-diffusion-cpp"
@@ -46,6 +50,8 @@ SD_CLI_PATH = SD_CPP_DIR / ("sd-cli.exe" if os.name == "nt" else "sd-cli")
 SD_CPP_RELEASE_API = "https://api.github.com/repos/leejet/stable-diffusion.cpp/releases/latest"
 SD_CPP_WIN_CUDA_ASSET = "sd-*-bin-win-cuda12-x64.zip"
 SD_CPP_WIN_CUDART_ASSET = "cudart-sd-bin-win-cu12-x64.zip"
+SD_CPP_WIN_VULKAN_ASSET = "sd-*-bin-win-vulkan-x64.zip"
+SD_CPP_WIN_CPU_ASSET = "sd-*-bin-win-cpu-x64.zip"
 SD_CLI_TIMEOUT_SECONDS = 60 * 60
 
 IMAGE_OUTPUT_DIR = CACHE_DIR / "image" / "generations"
@@ -58,16 +64,22 @@ GGUF_CACHE_DIR = SD_CACHE_DIR / "gguf"
 QWEN3_CACHE_DIR = SD_CACHE_DIR / "qwen3"
 VAE_CACHE_DIR = SD_CACHE_DIR / "vae"
 MAGEFLOW_CACHE_DIR = SD_CACHE_DIR / "mageflow"
+LORA_CACHE_DIR = SD_CACHE_DIR / "loras"
+PROMPT_TRANSLATOR_CACHE_DIR = SD_CACHE_DIR / "prompt_translator"
 GGUF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 QWEN3_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 VAE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 MAGEFLOW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+LORA_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+PROMPT_TRANSLATOR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 ZIMAGE_REPO = "leejet/Z-Image-Turbo-GGUF"
 ZIMAGE_GGUF_FILE = "z_image_turbo-Q4_0.gguf"
 ZIMAGE_QUALITY_GGUF_FILE = "z_image_turbo-Q8_0.gguf"
 QWEN3_LLM_REPO = "unsloth/Qwen3-4B-Instruct-2507-GGUF"
 QWEN3_LLM_FILE = "Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+PROMPT_TRANSLATOR_REPO = "mradermacher/Huihui-Qwen3-4B-Instruct-2507-abliterated-GGUF"
+PROMPT_TRANSLATOR_FILE = "Huihui-Qwen3-4B-Instruct-2507-abliterated.Q4_K_M.gguf"
 ZIMAGE_VAE_REPO = "Comfy-Org/z_image_turbo"
 ZIMAGE_VAE_FILE = "split_files/vae/ae.safetensors"
 MAGEFLOW_REPO = "gguf-org/mageflow-gguf"
@@ -83,15 +95,112 @@ MAX_IMAGE_STEPS = 8
 QUALITY_IMAGE_WIDTH = 1280
 QUALITY_IMAGE_HEIGHT = 720
 QUALITY_IMAGE_STEPS = 8
+QUALITY_IMAGE_SQUARE = 960
+QUALITY_IMAGE_PORTRAIT_WIDTH = 768
+QUALITY_IMAGE_PORTRAIT_HEIGHT = 1024
+QUALITY_IMAGE_MAX_DIM = 1280
+QUALITY_IMAGE_PIXEL_BUDGET = QUALITY_IMAGE_WIDTH * QUALITY_IMAGE_HEIGHT
 DEFAULT_CFG_SCALE = 1.0
 DEFAULT_IMG2IMG_STRENGTH = 0.55
 MAX_INIT_IMAGE_BYTES = 30 * 1024 * 1024
-IMAGE_PROMPT_TRANSLATION_TIMEOUT_SECONDS = 20.0
-IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS = 1600
-IMAGE_PROMPT_TRANSLATION_MIN_CHUNK_CHARS = 280
-IMAGE_PROMPT_TRANSLATION_MAX_SPLIT_DEPTH = 2
-IMAGE_PROMPT_TRANSLATION_MAX_CONSECUTIVE_FAILURES = 6
-IMAGE_PROMPT_TRANSLATION_MIN_LENGTH_RATIO = 0.65
+IMAGE_PROMPT_TRANSLATION_TIMEOUT_SECONDS = 60.0
+
+
+@dataclass(frozen=True)
+class _ZImageStyle:
+    download_urls: tuple[str, ...]
+    filename: str
+    sha256: str
+    weight: float
+    prompt_prefix: str = ""
+
+
+ZIMAGE_STYLE_SPECS = {
+    "realistic": _ZImageStyle(
+        download_urls=(
+            "https://huggingface.co/Kutches/ImageZ/resolve/main/aestheticphotoz4.safetensors?download=true",
+            "https://civitai.com/api/download/models/2512057",
+        ),
+        filename="neve-realistic.safetensors",
+        sha256="3e9b33455a0437d64e61a94baf1cb8e3e9e28f2026b3af4786a96514e9e1bcf2",
+        weight=0.7,
+        prompt_prefix="aesthetic amateur photo",
+    ),
+    "minimalist": _ZImageStyle(
+        download_urls=(
+            "https://huggingface.co/atMrMattV/Visione/resolve/main/models/styles/MinimalistVectorArtZ.safetensors?download=true",
+            "https://civitai.com/api/download/models/2594513",
+        ),
+        filename="neve-minimalist.safetensors",
+        sha256="14e6caed34e1a718c13f54617494db5e47fc5606815915f60e882d2518d6c221",
+        weight=1.0,
+        prompt_prefix="Minimalist Vector Art, ArsMJStyle",
+    ),
+    "fantasy": _ZImageStyle(
+        download_urls=(
+            "https://huggingface.co/alexrzem/zit-loras/resolve/main/turbo/Art_Style_-_Dark_Fantasy_Armor_-_ZImageTurbo_-_Razane.safetensors?download=true",
+            "https://civitai.com/api/download/models/2579449",
+        ),
+        filename="neve-fantasy.safetensors",
+        sha256="f848c7866f1438a82cd72397c19dca429a9808542886e4b6e6c72adb116a5212",
+        weight=1.0,
+        prompt_prefix="raz'sdarkfantasystyle-zit-mk.1",
+    ),
+    "surreal": _ZImageStyle(
+        download_urls=(
+            "https://huggingface.co/alexrzem/zit-loras/resolve/main/turbo/Artist_-_Daubrez_Painterly_Style_-_ZImageTurbo_-_blairesilver13.safetensors?download=true",
+            "https://civitai.com/api/download/models/2477908",
+        ),
+        filename="neve-surreal.safetensors",
+        sha256="a3827f602c19b8f6310a4cd4d6c3095a9c7b18e416099c47e0827694a7cd3e48",
+        weight=1.0,
+        prompt_prefix="DBRZ",
+    ),
+    "conceptual": _ZImageStyle(
+        download_urls=("https://civitai.com/api/download/models/2921054",),
+        filename="neve-conceptual.safetensors",
+        sha256="561f707182a2881da2f656d0ce64399386ce0438fbe8c1c4d350f04a1af17f61",
+        weight=0.7,
+        prompt_prefix="Bradhamel art style",
+    ),
+    "comics": _ZImageStyle(
+        download_urls=("https://civitai.com/api/download/models/2961085",),
+        filename="neve-comics.safetensors",
+        sha256="33eef7470d18b25c578c235f27d118252e265e578f38b1e1f888222e89097182",
+        weight=0.75,
+        prompt_prefix="Bradhamel art style, comic book illustration",
+    ),
+    "analog": _ZImageStyle(
+        download_urls=(
+            "https://huggingface.co/atMrMattV/Visione/resolve/main/models/styles/HI8.safetensors?download=true",
+            "https://civitai.com/api/download/models/2456725",
+        ),
+        filename="neve-analog.safetensors",
+        sha256="51f37cfe4466ed57ed04e1690dd6b3c409f1dc76c31d3dff7148ff002f5cb00a",
+        weight=0.9,
+        prompt_prefix="2000s analog amateur photography",
+    ),
+}
+
+
+def _cleanup_obsolete_style_loras() -> None:
+    current_files = {spec.filename for spec in ZIMAGE_STYLE_SPECS.values()}
+    for candidate in LORA_CACHE_DIR.iterdir():
+        try:
+            if candidate.is_dir():
+                shutil.rmtree(candidate)
+            elif candidate.name not in current_files:
+                candidate.unlink(missing_ok=True)
+        except Exception as exc:
+            log.warning("Nao foi possivel limpar LoRA antigo %s: %s", candidate, exc)
+
+
+_cleanup_obsolete_style_loras()
+
+
+def normalize_image_style(value: Optional[str]) -> str:
+    value = str(value or "none").strip().lower()
+    return value if value in ZIMAGE_STYLE_SPECS else "none"
 
 _PORTUGUESE_MARKERS = {
     "quero", "gere", "gerar", "crie", "criar", "desenhe", "faça", "faca",
@@ -101,6 +210,8 @@ _PORTUGUESE_MARKERS = {
     "cidade", "praia", "floresta", "montanha", "ceu", "céu", "noite", "dia",
     "rua", "câmera", "camera", "granulada", "granulado", "iluminacao", "iluminação",
     "vermelho", "azul", "verde", "amarelo", "preto", "branco", "luz",
+    "um", "uma", "dois", "duas", "tres", "quatro", "personagem", "personagens",
+    "guerra", "batalha", "paisagem", "cenario", "mulheres", "homens",
 }
 _ENGLISH_MARKERS = {
     "a", "the", "with", "and", "without", "photo", "photograph", "portrait",
@@ -247,9 +358,8 @@ def _fit_init_image_dimensions(init_image: _InitImage, max_width: int, max_heigh
 
 
 def _looks_portuguese(text: str) -> bool:
-    if _PORTUGUESE_ACCENT_RE.search(text):
-        return True
-    words = {word.lower() for word in _WORD_RE.findall(text)}
+    folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    words = {word.lower() for word in re.findall(r"[A-Za-z]+", folded)}
     return sum(1 for word in words if word in _PORTUGUESE_MARKERS) >= 2
 
 
@@ -268,55 +378,6 @@ def _normalize_image_prompt_text(prompt: str) -> str:
 def _short_log_prompt(prompt: str, limit: int = 500) -> str:
     prompt = _normalize_image_prompt_text(prompt)
     return prompt if len(prompt) <= limit else f"{prompt[:limit]}..."
-
-
-def _split_prompt_for_translation(
-    prompt: str,
-    max_chars: int = IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS,
-) -> list[str]:
-    prompt = _normalize_image_prompt_text(prompt)
-    max_chars = max(1, int(max_chars))
-    if len(prompt) <= max_chars:
-        return [prompt]
-
-    chunks: list[str] = []
-    current: list[str] = []
-    current_len = 0
-
-    for sentence in _SENTENCE_SPLIT_RE.split(prompt):
-        sentence = sentence.strip()
-        if not sentence:
-            continue
-
-        if len(sentence) > max_chars:
-            if current:
-                chunks.append(" ".join(current).strip())
-                current = []
-                current_len = 0
-
-            remaining = sentence
-            while len(remaining) > max_chars:
-                split_at = remaining.rfind(" ", max_chars // 2, max_chars + 1)
-                if split_at <= 0:
-                    split_at = max_chars
-                chunks.append(remaining[:split_at].strip())
-                remaining = remaining[split_at:].strip()
-            if remaining:
-                chunks.append(remaining)
-            continue
-
-        next_len = current_len + len(sentence) + (1 if current else 0)
-        if current and next_len > max_chars:
-            chunks.append(" ".join(current).strip())
-            current = [sentence]
-            current_len = len(sentence)
-        else:
-            current.append(sentence)
-            current_len = next_len
-
-    if current:
-        chunks.append(" ".join(current).strip())
-    return [chunk for chunk in chunks if chunk]
 
 
 def _contains_source_term(source_prompt: str, pattern: str) -> bool:
@@ -464,108 +525,160 @@ def _polish_translated_image_prompt(prompt: str, source_prompt: str = "") -> str
     return prompt
 
 
-@lru_cache(maxsize=512)
-def _translate_image_prompt_sync(prompt: str) -> str:
-    prompt = _normalize_image_prompt_text(prompt)
-    if not prompt:
-        return prompt
+def _image_prompt_llama_cli() -> Optional[Path]:
+    names = ("llama-cli.exe", "llama-cli") if os.name == "nt" else ("llama-cli",)
+    roots = (
+        BACKEND_DIR.parent / "llamacpp-server" / "bin",
+        BACKEND_DIR / "bin" / "llama.cpp",
+        BACKEND_DIR / "bin",
+    )
+    for root in roots:
+        for name in names:
+            candidate = root / name
+            if candidate.is_file():
+                return candidate
+    return None
 
+
+def _translate_image_prompt_locally_sync(prompt: str, llm_path: Path) -> str:
+    llama_cli = _image_prompt_llama_cli()
+    if llama_cli is None or not llm_path.is_file():
+        return prompt
+    llama_cli = llama_cli.resolve()
+    llm_path = llm_path.resolve()
+
+    # llama-cli on Windows may use the active console code page for argv. Removing
+    # accents keeps Portuguese semantics intact without replacing letters by '?'.
+    ascii_prompt = unicodedata.normalize("NFKD", prompt).encode("ascii", "ignore").decode("ascii")
+    marker = "NEVE_IMAGE_PROMPT_END_7F3A"
+    instruction = (
+        "Translate the user request into English for an image generator. Preserve exactly "
+        "the requested content. Do not invent a setting, clothing, colors, pose, objects, "
+        "mood, or story. Return only the final prompt without quotes or explanation. "
+        f"User request: {ascii_prompt} {marker}"
+    )
+    command = [
+        str(llama_cli),
+        "-m",
+        str(llm_path),
+        "-p",
+        instruction,
+        "-n",
+        "256",
+        "--temp",
+        "0",
+        "--top-k",
+        "1",
+        "--no-display-prompt",
+        "--no-show-timings",
+        "--no-warmup",
+        "--simple-io",
+        "--reasoning-format",
+        "none",
+        "-st",
+    ]
     try:
-        from deep_translator import GoogleTranslator
-    except Exception as e:
+        completed = subprocess.run(
+            command,
+            cwd=str(llama_cli.parent),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=45,
+            check=False,
+        )
+    except Exception as exc:
+        log.warning("Traducao local do prompt de imagem falhou: %s", exc)
+        return prompt
+
+    if completed.returncode != 0 or marker not in completed.stdout:
         log.warning(
-            "deep-translator nao carregou; usando o prompt de imagem original: %s",
-            e,
+            "Traducao local do prompt de imagem nao retornou uma resposta valida (codigo %s)",
+            completed.returncode,
         )
         return prompt
 
-    source_language = "pt" if _looks_portuguese(prompt) else "auto"
-    consecutive_failures = 0
-    translation_disabled = False
-
-    def translate_chunk(chunk: str, depth: int = 0) -> tuple[str, bool]:
-        nonlocal consecutive_failures, translation_disabled
-
-        if _looks_english(chunk):
-            return chunk, True
-        if translation_disabled:
-            return chunk, False
-
-        source_attempts = [source_language]
-        if (
-            source_language != "auto"
-            and (
-                depth >= IMAGE_PROMPT_TRANSLATION_MAX_SPLIT_DEPTH
-                or len(chunk) <= IMAGE_PROMPT_TRANSLATION_MIN_CHUNK_CHARS * 2
-            )
-        ):
-            source_attempts.append("auto")
-
-        for source in source_attempts:
-            try:
-                translated = GoogleTranslator(source=source, target="en").translate(
-                    chunk
-                )
-                translated = _normalize_image_prompt_text(str(translated or ""))
-                preserves_content = (
-                    len(chunk) < 120
-                    or len(translated)
-                    >= len(chunk) * IMAGE_PROMPT_TRANSLATION_MIN_LENGTH_RATIO
-                )
-                if (
-                    translated
-                    and preserves_content
-                    and (translated != chunk or not _looks_portuguese(chunk))
-                ):
-                    consecutive_failures = 0
-                    return translated, True
-            except Exception:
-                pass
-
-            consecutive_failures += 1
-            if consecutive_failures >= IMAGE_PROMPT_TRANSLATION_MAX_CONSECUTIVE_FAILURES:
-                translation_disabled = True
-                break
-
-        if (
-            depth < IMAGE_PROMPT_TRANSLATION_MAX_SPLIT_DEPTH
-            and len(chunk) > IMAGE_PROMPT_TRANSLATION_MIN_CHUNK_CHARS * 2
-        ):
-            next_max_chars = max(
-                IMAGE_PROMPT_TRANSLATION_MIN_CHUNK_CHARS,
-                min(IMAGE_PROMPT_TRANSLATION_CHUNK_CHARS // 2, len(chunk) // 2),
-            )
-            subchunks = _split_prompt_for_translation(chunk, next_max_chars)
-            if len(subchunks) > 1:
-                translated_parts: list[str] = []
-                translated_all = True
-                for subchunk in subchunks:
-                    translated_part, translated_ok = translate_chunk(subchunk, depth + 1)
-                    translated_parts.append(translated_part)
-                    translated_all = translated_all and translated_ok
-                return " ".join(translated_parts), translated_all
-
-        return chunk, False
-
-    translated_chunks: list[str] = []
-    translated_all = True
-    for chunk in _split_prompt_for_translation(prompt):
-        translated, translated_ok = translate_chunk(chunk)
-        translated_chunks.append(translated)
-        translated_all = translated_all and translated_ok
-
-    if not translated_all:
-        log.warning(
-            "A traducao integral do prompt de imagem nao estava disponivel; "
-            "usando o prompt original completo"
-        )
+    response = completed.stdout.split(marker, 1)[-1].replace(marker, "")
+    response = re.split(r"\n\s*Exiting\.\.\.\s*$", response, maxsplit=1)[0]
+    translated = _normalize_image_prompt_text(response)
+    if not translated or len(translated) < 4 or translated.lower().startswith(("i cannot", "sorry")):
         return prompt
+    return _polish_translated_image_prompt(translated, prompt)
 
-    return _polish_translated_image_prompt(" ".join(translated_chunks), prompt) or prompt
+
+def _ensure_prompt_translator_sync(hf_token: Optional[str] = None) -> Path:
+    from huggingface_hub import hf_hub_download
+
+    return Path(
+        hf_hub_download(
+            repo_id=PROMPT_TRANSLATOR_REPO,
+            filename=PROMPT_TRANSLATOR_FILE,
+            cache_dir=str(PROMPT_TRANSLATOR_CACHE_DIR),
+            token=hf_token or None,
+        )
+    ).resolve()
 
 
-async def _prepare_image_prompt(prompt: str) -> str:
-    prompt = _normalize_image_prompt_text(prompt)
+_PLURAL_SUBJECT_RE = re.compile(
+    r"\b(?:two|three|four|multiple|several|group|crowd|couple|duo|people|characters|"
+    r"men|women|girls|boys|dois|duas|tres|quatro|multipl\w*|varios|varias|grupo|"
+    r"multidao|casal|dupla|pessoas|personagens|homens|mulheres|meninas|meninos)\b",
+    flags=re.IGNORECASE,
+)
+_SINGULAR_SUBJECT_RE = re.compile(
+    r"\b(?:person|character|woman|man|girl|boy|child|baby|cat|dog|animal|creature|"
+    r"personagem|pessoa|mulher|homem|menina|menino|crianca|bebe|gato|cachorro|"
+    r"animal|criatura)\b",
+    flags=re.IGNORECASE,
+)
+_LANDSCAPE_PROMPT_RE = re.compile(
+    r"\b(?:landscape|panorama|panoramic|wide shot|wide-angle|widescreen|cityscape|"
+    r"battlefield|battle|war|war scene|paisagem|panorama|panoramica|plano aberto|"
+    r"grande angular|cidade|guerra|batalha|campo de batalha|cena de guerra)\b",
+    flags=re.IGNORECASE,
+)
+_PORTRAIT_PROMPT_RE = re.compile(
+    r"\b(?:portrait|headshot|close-up|upper body|full body|vertical|retrato|rosto|"
+    r"primeiro plano|meio corpo|corpo inteiro|vertical)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _protect_single_subject_composition(prompt: str, source_prompt: str) -> str:
+    combined = f"{source_prompt} {prompt}"
+    if _PLURAL_SUBJECT_RE.search(combined) or not _SINGULAR_SUBJECT_RE.search(combined):
+        return prompt
+    if re.search(r"\b(?:one single|single subject|solo)\b", prompt, flags=re.IGNORECASE):
+        return prompt
+    return f"one single subject, solo composition, no duplicates, {prompt}"
+
+
+def _quality_image_dimensions(prompt: str) -> tuple[int, int]:
+    if _LANDSCAPE_PROMPT_RE.search(prompt):
+        return QUALITY_IMAGE_WIDTH, QUALITY_IMAGE_HEIGHT
+    if _PORTRAIT_PROMPT_RE.search(prompt) or _SINGULAR_SUBJECT_RE.search(prompt):
+        return QUALITY_IMAGE_PORTRAIT_WIDTH, QUALITY_IMAGE_PORTRAIT_HEIGHT
+    return QUALITY_IMAGE_SQUARE, QUALITY_IMAGE_SQUARE
+
+
+def _fit_quality_init_image_dimensions(init_image: _InitImage) -> tuple[int, int]:
+    if init_image.width <= 0 or init_image.height <= 0:
+        return QUALITY_IMAGE_SQUARE, QUALITY_IMAGE_SQUARE
+
+    scale = min(
+        QUALITY_IMAGE_MAX_DIM / init_image.width,
+        QUALITY_IMAGE_MAX_DIM / init_image.height,
+        (QUALITY_IMAGE_PIXEL_BUDGET / (init_image.width * init_image.height)) ** 0.5,
+    )
+    width = max(256, min(QUALITY_IMAGE_MAX_DIM, int(init_image.width * scale) // 16 * 16))
+    height = max(256, min(QUALITY_IMAGE_MAX_DIM, int(init_image.height * scale) // 16 * 16))
+    return width, height
+
+
+async def _prepare_image_prompt(prompt: str, hf_token: Optional[str] = None) -> str:
+    source_prompt = _normalize_image_prompt_text(prompt)
+    prompt = source_prompt
     if not prompt:
         return prompt
 
@@ -574,12 +687,17 @@ async def _prepare_image_prompt(prompt: str) -> str:
             "Prompt de imagem ja esta em ingles; usando sem traducao: %s",
             _short_log_prompt(prompt),
         )
-        return prompt
+        return _protect_single_subject_composition(prompt, source_prompt)
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
+        translator_path = await loop.run_in_executor(
+            None, _ensure_prompt_translator_sync, hf_token
+        )
         translated = await asyncio.wait_for(
-            loop.run_in_executor(None, _translate_image_prompt_sync, prompt),
+            loop.run_in_executor(
+                None, _translate_image_prompt_locally_sync, prompt, translator_path
+            ),
             timeout=IMAGE_PROMPT_TRANSLATION_TIMEOUT_SECONDS,
         )
     except asyncio.TimeoutError:
@@ -587,19 +705,19 @@ async def _prepare_image_prompt(prompt: str) -> str:
             "Traducao do prompt de imagem excedeu %.0fs; usando o prompt original",
             IMAGE_PROMPT_TRANSLATION_TIMEOUT_SECONDS,
         )
-        return prompt
+        translated = prompt
     except Exception as e:
         log.warning("Traducao do prompt de imagem falhou; usando o original: %s", e)
-        return prompt
+        translated = prompt
 
     translated = _normalize_image_prompt_text(translated)
     if not translated:
         log.warning("Traducao do prompt de imagem retornou vazia; usando o original")
-        return prompt
+        translated = prompt
 
     if translated != prompt:
         log.info(
-            "Prompt de imagem traduzido para ingles antes da geracao: %s",
+            "Prompt de imagem traduzido localmente para ingles: %s",
             _short_log_prompt(translated),
         )
     elif _looks_english(prompt):
@@ -608,7 +726,7 @@ async def _prepare_image_prompt(prompt: str) -> str:
         log.warning(
             "Prompt de imagem mantido no idioma original porque a traducao nao estava disponivel"
         )
-    return translated
+    return _protect_single_subject_composition(translated, source_prompt)
 
 
 @dataclass(frozen=True)
@@ -620,9 +738,69 @@ class _ZImageResources:
     llm_vision: Optional[Path] = None
 
 
-def _download_file(url: str, destination: Path):
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(4 * 1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _ensure_style_lora(style: str, hf_token: Optional[str] = None) -> Optional[Path]:
+    style = normalize_image_style(style)
+    spec = ZIMAGE_STYLE_SPECS.get(style)
+    if spec is None:
+        return None
+
+    destination = LORA_CACHE_DIR / spec.filename
+    if destination.is_file() and _file_sha256(destination) == spec.sha256:
+        return destination
+
+    temporary = destination.with_suffix(f"{destination.suffix}.download")
+    failures: list[str] = []
+    try:
+        for source_url in spec.download_urls:
+            temporary.unlink(missing_ok=True)
+            try:
+                headers: dict[str, str] = {}
+                if "civitai.com/" in source_url:
+                    civitai_token = str(
+                        os.environ.get("NEVEAI_CIVITAI_TOKEN")
+                        or os.environ.get("CIVITAI_API_TOKEN")
+                        or ""
+                    ).strip()
+                    if civitai_token:
+                        separator = "&" if "?" in source_url else "?"
+                        source_url = (
+                            f"{source_url}{separator}token="
+                            f"{urllib.parse.quote(civitai_token, safe='')}"
+                        )
+                    else:
+                        headers["Accept"] = "application/octet-stream"
+
+                _download_file(source_url, temporary, headers=headers)
+                if _file_sha256(temporary) != spec.sha256:
+                    raise RuntimeError("hash SHA-256 inesperado")
+                os.replace(temporary, destination)
+                return destination
+            except Exception as exc:
+                failures.append(f"{urllib.parse.urlsplit(source_url).netloc}: {exc}")
+
+        raise RuntimeError(
+            f"Nao foi possivel baixar o estilo {style} com integridade verificada. "
+            + " | ".join(failures)
+        )
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _download_file(
+    url: str, destination: Path, headers: Optional[dict[str, str]] = None
+):
     destination.parent.mkdir(parents=True, exist_ok=True)
-    request = urllib.request.Request(url, headers={"User-Agent": "NeveAI/1.0"})
+    request_headers = {"User-Agent": "NeveAI/1.0"}
+    request_headers.update(headers or {})
+    request = urllib.request.Request(url, headers=request_headers)
     with urllib.request.urlopen(request, timeout=600) as response, open(destination, "wb") as output:
         while True:
             chunk = response.read(1024 * 1024)
@@ -651,32 +829,93 @@ def _download_and_extract_sd_cpp_asset(asset: dict):
                 archive_path.unlink()
 
 
-def _ensure_sd_cli_binary() -> Path:
-    if SD_CLI_PATH.exists():
-        return SD_CLI_PATH
+def _preferred_sd_cpp_windows_backend() -> str:
+    if shutil.which("nvidia-smi"):
+        return "cuda12"
+    try:
+        command = [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Get-CimInstance Win32_VideoController | ForEach-Object Name",
+        ]
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
+        )
+        gpu_names = result.stdout.lower()
+        if any(name in gpu_names for name in ("amd", "radeon")):
+            return "vulkan"
+    except Exception as exc:
+        log.debug("Nao foi possivel detectar a GPU para o sd-cli: %s", exc)
+    return "cpu"
 
+
+def _ensure_sd_cli_binary() -> Path:
     if os.name != "nt":
+        if SD_CLI_PATH.exists():
+            return SD_CLI_PATH
         raise RuntimeError(
             "sd-cli nao foi encontrado. Instale stable-diffusion.cpp e coloque o binario em "
             f"{SD_CLI_PATH}."
         )
 
+    backend = _preferred_sd_cpp_windows_backend()
+    version_file = SD_CPP_DIR / "version.txt"
+    installed_backend = ""
+    if version_file.is_file():
+        try:
+            installed_backend = next(
+                (line.strip().lower() for line in reversed(version_file.read_text(encoding="utf-8-sig").splitlines()) if line.strip()),
+                "",
+            )
+        except Exception:
+            installed_backend = ""
+
+    if SD_CLI_PATH.exists() and (
+        installed_backend == backend
+        or (backend == "cuda12" and not installed_backend)
+    ):
+        return SD_CLI_PATH
+
+    if SD_CPP_DIR.exists():
+        shutil.rmtree(SD_CPP_DIR)
     SD_CPP_DIR.mkdir(parents=True, exist_ok=True)
-    log.info("sd-cli nao encontrado; baixando stable-diffusion.cpp CUDA 12 para Windows...")
+    log.info("Preparando stable-diffusion.cpp %s para Windows...", backend)
     request = urllib.request.Request(SD_CPP_RELEASE_API, headers={"User-Agent": "NeveAI/1.0"})
     with urllib.request.urlopen(request, timeout=60) as response:
         release = json.loads(response.read().decode("utf-8"))
 
     assets = release.get("assets") or []
-    sd_asset = next((asset for asset in assets if fnmatch.fnmatch(asset.get("name", ""), SD_CPP_WIN_CUDA_ASSET)), None)
-    cudart_asset = next((asset for asset in assets if asset.get("name") == SD_CPP_WIN_CUDART_ASSET), None)
-    if not sd_asset or not cudart_asset:
-        raise RuntimeError("Release do stable-diffusion.cpp nao contem binarios Windows CUDA 12 esperados")
+    asset_pattern = {
+        "cuda12": SD_CPP_WIN_CUDA_ASSET,
+        "vulkan": SD_CPP_WIN_VULKAN_ASSET,
+        "cpu": SD_CPP_WIN_CPU_ASSET,
+    }[backend]
+    sd_asset = next(
+        (asset for asset in assets if fnmatch.fnmatch(asset.get("name", ""), asset_pattern)),
+        None,
+    )
+    cudart_asset = next(
+        (asset for asset in assets if asset.get("name") == SD_CPP_WIN_CUDART_ASSET),
+        None,
+    )
+    if not sd_asset or (backend == "cuda12" and not cudart_asset):
+        raise RuntimeError(f"Release do stable-diffusion.cpp nao contem o binario Windows {backend} esperado")
 
     _download_and_extract_sd_cpp_asset(sd_asset)
-    _download_and_extract_sd_cpp_asset(cudart_asset)
+    if backend == "cuda12" and cudart_asset is not None:
+        _download_and_extract_sd_cpp_asset(cudart_asset)
     if not SD_CLI_PATH.exists():
         raise RuntimeError(f"sd-cli nao foi extraido corretamente em {SD_CLI_PATH}")
+    version_file.write_text(
+        f"{str(release.get('tag_name') or 'latest')}\n{backend}\n", encoding="utf-8"
+    )
     return SD_CLI_PATH
 
 
@@ -776,12 +1015,28 @@ class _ZImageTurboPipeline:
         model_id: str,
         hf_token: Optional[str],
         quality: str,
+        style: str = "none",
         progress_callback: Optional[ImageProgressCallback] = None,
+        dimensions_callback: Optional[ImageDimensionsCallback] = None,
         **kwargs,
     ) -> str:
         async with self._request_lock:
-            await self.load(model_id, hf_token=hf_token, quality=quality, edit=bool(kwargs.get("init_image_reference")))
-            return await self.generate(progress_callback=progress_callback, **kwargs)
+            quality = "neve_image_2" if quality == "neve_image_2" else "neve_image"
+            style = normalize_image_style(style) if quality == "neve_image_2" else "none"
+            use_mageflow = bool(kwargs.get("init_image_reference")) and style == "none"
+            await self.load(
+                model_id,
+                hf_token=hf_token,
+                quality=quality,
+                edit=use_mageflow,
+            )
+            return await self.generate(
+                hf_token=hf_token,
+                style=style,
+                progress_callback=progress_callback,
+                dimensions_callback=dimensions_callback,
+                **kwargs,
+            )
 
     async def generate(
         self,
@@ -792,26 +1047,46 @@ class _ZImageTurboPipeline:
         guidance_scale: float = DEFAULT_CFG_SCALE,
         init_image_reference: Optional[str] = None,
         user_id: Optional[str] = None,
+        hf_token: Optional[str] = None,
+        style: str = "none",
         progress_callback: Optional[ImageProgressCallback] = None,
+        dimensions_callback: Optional[ImageDimensionsCallback] = None,
     ) -> str:
         if not self.is_loaded or self._resources is None:
             raise RuntimeError("Z-Image image runtime nao carregado")
 
-        prompt = await _prepare_image_prompt(prompt)
+        prompt = await _prepare_image_prompt(prompt, hf_token)
         if not prompt:
             raise RuntimeError("Prompt vazio para geracao de imagem")
+
+        style = normalize_image_style(style)
+        style_spec = ZIMAGE_STYLE_SPECS.get(style)
+        style_lora = None
+        if style_spec is not None:
+            style_lora = await asyncio.get_event_loop().run_in_executor(
+                None, _ensure_style_lora, style, hf_token
+            )
+            if style_spec.prompt_prefix:
+                prompt = f"{style_spec.prompt_prefix}, {prompt}"
+            prompt = f"{prompt} <lora:{style_lora.stem}:{style_spec.weight:g}>"
 
         init_image = await _prepare_init_image(init_image_reference, user_id=user_id)
 
         quality_mode = self._quality == "neve_image_2"
-        max_width = QUALITY_IMAGE_WIDTH if quality_mode else MAX_IMAGE_WIDTH
-        max_height = QUALITY_IMAGE_HEIGHT if quality_mode else MAX_IMAGE_HEIGHT
-        width = _align_image_dim(width, max_width, max_width)
-        height = _align_image_dim(height, max_height, max_height)
-        if init_image is not None:
-            width, height = _fit_init_image_dimensions(
-                init_image, width, height, max(max_width, max_height)
-            )
+        if quality_mode:
+            if init_image is not None:
+                width, height = _fit_quality_init_image_dimensions(init_image)
+            else:
+                width, height = _quality_image_dimensions(prompt)
+        else:
+            width = _align_image_dim(width, MAX_IMAGE_WIDTH, MAX_IMAGE_WIDTH)
+            height = _align_image_dim(height, MAX_IMAGE_HEIGHT, MAX_IMAGE_HEIGHT)
+            if init_image is not None:
+                width, height = _fit_init_image_dimensions(
+                    init_image, width, height, MAX_IMAGE_WIDTH
+                )
+        if dimensions_callback is not None:
+            await dimensions_callback(width, height)
         steps = 4 if self._edit_mode else _clamp_int(steps, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS, 1, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS)
         cfg = _cfg_scale(guidance_scale)
         seed = random.randint(0, 2**31 - 1)
@@ -842,6 +1117,11 @@ class _ZImageTurboPipeline:
             "--cfg-scale",
             f"{cfg:g}",
             "--diffusion-fa",
+            *(
+                ["--lora-model-dir", str(LORA_CACHE_DIR)]
+                if style_lora is not None
+                else []
+            ),
             *([] if quality_mode else ["--offload-to-cpu"]),
             *(["--vae-conv-direct"] if quality_mode and not self._edit_mode else []),
             *(["--llm_vision", str(self._resources.llm_vision), "--sampling-method", "euler"] if self._edit_mode else []),
@@ -952,6 +1232,7 @@ class GenerateForm(BaseModel):
     guidance_scale: Optional[float] = None
     init_image: Optional[str] = None
     quality: str = "neve_image"
+    style: str = "none"
 
 
 class ConfigForm(BaseModel):
@@ -1052,6 +1333,7 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
             model_id=model_id,
             hf_token=hf_token,
             quality=form_data.quality,
+            style=form_data.style,
             prompt=form_data.prompt,
             width=width,
             height=height,

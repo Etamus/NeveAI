@@ -687,7 +687,10 @@
 									kind={latestVisualGenerationStatus.action === 'video_generation' ? 'video' : 'image'}
 									progress={latestVisualGenerationStatus.progress ??
 										(latestVisualGenerationStatus.done ? 100 : 0)}
-									widescreen={latestVisualGenerationStatus.quality === 'neve_image_2'}
+									width={latestVisualGenerationStatus.width ??
+										(latestVisualGenerationStatus.quality === 'neve_image_2' ? 16 : 1)}
+									height={latestVisualGenerationStatus.height ??
+										(latestVisualGenerationStatus.quality === 'neve_image_2' ? 9 : 1)}
 								/>
 							</div>
 						{/if}

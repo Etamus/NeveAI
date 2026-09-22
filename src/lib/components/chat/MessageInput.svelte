@@ -146,6 +146,7 @@
 	export let fileGenerationEnabled = false;
 	export let stableDiffusionEnabled = false;
 	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
+	export let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'analog' = 'none';
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
 	export let videoGenerationResolution: '480p' | '544p' = '480p';
@@ -256,6 +257,7 @@
 		fileGenerationEnabled,
 		stableDiffusionEnabled,
 		stableDiffusionQuality,
+		stableDiffusionStyle,
 		musicGenerationEnabled,
 		videoGenerationEnabled,
 		videoGenerationResolution,
@@ -588,11 +590,16 @@
 	let loaded = false;
 	let showThinkingDropdown = false;
 	let showImageQualityDropdown = false;
+	let showImageStyleDropdown = false;
 	let showVideoResolutionDropdown = false;
 	let showVideoDurationDropdown = false;
 	$: if (!videoGenerationEnabled) {
 		showVideoResolutionDropdown = false;
 		showVideoDurationDropdown = false;
+	}
+	$: if (!stableDiffusionEnabled) {
+		showImageQualityDropdown = false;
+		showImageStyleDropdown = false;
 	}
 	const THINKING_MODE_STORAGE_KEY = 'neveai.globalThinkingEnabled';
 	const THINKING_EXTENDED_STORAGE_KEY = 'neveai.thinkingExtendedEnabled';
@@ -1352,6 +1359,9 @@
 <svelte:window on:click={(e) => {
 	if (showImageQualityDropdown && !(e.target as HTMLElement).closest('#image-quality-dropdown-container')) {
 		showImageQualityDropdown = false;
+	}
+	if (showImageStyleDropdown && !(e.target as HTMLElement).closest('#image-style-dropdown-container')) {
+		showImageStyleDropdown = false;
 	}
 	if (showVideoResolutionDropdown && !(e.target as HTMLElement).closest('#video-resolution-dropdown-container')) {
 		showVideoResolutionDropdown = false;
@@ -2234,7 +2244,7 @@
 												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Imagem</span>
 											</button>
 										<div class="relative shrink-0" id="image-quality-dropdown-container">
-											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label="Qualidade da imagem" aria-expanded={showImageQualityDropdown} on:click|preventDefault={() => (showImageQualityDropdown = !showImageQualityDropdown)}>
+											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label="Qualidade da imagem" aria-expanded={showImageQualityDropdown} on:click|preventDefault={() => { showImageStyleDropdown = false; showImageQualityDropdown = !showImageQualityDropdown; }}>
 												<span>{stableDiffusionQuality === 'neve_image_2' ? 'Neve Image 2' : 'Neve Image'}</span>
 												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageQualityDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
 											</button>
@@ -2248,6 +2258,44 @@
 												</div>
 											{/if}
 										</div>
+										{#if stableDiffusionQuality === 'neve_image_2'}
+										<div class="relative shrink-0" id="image-style-dropdown-container">
+											<button
+												type="button"
+												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+												aria-label="Estilo da imagem"
+												aria-expanded={showImageStyleDropdown}
+												on:click|preventDefault={() => {
+													showImageQualityDropdown = false;
+													showImageStyleDropdown = !showImageStyleDropdown;
+												}}
+											>
+												<span>{({ none: 'Sem estilo', realistic: 'Realista', minimalist: 'Minimalista', fantasy: 'Fantasia', surreal: 'Surreal', conceptual: 'Conceitual', comics: 'Quadrinhos', analog: 'Analógico' } as Record<string, string>)[stableDiffusionStyle]}</span>
+												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageStyleDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
+											</button>
+											{#if showImageStyleDropdown}
+												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-40 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
+													{#each [
+														{ id: 'none', label: 'Sem estilo' },
+														{ id: 'realistic', label: 'Realista' },
+														{ id: 'minimalist', label: 'Minimalista' },
+														{ id: 'fantasy', label: 'Fantasia' },
+														{ id: 'surreal', label: 'Surreal' },
+														{ id: 'conceptual', label: 'Conceitual' },
+														{ id: 'comics', label: 'Quadrinhos' },
+														{ id: 'analog', label: 'Analógico' }
+											] as style}
+												{#if style.id === 'realistic'}
+													<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[90%]" />
+												{/if}
+												<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { stableDiffusionStyle = style.id as typeof stableDiffusionStyle; localStorage.setItem('neveai.imageStyle', stableDiffusionStyle); showImageStyleDropdown = false; }}>
+															<span>{style.label}</span>{#if stableDiffusionStyle === style.id}<CheckCircle strokeWidth="1.7" />{/if}
+														</button>
+													{/each}
+												</div>
+											{/if}
+										</div>
+										{/if}
 										{/if}
 
 										{#if musicGenerationEnabled}
@@ -2445,7 +2493,7 @@
 											</div>
 										{/if}
 
-										{#if lastUsage}
+										{#if lastUsage && !stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled}
 											{@const totalTokens = lastUsage.total_tokens ?? ((lastUsage.prompt_tokens ?? lastUsage.input_tokens ?? 0) + (lastUsage.completion_tokens ?? lastUsage.output_tokens ?? 0))}
 											{@const contextModel = (() => { const mid = atSelectedModel?.id ?? selectedModels?.[0]; return $models.find((m) => m.id === mid); })()}
 											{@const contextWindow = contextModel?.llamacpp?.n_ctx || contextModel?.info?.params?.num_ctx || contextModel?.info?.meta?.context_length || 128000}

@@ -181,6 +181,7 @@
 	let fileGenerationEnabled = getFileGenerationPreference(false);
 	let stableDiffusionEnabled = false;
 	let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
+	let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'analog' = 'none';
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
 	let videoGenerationResolution: '480p' | '544p' = '480p';
@@ -1885,6 +1886,12 @@
 		stableDiffusionQuality = localStorage.getItem('neveai.imageQuality') === 'neve_image_2'
 			? 'neve_image_2'
 			: 'neve_image';
+		const savedImageStyle = localStorage.getItem('neveai.imageStyle');
+		stableDiffusionStyle = ['realistic', 'minimalist', 'fantasy', 'surreal', 'conceptual', 'comics', 'analog'].includes(
+			savedImageStyle ?? ''
+		)
+			? (savedImageStyle as typeof stableDiffusionStyle)
+			: 'none';
 		videoGenerationResolution = localStorage.getItem('neveai.videoResolution') === '544p'
 			? '544p'
 			: '480p';
@@ -4392,6 +4399,7 @@
 						? stableDiffusionEnabled
 						: false,
 				stable_diffusion_quality: stableDiffusionQuality,
+				stable_diffusion_style: stableDiffusionStyle,
 				music_generation:
 					$config?.features?.enable_music_generation &&
 					($user?.role === 'admin' || $user?.permissions?.features?.music_generation)
@@ -5044,6 +5052,7 @@
 					musicGenerationEnabled,
 					videoGenerationEnabled,
 					stableDiffusionQuality,
+					stableDiffusionStyle,
 					videoGenerationResolution,
 					videoGenerationDuration
 				};
@@ -5056,6 +5065,9 @@
 						stableDiffusionQuality =
 							message?.statusHistory?.find((status: any) => status.action === 'stable_diffusion')
 								?.quality ?? stableDiffusionQuality;
+						stableDiffusionStyle =
+							message?.statusHistory?.find((status: any) => status.action === 'stable_diffusion')
+								?.style ?? stableDiffusionStyle;
 					}
 					if (generatedAction === 'video_generation') {
 						const videoStatus = message?.statusHistory?.find(
@@ -5122,6 +5134,7 @@
 						musicGenerationEnabled = previousMediaState.musicGenerationEnabled;
 						videoGenerationEnabled = previousMediaState.videoGenerationEnabled;
 						stableDiffusionQuality = previousMediaState.stableDiffusionQuality;
+						stableDiffusionStyle = previousMediaState.stableDiffusionStyle;
 						videoGenerationResolution = previousMediaState.videoGenerationResolution;
 						videoGenerationDuration = previousMediaState.videoGenerationDuration;
 					}
@@ -5616,6 +5629,7 @@
 									bind:deepSearchEnabled
 									bind:stableDiffusionEnabled
 									bind:stableDiffusionQuality
+									bind:stableDiffusionStyle
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
 									bind:videoGenerationResolution
@@ -5699,6 +5713,7 @@
 									bind:deepSearchEnabled
 									bind:stableDiffusionEnabled
 									bind:stableDiffusionQuality
+									bind:stableDiffusionStyle
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
 									bind:videoGenerationResolution

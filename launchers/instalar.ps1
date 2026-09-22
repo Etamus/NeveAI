@@ -1393,7 +1393,12 @@ $ctl.BtnPrimary.Add_Click({
                 if ($nodeMajor -lt 18 -or $nodeMajor -gt 22) { return $null }
 
                 $npmPath = (Resolve-Path -LiteralPath $npmExe).ProviderPath
-                $npmVersionOut = & $npmPath --version 2>&1
+                $npmCliPath = Join-Path (Split-Path -Parent $nodePath) 'node_modules\npm\bin\npm-cli.js'
+                if (Test-Path -LiteralPath $npmCliPath) {
+                    $npmVersionOut = & $nodePath $npmCliPath --version 2>&1
+                } else {
+                    $npmVersionOut = & $npmPath --version 2>&1
+                }
                 if ($LASTEXITCODE -ne 0) { return $null }
                 $npmVersion = (("$npmVersionOut" -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
                 if (-not $npmVersion) { return $null }
@@ -1477,10 +1482,18 @@ $ctl.BtnPrimary.Add_Click({
                 $stagedPair = Test-FrontendNodePair $stagedNode $stagedNpm
                 if (-not $stagedPair) { throw 'Node.js portátil extraído não passou na validação.' }
 
-                if (Test-Path -LiteralPath $nodeDir) { Remove-Item -LiteralPath $nodeDir -Recurse -Force -EA SilentlyContinue }
-                Move-Item -LiteralPath $stageTarget -Destination $nodeDir -Force
+                if (Test-Path -LiteralPath $nodeDir) {
+                    Remove-Item -LiteralPath $nodeDir -Recurse -Force -EA Stop
+                    if (Test-Path -LiteralPath $nodeDir) { throw 'A instalação anterior do Node.js portátil não pôde ser substituída.' }
+                }
+                Move-Item -LiteralPath $stageTarget -Destination $nodeDir -Force -EA Stop
+                Get-ChildItem -LiteralPath $nodeDir -Recurse -File -EA SilentlyContinue | Unblock-File -EA SilentlyContinue
 
-                $pair = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
+                $pair = $null
+                for ($attempt = 1; $attempt -le 10 -and -not $pair; $attempt++) {
+                    $pair = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
+                    if (-not $pair) { Start-Sleep -Milliseconds 500 }
+                }
                 if (-not $pair) { throw 'Node.js portátil foi copiado, mas não respondeu após a instalação.' }
                 Log "[OK] Node.js portátil pronto: $($pair.NodeVersion) / npm $($pair.NpmVersion)"
                 return $pair
@@ -1904,16 +1917,22 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 $rc = Run $VENV_PY @('-I','-c',$code,$cudaRequired) 'validar PyTorch existente'
                 return ($rc -eq 0)
             }
-            function Test-StableDiffusionCppReady {
+            function Test-StableDiffusionCppReady([string]$expectedBackend = '') {
                 $sdDir = Join-Path $BACKEND 'bin\stable-diffusion-cpp'
                 $sdCli = Join-Path $sdDir 'sd-cli.exe'
                 $sdDll = Join-Path $sdDir 'stable-diffusion.dll'
-                return ((Test-Path -LiteralPath $sdCli) -and (Test-Path -LiteralPath $sdDll))
+                if (-not ((Test-Path -LiteralPath $sdCli) -and (Test-Path -LiteralPath $sdDll))) { return $false }
+                if (-not $expectedBackend) { return $true }
+                $versionFile = Join-Path $sdDir 'version.txt'
+                if (-not (Test-Path -LiteralPath $versionFile)) { return $false }
+                $installedBackend = @(Get-Content -LiteralPath $versionFile -EA SilentlyContinue | Where-Object { $_ }) | Select-Object -Last 1
+                return ([string]$installedBackend).Trim().ToLowerInvariant() -eq $expectedBackend.ToLowerInvariant()
             }
 
             function Install-StableDiffusionCpp {
-                if (Test-StableDiffusionCppReady) {
-                    Log '[OK] stable-diffusion.cpp já disponível; pulando download'
+                $sdBackend = if ($cfg.vendor -eq 'NVIDIA') { 'cuda12' } elseif ($cfg.vendor -eq 'AMD') { 'vulkan' } else { 'cpu' }
+                if (Test-StableDiffusionCppReady $sdBackend) {
+                    Log "[OK] stable-diffusion.cpp $sdBackend já disponível; pulando download"
                     return $true
                 }
 
@@ -1925,11 +1944,16 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 try {
                     New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
                     $rel = Invoke-RestMethod 'https://api.github.com/repos/leejet/stable-diffusion.cpp/releases/latest' -Headers @{ 'User-Agent' = 'Neve-Installer/3.0' } -TimeoutSec 60
-                    $sdObj = $rel.assets | Where-Object { $_.name -like 'sd-*-bin-win-cuda12-x64.zip' } | Select-Object -First 1
-                    $dllObj = $rel.assets | Where-Object { $_.name -eq 'cudart-sd-bin-win-cu12-x64.zip' } | Select-Object -First 1
-                    if (-not $sdObj -or -not $dllObj) { throw 'Release do stable-diffusion.cpp sem binários Windows CUDA 12 esperados.' }
+                    $assetPattern = switch ($sdBackend) {
+                        'cuda12' { 'sd-*-bin-win-cuda12-x64.zip' }
+                        'vulkan' { 'sd-*-bin-win-vulkan-x64.zip' }
+                        default  { 'sd-*-bin-win-cpu-x64.zip' }
+                    }
+                    $sdObj = $rel.assets | Where-Object { $_.name -like $assetPattern } | Select-Object -First 1
+                    $dllObj = if ($sdBackend -eq 'cuda12') { $rel.assets | Where-Object { $_.name -eq 'cudart-sd-bin-win-cu12-x64.zip' } | Select-Object -First 1 } else { $null }
+                    if (-not $sdObj -or ($sdBackend -eq 'cuda12' -and -not $dllObj)) { throw "Release do stable-diffusion.cpp sem binário Windows $sdBackend esperado." }
 
-                    foreach ($asset in @($sdObj, $dllObj)) {
+                    foreach ($asset in @($sdObj, $dllObj) | Where-Object { $_ }) {
                         $zipPath = Join-Path $env:TEMP ("neve_sdcpp_{0}_{1}.zip" -f ([guid]::NewGuid().ToString('N')), $asset.name)
                         $tmpFiles += $zipPath
                         $sizeMB = [math]::Round($asset.size / 1MB, 0)
@@ -1944,9 +1968,9 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                     Get-ChildItem -LiteralPath $sdDir -Force -EA SilentlyContinue | Remove-Item -Recurse -Force -EA SilentlyContinue
                     Get-ChildItem -LiteralPath $stageDir -File -EA SilentlyContinue | ForEach-Object { Copy-Item $_.FullName $sdDir -Force }
 
-                    if (-not (Test-StableDiffusionCppReady)) { throw 'sd-cli.exe foi copiado, mas não passou na validação.' }
-                    Set-Content -Path (Join-Path $sdDir 'version.txt') -Value @($rel.tag_name, 'cuda12') -Encoding UTF8
-                    Log "[OK] stable-diffusion.cpp $($rel.tag_name) instalado para Z-Image-Turbo"
+                    Set-Content -Path (Join-Path $sdDir 'version.txt') -Value @($rel.tag_name, $sdBackend) -Encoding UTF8
+                    if (-not (Test-StableDiffusionCppReady $sdBackend)) { throw 'sd-cli.exe foi copiado, mas não passou na validação.' }
+                    Log "[OK] stable-diffusion.cpp $($rel.tag_name) $sdBackend instalado para Z-Image-Turbo"
                     return $true
                 } catch {
                     Log "[!] stable-diffusion.cpp não pôde ser preparado agora: $_" 'warn'
@@ -2018,13 +2042,13 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             Log "[OK] PyTorch instalado"
 
             # ---- 7. stable-diffusion.cpp (Z-Image-Turbo)
-            if ($cfg.vendor -eq 'NVIDIA') {
+            if ($cfg.vendor -in @('NVIDIA','AMD')) {
                 P 55 'Preparando geração de imagem local'
                 Set-InstallState 'installing_stable_diffusion_cpp'
                 [void](Install-StableDiffusionCpp)
             } else {
                 P 55 'Otimizando instalação para o hardware'
-                Log "[OK] stable-diffusion.cpp CUDA ignorado para $($cfg.vendor); esse binário não é utilizável neste backend."
+                Log "[OK] stable-diffusion.cpp ignorado para $($cfg.vendor)."
             }
 
             # ---- 8. requirements do backend
@@ -2208,7 +2232,10 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 if ($tOut) { $summary += "PyTorch:     $tOut" }
             } catch {}
             $summary += "llama.cpp:   $($cfg.llamaAsset)"
-            if (Test-StableDiffusionCppReady) { $summary += "sd.cpp:      Z-Image-Turbo CUDA 12" }
+            if (Test-StableDiffusionCppReady) {
+                $sdBackendSummary = if ($cfg.vendor -eq 'AMD') { 'Vulkan' } elseif ($cfg.vendor -eq 'NVIDIA') { 'CUDA 12' } else { 'CPU' }
+                $summary += "sd.cpp:      Z-Image-Turbo $sdBackendSummary"
+            }
             if ($vramGb -gt 0) { $summary += "VRAM:        ${vramGb} GB ($($detected.Name))" }
             if ($pythonDependencyFailures.Count -gt 0) {
                 $summary += "Pendências:  $($pythonDependencyFailures.Count) dependência(s) Python; rode instalar.bat novamente para tentar só o que faltou."
@@ -3938,7 +3965,12 @@ $ctl.BtnPrimary.Add_Click({
                 if ($nodeMajor -lt 18 -or $nodeMajor -gt 22) { return $null }
 
                 $npmPath = (Resolve-Path -LiteralPath $npmExe).ProviderPath
-                $npmVersionOut = & $npmPath --version 2>&1
+                $npmCliPath = Join-Path (Split-Path -Parent $nodePath) 'node_modules\npm\bin\npm-cli.js'
+                if (Test-Path -LiteralPath $npmCliPath) {
+                    $npmVersionOut = & $nodePath $npmCliPath --version 2>&1
+                } else {
+                    $npmVersionOut = & $npmPath --version 2>&1
+                }
                 if ($LASTEXITCODE -ne 0) { return $null }
                 $npmVersion = (("$npmVersionOut" -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
                 if (-not $npmVersion) { return $null }
@@ -4025,10 +4057,18 @@ $ctl.BtnPrimary.Add_Click({
                 $stagedPair = Test-FrontendNodePair (Join-Path $stageTarget 'node.exe') (Join-Path $stageTarget 'npm.cmd')
                 if (-not $stagedPair) { throw 'Node.js portátil extraído não passou na validação.' }
 
-                if (Test-Path -LiteralPath $nodeDir) { Remove-Item -LiteralPath $nodeDir -Recurse -Force -EA SilentlyContinue }
-                Move-Item -LiteralPath $stageTarget -Destination $nodeDir -Force
+                if (Test-Path -LiteralPath $nodeDir) {
+                    Remove-Item -LiteralPath $nodeDir -Recurse -Force -EA Stop
+                    if (Test-Path -LiteralPath $nodeDir) { throw 'A instalação anterior do Node.js portátil não pôde ser substituída.' }
+                }
+                Move-Item -LiteralPath $stageTarget -Destination $nodeDir -Force -EA Stop
+                Get-ChildItem -LiteralPath $nodeDir -Recurse -File -EA SilentlyContinue | Unblock-File -EA SilentlyContinue
 
-                $pair = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
+                $pair = $null
+                for ($attempt = 1; $attempt -le 10 -and -not $pair; $attempt++) {
+                    $pair = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
+                    if (-not $pair) { Start-Sleep -Milliseconds 500 }
+                }
                 if (-not $pair) { throw 'Node.js portátil foi copiado, mas não respondeu após a instalação.' }
                 L "[OK] Node.js portátil pronto: $($pair.NodeVersion) / npm $($pair.NpmVersion)"
                 return $pair
@@ -5215,7 +5255,12 @@ function Test-FrontendNodePair([string]$nodeExe, [string]$npmExe) {
         if ($nodeMajor -lt 18 -or $nodeMajor -gt 22) { return $null }
 
         $npmPath = (Resolve-Path -LiteralPath $npmExe).ProviderPath
-        $npmVersionOut = & $npmPath --version 2>&1
+        $npmCliPath = Join-Path (Split-Path -Parent $nodePath) 'node_modules\npm\bin\npm-cli.js'
+        if (Test-Path -LiteralPath $npmCliPath) {
+            $npmVersionOut = & $nodePath $npmCliPath --version 2>&1
+        } else {
+            $npmVersionOut = & $npmPath --version 2>&1
+        }
         if ($LASTEXITCODE -ne 0) { return $null }
         $npmVersion = (("$npmVersionOut" -split "`r?`n") | Where-Object { $_.Trim() } | Select-Object -First 1).Trim()
         if (-not $npmVersion) { return $null }
@@ -5310,10 +5355,18 @@ function Install-PortableNode22 {
         $stagedPair = Test-FrontendNodePair (Join-Path $stageTarget 'node.exe') (Join-Path $stageTarget 'npm.cmd')
         if (-not $stagedPair) { throw 'Node.js portatil extraido nao passou na validacao.' }
 
-        if (Test-Path -LiteralPath $nodeDir) { Remove-Item -LiteralPath $nodeDir -Recurse -Force -EA SilentlyContinue }
-        Move-Item -LiteralPath $stageTarget -Destination $nodeDir -Force
+        if (Test-Path -LiteralPath $nodeDir) {
+            Remove-Item -LiteralPath $nodeDir -Recurse -Force -EA Stop
+            if (Test-Path -LiteralPath $nodeDir) { throw 'A instalacao anterior do Node.js portatil nao pode ser substituida.' }
+        }
+        Move-Item -LiteralPath $stageTarget -Destination $nodeDir -Force -EA Stop
+        Get-ChildItem -LiteralPath $nodeDir -Recurse -File -EA SilentlyContinue | Unblock-File -EA SilentlyContinue
 
-        $pair = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
+        $pair = $null
+        for ($attempt = 1; $attempt -le 10 -and -not $pair; $attempt++) {
+            $pair = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
+            if (-not $pair) { Start-Sleep -Milliseconds 500 }
+        }
         if (-not $pair) { throw 'Node.js portatil foi copiado, mas nao respondeu apos a instalacao.' }
         Append-Log "Node.js portatil pronto: $($pair.NodeVersion) / npm $($pair.NpmVersion)" 'ok'
         return $pair

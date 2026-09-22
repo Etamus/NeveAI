@@ -59,10 +59,19 @@ DEFAULT_HEIGHT = 576
 DEFAULT_FRAMES = 124
 DEFAULT_STEPS = 8
 DEFAULT_FPS = 24.0
+VIDEO_DIMENSION_MULTIPLE = 32
 GENERATION_TIMEOUT_SECONDS = 60 * 60
 VIDEO_GPU_POWER_RATIO = 0.83
 VIDEO_GPU_MAX_TEMPERATURE_C = 76.0
 VIDEO_GPU_TEMPERATURE_POLL_SECONDS = 0.5
+
+
+def _align_video_dimension(value: int) -> int:
+    """Keep MiniMax H3 video and reference-image latents patch-compatible."""
+    value = max(VIDEO_DIMENSION_MULTIPLE, int(value))
+    return (
+        (value + VIDEO_DIMENSION_MULTIPLE // 2) // VIDEO_DIMENSION_MULTIPLE
+    ) * VIDEO_DIMENSION_MULTIPLE
 
 
 def _hidden_process_kwargs() -> dict:
@@ -76,6 +85,34 @@ def _hidden_process_kwargs() -> dict:
         info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         return {"startupinfo": info, "creationflags": subprocess.CREATE_NO_WINDOW}
     return {}
+
+
+def _is_amd_only_windows_system() -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "powershell.exe",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Get-CimInstance Win32_VideoController | ForEach-Object Name",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        names = result.stdout.lower()
+        has_amd = "amd" in names or "radeon" in names
+        has_nvidia = "nvidia" in names or "geforce" in names
+        return has_amd and not has_nvidia
+    except Exception:
+        return False
 
 
 def _runtime_python() -> Path:
@@ -216,6 +253,11 @@ class MiniMaxH3Runtime:
         async with self._runtime_lock:
             if self.is_installed:
                 return
+            if await asyncio.to_thread(_is_amd_only_windows_system):
+                raise RuntimeError(
+                    "O Criar video com MiniMax H3 requer NVIDIA CUDA; este pipeline "
+                    "nao possui backend Vulkan compativel para GPUs AMD."
+                )
             if sys.version_info[:2] not in {(3, 11), (3, 12), (3, 13)}:
                 raise RuntimeError("A geracao de video requer Python 3.11, 3.12 ou 3.13.")
 
@@ -555,6 +597,8 @@ for repo_id, filename, local_dir in items:
         height: int = DEFAULT_HEIGHT,
         frames: int = DEFAULT_FRAMES,
     ) -> dict:
+        width = _align_video_dimension(width)
+        height = _align_video_dimension(height)
         workflow: dict[str, dict] = {
             "1": {
                 "class_type": "CLIPLoader",

@@ -55,6 +55,7 @@
 	export let deepSearchEnabled = false;
 	export let stableDiffusionEnabled = false;
 	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
+	export let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'analog' = 'none';
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
 	export let onNativeIntegrationChange: Function = () => {};
@@ -138,6 +139,7 @@
 					bind:deepSearchEnabled
 					bind:stableDiffusionEnabled
 					bind:stableDiffusionQuality
+					bind:stableDiffusionStyle
 					bind:musicGenerationEnabled
 					bind:videoGenerationEnabled
 					{onNativeIntegrationChange}
