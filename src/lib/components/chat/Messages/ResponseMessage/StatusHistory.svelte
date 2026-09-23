@@ -31,9 +31,20 @@
 		);
 	};
 
-	$: visibleHistory = (history ?? []).filter(
-		(item) => item?.hidden !== true && !isQueryingStatus(item)
-	);
+	$: visibleHistory = (history ?? [])
+		.filter((item) => item?.hidden !== true && !isQueryingStatus(item))
+		.reduce((items, item) => {
+			const previous = items.at(-1);
+			if (
+				previous?.action === item?.action &&
+				previous?.description === item?.description
+			) {
+				items[items.length - 1] = item;
+			} else {
+				items.push(item);
+			}
+			return items;
+		}, []);
 	$: status = visibleHistory.at(-1) ?? null;
 	$: isCompletedVisualStatus =
 		status?.done === true &&

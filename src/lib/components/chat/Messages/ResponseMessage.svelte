@@ -225,6 +225,11 @@
 			!latestVisualGenerationStatus.error &&
 			!visualGenerationFileReady
 	);
+	$: isVisualGenerationInProgress = Boolean(
+		latestVisualGenerationStatus &&
+			latestVisualGenerationStatus.done !== true &&
+			!latestVisualGenerationStatus.error
+	);
 
 	const copyToClipboard = async (text) => {
 		text = removeAllDetails(text);
@@ -911,7 +916,7 @@
 					</div>
 				</div>
 
-				{#if !edit}
+				{#if !edit && !isVisualGenerationInProgress}
 					<div
 						bind:this={buttonsContainerElement}
 						class="flex items-center gap-1 buttons text-gray-600 dark:text-gray-500 mt-1"

@@ -1,13 +1,4 @@
-"""
-Z-Image-Turbo local -- geracao de imagem via stable-diffusion.cpp.
-
-O runtime usa o diffusion model GGUF do Z-Image-Turbo, Qwen3-4B como text
-encoder e o VAE publico distribuido com o Z-Image-Turbo.
-
-Resolucao: 768 x 768
-Steps    : 8
-Modelo   : leejet/Z-Image-Turbo-GGUF / z_image_turbo-Q4_0.gguf
-"""
+"""Geracao local de imagens Z-Image-Turbo e Qwen Image via stable-diffusion.cpp."""
 
 import asyncio
 import base64
@@ -53,6 +44,7 @@ SD_CPP_WIN_CUDART_ASSET = "cudart-sd-bin-win-cu12-x64.zip"
 SD_CPP_WIN_VULKAN_ASSET = "sd-*-bin-win-vulkan-x64.zip"
 SD_CPP_WIN_CPU_ASSET = "sd-*-bin-win-cpu-x64.zip"
 SD_CLI_TIMEOUT_SECONDS = 60 * 60
+SD_CPP_QWEN_IMAGE_21_MIN_BUILD = 899
 
 IMAGE_OUTPUT_DIR = CACHE_DIR / "image" / "generations"
 IMAGE_INPUT_DIR = CACHE_DIR / "image" / "inputs"
@@ -78,6 +70,13 @@ ZIMAGE_GGUF_FILE = "z_image_turbo-Q4_0.gguf"
 ZIMAGE_QUALITY_GGUF_FILE = "z_image_turbo-Q8_0.gguf"
 QWEN3_LLM_REPO = "unsloth/Qwen3-4B-Instruct-2507-GGUF"
 QWEN3_LLM_FILE = "Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
+QWEN_IMAGE_21_REPO = "leejet/Qwen-Image-2.1-GGUF"
+QWEN_IMAGE_21_FILE = "qwen_image_2.1-Q6_K.gguf"
+QWEN_IMAGE_21_LLM_REPO = "Qwen/Qwen3-VL-8B-Instruct-GGUF"
+QWEN_IMAGE_21_LLM_FILE = "Qwen3VL-8B-Instruct-Q4_K_M.gguf"
+QWEN_IMAGE_21_VISION_FILE = "mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf"
+QWEN_IMAGE_21_VAE_REPO = "Comfy-Org/Qwen-Image-2.1"
+QWEN_IMAGE_21_VAE_FILE = "vae/qwen_image_2.1_vae_bf16.safetensors"
 PROMPT_TRANSLATOR_REPO = "mradermacher/Huihui-Qwen3-4B-Instruct-2507-abliterated-GGUF"
 PROMPT_TRANSLATOR_FILE = "Huihui-Qwen3-4B-Instruct-2507-abliterated.Q4_K_M.gguf"
 ZIMAGE_VAE_REPO = "Comfy-Org/z_image_turbo"
@@ -93,13 +92,25 @@ MAX_IMAGE_WIDTH = 768
 MAX_IMAGE_HEIGHT = 768
 MAX_IMAGE_STEPS = 8
 QUALITY_IMAGE_WIDTH = 1280
-QUALITY_IMAGE_HEIGHT = 720
+QUALITY_IMAGE_HEIGHT = 1280
 QUALITY_IMAGE_STEPS = 8
-QUALITY_IMAGE_SQUARE = 960
-QUALITY_IMAGE_PORTRAIT_WIDTH = 768
-QUALITY_IMAGE_PORTRAIT_HEIGHT = 1024
-QUALITY_IMAGE_MAX_DIM = 1280
-QUALITY_IMAGE_PIXEL_BUDGET = QUALITY_IMAGE_WIDTH * QUALITY_IMAGE_HEIGHT
+QUALITY_IMAGE_RESOLUTIONS = {
+    "1:1": (1024, 1024),
+    "16:9": (1280, 720),
+    "9:16": (720, 1280),
+    "4:3": (1152, 864),
+    "3:4": (864, 1152),
+}
+QWEN_IMAGE_21_STEPS = 28
+QWEN_IMAGE_21_CFG_SCALE = 6.0
+QWEN_IMAGE_21_MAX_REFERENCES = 10
+QWEN_IMAGE_21_RESOLUTIONS = {
+    "1:1": (1280, 1280),
+    "16:9": (1280, 720),
+    "9:16": (720, 1280),
+    "4:3": (1280, 960),
+    "3:4": (960, 1280),
+}
 DEFAULT_CFG_SCALE = 1.0
 DEFAULT_IMG2IMG_STRENGTH = 0.55
 MAX_INIT_IMAGE_BYTES = 30 * 1024 * 1024
@@ -186,6 +197,52 @@ ZIMAGE_STYLE_SPECS = {
         weight=1.0,
         prompt_prefix="Arcane style, painterly stylized 3D animation",
     ),
+    "conceptual_2": _ZImageStyle(
+        download_urls=(
+            "https://civitai.com/api/download/models/2533098?fileId=2420944",
+        ),
+        filename="neve-conceptual-2.safetensors",
+        sha256="551d5a71438ba3ab634b3b88411ab4704840b6f0108bc0fbdcfacba60e43db09",
+        weight=0.7,
+    ),
+    "realistic_2": _ZImageStyle(
+        download_urls=(
+            "https://huggingface.co/Kutches/ImageZ/resolve/main/Z-Real-v1.0.safetensors?download=true",
+            "https://civitai.com/api/download/models/2474931?fileId=2363398",
+        ),
+        filename="neve-realistic-2.safetensors",
+        sha256="924bb750f20e1b8465f6017198caad337be622620507ce37eb527c7817d1fa39",
+        weight=1.0,
+        prompt_prefix="z-realism",
+    ),
+    "realistic_4": _ZImageStyle(
+        download_urls=(
+            "https://huggingface.co/Sentinel7/z-image/resolve/main/1862761/2526600/NIceAsians_Zimage.safetensors?download=true",
+            "https://civitai.com/api/download/models/2526600?fileId=2414362",
+        ),
+        filename="neve-realistic-4.safetensors",
+        sha256="b51a0a20fd93ba3fec2f0e9a99c3f3e4957164711605df0e17c79734af3949fb",
+        weight=0.8,
+    ),
+    "arcane_2": _ZImageStyle(
+        download_urls=(
+            "https://huggingface.co/ThirdTimesTheCiarc/stylish/resolve/main/2337762/2629656/Studio%20Fortiche_E15.safetensors?download=true",
+            "https://civitai.com/api/download/models/2629656?fileId=2517602",
+        ),
+        filename="neve-arcane-2.safetensors",
+        sha256="216ade991f3b1422dbfcd1a8d29b8d1e0818039ed46e5fba3ec167c855e0a8c7",
+        weight=0.8,
+        prompt_prefix="StudiFort art style",
+    ),
+    "flat_pop": _ZImageStyle(
+        download_urls=(
+            "https://civitai.com/api/download/models/2551241?fileId=2439570",
+        ),
+        filename="neve-flat-pop.safetensors",
+        sha256="8be0825d1c0613e02fd81e6e93093db5d00b1eaec9990f7b7939435ec97f6901",
+        weight=0.85,
+        prompt_prefix="Flatpop Art style",
+    ),
 }
 
 
@@ -207,6 +264,25 @@ _cleanup_obsolete_style_loras()
 def normalize_image_style(value: Optional[str]) -> str:
     value = str(value or "none").strip().lower()
     return value if value in ZIMAGE_STYLE_SPECS else "none"
+
+
+def normalize_image_quality(value: Optional[str]) -> str:
+    value = str(value or "neve_image").strip().lower()
+    return value if value in {"neve_image", "neve_image_2", "qwen_image_2_1"} else "neve_image"
+
+
+def normalize_qwen_image_resolution(value: Optional[str]) -> str:
+    value = str(value or "1:1").strip()
+    return value if value in QWEN_IMAGE_21_RESOLUTIONS else "1:1"
+
+
+def qwen_image_dimensions(value: Optional[str]) -> tuple[int, int]:
+    return QWEN_IMAGE_21_RESOLUTIONS[normalize_qwen_image_resolution(value)]
+
+
+def quality_image_dimensions(value: Optional[str]) -> tuple[int, int]:
+    resolution = str(value or "1:1").strip()
+    return QUALITY_IMAGE_RESOLUTIONS.get(resolution, QUALITY_IMAGE_RESOLUTIONS["1:1"])
 
 _PORTUGUESE_MARKERS = {
     "quero", "gere", "gerar", "crie", "criar", "desenhe", "faça", "faca",
@@ -346,6 +422,33 @@ async def _prepare_init_image(reference: Optional[str], user_id: Optional[str] =
 
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, _prepare_init_image_sync, reference, user_id)
+
+
+async def _prepare_reference_images(
+    references: Optional[list[str]], user_id: Optional[str] = None
+) -> list[_InitImage]:
+    unique_references: list[str] = []
+    seen: set[str] = set()
+    for reference in references or []:
+        normalized = str(reference or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique_references.append(normalized)
+        if len(unique_references) >= QWEN_IMAGE_21_MAX_REFERENCES:
+            break
+
+    prepared: list[_InitImage] = []
+    try:
+        for reference in unique_references:
+            image = await _prepare_init_image(reference, user_id=user_id)
+            if image is not None:
+                prepared.append(image)
+        return prepared
+    except BaseException:
+        for image in prepared:
+            image.path.unlink(missing_ok=True)
+        raise
 
 
 def _fit_init_image_dimensions(init_image: _InitImage, max_width: int, max_height: int, max_size: int = MAX_IMAGE_WIDTH) -> tuple[int, int]:
@@ -672,32 +775,6 @@ def _protect_single_subject_composition(prompt: str, source_prompt: str) -> str:
     return f"one single subject, solo composition, no duplicates, {prompt}"
 
 
-def _quality_image_dimensions(prompt: str) -> tuple[int, int]:
-    if _EXPLICIT_LANDSCAPE_PROMPT_RE.search(prompt):
-        return QUALITY_IMAGE_WIDTH, QUALITY_IMAGE_HEIGHT
-    if _PORTRAIT_PROMPT_RE.search(prompt):
-        return QUALITY_IMAGE_PORTRAIT_WIDTH, QUALITY_IMAGE_PORTRAIT_HEIGHT
-    if _SCENE_LANDSCAPE_PROMPT_RE.search(prompt):
-        return QUALITY_IMAGE_WIDTH, QUALITY_IMAGE_HEIGHT
-    if _SINGULAR_SUBJECT_RE.search(prompt):
-        return QUALITY_IMAGE_PORTRAIT_WIDTH, QUALITY_IMAGE_PORTRAIT_HEIGHT
-    return QUALITY_IMAGE_SQUARE, QUALITY_IMAGE_SQUARE
-
-
-def _fit_quality_init_image_dimensions(init_image: _InitImage) -> tuple[int, int]:
-    if init_image.width <= 0 or init_image.height <= 0:
-        return QUALITY_IMAGE_SQUARE, QUALITY_IMAGE_SQUARE
-
-    scale = min(
-        QUALITY_IMAGE_MAX_DIM / init_image.width,
-        QUALITY_IMAGE_MAX_DIM / init_image.height,
-        (QUALITY_IMAGE_PIXEL_BUDGET / (init_image.width * init_image.height)) ** 0.5,
-    )
-    width = max(256, min(QUALITY_IMAGE_MAX_DIM, int(init_image.width * scale) // 16 * 16))
-    height = max(256, min(QUALITY_IMAGE_MAX_DIM, int(init_image.height * scale) // 16 * 16))
-    return width, height
-
-
 async def _prepare_image_prompt(prompt: str, hf_token: Optional[str] = None) -> str:
     source_prompt = _normalize_image_prompt_text(prompt)
     prompt = source_prompt
@@ -780,17 +857,17 @@ def _ensure_style_lora(style: str, hf_token: Optional[str] = None) -> Optional[P
 
     temporary = destination.with_suffix(f"{destination.suffix}.download")
     failures: list[str] = []
+    civitai_token = str(
+        os.environ.get("NEVEAI_CIVITAI_TOKEN")
+        or os.environ.get("CIVITAI_API_TOKEN")
+        or ""
+    ).strip()
     try:
         for source_url in spec.download_urls:
             temporary.unlink(missing_ok=True)
             try:
                 headers: dict[str, str] = {}
                 if "civitai.com/" in source_url:
-                    civitai_token = str(
-                        os.environ.get("NEVEAI_CIVITAI_TOKEN")
-                        or os.environ.get("CIVITAI_API_TOKEN")
-                        or ""
-                    ).strip()
                     if civitai_token:
                         separator = "&" if "?" in source_url else "?"
                         source_url = (
@@ -808,6 +885,12 @@ def _ensure_style_lora(style: str, hf_token: Optional[str] = None) -> Optional[P
             except Exception as exc:
                 failures.append(f"{urllib.parse.urlsplit(source_url).netloc}: {exc}")
 
+        if style == "flat_pop" and not civitai_token:
+            raise RuntimeError(
+                "O estilo Flat pop exige autenticacao para baixar o arquivo original do "
+                "Civitai. Configure NEVEAI_CIVITAI_TOKEN ou CIVITAI_API_TOKEN e reinicie "
+                "o backend."
+            )
         raise RuntimeError(
             f"Nao foi possivel baixar o estilo {style} com integridade verificada. "
             + " | ".join(failures)
@@ -831,18 +914,18 @@ def _download_file(
             output.write(chunk)
 
 
-def _download_and_extract_sd_cpp_asset(asset: dict):
+def _download_and_extract_sd_cpp_asset(asset: dict, destination_dir: Path = SD_CPP_DIR):
     url = asset.get("browser_download_url")
     name = asset.get("name")
     if not url or not name:
         raise RuntimeError("Asset invalido no release do stable-diffusion.cpp")
 
-    archive_path = SD_CPP_DIR / name
+    archive_path = destination_dir / name
     log.info("Baixando stable-diffusion.cpp: %s", name)
     _download_file(url, archive_path)
     try:
         with zipfile.ZipFile(archive_path) as archive:
-            archive.extractall(SD_CPP_DIR)
+            archive.extractall(destination_dir)
     finally:
         try:
             archive_path.unlink(missing_ok=True)
@@ -878,7 +961,36 @@ def _preferred_sd_cpp_windows_backend() -> str:
     return "cpu"
 
 
-def _ensure_sd_cli_binary() -> Path:
+def _supports_native_sage_attention() -> bool:
+    if os.name != "nt" or _preferred_sd_cpp_windows_backend() != "cuda12":
+        return False
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=compute_cap",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        first_capability = result.stdout.splitlines()[0].strip()
+        return result.returncode == 0 and float(first_capability) >= 8.0
+    except (IndexError, OSError, ValueError, subprocess.SubprocessError):
+        return False
+
+
+def _sd_cpp_build_number(version_lines: list[str]) -> int:
+    if not version_lines:
+        return 0
+    match = re.search(r"master-(\d+)", version_lines[0], flags=re.IGNORECASE)
+    return int(match.group(1)) if match else 0
+
+
+def _ensure_sd_cli_binary(require_qwen_image_21: bool = False) -> Path:
     if os.name != "nt":
         if SD_CLI_PATH.exists():
             return SD_CLI_PATH
@@ -890,24 +1002,32 @@ def _ensure_sd_cli_binary() -> Path:
     backend = _preferred_sd_cpp_windows_backend()
     version_file = SD_CPP_DIR / "version.txt"
     installed_backend = ""
+    installed_version_lines: list[str] = []
     if version_file.is_file():
         try:
+            installed_version_lines = version_file.read_text(encoding="utf-8-sig").splitlines()
             installed_backend = next(
-                (line.strip().lower() for line in reversed(version_file.read_text(encoding="utf-8-sig").splitlines()) if line.strip()),
+                (line.strip().lower() for line in reversed(installed_version_lines) if line.strip()),
                 "",
             )
         except Exception:
             installed_backend = ""
 
-    if SD_CLI_PATH.exists() and (
+    supports_qwen_image_21 = (
+        not require_qwen_image_21
+        or _sd_cpp_build_number(installed_version_lines) >= SD_CPP_QWEN_IMAGE_21_MIN_BUILD
+    )
+    if SD_CLI_PATH.exists() and supports_qwen_image_21 and (
         installed_backend == backend
         or (backend == "cuda12" and not installed_backend)
     ):
         return SD_CLI_PATH
 
-    if SD_CPP_DIR.exists():
-        shutil.rmtree(SD_CPP_DIR)
-    SD_CPP_DIR.mkdir(parents=True, exist_ok=True)
+    staging_dir = SD_CPP_DIR.with_name(f"{SD_CPP_DIR.name}.update")
+    backup_dir = SD_CPP_DIR.with_name(f"{SD_CPP_DIR.name}.backup")
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir)
+    staging_dir.mkdir(parents=True, exist_ok=True)
     log.info("Preparando stable-diffusion.cpp %s para Windows...", backend)
     request = urllib.request.Request(SD_CPP_RELEASE_API, headers={"User-Agent": "NeveAI/1.0"})
     with urllib.request.urlopen(request, timeout=60) as response:
@@ -930,19 +1050,40 @@ def _ensure_sd_cli_binary() -> Path:
     if not sd_asset or (backend == "cuda12" and not cudart_asset):
         raise RuntimeError(f"Release do stable-diffusion.cpp nao contem o binario Windows {backend} esperado")
 
-    _download_and_extract_sd_cpp_asset(sd_asset)
-    if backend == "cuda12" and cudart_asset is not None:
-        _download_and_extract_sd_cpp_asset(cudart_asset)
-    if not SD_CLI_PATH.exists():
-        raise RuntimeError(f"sd-cli nao foi extraido corretamente em {SD_CLI_PATH}")
-    version_file.write_text(
-        f"{str(release.get('tag_name') or 'latest')}\n{backend}\n", encoding="utf-8"
-    )
+    try:
+        _download_and_extract_sd_cpp_asset(sd_asset, staging_dir)
+        if backend == "cuda12" and cudart_asset is not None:
+            _download_and_extract_sd_cpp_asset(cudart_asset, staging_dir)
+        staged_cli = staging_dir / SD_CLI_PATH.name
+        if not staged_cli.exists():
+            raise RuntimeError(f"sd-cli nao foi extraido corretamente em {staged_cli}")
+        (staging_dir / "version.txt").write_text(
+            f"{str(release.get('tag_name') or 'latest')}\n{backend}\n", encoding="utf-8"
+        )
+
+        if backup_dir.exists():
+            shutil.rmtree(backup_dir)
+        if SD_CPP_DIR.exists():
+            os.replace(SD_CPP_DIR, backup_dir)
+        try:
+            os.replace(staging_dir, SD_CPP_DIR)
+        except BaseException:
+            if backup_dir.exists() and not SD_CPP_DIR.exists():
+                os.replace(backup_dir, SD_CPP_DIR)
+            raise
+        if backup_dir.exists():
+            try:
+                shutil.rmtree(backup_dir)
+            except Exception as exc:
+                log.warning("Runtime antigo sera limpo depois: %s", exc)
+    finally:
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
     return SD_CLI_PATH
 
 
 class _ZImageTurboPipeline:
-    """Gerencia os recursos Z-Image-Turbo e executa sd-cli de forma serializada."""
+    """Gerencia os runtimes locais de imagem e executa sd-cli em serie."""
 
     def __init__(self):
         self._resources: Optional[_ZImageResources] = None
@@ -960,8 +1101,8 @@ class _ZImageTurboPipeline:
     async def load(self, model_id: str, device: str = "cuda", hf_token: Optional[str] = None, quality: str = "neve_image", edit: bool = False):
         async with self._load_lock:
             model_id = normalize_sd_model_id(model_id)
-            quality = "neve_image_2" if quality == "neve_image_2" else "neve_image"
-            edit = quality == "neve_image_2" and edit
+            quality = normalize_image_quality(quality)
+            edit = quality in {"neve_image_2", "qwen_image_2_1"} and edit
             if self._resources is not None and self._model_id == model_id and self._quality == quality and self._edit_mode == edit:
                 return
 
@@ -970,8 +1111,48 @@ class _ZImageTurboPipeline:
             def _prepare_sync() -> _ZImageResources:
                 from huggingface_hub import hf_hub_download
 
-                sd_cli = _ensure_sd_cli_binary()
+                sd_cli = _ensure_sd_cli_binary(
+                    require_qwen_image_21=quality == "qwen_image_2_1"
+                )
                 token = hf_token or None
+
+                if quality == "qwen_image_2_1":
+                    def download_qwen(repo: str, filename: str, cache_dir: Path) -> Path:
+                        return Path(
+                            hf_hub_download(
+                                repo_id=repo,
+                                filename=filename,
+                                cache_dir=str(cache_dir),
+                                token=token,
+                            )
+                        )
+
+                    log.info("Baixando/carregando Qwen Image 2.1 Q6_K...")
+                    return _ZImageResources(
+                        sd_cli=sd_cli,
+                        diffusion_model=download_qwen(
+                            QWEN_IMAGE_21_REPO, QWEN_IMAGE_21_FILE, GGUF_CACHE_DIR
+                        ),
+                        llm=download_qwen(
+                            QWEN_IMAGE_21_LLM_REPO,
+                            QWEN_IMAGE_21_LLM_FILE,
+                            QWEN3_CACHE_DIR,
+                        ),
+                        vae=download_qwen(
+                            QWEN_IMAGE_21_VAE_REPO,
+                            QWEN_IMAGE_21_VAE_FILE,
+                            VAE_CACHE_DIR,
+                        ),
+                        llm_vision=(
+                            download_qwen(
+                                QWEN_IMAGE_21_LLM_REPO,
+                                QWEN_IMAGE_21_VISION_FILE,
+                                QWEN3_CACHE_DIR,
+                            )
+                            if edit
+                            else None
+                        ),
+                    )
 
                 if edit:
                     def download(repo: str, filename: str) -> Path:
@@ -1022,7 +1203,12 @@ class _ZImageTurboPipeline:
             self._model_id = model_id
             self._quality = quality
             self._edit_mode = edit
-            log.info("%s pronto via stable-diffusion.cpp", "Mage-Flow-Edit" if edit else "Z-Image-Turbo")
+            runtime_name = (
+                "Qwen Image 2.1"
+                if quality == "qwen_image_2_1"
+                else "Mage-Flow-Edit" if edit else "Z-Image-Turbo"
+            )
+            log.info("%s pronto via stable-diffusion.cpp", runtime_name)
 
     async def unload(self):
         async with self._request_lock:
@@ -1043,15 +1229,19 @@ class _ZImageTurboPipeline:
         **kwargs,
     ) -> str:
         async with self._request_lock:
-            quality = "neve_image_2" if quality == "neve_image_2" else "neve_image"
+            quality = normalize_image_quality(quality)
             style = normalize_image_style(style) if quality == "neve_image_2" else "none"
-            use_mageflow = bool(kwargs.get("init_image_reference")) and style == "none"
+            has_reference = bool(
+                kwargs.get("init_image_references") or kwargs.get("init_image_reference")
+            )
+            use_mageflow = quality == "neve_image_2" and has_reference and style == "none"
+            needs_vision = quality == "qwen_image_2_1" and has_reference
             load_task = asyncio.create_task(
                 self.load(
                     model_id,
                     hf_token=hf_token,
                     quality=quality,
-                    edit=use_mageflow,
+                    edit=use_mageflow or needs_vision,
                 )
             )
             try:
@@ -1089,6 +1279,8 @@ class _ZImageTurboPipeline:
         steps: int = MAX_IMAGE_STEPS,
         guidance_scale: float = DEFAULT_CFG_SCALE,
         init_image_reference: Optional[str] = None,
+        init_image_references: Optional[list[str]] = None,
+        resolution: str = "1:1",
         user_id: Optional[str] = None,
         hf_token: Optional[str] = None,
         style: str = "none",
@@ -1096,17 +1288,22 @@ class _ZImageTurboPipeline:
         dimensions_callback: Optional[ImageDimensionsCallback] = None,
     ) -> str:
         if not self.is_loaded or self._resources is None:
-            raise RuntimeError("Z-Image image runtime nao carregado")
+            raise RuntimeError("Runtime local de imagem nao carregado")
 
         if progress_callback is not None:
             await progress_callback(22)
-        prompt = await _prepare_image_prompt(prompt, hf_token)
+        qwen_image_mode = self._quality == "qwen_image_2_1"
+        prompt = (
+            _normalize_image_prompt_text(prompt)
+            if qwen_image_mode
+            else await _prepare_image_prompt(prompt, hf_token)
+        )
         if not prompt:
             raise RuntimeError("Prompt vazio para geracao de imagem")
         if progress_callback is not None:
             await progress_callback(26)
 
-        style = normalize_image_style(style)
+        style = normalize_image_style(style) if self._quality == "neve_image_2" else "none"
         style_spec = ZIMAGE_STYLE_SPECS.get(style)
         style_lora = None
         if style_spec is not None:
@@ -1121,14 +1318,28 @@ class _ZImageTurboPipeline:
         if progress_callback is not None:
             await progress_callback(30)
 
-        init_image = await _prepare_init_image(init_image_reference, user_id=user_id)
+        reference_values = list(init_image_references or [])
+        if init_image_reference and init_image_reference not in reference_values:
+            reference_values.insert(0, init_image_reference)
+        reference_images = (
+            await _prepare_reference_images(reference_values, user_id=user_id)
+            if qwen_image_mode
+            else []
+        )
+        init_image = (
+            None
+            if qwen_image_mode
+            else await _prepare_init_image(
+                reference_values[0] if reference_values else None,
+                user_id=user_id,
+            )
+        )
 
         quality_mode = self._quality == "neve_image_2"
-        if quality_mode:
-            if init_image is not None:
-                width, height = _fit_quality_init_image_dimensions(init_image)
-            else:
-                width, height = _quality_image_dimensions(prompt)
+        if qwen_image_mode:
+            width, height = qwen_image_dimensions(resolution)
+        elif quality_mode:
+            width, height = quality_image_dimensions(resolution)
         else:
             width = _align_image_dim(width, MAX_IMAGE_WIDTH, MAX_IMAGE_WIDTH)
             height = _align_image_dim(height, MAX_IMAGE_HEIGHT, MAX_IMAGE_HEIGHT)
@@ -1140,8 +1351,12 @@ class _ZImageTurboPipeline:
             await dimensions_callback(width, height)
         if progress_callback is not None:
             await progress_callback(33)
-        steps = 4 if self._edit_mode else _clamp_int(steps, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS, 1, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS)
-        cfg = _cfg_scale(guidance_scale)
+        if qwen_image_mode:
+            steps = QWEN_IMAGE_21_STEPS
+            cfg = QWEN_IMAGE_21_CFG_SCALE
+        else:
+            steps = 4 if self._edit_mode else _clamp_int(steps, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS, 1, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS)
+            cfg = _cfg_scale(guidance_scale)
         seed = random.randint(0, 2**31 - 1)
         filename = f"sd_{int(time.time())}_{seed}.png"
         output_path = IMAGE_OUTPUT_DIR / filename
@@ -1151,6 +1366,11 @@ class _ZImageTurboPipeline:
             _short_log_prompt(prompt),
         )
 
+        attention_args = (
+            ["--sage-attn"]
+            if qwen_image_mode and _supports_native_sage_attention()
+            else ["--diffusion-fa"]
+        )
         cmd = [
             str(self._resources.sd_cli),
             "--diffusion-model",
@@ -1169,21 +1389,31 @@ class _ZImageTurboPipeline:
             str(steps),
             "--cfg-scale",
             f"{cfg:g}",
-            "--diffusion-fa",
+            *attention_args,
             *(
                 ["--lora-model-dir", str(LORA_CACHE_DIR)]
                 if style_lora is not None
                 else []
             ),
-            *([] if quality_mode else ["--offload-to-cpu"]),
-            *(["--vae-conv-direct"] if quality_mode and not self._edit_mode else []),
-            *(["--llm_vision", str(self._resources.llm_vision), "--sampling-method", "euler"] if self._edit_mode else []),
+            *([] if quality_mode and not qwen_image_mode else ["--offload-to-cpu"]),
+            *(["--vae-conv-direct"] if quality_mode and not self._edit_mode and not qwen_image_mode else []),
+            *(
+                ["--llm_vision", str(self._resources.llm_vision)]
+                if self._resources.llm_vision is not None
+                else []
+            ),
+            *(["--sampling-method", "euler"] if self._edit_mode or qwen_image_mode else []),
             "-s",
             str(seed),
             "-o",
             str(output_path),
         ]
-        if init_image is not None:
+        if qwen_image_mode:
+            for reference_image in reference_images:
+                cmd.extend(["-r", str(reference_image.path)])
+            if reference_images:
+                cmd.extend(["--ref-image-args", "preset=qwen,vlm_size=768"])
+        elif init_image is not None:
             if self._edit_mode:
                 cmd.extend(["--ref-image", str(init_image.path)])
             else:
@@ -1194,8 +1424,10 @@ class _ZImageTurboPipeline:
 
         try:
             async with self._generation_lock:
-                mode = "img2img" if init_image is not None else "txt2img"
-                log.info("Gerando imagem Z-Image-Turbo %s %sx%s, steps=%s, cfg=%s", mode, width, height, steps, cfg)
+                has_input = bool(reference_images) if qwen_image_mode else init_image is not None
+                mode = "image-edit" if has_input else "txt2img"
+                runtime_name = "Qwen Image 2.1" if qwen_image_mode else "Z-Image-Turbo"
+                log.info("Gerando imagem %s %s %sx%s, steps=%s, cfg=%s", runtime_name, mode, width, height, steps, cfg)
                 process = await asyncio.create_subprocess_exec(
                     *cmd,
                     cwd=str(SD_CPP_DIR),
@@ -1265,19 +1497,27 @@ class _ZImageTurboPipeline:
                     await asyncio.wait_for(
                         communicate_with_progress(), timeout=SD_CLI_TIMEOUT_SECONDS
                     )
+                except asyncio.CancelledError:
+                    if process.returncode is None:
+                        process.kill()
+                        await process.wait()
+                    raise
                 except asyncio.TimeoutError:
                     process.kill()
                     await process.wait()
                     raise RuntimeError("Geracao de imagem excedeu o tempo limite do stable-diffusion.cpp")
         finally:
+            temporary_images = [*reference_images]
             if init_image is not None:
+                temporary_images.append(init_image)
+            for temporary_image in temporary_images:
                 try:
-                    init_image.path.unlink(missing_ok=True)
+                    temporary_image.path.unlink(missing_ok=True)
                 except TypeError:
-                    if init_image.path.exists():
-                        init_image.path.unlink()
+                    if temporary_image.path.exists():
+                        temporary_image.path.unlink()
                 except Exception as e:
-                    log.debug("Nao foi possivel remover imagem temporaria de img2img: %s", e)
+                    log.debug("Nao foi possivel remover imagem temporaria de referencia: %s", e)
 
         output = b"".join(stdout_chunks) + b"\n" + b"".join(stderr_chunks)
         output_text = output.decode("utf-8", errors="replace")
@@ -1304,8 +1544,10 @@ class GenerateForm(BaseModel):
     steps: Optional[int] = None
     guidance_scale: Optional[float] = None
     init_image: Optional[str] = None
+    init_images: Optional[list[str]] = None
     quality: str = "neve_image"
     style: str = "none"
+    resolution: str = "1:1"
 
 
 class ConfigForm(BaseModel):
@@ -1379,13 +1621,19 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
         raise HTTPException(status_code=403, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
 
     model_id = normalize_sd_model_id(request.app.state.config.STABLE_DIFFUSION_MODEL)
-    quality_mode = form_data.quality == "neve_image_2"
+    quality = normalize_image_quality(form_data.quality)
+    quality_mode = quality == "neve_image_2"
+    qwen_image_mode = quality == "qwen_image_2_1"
     max_width = QUALITY_IMAGE_WIDTH if quality_mode else MAX_IMAGE_WIDTH
     max_height = QUALITY_IMAGE_HEIGHT if quality_mode else MAX_IMAGE_HEIGHT
     max_steps = QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS
-    width = _align_image_dim(form_data.width or (max_width if quality_mode else request.app.state.config.STABLE_DIFFUSION_WIDTH), max_width, max_width)
-    height = _align_image_dim(form_data.height or (max_height if quality_mode else request.app.state.config.STABLE_DIFFUSION_HEIGHT), max_height, max_height)
-    steps = _clamp_int(form_data.steps or (max_steps if quality_mode else request.app.state.config.STABLE_DIFFUSION_STEPS), max_steps, 1, max_steps)
+    if qwen_image_mode:
+        width, height = qwen_image_dimensions(form_data.resolution)
+        steps = QWEN_IMAGE_21_STEPS
+    else:
+        width = _align_image_dim(form_data.width or (max_width if quality_mode else request.app.state.config.STABLE_DIFFUSION_WIDTH), max_width, max_width)
+        height = _align_image_dim(form_data.height or (max_height if quality_mode else request.app.state.config.STABLE_DIFFUSION_HEIGHT), max_height, max_height)
+        steps = _clamp_int(form_data.steps or (max_steps if quality_mode else request.app.state.config.STABLE_DIFFUSION_STEPS), max_steps, 1, max_steps)
     guidance_scale = _cfg_scale(
         form_data.guidance_scale
         if form_data.guidance_scale is not None
@@ -1405,14 +1653,16 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
         data_uri = await _sd_pipeline.run(
             model_id=model_id,
             hf_token=hf_token,
-            quality=form_data.quality,
+            quality=quality,
             style=form_data.style,
+            resolution=form_data.resolution,
             prompt=form_data.prompt,
             width=width,
             height=height,
             steps=steps,
             guidance_scale=guidance_scale,
             init_image_reference=form_data.init_image,
+            init_image_references=form_data.init_images,
             user_id=getattr(user, "id", None),
         )
         return {"url": data_uri}

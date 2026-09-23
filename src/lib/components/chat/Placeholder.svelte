@@ -54,10 +54,14 @@
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
 	export let stableDiffusionEnabled = false;
-	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
-	export let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'arcane' = 'none';
+	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' = 'neve_image';
+	export let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'arcane' | 'conceptual_2' | 'realistic_2' | 'realistic_4' | 'arcane_2' | 'flat_pop' = 'none';
+	export let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
+	export let videoGenerationResolution: '384p' | '480p' | '544p' = '480p';
+	export let videoGenerationDuration: '5s' | '8s' = '5s';
+	export let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
 	export let onNativeIntegrationChange: Function = () => {};
 	export let thinkingEnabled = true;
 	export let thinkingExtendedEnabled = true;
@@ -140,8 +144,12 @@
 					bind:stableDiffusionEnabled
 					bind:stableDiffusionQuality
 					bind:stableDiffusionStyle
+					bind:stableDiffusionResolution
 					bind:musicGenerationEnabled
 					bind:videoGenerationEnabled
+					bind:videoGenerationResolution
+					bind:videoGenerationDuration
+					bind:videoGenerationAspectRatio
 					{onNativeIntegrationChange}
 					bind:thinkingEnabled
 					bind:thinkingExtendedEnabled

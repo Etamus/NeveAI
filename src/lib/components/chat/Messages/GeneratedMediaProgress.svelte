@@ -6,20 +6,16 @@
 
 	$: percent = Math.min(100, Math.max(0, Math.round(Number(progress) || 0)));
 	$: label = kind === 'video' ? 'Criando vídeo' : 'Criando imagem';
-	$: safeWidth = kind === 'video' ? 16 : Math.max(1, Number(width) || 1);
-	$: safeHeight = kind === 'video' ? 9 : Math.max(1, Number(height) || 1);
+	$: safeWidth = Math.max(1, Number(width) || 1);
+	$: safeHeight = Math.max(1, Number(height) || 1);
 	$: aspectRatio = safeWidth / safeHeight;
-	$: displayWidth = Math.min(26, 26 * aspectRatio);
+	$: maxDisplaySize = kind === 'video' ? 32 : 26;
+	$: displayWidth = Math.min(maxDisplaySize, maxDisplaySize * aspectRatio);
 </script>
 
 <div
-	class="relative overflow-hidden rounded-lg bg-gray-50/35 backdrop-blur-sm dark:bg-gray-900/45 {kind ===
-	'video'
-		? 'aspect-video w-full max-w-[32rem] self-start'
-		: 'w-full'}"
-	style={kind === 'video'
-		? undefined
-		: `aspect-ratio: ${safeWidth} / ${safeHeight}; width: min(100%, ${displayWidth}rem); max-height: 26rem;`}
+	class="relative w-full self-start overflow-hidden rounded-lg bg-gray-100/35 backdrop-blur-sm dark:bg-gray-800/35"
+	style={`aspect-ratio: ${safeWidth} / ${safeHeight}; width: min(100%, ${displayWidth}rem); max-height: ${maxDisplaySize}rem;`}
 	role="progressbar"
 	aria-label={label}
 	aria-valuemin="0"

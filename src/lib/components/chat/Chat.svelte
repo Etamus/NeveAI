@@ -146,6 +146,7 @@
 	let activeGenerationSpacerHeightLimit: number | null = null;
 	let lastMessagesScrollTop = 0;
 	let generationSpacerUpwardScrollIntentUntil = 0;
+	let visualMediaAutoFollowMessageId: string | null = null;
 	let messagesBottomWheelLockUntil = 0;
 	let messagesBottomWheelLockRAF: ReturnType<typeof requestAnimationFrame> | null = null;
 	let processing = '';
@@ -180,16 +181,19 @@
 	let codeExecutionEnabled = false;
 	let fileGenerationEnabled = getFileGenerationPreference(false);
 	let stableDiffusionEnabled = false;
-	let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
-	let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'arcane' = 'none';
+	let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' = 'neve_image';
+	let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'arcane' | 'conceptual_2' | 'realistic_2' | 'realistic_4' | 'arcane_2' | 'flat_pop' = 'none';
+	let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
-	let videoGenerationResolution: '480p' | '544p' = '480p';
+	let videoGenerationResolution: '384p' | '480p' | '544p' = '480p';
 	let videoGenerationDuration: '5s' | '8s' = '5s';
+	let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
 	let videoPreferencesReady = false;
 	$: if (videoPreferencesReady) {
 		localStorage.setItem('neveai.videoResolution', videoGenerationResolution);
 		localStorage.setItem('neveai.videoDuration', videoGenerationDuration);
+		localStorage.setItem('neveai.videoAspectRatio', videoGenerationAspectRatio);
 	}
 	let previousMediaGenerationEnabled = stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
 	let previousVideoGenerationEnabled = videoGenerationEnabled;
@@ -978,10 +982,11 @@
 					if (message?.statusHistory) {
 						const lastStatus = message.statusHistory.at(-1);
 						if (
-							data?.progress !== undefined &&
 							['stable_diffusion', 'video_generation'].includes(data?.action) &&
 							lastStatus?.action === data?.action &&
-							lastStatus?.done !== true
+							lastStatus?.done !== true &&
+							(data?.progress !== undefined ||
+								lastStatus?.description === data?.description)
 						) {
 							message.statusHistory[message.statusHistory.length - 1] = data;
 						} else {
@@ -1883,19 +1888,27 @@
 	};
 
 	onMount(() => {
-		stableDiffusionQuality = localStorage.getItem('neveai.imageQuality') === 'neve_image_2'
-			? 'neve_image_2'
+		const savedImageQuality = localStorage.getItem('neveai.imageQuality');
+		stableDiffusionQuality = ['neve_image', 'neve_image_2', 'qwen_image_2_1'].includes(savedImageQuality ?? '')
+			? (savedImageQuality as typeof stableDiffusionQuality)
 			: 'neve_image';
 		const savedImageStyle = localStorage.getItem('neveai.imageStyle');
-		stableDiffusionStyle = ['realistic', 'minimalist', 'fantasy', 'surreal', 'conceptual', 'comics', 'arcane'].includes(
+		stableDiffusionStyle = ['realistic', 'minimalist', 'fantasy', 'surreal', 'conceptual', 'comics', 'arcane', 'conceptual_2', 'realistic_2', 'realistic_4', 'arcane_2', 'flat_pop'].includes(
 			savedImageStyle ?? ''
 		)
 			? (savedImageStyle as typeof stableDiffusionStyle)
 			: 'none';
-		videoGenerationResolution = localStorage.getItem('neveai.videoResolution') === '544p'
-			? '544p'
+		const savedImageResolution = localStorage.getItem('neveai.imageResolution');
+		stableDiffusionResolution = ['1:1', '16:9', '9:16', '4:3', '3:4'].includes(savedImageResolution ?? '')
+			? (savedImageResolution as typeof stableDiffusionResolution)
+			: '1:1';
+		const savedVideoResolution = localStorage.getItem('neveai.videoResolution');
+		videoGenerationResolution = ['384p', '480p', '544p'].includes(savedVideoResolution ?? '')
+			? (savedVideoResolution as typeof videoGenerationResolution)
 			: '480p';
 		videoGenerationDuration = localStorage.getItem('neveai.videoDuration') === '8s' ? '8s' : '5s';
+		videoGenerationAspectRatio =
+			localStorage.getItem('neveai.videoAspectRatio') === '9:16' ? '9:16' : '16:9';
 		videoPreferencesReady = true;
 		loading = true;
 		console.log('mounted');
@@ -2993,6 +3006,9 @@
 
 	const releaseGeneratingMessageAnchor = (messageId?: string) => {
 		if (!messageId || anchoredGeneratingMessageId === messageId) {
+			if (!messageId || visualMediaAutoFollowMessageId === messageId) {
+				visualMediaAutoFollowMessageId = null;
+			}
 			if (
 				messagesContainerElement &&
 				generationBottomSpacerHeight > 0 &&
@@ -3067,6 +3083,13 @@
 		const currentScrollTop = messagesContainerElement.scrollTop;
 		const upwardDistance = lastMessagesScrollTop - currentScrollTop;
 		lastMessagesScrollTop = currentScrollTop;
+		if (
+			upwardDistance > 0 &&
+			performance.now() <= generationSpacerUpwardScrollIntentUntil &&
+			visualMediaAutoFollowMessageId
+		) {
+			visualMediaAutoFollowMessageId = null;
+		}
 
 		if (
 			generationBottomSpacerHeight <= 0 ||
@@ -3236,7 +3259,14 @@
 			resizeFrame = requestAnimationFrame(() => {
 				resizeFrame = null;
 				clampIdleGenerationSpacerScroll();
-				updateScrollStateFromContainer({ updateAutoScroll: false });
+				if (
+					visualMediaAutoFollowMessageId &&
+					visualMediaAutoFollowMessageId === anchoredGeneratingMessageId
+				) {
+					scrollToContentBottom('auto');
+				} else {
+					updateScrollStateFromContainer({ updateAutoScroll: false });
+				}
 			});
 		});
 
@@ -4276,6 +4306,11 @@
 		}
 
 		const initialResponseMessageId = responseMessageOrder[0] ?? null;
+		visualMediaAutoFollowMessageId =
+			initialResponseMessageId &&
+			(requestFeatures?.stable_diffusion || requestFeatures?.video_generation)
+				? initialResponseMessageId
+				: null;
 		if (initialResponseMessageId) {
 			primeGeneratingMessageAnchor(initialResponseMessageId);
 		}
@@ -4400,6 +4435,7 @@
 						: false,
 				stable_diffusion_quality: stableDiffusionQuality,
 				stable_diffusion_style: stableDiffusionStyle,
+				stable_diffusion_resolution: stableDiffusionResolution,
 				music_generation:
 					$config?.features?.enable_music_generation &&
 					($user?.role === 'admin' || $user?.permissions?.features?.music_generation)
@@ -4411,7 +4447,8 @@
 						? videoGenerationEnabled
 						: false,
 				video_generation_resolution: videoGenerationResolution,
-				video_generation_duration: videoGenerationDuration
+				video_generation_duration: videoGenerationDuration,
+				video_generation_aspect_ratio: videoGenerationAspectRatio
 			};
 
 		const currentModels = atSelectedModel?.id ? [atSelectedModel.id] : selectedModels;
@@ -5053,8 +5090,10 @@
 					videoGenerationEnabled,
 					stableDiffusionQuality,
 					stableDiffusionStyle,
+					stableDiffusionResolution,
 					videoGenerationResolution,
-					videoGenerationDuration
+					videoGenerationDuration,
+					videoGenerationAspectRatio
 				};
 
 				if (generatedAction) {
@@ -5068,6 +5107,9 @@
 						stableDiffusionStyle =
 							message?.statusHistory?.find((status: any) => status.action === 'stable_diffusion')
 								?.style ?? stableDiffusionStyle;
+						stableDiffusionResolution =
+							message?.statusHistory?.find((status: any) => status.action === 'stable_diffusion')
+								?.resolution ?? stableDiffusionResolution;
 					}
 					if (generatedAction === 'video_generation') {
 						const videoStatus = message?.statusHistory?.find(
@@ -5075,6 +5117,7 @@
 						);
 						videoGenerationResolution = videoStatus?.resolution ?? videoGenerationResolution;
 						videoGenerationDuration = videoStatus?.duration ?? videoGenerationDuration;
+						videoGenerationAspectRatio = videoStatus?.aspect_ratio ?? videoGenerationAspectRatio;
 					}
 				}
 
@@ -5135,8 +5178,10 @@
 						videoGenerationEnabled = previousMediaState.videoGenerationEnabled;
 						stableDiffusionQuality = previousMediaState.stableDiffusionQuality;
 						stableDiffusionStyle = previousMediaState.stableDiffusionStyle;
+						stableDiffusionResolution = previousMediaState.stableDiffusionResolution;
 						videoGenerationResolution = previousMediaState.videoGenerationResolution;
 						videoGenerationDuration = previousMediaState.videoGenerationDuration;
+						videoGenerationAspectRatio = previousMediaState.videoGenerationAspectRatio;
 					}
 				}
 			}
@@ -5630,10 +5675,12 @@
 									bind:stableDiffusionEnabled
 									bind:stableDiffusionQuality
 									bind:stableDiffusionStyle
+									bind:stableDiffusionResolution
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
 									bind:videoGenerationResolution
 									bind:videoGenerationDuration
+									bind:videoGenerationAspectRatio
 									onNativeIntegrationChange={setNativeIntegration}
 									bind:thinkingEnabled
 									bind:thinkingExtendedEnabled
@@ -5714,10 +5761,12 @@
 									bind:stableDiffusionEnabled
 									bind:stableDiffusionQuality
 									bind:stableDiffusionStyle
+									bind:stableDiffusionResolution
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
 									bind:videoGenerationResolution
 									bind:videoGenerationDuration
+									bind:videoGenerationAspectRatio
 									onNativeIntegrationChange={setNativeIntegration}
 									bind:thinkingEnabled
 									bind:thinkingExtendedEnabled

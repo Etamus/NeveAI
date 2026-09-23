@@ -145,12 +145,42 @@
 	export let codeExecutionEnabled = false;
 	export let fileGenerationEnabled = false;
 	export let stableDiffusionEnabled = false;
-	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' = 'neve_image';
-	export let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'arcane' = 'none';
+	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' = 'neve_image';
+	export let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'arcane' | 'conceptual_2' | 'realistic_2' | 'realistic_4' | 'arcane_2' | 'flat_pop' = 'none';
+	const imageStyleOptions = [
+		{ id: 'none', label: 'Sem estilo' },
+		{ id: 'realistic', label: 'Realista' },
+		{ id: 'minimalist', label: 'Minimalista' },
+		{ id: 'fantasy', label: 'Fantasia' },
+		{ id: 'surreal', label: 'Surreal' },
+		{ id: 'conceptual', label: 'Conceitual' },
+		{ id: 'comics', label: 'Quadrinhos' },
+		{ id: 'arcane', label: 'Arcano' },
+		{ id: 'conceptual_2', label: 'Conceitual 2' },
+		{ id: 'realistic_2', label: 'Realista 2' },
+		{ id: 'realistic_4', label: 'Realista 4' },
+		{ id: 'arcane_2', label: 'Arcano 2' },
+		{ id: 'flat_pop', label: 'Flat pop' }
+	] as const;
+	$: selectedImageStyleLabel =
+		imageStyleOptions.find((style) => style.id === stableDiffusionStyle)?.label ?? 'Sem estilo';
+	export let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
+	const imageResolutionOptions = [
+		{ id: '1:1', shape: 'h-4 w-4' },
+		{ id: '3:4', shape: 'h-[18px] w-[14px]' },
+		{ id: '4:3', shape: 'h-[14px] w-[18px]' },
+		{ id: '16:9', shape: 'h-3 w-5' },
+		{ id: '9:16', shape: 'h-5 w-[11px]' }
+	] as const;
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
-	export let videoGenerationResolution: '480p' | '544p' = '480p';
+	export let videoGenerationResolution: '384p' | '480p' | '544p' = '480p';
 	export let videoGenerationDuration: '5s' | '8s' = '5s';
+	export let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
+	const videoAspectRatioOptions = [
+		{ id: '16:9', shape: 'h-3 w-5' },
+		{ id: '9:16', shape: 'h-5 w-[11px]' }
+	] as const;
 	export let onNativeIntegrationChange: Function = () => {};
 	export let thinkingEnabled = true;
 	export let thinkingExtendedEnabled = true;
@@ -161,10 +191,13 @@
 	let videoPreferencesChatId: string | null = null;
 
 	const restoreVideoPreferences = () => {
-		videoGenerationResolution = localStorage.getItem('neveai.videoResolution') === '544p'
-			? '544p'
+		const savedResolution = localStorage.getItem('neveai.videoResolution');
+		videoGenerationResolution = ['384p', '480p', '544p'].includes(savedResolution ?? '')
+			? (savedResolution as typeof videoGenerationResolution)
 			: '480p';
 		videoGenerationDuration = localStorage.getItem('neveai.videoDuration') === '8s' ? '8s' : '5s';
+		videoGenerationAspectRatio =
+			localStorage.getItem('neveai.videoAspectRatio') === '9:16' ? '9:16' : '16:9';
 	};
 
 	$: if (videoPreferencesMounted && videoPreferencesChatId !== $chatId) {
@@ -258,10 +291,12 @@
 		stableDiffusionEnabled,
 		stableDiffusionQuality,
 		stableDiffusionStyle,
+		stableDiffusionResolution,
 		musicGenerationEnabled,
 		videoGenerationEnabled,
 		videoGenerationResolution,
 		videoGenerationDuration,
+		videoGenerationAspectRatio,
 		thinkingEnabled,
 		thinkingExtendedEnabled
 	});
@@ -591,15 +626,22 @@
 	let showThinkingDropdown = false;
 	let showImageQualityDropdown = false;
 	let showImageStyleDropdown = false;
+	let showImageResolutionDropdown = false;
 	let showVideoResolutionDropdown = false;
 	let showVideoDurationDropdown = false;
+	let showVideoAspectRatioDropdown = false;
 	$: if (!videoGenerationEnabled) {
 		showVideoResolutionDropdown = false;
 		showVideoDurationDropdown = false;
+		showVideoAspectRatioDropdown = false;
+	}
+	$: if (stableDiffusionEnabled || videoGenerationEnabled) {
+		showThinkingDropdown = false;
 	}
 	$: if (!stableDiffusionEnabled) {
 		showImageQualityDropdown = false;
 		showImageStyleDropdown = false;
+		showImageResolutionDropdown = false;
 	}
 	const THINKING_MODE_STORAGE_KEY = 'neveai.globalThinkingEnabled';
 	const THINKING_EXTENDED_STORAGE_KEY = 'neveai.thinkingExtendedEnabled';
@@ -1363,11 +1405,17 @@
 	if (showImageStyleDropdown && !(e.target as HTMLElement).closest('#image-style-dropdown-container')) {
 		showImageStyleDropdown = false;
 	}
+	if (showImageResolutionDropdown && !(e.target as HTMLElement).closest('#image-resolution-dropdown-container')) {
+		showImageResolutionDropdown = false;
+	}
 	if (showVideoResolutionDropdown && !(e.target as HTMLElement).closest('#video-resolution-dropdown-container')) {
 		showVideoResolutionDropdown = false;
 	}
 	if (showVideoDurationDropdown && !(e.target as HTMLElement).closest('#video-duration-dropdown-container')) {
 		showVideoDurationDropdown = false;
+	}
+	if (showVideoAspectRatioDropdown && !(e.target as HTMLElement).closest('#video-aspect-ratio-dropdown-container')) {
+		showVideoAspectRatioDropdown = false;
 	}
 	if (showThinkingDropdown) {
 		const container = document.getElementById('thinking-dropdown-container');
@@ -1912,7 +1960,7 @@
 
 							{#if isCompact}
 								<div class="self-center flex items-center gap-3 shrink-0 pr-1">
-									{#if showThinkingButton}
+									{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
 										<div class="relative flex items-center self-center" id="thinking-dropdown-container">
 											<button
 												type="button"
@@ -2244,14 +2292,14 @@
 												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Imagem</span>
 											</button>
 										<div class="relative shrink-0" id="image-quality-dropdown-container">
-											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label="Qualidade da imagem" aria-expanded={showImageQualityDropdown} on:click|preventDefault={() => { showImageStyleDropdown = false; showImageQualityDropdown = !showImageQualityDropdown; }}>
-												<span>{stableDiffusionQuality === 'neve_image_2' ? 'Neve Image 2' : 'Neve Image'}</span>
+											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label="Modelo de imagem" aria-expanded={showImageQualityDropdown} on:click|preventDefault={() => { showImageStyleDropdown = false; showImageResolutionDropdown = false; showImageQualityDropdown = !showImageQualityDropdown; }}>
+												<span>{stableDiffusionQuality === 'qwen_image_2_1' ? 'Neve Image 2' : stableDiffusionQuality === 'neve_image_2' ? 'Neve Image 1.4' : 'Neve Image 1'}</span>
 												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageQualityDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
 											</button>
 											{#if showImageQualityDropdown}
 												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-													{#each [{ id: 'neve_image', label: 'Neve Image' }, { id: 'neve_image_2', label: 'Neve Image 2' }] as quality}
-													<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { stableDiffusionQuality = quality.id as 'neve_image' | 'neve_image_2'; localStorage.setItem('neveai.imageQuality', stableDiffusionQuality); showImageQualityDropdown = false; }}>
+													{#each [{ id: 'neve_image', label: 'Neve Image 1' }, { id: 'neve_image_2', label: 'Neve Image 1.4' }, { id: 'qwen_image_2_1', label: 'Neve Image 2' }] as quality}
+													<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { stableDiffusionQuality = quality.id as typeof stableDiffusionQuality; localStorage.setItem('neveai.imageQuality', stableDiffusionQuality); showImageQualityDropdown = false; }}>
 															<span>{quality.label}</span>{#if stableDiffusionQuality === quality.id}<CheckCircle strokeWidth="1.7" />{/if}
 														</button>
 													{/each}
@@ -2267,29 +2315,73 @@
 												aria-expanded={showImageStyleDropdown}
 												on:click|preventDefault={() => {
 													showImageQualityDropdown = false;
+													showImageResolutionDropdown = false;
 													showImageStyleDropdown = !showImageStyleDropdown;
 												}}
 											>
-												<span>{({ none: 'Sem estilo', realistic: 'Realista', minimalist: 'Minimalista', fantasy: 'Fantasia', surreal: 'Surreal', conceptual: 'Conceitual', comics: 'Quadrinhos', arcane: 'Arcano' } as Record<string, string>)[stableDiffusionStyle]}</span>
+												<span>{selectedImageStyleLabel}</span>
 												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageStyleDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
 											</button>
 											{#if showImageStyleDropdown}
-												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-40 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-													{#each [
-														{ id: 'none', label: 'Sem estilo' },
-														{ id: 'realistic', label: 'Realista' },
-														{ id: 'minimalist', label: 'Minimalista' },
-														{ id: 'fantasy', label: 'Fantasia' },
-														{ id: 'surreal', label: 'Surreal' },
-														{ id: 'conceptual', label: 'Conceitual' },
-														{ id: 'comics', label: 'Quadrinhos' },
-																{ id: 'arcane', label: 'Arcano' }
-															] as style}
-												{#if style.id === 'realistic'}
-													<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[90%]" />
-												{/if}
-												<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { stableDiffusionStyle = style.id as typeof stableDiffusionStyle; localStorage.setItem('neveai.imageStyle', stableDiffusionStyle); showImageStyleDropdown = false; }}>
-															<span>{style.label}</span>{#if stableDiffusionStyle === style.id}<CheckCircle strokeWidth="1.7" />{/if}
+												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-72 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-2 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
+													<button
+														type="button"
+														class="grid min-h-10 w-full grid-cols-[1fr_16px] items-center gap-2 rounded-md border px-3 py-2 text-left font-medium transition-colors {stableDiffusionStyle === 'none' ? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100' : 'border-transparent text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'}"
+														on:click={() => {
+															stableDiffusionStyle = 'none';
+															localStorage.setItem('neveai.imageStyle', stableDiffusionStyle);
+															showImageStyleDropdown = false;
+														}}
+													>
+														<span>Sem estilo</span>
+														<span class="flex size-4 items-center justify-center">{#if stableDiffusionStyle === 'none'}<CheckCircle className="size-4" strokeWidth="1.7" />{/if}</span>
+													</button>
+													<hr class="my-1.5 border-gray-200 dark:border-gray-800" />
+													<div class="grid grid-cols-2 gap-1.5">
+														{#each imageStyleOptions.slice(1) as style}
+															<button
+																type="button"
+																class="grid min-h-10 w-full grid-cols-[1fr_16px] items-center gap-2 rounded-md border px-3 py-2 text-left font-medium transition-colors {stableDiffusionStyle === style.id ? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100' : 'border-transparent text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'}"
+																on:click={() => {
+																	stableDiffusionStyle = style.id;
+																	localStorage.setItem('neveai.imageStyle', stableDiffusionStyle);
+																	showImageStyleDropdown = false;
+																}}
+															>
+																<span class="truncate">{style.label}</span>
+																<span class="flex size-4 items-center justify-center">{#if stableDiffusionStyle === style.id}<CheckCircle className="size-4" strokeWidth="1.7" />{/if}</span>
+															</button>
+														{/each}
+													</div>
+												</div>
+											{/if}
+										</div>
+										{/if}
+										{#if stableDiffusionQuality === 'neve_image_2' || stableDiffusionQuality === 'qwen_image_2_1'}
+										<div class="relative shrink-0" id="image-resolution-dropdown-container">
+											<button
+												type="button"
+												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+												aria-label="Proporção da imagem"
+												aria-expanded={showImageResolutionDropdown}
+												on:click|preventDefault={() => {
+													showImageQualityDropdown = false;
+													showImageStyleDropdown = false;
+													showImageResolutionDropdown = !showImageResolutionDropdown;
+												}}
+											>
+												<span>{stableDiffusionResolution}</span>
+												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageResolutionDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
+											</button>
+											{#if showImageResolutionDropdown}
+												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
+													{#each imageResolutionOptions as option}
+														<button type="button" class="grid w-full grid-cols-[1fr_16px] items-center gap-2 px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { stableDiffusionResolution = option.id; localStorage.setItem('neveai.imageResolution', stableDiffusionResolution); showImageResolutionDropdown = false; }}>
+															<span class="grid grid-cols-[24px_1fr] items-center gap-2">
+																<span class="flex h-5 w-6 items-center justify-center"><span class="block border border-current rounded-[1px] {option.shape}"></span></span>
+																<span class="leading-5">{option.id}</span>
+															</span>
+															<span class="flex size-4 items-center justify-center">{#if stableDiffusionResolution === option.id}<CheckCircle className="size-4" strokeWidth="1.7" />{/if}</span>
 														</button>
 													{/each}
 												</div>
@@ -2323,7 +2415,7 @@
 													onNativeIntegrationChange(null);
 												}}
 												type="button"
-											class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/10"
+											class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-yellow-500 dark:text-yellow-300 hover:bg-yellow-50 dark:hover:bg-yellow-900/10"
 											>
 												<div class="relative size-4 shrink-0 flex items-center justify-center">
 													<span class="group-hover:hidden flex items-center justify-center">
@@ -2343,7 +2435,8 @@
 												aria-label="Resolução do vídeo"
 												aria-expanded={showVideoResolutionDropdown}
 												on:click|preventDefault={() => {
-													showVideoDurationDropdown = false;
+											showVideoDurationDropdown = false;
+											showVideoAspectRatioDropdown = false;
 													showVideoResolutionDropdown = !showVideoResolutionDropdown;
 												}}
 											>
@@ -2352,8 +2445,8 @@
 											</button>
 											{#if showVideoResolutionDropdown}
 												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-													{#each ['480p', '544p'] as resolution}
-														<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { videoGenerationResolution = resolution as '480p' | '544p'; localStorage.setItem('neveai.videoResolution', videoGenerationResolution); showVideoResolutionDropdown = false; }}>
+											{#each ['384p', '480p', '544p'] as resolution}
+												<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { videoGenerationResolution = resolution as '384p' | '480p' | '544p'; localStorage.setItem('neveai.videoResolution', videoGenerationResolution); showVideoResolutionDropdown = false; }}>
 															<span>{resolution}</span>{#if videoGenerationResolution === resolution}<CheckCircle strokeWidth="1.7" />{/if}
 														</button>
 													{/each}
@@ -2367,9 +2460,10 @@
 												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
 												aria-label="Duração do vídeo"
 												aria-expanded={showVideoDurationDropdown}
-												on:click|preventDefault={() => {
-													showVideoResolutionDropdown = false;
-													showVideoDurationDropdown = !showVideoDurationDropdown;
+											on:click|preventDefault={() => {
+												showVideoResolutionDropdown = false;
+												showVideoAspectRatioDropdown = false;
+												showVideoDurationDropdown = !showVideoDurationDropdown;
 												}}
 											>
 												<span>{videoGenerationDuration}</span>
@@ -2381,11 +2475,41 @@
 														<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { videoGenerationDuration = durationOption as '5s' | '8s'; localStorage.setItem('neveai.videoDuration', videoGenerationDuration); showVideoDurationDropdown = false; }}>
 															<span>{durationOption}</span>{#if videoGenerationDuration === durationOption}<CheckCircle strokeWidth="1.7" />{/if}
 														</button>
-													{/each}
-												</div>
-											{/if}
+											{/each}
 										</div>
 									{/if}
+								</div>
+
+								<div class="relative shrink-0" id="video-aspect-ratio-dropdown-container">
+										<button
+											type="button"
+											class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+											aria-label="Proporção do vídeo"
+											aria-expanded={showVideoAspectRatioDropdown}
+											on:click|preventDefault={() => {
+												showVideoResolutionDropdown = false;
+												showVideoDurationDropdown = false;
+												showVideoAspectRatioDropdown = !showVideoAspectRatioDropdown;
+											}}
+										>
+											<span>{videoGenerationAspectRatio}</span>
+											<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showVideoAspectRatioDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
+										</button>
+									{#if showVideoAspectRatioDropdown}
+										<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
+											{#each videoAspectRatioOptions as option}
+												<button type="button" class="grid w-full grid-cols-[1fr_16px] items-center gap-2 px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { videoGenerationAspectRatio = option.id; localStorage.setItem('neveai.videoAspectRatio', videoGenerationAspectRatio); showVideoAspectRatioDropdown = false; }}>
+													<span class="grid grid-cols-[24px_1fr] items-center gap-2">
+														<span class="flex h-5 w-6 items-center justify-center"><span class="block border border-current rounded-[1px] {option.shape}"></span></span>
+														<span class="leading-5">{option.id}</span>
+													</span>
+													<span class="flex size-4 items-center justify-center">{#if videoGenerationAspectRatio === option.id}<CheckCircle className="size-4" strokeWidth="1.7" />{/if}</span>
+												</button>
+												{/each}
+											</div>
+									{/if}
+								</div>
+								{/if}
 
 									</div>
 								</div>
@@ -2403,7 +2527,7 @@
 													xmlns="http://www.w3.org/2000/svg"
 													viewBox="0 0 24 24"
 													fill="currentColor"
-													class="block size-5 -translate-x-[0.5px]"
+													class="block size-5 -translate-x-[0.5px] translate-y-[0.5px]"
 												>
 													<circle cx="12" cy="12" r="9.75" />
 													<rect x="8.25" y="8.25" width="7.5" height="7.5" rx="1.15" class="text-white dark:text-gray-700" fill="currentColor" />
@@ -2415,7 +2539,7 @@
 											<TerminalMenu bind:show={showTools} />
 										{/if}
 
-										{#if showThinkingButton}
+										{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
 											<div class="relative flex items-center self-center mr-2" id="thinking-dropdown-container">
 												<button
 													type="button"

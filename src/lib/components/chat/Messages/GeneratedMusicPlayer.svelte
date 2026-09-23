@@ -63,7 +63,7 @@
 	};
 </script>
 
-<div class="music-player flex h-14 w-full min-w-[18rem] max-w-[30rem] items-center gap-2.5 bg-transparent px-0.5 text-gray-700 dark:text-gray-200">
+<div class="music-player flex h-14 w-full min-w-[18rem] max-w-[30rem] items-center gap-2.5 rounded-lg bg-gray-100/70 px-2.5 text-gray-700 dark:bg-gray-800/55 dark:text-gray-200">
 	<audio
 		bind:this={audioElement}
 		src={resolvedSrc}
@@ -82,15 +82,15 @@
 
 	<button
 		type="button"
-		class="grid size-9 shrink-0 place-items-center rounded-full bg-gray-100 p-0 text-gray-900 transition-colors hover:bg-gray-200 dark:bg-gray-100 dark:hover:bg-white"
+		class="grid size-9 shrink-0 place-items-center p-0 text-gray-700 transition-colors hover:text-gray-950 dark:text-gray-200 dark:hover:text-white"
 		aria-label={playing ? 'Pausar' : 'Reproduzir'}
 		title={playing ? 'Pausar' : 'Reproduzir'}
 		on:click={togglePlayback}
 	>
 		{#if playing}
-			<svg viewBox="0 0 24 24" fill="currentColor" class="block size-4" aria-hidden="true"><rect x="7.25" y="5" width="3.5" height="14" rx="0.75" /><rect x="13.25" y="5" width="3.5" height="14" rx="0.75" /></svg>
+			<svg viewBox="0 0 24 24" fill="currentColor" class="block size-5" aria-hidden="true"><rect x="6.5" y="5" width="4.25" height="14" rx="0.8" /><rect x="13.25" y="5" width="4.25" height="14" rx="0.8" /></svg>
 		{:else}
-			<svg viewBox="0 0 24 24" fill="currentColor" class="block size-4" aria-hidden="true"><path d="M8 5.77a.75.75 0 0 1 1.14-.64l10 6.23a.75.75 0 0 1 0 1.28l-10 6.23A.75.75 0 0 1 8 18.23V5.77Z" /></svg>
+			<svg viewBox="0 0 24 24" fill="currentColor" class="block size-5" aria-hidden="true"><path d="M8 5.77a.75.75 0 0 1 1.14-.64l10 6.23a.75.75 0 0 1 0 1.28l-10 6.23A.75.75 0 0 1 8 18.23V5.77Z" /></svg>
 		{/if}
 	</button>
 

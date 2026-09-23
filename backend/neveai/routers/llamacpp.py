@@ -2138,6 +2138,7 @@ def _catalog_model_form(entry: dict, repo_filename: str) -> ModelForm:
         "neve_catalog_repo": entry["repo"],
         "neve_catalog_defaults_version": NEVE_CATALOG_DEFAULTS_VERSION,
         "neve_catalog_profile_image_locked": True,
+        "neve_catalog_identity_locked": True,
         "managed_by": "neve_download",
     }
 

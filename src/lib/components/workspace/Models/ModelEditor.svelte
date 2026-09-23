@@ -162,6 +162,9 @@
 	$: isCatalogIconLocked = Boolean(
 		info?.meta?.neve_catalog_profile_image_locked || info?.meta?.neve_catalog_id
 	);
+	$: isCatalogIdentityLocked = Boolean(
+		info?.meta?.managed_by === 'neve_download' && info?.meta?.neve_catalog_id
+	);
 	$: hasCustomModelImage = Boolean(
 		info?.meta?.profile_image_url &&
 			info.meta.profile_image_url !== DEFAULT_MODEL_PROFILE_IMAGE_URL
@@ -659,7 +662,7 @@
 									{modelNameMeasureText}
 								</span>
 								<input
-									class="text-2xl font-semibold leading-none min-w-0 max-w-full bg-transparent outline-hidden p-0"
+									class="text-2xl font-semibold leading-none min-w-0 max-w-full bg-transparent outline-hidden p-0 disabled:cursor-default disabled:opacity-100"
 									style="width: {modelNameFieldWidth};"
 									placeholder={$i18n.t('Model Name')}
 									value={modelNameDisplayValue}
@@ -674,6 +677,7 @@
 									}}
 									spellcheck="false"
 									maxlength={MODEL_NAME_MAX_CHARS}
+									disabled={isCatalogIdentityLocked}
 									required
 								/>
 								<input
@@ -717,6 +721,7 @@
 									spellcheck={false}
 									autoResize={false}
 									maxlength={MODEL_DESCRIPTION_MAX_CHARS}
+									readonly={isCatalogIdentityLocked}
 									bind:value={description}
 								/>
 							</div>

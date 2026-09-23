@@ -2235,38 +2235,59 @@ def _is_chat_image_file(file_item: Any) -> bool:
     return file_item.get("type") == "image" or str(file_item.get("content_type") or "").startswith("image/")
 
 
-def _get_image_reference_from_message(message: Optional[dict]) -> Optional[str]:
+def _get_image_references_from_message(
+    message: Optional[dict], limit: int = 10
+) -> list[str]:
     if not isinstance(message, dict):
-        return None
+        return []
+
+    references: list[str] = []
+    seen: set[str] = set()
+
+    def add(reference: Any) -> None:
+        normalized = str(reference or "").strip()
+        if normalized and normalized not in seen and len(references) < limit:
+            seen.add(normalized)
+            references.append(normalized)
 
     for file_item in message.get("files") or []:
         if not _is_chat_image_file(file_item):
             continue
-        reference = file_item.get("url") or file_item.get("id")
-        if reference:
-            return str(reference)
+        add(file_item.get("url") or file_item.get("id"))
 
     content = message.get("content")
     if isinstance(content, list):
         for part in content:
             if not isinstance(part, dict) or part.get("type") != "image_url":
                 continue
-            reference = (part.get("image_url") or {}).get("url")
-            if reference:
-                return str(reference)
+            add((part.get("image_url") or {}).get("url"))
 
-    return None
+    return references
+
+
+def _get_image_reference_from_message(message: Optional[dict]) -> Optional[str]:
+    references = _get_image_references_from_message(message, limit=1)
+    return references[0] if references else None
+
+
+def _collect_stable_diffusion_image_references(
+    messages: list[dict], parent_message: Optional[dict] = None, limit: int = 10
+) -> list[str]:
+    current_references = _get_image_references_from_message(parent_message, limit=limit)
+    if current_references:
+        return current_references
+
+    last_user_message = get_last_user_message_item(messages or [])
+    return _get_image_references_from_message(last_user_message, limit=limit)
 
 
 def _collect_stable_diffusion_init_image_reference(
     messages: list[dict], parent_message: Optional[dict] = None
 ) -> Optional[str]:
-    current_reference = _get_image_reference_from_message(parent_message)
-    if current_reference:
-        return current_reference
-
-    last_user_message = get_last_user_message_item(messages or [])
-    return _get_image_reference_from_message(last_user_message)
+    references = _collect_stable_diffusion_image_references(
+        messages, parent_message, limit=1
+    )
+    return references[0] if references else None
 
 
 async def chat_stable_diffusion_handler(
@@ -2285,28 +2306,36 @@ async def chat_stable_diffusion_handler(
         messages,
         metadata.get("parent_message"),
     )
-    init_image_reference = _collect_stable_diffusion_init_image_reference(
+    init_image_references = _collect_stable_diffusion_image_references(
         messages,
         metadata.get("parent_message"),
     )
-    quality = "neve_image_2" if (extra_params.get("__features__") or {}).get("stable_diffusion_quality") == "neve_image_2" else "neve_image"
+    image_features = extra_params.get("__features__") or {}
     from neveai.routers.stable_diffusion import (
-        _quality_image_dimensions,
         normalize_image_style,
+        normalize_image_quality,
+        normalize_qwen_image_resolution,
+        quality_image_dimensions,
+        qwen_image_dimensions,
+        QWEN_IMAGE_21_STEPS,
     )
 
-    style = normalize_image_style(
-        (extra_params.get("__features__") or {}).get("stable_diffusion_style")
+    quality = normalize_image_quality(image_features.get("stable_diffusion_quality"))
+    resolution = normalize_qwen_image_resolution(
+        image_features.get("stable_diffusion_resolution")
     )
-    generation_description = "Editando imagem..." if init_image_reference else "Criando imagem..."
+    style = (
+        normalize_image_style(image_features.get("stable_diffusion_style"))
+        if quality == "neve_image_2"
+        else "none"
+    )
+    generation_description = "Editando imagem..." if init_image_references else "Criando imagem..."
     progress_width = int(request.app.state.config.STABLE_DIFFUSION_WIDTH)
     progress_height = int(request.app.state.config.STABLE_DIFFUSION_HEIGHT)
     if quality == "neve_image_2":
-        progress_width, progress_height = (
-            (960, 960)
-            if init_image_reference
-            else _quality_image_dimensions(image_prompt)
-        )
+        progress_width, progress_height = quality_image_dimensions(resolution)
+    elif quality == "qwen_image_2_1":
+        progress_width, progress_height = qwen_image_dimensions(resolution)
     last_progress = 0
 
     async def emit_image_progress(progress: int) -> None:
@@ -2320,6 +2349,7 @@ async def chat_stable_diffusion_handler(
                     "description": generation_description,
                     "quality": quality,
                     "style": style,
+                    "resolution": resolution,
                     "width": progress_width,
                     "height": progress_height,
                     "progress": last_progress,
@@ -2347,9 +2377,12 @@ async def chat_stable_diffusion_handler(
         steps          = request.app.state.config.STABLE_DIFFUSION_STEPS
         guidance_scale = request.app.state.config.STABLE_DIFFUSION_GUIDANCE_SCALE
         if quality == "neve_image_2":
-            width = 1280
-            height = 720
+            width, height = quality_image_dimensions(resolution)
             steps = 8
+        elif quality == "qwen_image_2_1":
+            width, height = qwen_image_dimensions(resolution)
+            steps = QWEN_IMAGE_21_STEPS
+            guidance_scale = 6.0
 
         # Put LLM in standby
         llm_standby_info = None
@@ -2365,12 +2398,14 @@ async def chat_stable_diffusion_handler(
                 hf_token=hf_token,
                 quality=quality,
                 style=style,
+                resolution=resolution,
                 prompt=image_prompt,
                 width=width,
                 height=height,
                 steps=steps,
                 guidance_scale=guidance_scale,
-                init_image_reference=init_image_reference,
+                init_image_reference=(init_image_references[0] if init_image_references else None),
+                init_image_references=init_image_references,
                 user_id=getattr(user, "id", None),
                 progress_callback=emit_image_progress,
                 dimensions_callback=emit_image_dimensions,
@@ -2394,10 +2429,11 @@ async def chat_stable_diffusion_handler(
                 request,
                 file=upload,
                 metadata={
-                    "source": "z-image-turbo",
+                    "source": "qwen-image-2.1" if quality == "qwen_image_2_1" else "z-image-turbo",
                     "prompt": image_prompt,
                     "quality": quality,
                     "style": style,
+                    "resolution": resolution,
                     "width": progress_width,
                     "height": progress_height,
                 },
@@ -2413,9 +2449,10 @@ async def chat_stable_diffusion_handler(
                     "type": "status",
                     "data": {
                         "action": "stable_diffusion",
-                        "description": "Imagem editada" if init_image_reference else "Imagem criada",
+                        "description": "Imagem editada" if init_image_references else "Imagem criada",
                         "quality": quality,
                         "style": style,
+                        "resolution": resolution,
                         "width": progress_width,
                         "height": progress_height,
                         "progress": 100,
@@ -2681,14 +2718,28 @@ async def chat_video_generation_handler(
         metadata.get("parent_message"),
     )
     video_features = extra_params.get("__features__") or {}
+    requested_resolution = str(
+        video_features.get("video_generation_resolution") or "480p"
+    )
     resolution = (
-        "544p" if video_features.get("video_generation_resolution") == "544p" else "480p"
+        requested_resolution
+        if requested_resolution in {"384p", "480p", "544p"}
+        else "480p"
     )
     duration = "8s" if video_features.get("video_generation_duration") == "8s" else "5s"
-    # MiniMax H3 reference images are encoded into 2x2 latent patches, so both
-    # canvas axes must be divisible by 32. 864x480 is the closest compatible
-    # 16:9-style canvas for the 480p option.
-    width, height = (960, 544) if resolution == "544p" else (864, 480)
+    aspect_ratio = (
+        "9:16"
+        if video_features.get("video_generation_aspect_ratio") == "9:16"
+        else "16:9"
+    )
+    landscape_dimensions = {
+        "384p": (672, 384),
+        "480p": (864, 480),
+        "544p": (960, 544),
+    }
+    width, height = landscape_dimensions[resolution]
+    if aspect_ratio == "9:16":
+        width, height = height, width
     frames = 196 if duration == "8s" else 124
     last_status = ""
     last_progress = -1
@@ -2720,6 +2771,9 @@ async def chat_video_generation_handler(
                     "description": description,
                     "resolution": resolution,
                     "duration": duration,
+                    "aspect_ratio": aspect_ratio,
+                    "width": width,
+                    "height": height,
                     **(
                         {"progress": normalized_progress}
                         if normalized_progress is not None
@@ -2813,6 +2867,7 @@ async def chat_video_generation_handler(
                 "frames": frames,
                 "fps": 24,
                 "steps": 8,
+                "aspect_ratio": aspect_ratio,
                 "image_to_video": bool(image_reference),
             },
             process=False,
@@ -2828,6 +2883,9 @@ async def chat_video_generation_handler(
                     "description": "Vídeo criado",
                     "resolution": resolution,
                     "duration": duration,
+                    "aspect_ratio": aspect_ratio,
+                    "width": width,
+                    "height": height,
                     "progress": 100,
                     "done": True,
                 },
@@ -2870,6 +2928,9 @@ async def chat_video_generation_handler(
                     "description": f"Falha ao criar video: {error_message}",
                     "resolution": resolution,
                     "duration": duration,
+                    "aspect_ratio": aspect_ratio,
+                    "width": width,
+                    "height": height,
                     "done": True,
                     "error": True,
                 },
@@ -6456,6 +6517,9 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         features["stable_diffusion_style"] = submitted_features.get(
             "stable_diffusion_style", "none"
         )
+        features["stable_diffusion_resolution"] = submitted_features.get(
+            "stable_diffusion_resolution", "1:1"
+        )
     if submitted_features.get("video_generation"):
         # Preserve the user's explicit video choice even if an inlet/filter
         # rebuilt the payload. Video owns the request and is mutually exclusive.
@@ -6465,6 +6529,9 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         )
         features["video_generation_duration"] = submitted_features.get(
             "video_generation_duration", "5s"
+        )
+        features["video_generation_aspect_ratio"] = submitted_features.get(
+            "video_generation_aspect_ratio", "16:9"
         )
         for feature_id in (
             "web_search",

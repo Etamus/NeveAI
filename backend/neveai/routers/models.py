@@ -106,17 +106,26 @@ def get_static_profile_image_response(profile_image_url: str, etag: Optional[str
     return FileResponse(image_path, headers=headers)
 
 
-def lock_neve_catalog_profile_image(model: ModelModel, form_data: ModelForm) -> ModelForm:
+def lock_neve_catalog_identity(model: ModelModel, form_data: ModelForm) -> ModelForm:
     existing_meta = model.meta.model_dump() if model.meta else {}
-    catalog_profile_image_url = llamacpp.get_catalog_profile_image_url(existing_meta)
-    if not catalog_profile_image_url:
+    if (
+        existing_meta.get("managed_by") != "neve_download"
+        or not existing_meta.get("neve_catalog_id")
+    ):
         return form_data
 
     form_model_data = form_data.model_dump()
     form_meta = form_model_data.get("meta") or {}
-    form_meta["profile_image_url"] = catalog_profile_image_url
+    catalog_profile_image_url = llamacpp.get_catalog_profile_image_url(existing_meta)
+    if catalog_profile_image_url:
+        form_meta["profile_image_url"] = catalog_profile_image_url
+
+    form_model_data["name"] = model.name
+    form_meta["description"] = existing_meta.get("description")
     form_meta["neve_catalog_id"] = existing_meta.get("neve_catalog_id")
     form_meta["neve_catalog_profile_image_locked"] = True
+    form_meta["neve_catalog_identity_locked"] = True
+    form_meta["managed_by"] = "neve_download"
 
     if existing_meta.get("neve_catalog_repo"):
         form_meta["neve_catalog_repo"] = existing_meta.get("neve_catalog_repo")
@@ -644,7 +653,7 @@ async def update_model_by_id(
         )
 
     form_data = mark_model_form_user_customized(form_data)
-    form_data = lock_neve_catalog_profile_image(model, form_data)
+    form_data = lock_neve_catalog_identity(model, form_data)
     model = Models.update_model_by_id(form_data.id, ModelForm(**form_data.model_dump()), db=db)
     request.app.state.BASE_MODELS = None
     return model

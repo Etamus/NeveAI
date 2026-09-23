@@ -395,7 +395,7 @@ $: if (show) {
 
 						{#if item.size}
 							<div class="capitalize shrink-0">{formatFileSize(item.size)}</div>
-							{#if !item?.generated}•{/if}
+							{#if !(isImage || isAudio || isVideo)}•{/if}
 						{/if}
 
 						{#if item?.file?.data?.content}

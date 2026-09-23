@@ -2,6 +2,7 @@
 	import { getContext } from 'svelte';
 	import { getFileContentById } from '$lib/apis/files';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
+	import GeneratedVideoPreview from './GeneratedVideoPreview.svelte';
 
 	export let src = '';
 	export let fileId: string | null = null;
@@ -14,9 +15,13 @@
 	let currentTime = 0;
 	let duration = 0;
 	let muted = false;
+	let showExpanded = false;
+	let expandedAutoplay = false;
+	let videoAspectRatio = 16 / 9;
 
 	$: resolvedSrc = src.startsWith('/') ? `${NEVEAI_BASE_URL}${src}` : src;
 	$: progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+	$: videoDisplayWidth = Math.min(32, 32 * videoAspectRatio);
 
 	const formatTime = (seconds: number) => {
 		if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -43,10 +48,10 @@
 		muted = videoElement.muted;
 	};
 
-	const toggleFullscreen = async () => {
-		if (!playerElement) return;
-		if (document.fullscreenElement) await document.exitFullscreen();
-		else await playerElement.requestFullscreen();
+	const expandPlayer = () => {
+		expandedAutoplay = Boolean(videoElement && !videoElement.paused);
+		videoElement?.pause();
+		showExpanded = true;
 	};
 
 	const download = async () => {
@@ -70,9 +75,19 @@
 	};
 </script>
 
+<GeneratedVideoPreview
+	bind:show={showExpanded}
+	src={resolvedSrc}
+	initialTime={currentTime}
+	autoplay={expandedAutoplay}
+	onDownload={download}
+/>
+
 <div
 	bind:this={playerElement}
-	class="video-player relative aspect-video w-full max-w-[32rem] self-start overflow-hidden rounded-lg bg-transparent text-gray-700 dark:text-gray-200"
+	class="video-player relative w-full self-start overflow-hidden rounded-lg bg-transparent text-gray-700 dark:text-gray-200"
+	class:portrait-video={videoAspectRatio < 1}
+	style={`aspect-ratio: ${videoAspectRatio}; width: min(100%, ${videoDisplayWidth}rem); max-height: 32rem;`}
 >
 	<!-- Generated clips do not have a caption track available. -->
 	<!-- svelte-ignore a11y_media_has_caption -->
@@ -82,7 +97,12 @@
 		preload="metadata"
 		src={resolvedSrc}
 		class="absolute inset-0 block size-full object-cover"
-		on:loadedmetadata={() => (duration = videoElement.duration || 0)}
+		on:loadedmetadata={() => {
+			duration = videoElement.duration || 0;
+			if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+				videoAspectRatio = videoElement.videoWidth / videoElement.videoHeight;
+			}
+		}}
 		on:durationchange={() => (duration = videoElement.duration || 0)}
 		on:timeupdate={() => (currentTime = videoElement.currentTime || 0)}
 		on:play={() => (playing = true)}
@@ -94,22 +114,28 @@
 		on:click={togglePlayback}
 	></video>
 
-	<div class="video-controls absolute inset-x-1 bottom-1 flex h-11 items-center gap-2.5 rounded-md bg-white/10 px-3 backdrop-blur-[3px] dark:bg-black/10">
+	<div class="video-controls absolute inset-x-1 bottom-1 flex h-11 items-center gap-2.5 rounded-md px-3">
 		<button
 			type="button"
-			class="grid size-8 shrink-0 place-items-center rounded-full bg-gray-100 p-0 text-gray-900 transition-colors hover:bg-gray-200 dark:bg-gray-100 dark:hover:bg-white"
+			class="video-play grid size-8 shrink-0 place-items-center p-0 text-white drop-shadow-md transition-colors hover:text-gray-100 dark:text-gray-200 dark:hover:text-white"
 			aria-label={playing ? 'Pausar' : 'Reproduzir'}
 			title={playing ? 'Pausar' : 'Reproduzir'}
 			on:click={togglePlayback}
 		>
-			{#if playing}
-				<svg viewBox="0 0 24 24" fill="currentColor" class="block size-3.5" aria-hidden="true"><rect x="7.25" y="5" width="3.5" height="14" rx="0.75" /><rect x="13.25" y="5" width="3.5" height="14" rx="0.75" /></svg>
+		{#if playing}
+				<svg viewBox="0 0 24 24" fill="currentColor" class="block size-5" aria-hidden="true"><rect x="6.5" y="5" width="4.25" height="14" rx="0.8" /><rect x="13.25" y="5" width="4.25" height="14" rx="0.8" /></svg>
 			{:else}
-				<svg viewBox="0 0 24 24" fill="currentColor" class="block size-3.5" aria-hidden="true"><path d="M8 5.77a.75.75 0 0 1 1.14-.64l10 6.23a.75.75 0 0 1 0 1.28l-10 6.23A.75.75 0 0 1 8 18.23V5.77Z" /></svg>
+				<svg viewBox="0 0 24 24" fill="currentColor" class="block size-5" aria-hidden="true"><path d="M8 5.77a.75.75 0 0 1 1.14-.64l10 6.23a.75.75 0 0 1 0 1.28l-10 6.23A.75.75 0 0 1 8 18.23V5.77Z" /></svg>
 			{/if}
 		</button>
 
-		<span class="w-[2.3rem] shrink-0 text-[0.6875rem] tabular-nums text-white drop-shadow-md dark:text-gray-200">{formatTime(currentTime)}</span>
+		{#if videoAspectRatio < 1}
+			<span class="video-time-combined whitespace-nowrap text-[0.6875rem] tabular-nums text-white drop-shadow-md dark:text-gray-200">
+				{formatTime(currentTime)} / {formatTime(duration)}
+			</span>
+		{:else}
+			<span class="video-current-time w-[2.3rem] shrink-0 text-[0.6875rem] tabular-nums text-white drop-shadow-md dark:text-gray-200">{formatTime(currentTime)}</span>
+		{/if}
 		<input
 			type="range"
 			min="0"
@@ -121,9 +147,11 @@
 			style="--video-progress: {progress}%"
 			on:input={seek}
 		/>
-		<span class="w-[2.3rem] shrink-0 text-right text-[0.6875rem] tabular-nums text-white drop-shadow-md dark:text-gray-200">{formatTime(duration)}</span>
+		{#if videoAspectRatio >= 1}
+			<span class="video-duration w-[2.3rem] shrink-0 text-right text-[0.6875rem] tabular-nums text-white drop-shadow-md dark:text-gray-200">{formatTime(duration)}</span>
+		{/if}
 
-		<div class="flex shrink-0 items-center gap-0.5">
+		<div class="video-actions flex shrink-0 items-center gap-0.5">
 			<button type="button" class="grid size-8 place-items-center rounded-md p-0 text-white drop-shadow-md transition-colors hover:bg-white/15 hover:text-white dark:text-gray-200 dark:hover:bg-white/10 dark:hover:text-white" aria-label={muted ? 'Desilenciar' : 'Silenciar'} title={muted ? 'Desilenciar' : 'Silenciar'} on:click={toggleMuted}>
 				{#if muted}
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-[1.05rem]" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5 6.8 8.5H4.5v7h2.3L11 19V5Zm5.2 5.2 4 4m0-4-4 4" /></svg>
@@ -131,8 +159,8 @@
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-[1.05rem]" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5 6.8 8.5H4.5v7h2.3L11 19V5Zm4.2 3.4a5 5 0 0 1 0 7.2m2.6-9.8a8.5 8.5 0 0 1 0 12.4" /></svg>
 				{/if}
 			</button>
-			<button type="button" class="grid size-8 place-items-center rounded-md p-0 text-white drop-shadow-md transition-colors hover:bg-white/15 hover:text-white dark:text-gray-200 dark:hover:bg-white/10 dark:hover:text-white" aria-label="Tela cheia" title="Tela cheia" on:click={toggleFullscreen}>
-				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-[1.05rem]" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" /></svg>
+			<button type="button" class="grid size-8 place-items-center rounded-md p-0 text-white drop-shadow-md transition-colors hover:bg-white/15 hover:text-white dark:text-gray-200 dark:hover:bg-white/10 dark:hover:text-white" aria-label="Expandir" title="Expandir" on:click={expandPlayer}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-[1.05rem]" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4H4v5m11-5h5v5m0 6v5h-5M4 15v5h5" /></svg>
 			</button>
 			<button type="button" class="grid size-8 place-items-center rounded-md p-0 text-white drop-shadow-md transition-colors hover:bg-white/15 hover:text-white dark:text-gray-200 dark:hover:bg-white/10 dark:hover:text-white" aria-label={$i18n.t('Download')} title={$i18n.t('Download')} on:click={download}>
 				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-[1.05rem]" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 11l5 5 5-5M12 4v12" /></svg>
@@ -142,24 +170,6 @@
 </div>
 
 <style>
-	.video-player:fullscreen {
-		position: fixed !important;
-		inset: 0 !important;
-		width: 100dvw !important;
-		height: 100dvh !important;
-		min-width: 100dvw;
-		min-height: 100dvh;
-		max-width: none;
-		aspect-ratio: auto;
-		overflow: hidden;
-		margin: 0 !important;
-		padding: 0 !important;
-		border: 0;
-		border-radius: 0;
-		clip-path: none;
-		background: transparent;
-	}
-
 	.video-player {
 		border-radius: 0.5rem;
 		clip-path: inset(0 round 0.5rem);
@@ -171,15 +181,26 @@
 		transform: none;
 	}
 
-	.video-player:fullscreen video {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		height: 100%;
-		border-radius: 0;
-		object-fit: cover;
-		transform: none;
+	.portrait-video .video-controls {
+		display: grid;
+		height: 4rem;
+		align-items: center;
+		grid-template-columns: 2rem auto minmax(0, 1fr) auto;
+		grid-template-rows: 1rem 2rem;
+		column-gap: 0.25rem;
+		row-gap: 0.25rem;
+		padding: 0.375rem 0.5rem;
 	}
+
+	.portrait-video .video-progress {
+		grid-column: 1 / -1;
+		grid-row: 1;
+		width: 100%;
+	}
+
+	.portrait-video .video-play { grid-column: 1; grid-row: 2; }
+	.portrait-video .video-time-combined { grid-column: 2; grid-row: 2; }
+	.portrait-video .video-actions { grid-column: 4; grid-row: 2; }
 
 	.video-progress {
 		height: 0.875rem;
