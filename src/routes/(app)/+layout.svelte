@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { onMount, tick, getContext } from 'svelte';
+	import { onMount, onDestroy, tick, getContext } from 'svelte';
 	import { openDB, deleteDB } from 'idb';
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
@@ -29,6 +29,7 @@
 		tags,
 		banners,
 		showSettings,
+		showSettingsTab,
 		temporaryChatEnabled,
 		toolServers,
 		terminalServers,
@@ -36,11 +37,14 @@
 		showSidebar,
 		showControls,
 		mobile,
+		neveDownloadToast,
 		loadShortCodesToEmojis
 	} from '$lib/stores';
 
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
+	import NeveUpdateToast from '$lib/components/chat/NeveUpdateToast.svelte';
+	import DownloadProgressToast from '$lib/components/chat/DownloadNeveModelsProgressToast.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import AccountPending from '$lib/components/layout/Overlay/AccountPending.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
@@ -52,7 +56,61 @@
 	let DB = null;
 	let localDBChats = [];
 
-	let version;
+	let updateCheckInterval: ReturnType<typeof setInterval>;
+	let updateToastDismissed = false;
+	let latestUpdateVersion = '';
+	let updateToastShownVersion = '';
+	let updateToastHeight = 0;
+	let downloadToastHeight = 0;
+	let updateToastObserver: MutationObserver | undefined;
+	let unsubscribeUpdateRoute: (() => void) | undefined;
+	let unsubscribeUpdateSettings: (() => void) | undefined;
+
+	const hasVisibleModal = () =>
+		Array.from(document.querySelectorAll<HTMLElement>('.modal, [role="dialog"][aria-modal="true"]'))
+			.some((element) =>
+				!element.closest('[data-sonner-toast]') &&
+				element.getAttribute('aria-hidden') !== 'true' &&
+				!element.classList.contains('hidden') &&
+				(element.offsetParent !== null || element.getClientRects().length > 0)
+			);
+
+	const syncUpdateToast = () => {
+		const pathname = $page.url.pathname;
+		const isChat = pathname === '/' || /^\/c\/[^/]+\/?$/.test(pathname);
+		const shouldShow = latestUpdateVersion && !updateToastDismissed &&
+			$settings?.showUpdateToast !== false && isChat && !$showSettings && !hasVisibleModal();
+		if (!shouldShow) {
+			updateToastShownVersion = '';
+			return;
+		}
+		updateToastShownVersion = latestUpdateVersion;
+	};
+
+	$: if (typeof document !== 'undefined') {
+		document.documentElement.style.setProperty(
+			'--neve-update-toast-offset',
+			updateToastShownVersion ? `${Math.max(updateToastHeight, 68) + 14}px` : '0px'
+		);
+	}
+
+	$: if (typeof document !== 'undefined') {
+		document.documentElement.style.setProperty(
+			'--neve-download-toast-offset',
+			$neveDownloadToast ? `${Math.max(downloadToastHeight, 82) + 14}px` : '0px'
+		);
+	}
+
+	const closeUpdateToast = () => {
+		updateToastDismissed = true;
+		updateToastShownVersion = '';
+	};
+
+	const openUpdateSettings = () => {
+		closeUpdateToast();
+		showSettingsTab.set('about');
+		showSettings.set(true);
+	};
 
 	const clearChatInputStorage = () => {
 		const chatInputKeys = Object.keys(localStorage).filter((key) => key.startsWith('chat-input'));
@@ -325,19 +383,16 @@
 			}
 		}
 
-		// Check for version updates
 		if ($user?.role === 'admin' && $config?.features?.enable_version_update_check) {
-			// Check if the user has dismissed the update toast in the last 24 hours
-			if (localStorage.dismissedUpdateToast) {
-				const dismissedUpdateToast = new Date(Number(localStorage.dismissedUpdateToast));
-				const now = new Date();
-
-				if (now - dismissedUpdateToast > 24 * 60 * 60 * 1000) {
-					checkForVersionUpdates();
-				}
-			} else {
-				checkForVersionUpdates();
-			}
+			localStorage.removeItem('neveai.dismissedUpdateVersion');
+			unsubscribeUpdateRoute = page.subscribe(syncUpdateToast);
+			unsubscribeUpdateSettings = showSettings.subscribe(syncUpdateToast);
+			updateToastObserver = new MutationObserver(syncUpdateToast);
+			updateToastObserver.observe(document.body, {
+				childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-hidden']
+			});
+			checkForVersionUpdates();
+			updateCheckInterval = setInterval(checkForVersionUpdates, 10 * 60 * 1000);
 		}
 		// Persist showControls: track open/close state separately from saved size
 		// chatControlsSize always retains the last width for openPane()
@@ -352,16 +407,62 @@
 	});
 
 	const checkForVersionUpdates = async () => {
-		version = await getVersionUpdates(localStorage.token).catch((error) => {
-			return {
-				current: NEVEAI_VERSION,
-				latest: NEVEAI_VERSION
-			};
-		});
+		if ($settings?.showUpdateToast === false) {
+			latestUpdateVersion = '';
+			syncUpdateToast();
+			return;
+		}
+		const version = await getVersionUpdates(localStorage.token).catch(() => null);
+		if (!version) return;
+		const latest = String(version.latest_tag || version.latest || '').trim();
+		const current = String(version.current_tag || version.current || NEVEAI_VERSION).trim();
+		const available = version.neve_update_available === true ||
+			(version.neve_update_available === undefined && latest && compareVersion(latest, current));
+		if (!available || !latest) {
+			latestUpdateVersion = '';
+			syncUpdateToast();
+			return;
+		}
+		latestUpdateVersion = latest;
+		syncUpdateToast();
 	};
+
+	onDestroy(() => {
+		clearInterval(updateCheckInterval);
+		updateToastObserver?.disconnect();
+		unsubscribeUpdateRoute?.();
+		unsubscribeUpdateSettings?.();
+		if (typeof document !== 'undefined') {
+			document.documentElement.style.removeProperty('--neve-update-toast-offset');
+			document.documentElement.style.removeProperty('--neve-download-toast-offset');
+		}
+	});
 </script>
 
 <SettingsModal bind:show={$showSettings} />
+
+{#if updateToastShownVersion}
+	<div role="status" aria-live="polite" class="fixed right-[9px] top-7 z-[1000000000] max-[600px]:left-[19px] max-[600px]:right-auto max-[600px]:top-4" bind:clientHeight={updateToastHeight}>
+		<NeveUpdateToast version={updateToastShownVersion} onClose={closeUpdateToast} onOpen={openUpdateSettings} />
+	</div>
+{/if}
+
+{#if $neveDownloadToast}
+	<div
+		role="status"
+		aria-live="polite"
+		class="fixed right-[9px] top-[calc(1.75rem+var(--neve-update-toast-offset,0px))] z-[1000000000] max-[600px]:left-[19px] max-[600px]:right-auto max-[600px]:top-[calc(1rem+var(--neve-update-toast-offset,0px))]"
+		bind:clientHeight={downloadToastHeight}
+	>
+		<DownloadProgressToast
+			name={$neveDownloadToast.name}
+			progress={$neveDownloadToast.progress}
+			label={$neveDownloadToast.label}
+			cancelling={$neveDownloadToast.cancelling}
+			onCancel={$neveDownloadToast.onCancel}
+		/>
+	</div>
+{/if}
 
 
 

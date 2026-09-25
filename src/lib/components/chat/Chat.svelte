@@ -183,7 +183,7 @@
 	let codeExecutionEnabled = false;
 	let fileGenerationEnabled = getFileGenerationPreference(false);
 	let stableDiffusionEnabled = false;
-	let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' = 'neve_image';
+	let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2s' = 'neve_image';
 	let stableDiffusionStyle: 'none' | 'minimalist' | 'polygonal' | 'fantasy' | 'comics' | 'arcane' | 'spontaneous' | 'realistic' | 'manga' | 'pixelated' = 'none';
 	let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	let musicGenerationEnabled = false;
@@ -1891,7 +1891,7 @@
 
 	onMount(() => {
 		const savedImageQuality = localStorage.getItem('neveai.imageQuality');
-		stableDiffusionQuality = ['neve_image', 'neve_image_2', 'qwen_image_2_1'].includes(savedImageQuality ?? '')
+		stableDiffusionQuality = ['neve_image', 'neve_image_2', 'qwen_image_2_1', 'qwen_image_2s'].includes(savedImageQuality ?? '')
 			? (savedImageQuality as typeof stableDiffusionQuality)
 			: 'neve_image';
 		const previousImageStyle = localStorage.getItem('neveai.imageStyle');

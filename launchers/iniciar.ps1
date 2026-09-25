@@ -14,6 +14,7 @@ $WindowScript = Join-Path $Root 'neve_window.py'
 $WindowIconPath = Join-Path $Root 'static\static\faviconbar.ico'
 $LogDir = Join-Path $Root 'logs'
 $LogPath = Join-Path $LogDir 'start-launcher.log'
+$VersionPath = Join-Path $Root 'version.txt'
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
@@ -132,7 +133,9 @@ $xaml = @'
         AllowsTransparency="True"
         Background="Transparent"
         Topmost="True"
-        ShowInTaskbar="True">
+        ShowInTaskbar="True"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True">
     <Border Background="#171717"
             BorderBrush="#303030"
             BorderThickness="1"
@@ -142,6 +145,8 @@ $xaml = @'
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <StackPanel Grid.Row="0"
@@ -150,27 +155,39 @@ $xaml = @'
                         Orientation="Vertical">
                 <StackPanel HorizontalAlignment="Center"
                             Orientation="Horizontal"
-                            Margin="0,0,0,18">
+                            Margin="0.5,0,0,0">
                     <Image x:Name="Logo"
-                           Width="84"
-                           Height="84"
+                           Width="54"
+                           Height="54"
                            Stretch="Uniform"
-                           Margin="-23,3,0,0" />
+                           RenderOptions.BitmapScalingMode="HighQuality"
+                           SnapsToDevicePixels="True" />
                     <TextBlock Text="NeveAI"
                                VerticalAlignment="Center"
                                Foreground="#F3F5F7"
                                FontSize="38"
-                               FontWeight="SemiBold" />
+                               FontWeight="SemiBold"
+                               Margin="12,0,0,0" />
                 </StackPanel>
-                <TextBlock x:Name="StatusText"
-                           Text="Iniciando..."
-                           HorizontalAlignment="Center"
-                           Foreground="#A9B1BC"
-                           FontSize="12"
-                           Margin="10,20,0,0" />
             </StackPanel>
 
-            <Grid Grid.Row="1">
+            <TextBlock x:Name="VersionText"
+                       Grid.Row="1"
+                       Text=""
+                       HorizontalAlignment="Left"
+                       Foreground="#C2C7CD"
+                       FontSize="11"
+                       Margin="0,0,0,4" />
+
+            <TextBlock x:Name="StatusText"
+                       Grid.Row="2"
+                       Text="Iniciando..."
+                       HorizontalAlignment="Left"
+                       Foreground="#A9B1BC"
+                       FontSize="11.5"
+                       Margin="0,0,0,10" />
+
+            <Grid Grid.Row="3">
                 <ProgressBar x:Name="Progress"
                              Height="6"
                              Minimum="0"
@@ -178,7 +195,21 @@ $xaml = @'
                              Value="0"
                              Foreground="#F3F5F7"
                              Background="#303030"
-                             BorderThickness="0" />
+                             BorderThickness="0">
+                    <ProgressBar.Template>
+                        <ControlTemplate TargetType="{x:Type ProgressBar}">
+                            <Grid>
+                                <Border x:Name="PART_Track"
+                                        Background="{TemplateBinding Background}"
+                                        CornerRadius="3" />
+                                <Border x:Name="PART_Indicator"
+                                        HorizontalAlignment="Left"
+                                        Background="{TemplateBinding Foreground}"
+                                        CornerRadius="3" />
+                            </Grid>
+                        </ControlTemplate>
+                    </ProgressBar.Template>
+                </ProgressBar>
             </Grid>
         </Grid>
     </Border>
@@ -188,8 +219,13 @@ $xaml = @'
 $reader = New-Object System.Xml.XmlNodeReader ([xml]$xaml)
 $window = [Windows.Markup.XamlReader]::Load($reader)
 $logo = $window.FindName('Logo')
+$versionText = $window.FindName('VersionText')
 $statusText = $window.FindName('StatusText')
 $progressBar = $window.FindName('Progress')
+
+if (Test-Path -LiteralPath $VersionPath) {
+	$versionText.Text = (Get-Content -LiteralPath $VersionPath -Raw).Trim()
+}
 
 if (Test-Path -LiteralPath $WindowIconPath) {
 	$window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([Uri]$WindowIconPath)
@@ -211,8 +247,14 @@ if ($logoPath) {
 	$image.BeginInit()
 	$image.UriSource = [Uri]$logoPath
 	$image.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+	$image.CreateOptions = [System.Windows.Media.Imaging.BitmapCreateOptions]::PreservePixelFormat
+	$image.DecodePixelWidth = 336
 	$image.EndInit()
-	$logo.Source = $image
+	$image.Freeze()
+	$crop = New-Object System.Windows.Int32Rect(54, 54, 228, 228)
+	$croppedImage = New-Object System.Windows.Media.Imaging.CroppedBitmap($image, $crop)
+	$croppedImage.Freeze()
+	$logo.Source = $croppedImage
 }
 
 function Set-SplashProgress {

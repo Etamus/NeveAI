@@ -157,7 +157,7 @@
 	};
 
 	const createFolder = async ({ name, data, parent_id }) => {
-		name = name?.trim();
+		name = (name ?? '').trim().slice(0, 60);
 		if (!name) {
 			toast.error($i18n.t('Folder name cannot be empty.'));
 			return;
@@ -168,13 +168,16 @@
 		if (siblings.find((folder) => folder.name.toLowerCase() === name.toLowerCase())) {
 			// If a folder with the same name already exists, append a number to the name
 			let i = 1;
+			let candidate = name;
 			while (
-				siblings.find((folder) => folder.name.toLowerCase() === `${name} ${i}`.toLowerCase())
+				siblings.find((folder) => folder.name.toLowerCase() === candidate.toLowerCase())
 			) {
+				const suffix = ` ${i}`;
+				candidate = `${name.slice(0, 60 - suffix.length).trimEnd()}${suffix}`;
 				i++;
 			}
 
-			name = `${name} ${i}`;
+			name = candidate;
 		}
 
 		// Add a dummy folder to the list to show the user that the folder is being created
@@ -459,13 +462,25 @@
 			document.documentElement.style.setProperty('--sidebar-width', `${w}px`);
 		});
 
-		showSidebar.set(!$mobile ? (localStorage.sidebar !== 'false') : false);
+		let desktopSidebarOpen = localStorage.sidebar !== 'false';
+		let applyingResponsiveState = false;
+		const desktopShell =
+			new URLSearchParams(window.location.search).has('neve-desktop') ||
+			sessionStorage.getItem('neve-desktop-window') === '1';
+		const sidebarStartupFixKey = 'neve-sidebar-startup-fix-v1';
+		if (desktopShell && localStorage.getItem(sidebarStartupFixKey) !== '1') {
+			desktopSidebarOpen = true;
+			localStorage.sidebar = 'true';
+			localStorage.setItem(sidebarStartupFixKey, '1');
+		}
+
+		showSidebar.set($mobile ? false : desktopSidebarOpen);
 
 		const unsubscribers = [
 			mobile.subscribe((value) => {
-				if ($showSidebar && value) {
-					showSidebar.set(false);
-				}
+				applyingResponsiveState = true;
+				showSidebar.set(value ? false : desktopSidebarOpen);
+				applyingResponsiveState = false;
 
 				if ($showSidebar && !value) {
 					const navElement = document.getElementsByTagName('nav')[0];
@@ -475,7 +490,10 @@
 				}
 			}),
 			showSidebar.subscribe(async (value) => {
-				localStorage.sidebar = value;
+				if (!$mobile && !applyingResponsiveState) {
+					desktopSidebarOpen = value;
+					localStorage.sidebar = String(value);
+				}
 
 				// nav element is not available on the first render
 				const navElement = document.getElementsByTagName('nav')[0];

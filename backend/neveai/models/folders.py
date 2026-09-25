@@ -5,7 +5,7 @@ from typing import Optional
 import re
 
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import BigInteger, Column, Text, JSON, Boolean, func
 from sqlalchemy.orm import Session
 
@@ -74,12 +74,30 @@ class FolderForm(BaseModel):
     parent_id: Optional[str] = None
     model_config = ConfigDict(extra="allow")
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value or len(value) > 60:
+            raise ValueError("Project name must contain between 1 and 60 characters")
+        return value
+
 
 class FolderUpdateForm(BaseModel):
     name: Optional[str] = None
     data: Optional[dict] = None
     meta: Optional[dict] = None
     model_config = ConfigDict(extra="allow")
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        value = value.strip()
+        if not value or len(value) > 60:
+            raise ValueError("Project name must contain between 1 and 60 characters")
+        return value
 
 
 class FolderTable:

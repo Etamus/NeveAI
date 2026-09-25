@@ -35,6 +35,7 @@
 
 	const submitHandler = async () => {
 		loading = true;
+		name = name.trim().slice(0, 60);
 
 		if ((data?.files ?? []).some((file) => file.status === 'uploading')) {
 			toast.error($i18n.t('Please wait until all files are uploaded.'));
@@ -144,6 +145,7 @@
 							class="w-full text-sm bg-transparent outline-hidden placeholder:text-gray-300 dark:placeholder:text-gray-700"
 							type="text"
 							bind:value={name}
+							maxlength="60"
 							placeholder={$i18n.t('Digite o nome do projeto')}
 							autocomplete="off"
 						/>

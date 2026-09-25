@@ -2357,7 +2357,7 @@ async def chat_stable_diffusion_handler(
     progress_height = int(request.app.state.config.STABLE_DIFFUSION_HEIGHT)
     if quality == "neve_image_2":
         progress_width, progress_height = quality_image_dimensions(resolution)
-    elif quality == "qwen_image_2_1":
+    elif quality in {"qwen_image_2_1", "qwen_image_2s"}:
         progress_width, progress_height = qwen_image_dimensions(resolution)
     last_progress = 0
 
@@ -2425,10 +2425,10 @@ async def chat_stable_diffusion_handler(
         if quality == "neve_image_2":
             width, height = quality_image_dimensions(resolution)
             steps = 8
-        elif quality == "qwen_image_2_1":
+        elif quality in {"qwen_image_2_1", "qwen_image_2s"}:
             width, height = qwen_image_dimensions(resolution)
-            steps = QWEN_IMAGE_21_STEPS
-            guidance_scale = 6.0
+            steps = 6 if quality == "qwen_image_2s" else QWEN_IMAGE_21_STEPS
+            guidance_scale = 1.0 if quality == "qwen_image_2s" else 6.0
 
         # Put LLM in standby
         llm_standby_info = None
@@ -2439,23 +2439,35 @@ async def chat_stable_diffusion_handler(
 
         try:
             # Generate image directly and skip the LLM response path.
-            data_uri = await _sd_pipeline.run(
-                model_id=model_id,
-                hf_token=hf_token,
-                quality=quality,
-                style=style,
-                resolution=resolution,
-                prompt=image_prompt,
-                width=width,
-                height=height,
-                steps=steps,
-                guidance_scale=guidance_scale,
-                init_image_reference=(init_image_references[0] if init_image_references else None),
-                init_image_references=init_image_references,
-                user_id=getattr(user, "id", None),
-                progress_callback=emit_image_progress,
-                dimensions_callback=emit_image_dimensions,
-            )
+            if quality == "qwen_image_2s":
+                from neveai.routers.image_fast_generation import neve_image_2s_runtime
+
+                data_uri = await neve_image_2s_runtime.run(
+                    prompt=image_prompt,
+                    resolution=resolution,
+                    references=init_image_references,
+                    user_id=getattr(user, "id", None),
+                    progress=emit_image_progress,
+                    dimensions=emit_image_dimensions,
+                )
+            else:
+                data_uri = await _sd_pipeline.run(
+                    model_id=model_id,
+                    hf_token=hf_token,
+                    quality=quality,
+                    style=style,
+                    resolution=resolution,
+                    prompt=image_prompt,
+                    width=width,
+                    height=height,
+                    steps=steps,
+                    guidance_scale=guidance_scale,
+                    init_image_reference=(init_image_references[0] if init_image_references else None),
+                    init_image_references=init_image_references,
+                    user_id=getattr(user, "id", None),
+                    progress_callback=emit_image_progress,
+                    dimensions_callback=emit_image_dimensions,
+                )
 
             header, encoded_image = data_uri.split(",", 1)
             content_type = header[5:].split(";", 1)[0] or "image/png"
@@ -2475,7 +2487,7 @@ async def chat_stable_diffusion_handler(
                 request,
                 file=upload,
                 metadata={
-                    "source": "qwen-image-2.1" if quality == "qwen_image_2_1" else "z-image-turbo",
+                    "source": "qwen-image-2s" if quality == "qwen_image_2s" else "qwen-image-2.1" if quality == "qwen_image_2_1" else "z-image-turbo",
                     "prompt": image_prompt,
                     "quality": quality,
                     "style": style,

@@ -318,7 +318,7 @@
 
 		const currentName = folders[folderId].name;
 
-		name = name.trim();
+		name = name.trim().slice(0, 60);
 		folders[folderId].name = name;
 
 		const res = await updateFolderById(localStorage.token, folderId, {
@@ -597,6 +597,7 @@
 							id="folder-{folderId}-input"
 							type="text"
 							bind:value={name}
+							maxlength="60"
 							on:blur={() => {
 								console.log('Blur');
 								updateHandler({ name });

@@ -205,11 +205,13 @@ NeveAI/
 ### Outras Funcionalidades
 - **Busca na web** via SearXNG (sem chave de API)
 - **Execução de código Python** via Pyodide (WebAssembly, no browser)
-- **Geração e edição de imagens local** com Neve Image 1, Neve Image 1.4 (estilos e resoluções selecionáveis) e Neve Image 2 (até 10 imagens de referência)
+- **Geração e edição de imagens local** com Neve Image 1, Neve Image 1.4 (estilos e resoluções selecionáveis), Neve Image 2 (até 10 imagens de referência) e Neve Image 2 Fast (ComfyUI isolado, Turbo em 6 passos, até 3 referências)
 - **Geração de músicas** via Neve-Step 1.5 Turbo local, com orientação de estilo, letras em português e player integrado
 - **Geração de vídeos local** com MiniMax H3, suporte a texto ou imagem de referência e seletores de resolução e duração
 - **Ferramentas para documentos** com geração assistida pela LLM e OfficeCLI para saídas DOCX, XLSX e PPTX, mantendo o pipeline interno como fallback
 - **MCP (Model Context Protocol)** v1.26 para ferramentas externas
+
+O Neve Image 2 Fast baixa os pesos na primeira utilização e usa ComfyUI com CUDA e o LoRA. Em AMD no Windows, a seleção usa o Neve Image 2 pelo backend Vulkan como fallback compatível (sem aceleração de 6 passos).
 
 ---
 

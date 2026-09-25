@@ -129,6 +129,14 @@
 		}
 	}
 
+	const isImageAttachment = (file) =>
+		file?.type === 'image' || (file?.content_type ?? '').startsWith('image/');
+
+	const getAttachmentUrl = (file) =>
+		file?.url?.startsWith('data') || file?.url?.startsWith('http')
+			? file.url
+			: `${NEVEAI_API_BASE_URL}/files/${file.url}${file?.content_type ? '/content' : ''}`;
+
 	$: if (message.content && contentElement) {
 		tick().then(checkOverflow);
 	}
@@ -157,29 +165,61 @@
 		<div class="chat-{message.role} w-full min-w-full markdown-prose">
 			{#if edit !== true}
 				{#if message.files}
+					{@const imageFiles = message.files.filter(isImageAttachment)}
+					{@const otherFiles = message.files.filter((file) => !isImageAttachment(file))}
 					<div
 						class="mb-1 w-full flex flex-col justify-end overflow-x-auto gap-1 flex-wrap"
 						dir={$settings?.chatDirection ?? 'auto'}
 					>
-						{#each message.files as file}
-							{@const fileUrl =
-								file.url?.startsWith('data') || file.url?.startsWith('http')
-									? file.url
-									: `${NEVEAI_API_BASE_URL}/files/${file.url}${file?.content_type ? '/content' : ''}`}
+						{#if imageFiles.length > 1}
+							{@const gridRemainder = imageFiles.length % 3}
+							<div
+								class="grid w-full max-w-[26rem] {imageFiles.length === 2
+									? 'grid-cols-2'
+									: 'grid-cols-3'} gap-1 {($settings?.chatBubble ?? true)
+									? 'self-end'
+									: ''}"
+							>
+								{#each imageFiles as file, fileIndex}
+									<div
+										class="aspect-square min-w-0 overflow-hidden rounded-lg"
+										style:grid-column-start={imageFiles.length >= 4 &&
+										gridRemainder > 0 &&
+										fileIndex === imageFiles.length - gridRemainder
+											? `${4 - gridRemainder}`
+											: undefined}
+									>
+										<Image
+											src={getAttachmentUrl(file)}
+											alt={file?.name ?? ''}
+											containerClassName="size-full"
+											className="block size-full outline-hidden focus:outline-hidden"
+											imageClassName="block size-full rounded-lg object-cover"
+										/>
+									</div>
+								{/each}
+							</div>
+						{:else if imageFiles.length === 1}
 							<div class={($settings?.chatBubble ?? true) ? 'self-end' : ''}>
-								{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
-									<Image src={fileUrl} imageClassName=" max-h-96 rounded-lg" />
-								{:else}
-									<FileItem
-										item={file}
-										chatAttachment={true}
-										url={file.url}
-										name={file.name}
-										type={file.type}
-										size={file?.size}
-										small={true}
-									/>
-								{/if}
+								<Image
+									src={getAttachmentUrl(imageFiles[0])}
+									alt={imageFiles[0]?.name ?? ''}
+									imageClassName="max-h-96 rounded-lg"
+								/>
+							</div>
+						{/if}
+
+						{#each otherFiles as file}
+							<div class={($settings?.chatBubble ?? true) ? 'self-end' : ''}>
+								<FileItem
+									item={file}
+									chatAttachment={true}
+									url={file.url}
+									name={file.name}
+									type={file.type}
+									size={file?.size}
+									small={true}
+								/>
 							</div>
 						{/each}
 					</div>

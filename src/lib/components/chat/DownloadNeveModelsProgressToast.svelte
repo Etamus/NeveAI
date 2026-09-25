@@ -9,7 +9,7 @@
 </script>
 
 <div
-	class="pointer-events-auto w-[20.75rem] -translate-x-1 translate-y-5 rounded-xl border border-gray-200 bg-white px-4 py-3 text-gray-900 shadow-lg dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
+	class="pointer-events-auto w-[20.75rem] max-w-[calc(100vw-2rem)] -translate-x-1 translate-y-5 rounded-xl border border-gray-200 bg-white px-4 py-3 text-gray-900 shadow-lg dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
 >
 	<div class="flex min-w-0 items-start gap-3">
 		<div class="min-w-0 flex-1">
@@ -35,10 +35,3 @@
 		<div class="h-full rounded-full bg-black transition-all dark:bg-white" style="width: {percent}%"></div>
 	</div>
 </div>
-
-<style>
-	:global([data-sonner-toast].neve-download-progress-toast-shell) {
-		pointer-events: none;
-		overflow-wrap: normal;
-	}
-</style>

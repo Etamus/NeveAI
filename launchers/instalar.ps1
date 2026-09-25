@@ -86,7 +86,7 @@ $LOG_DIR  = Join-Path $ROOT 'logs'
 if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
 $LOG = Join-Path $LOG_DIR 'install.log'
 $STATE_FILE = Join-Path $LOG_DIR 'install-state.txt'
-$INSTALLER_REVISION = '2026-09-01-transactional-update-v1'
+$INSTALLER_REVISION = '2026-09-25-update-validation-v2'
 '' | Set-Content $LOG
 Add-Content -LiteralPath $LOG -Value ("[INSTALLER] revision={0}; script={1}; root={2}" -f $INSTALLER_REVISION, $SCRIPT_PATH, $ROOT) -Encoding UTF8
 [System.IO.File]::WriteAllText($STATE_FILE, 'idle', [System.Text.UTF8Encoding]::new($false))
@@ -2413,7 +2413,10 @@ function Normalize-ReleaseTag([string]$tag) {
 }
 
 function Get-VersionParts([string]$tag) {
-    $matches = [regex]::Matches((Normalize-ReleaseTag $tag), '\d+')
+    $normalized = Normalize-ReleaseTag $tag
+    if ($normalized -match '^b(\d+)$') { return @([int]$matches[1]) }
+    $core = ($normalized -split '[-+]', 2)[0]
+    $matches = [regex]::Matches($core, '\d+')
     $parts = @()
     foreach ($match in $matches) { $parts += [int]$match.Value }
     return $parts
@@ -2435,6 +2438,38 @@ function Test-ReleaseTagNewer([string]$current, [string]$latest) {
         $latestValue = if ($i -lt $latestParts.Count) { $latestParts[$i] } else { 0 }
         if ($latestValue -gt $currentValue) { return $true }
         if ($latestValue -lt $currentValue) { return $false }
+    }
+
+    $semverPattern = '^\d+(?:\.\d+)*(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$'
+    $currentMatch = [regex]::Match($currentNorm, $semverPattern)
+    $latestMatch = [regex]::Match($latestNorm, $semverPattern)
+    if (-not $currentMatch.Success -or -not $latestMatch.Success) { return $false }
+
+    $currentPre = $currentMatch.Groups[1].Value
+    $latestPre = $latestMatch.Groups[1].Value
+    if ($currentPre -and -not $latestPre) { return $true }
+    if (-not $currentPre -or -not $latestPre) { return $false }
+
+    $currentIds = @($currentPre -split '\.')
+    $latestIds = @($latestPre -split '\.')
+    $count = [Math]::Max($currentIds.Count, $latestIds.Count)
+    for ($i = 0; $i -lt $count; $i++) {
+        if ($i -ge $currentIds.Count) { return $true }
+        if ($i -ge $latestIds.Count) { return $false }
+        $currentNumber = 0
+        $latestNumber = 0
+        $currentNumeric = [int]::TryParse($currentIds[$i], [ref]$currentNumber)
+        $latestNumeric = [int]::TryParse($latestIds[$i], [ref]$latestNumber)
+        if ($currentNumeric -and $latestNumeric) {
+            if ($latestNumber -gt $currentNumber) { return $true }
+            if ($latestNumber -lt $currentNumber) { return $false }
+        } elseif ($currentNumeric -ne $latestNumeric) {
+            return $currentNumeric
+        } else {
+            $comparison = [string]::CompareOrdinal($latestIds[$i], $currentIds[$i])
+            if ($comparison -gt 0) { return $true }
+            if ($comparison -lt 0) { return $false }
+        }
     }
 
     return $false
@@ -2899,6 +2934,12 @@ foreach ($name in 'LogoImg','BtnClose',
                   'LblDoneTitle','LblDoneSub','LblSummary',
                   'BtnLlama','BtnCancel','BtnPrimary') {
     $ctl[$name] = $window.FindName($name)
+}
+
+function Test-ReleaseTagValid([string]$tag) {
+    $normalized = Normalize-ReleaseTag $tag
+    return -not [string]::IsNullOrWhiteSpace($normalized) -and
+        [regex]::IsMatch($normalized, '^\d+(?:\.\d+)*(?:[-+][0-9A-Za-z.-]+)?$')
 }
 
 $script:UpdateProcessList = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
@@ -3612,6 +3653,9 @@ $llamaCheckError = $null
 try {
     $releaseObj = Get-GitHubLatestRelease $REPO_OWNER $REPO_NAME
     $latestTag  = $releaseObj.tag_name
+    if (-not (Test-ReleaseTagValid $latestTag)) {
+        throw "O GitHub retornou uma versão inválida: '$latestTag'."
+    }
 } catch {
     $checkError = Get-FriendlyGitHubError $_
 }
@@ -3619,7 +3663,7 @@ try {
     $llamaPreferredBackends = @()
     if ($llamaInstalledAsset -match '-bin-win-(.+)-x64\.zip$') {
         $llamaPreferredBackends = @($matches[1])
-    } elseif ($llamaInstalledBackend -in @('cpu', 'cuda-12.4', 'cuda-13.3', 'cuda-cu12.4', 'cuda-cu13.3', 'vulkan')) {
+    } elseif ($llamaInstalledBackend -in @('cpu', 'cuda-12.4', 'cuda-13.3', 'cuda-13.4', 'cuda-cu12.4', 'cuda-cu13.3', 'cuda-cu13.4', 'vulkan')) {
         $llamaPreferredBackends = @($llamaInstalledBackend)
     }
     $llamaReleaseObj = Get-GitHubLatestLlamaRelease ([string[]]$llamaPreferredBackends)
@@ -3645,8 +3689,9 @@ if ($checkError) {
     if (-not $appIntegrity.Ok) {
         $notes = "Instalação local incompleta. O atualizador vai reparar a partir do release do GitHub.`r`nFaltando: $($appIntegrity.Missing -join ', ')`r`n`r`n$notes"
     }
-    $sameNeveVersion = (Normalize-ReleaseTag $currentVersion) -eq (Normalize-ReleaseTag $latestTag)
-    $hasNeveUpdate = Test-ReleaseTagNewer $currentVersion $latestTag
+    $currentVersionValid = Test-ReleaseTagValid $currentVersion
+    $sameNeveVersion = $currentVersionValid -and (Normalize-ReleaseTag $currentVersion) -eq (Normalize-ReleaseTag $latestTag)
+    $hasNeveUpdate = (-not $currentVersionValid) -or (Test-ReleaseTagNewer $currentVersion $latestTag)
     if ($sameNeveVersion -and $appIntegrity.Ok) {
         $ctl.LblStatus.Text     = 'Atualizado'
         $ctl.LblStatus.Foreground = '#10B981'
@@ -3656,7 +3701,7 @@ if ($checkError) {
         $ctl.LblStatus.Foreground = '#D97706'
         $ctl.ChkUpdateNeve.Visibility = 'Visible'
         $ctl.ChkUpdateNeve.IsChecked = $true
-    } elseif ($hasNeveUpdate) {
+    } elseif ($hasNeveUpdate -or -not $appIntegrity.Ok) {
         $ctl.LblStatus.Text     = 'Pendente'
         $ctl.LblStatus.Foreground = '#D97706'
         $ctl.ChkUpdateNeve.Visibility = 'Visible'

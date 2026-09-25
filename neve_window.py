@@ -47,6 +47,67 @@ _LR_DEFAULTSIZE = 0x0040
 _taskbar_icon = None
 
 
+def _set_nested_pref(data: dict, dotted_key: str, value) -> None:
+    target = data
+    parts = dotted_key.split(".")
+    for part in parts[:-1]:
+        child = target.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            target[part] = child
+        target = child
+    target[parts[-1]] = value
+
+
+def _update_profile_json(path: str, preferences: dict[str, object]) -> None:
+    data: dict = {}
+    try:
+        with open(path, "r", encoding="utf-8") as source:
+            loaded = json.load(source)
+            if isinstance(loaded, dict):
+                data = loaded
+    except (OSError, ValueError):
+        pass
+
+    for key, value in preferences.items():
+        _set_nested_pref(data, key, value)
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temporary_path = f"{path}.neve.tmp"
+    try:
+        with open(temporary_path, "w", encoding="utf-8") as output:
+            json.dump(data, output, ensure_ascii=False, separators=(",", ":"))
+        os.replace(temporary_path, path)
+    except OSError:
+        try:
+            os.remove(temporary_path)
+        except OSError:
+            pass
+
+
+def _prepare_browser_profile() -> None:
+    """Disable browser onboarding that is irrelevant inside the app window."""
+    _update_profile_json(
+        os.path.join(_PROFILE, "Local State"),
+        {
+            "brave.p3a.enabled": False,
+            "brave.p3a.notice_acknowledged": True,
+            "brave.stats.reporting_enabled": False,
+            "brave.dont_ask_for_crash_reporting": True,
+            "browser.enabled_labs_experiments": [],
+        },
+    )
+    _update_profile_json(
+        os.path.join(_PROFILE, "Default", "Preferences"),
+        {
+            "browser.has_seen_welcome_page": True,
+            "browser.show_home_button": False,
+            "translate.enabled": False,
+            "translate_blocked_languages": ["pt", "pt-BR"],
+        },
+    )
+
+
 class _WindowPlacement(ctypes.Structure):
     _fields_ = [
         ("length", wintypes.UINT),
@@ -545,6 +606,7 @@ def main():
         return
 
     os.makedirs(_PROFILE, exist_ok=True)
+    _prepare_browser_profile()
     saved_state = _load_window_state()
     process = subprocess.Popen([
         browser,
@@ -554,9 +616,12 @@ def main():
         "--start-minimized",
         "--no-first-run",
         "--no-default-browser-check",
+        "--disable-default-apps",
+        "--disable-notifications",
+        "--disable-translate",
         "--disable-background-mode",
         "--disable-extensions",
-        "--disable-features=WebAppIconInTitlebar",
+        "--disable-features=WebAppIconInTitlebar,Translate,TranslateUI,BraveDayZeroExperiment",
         f"--user-data-dir={_PROFILE}",
     ])
     hwnd = _bring_app_to_front(process, saved_state)

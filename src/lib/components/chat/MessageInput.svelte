@@ -146,17 +146,17 @@
 	export let codeExecutionEnabled = false;
 	export let fileGenerationEnabled = false;
 	export let stableDiffusionEnabled = false;
-	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' = 'neve_image';
+	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2s' = 'neve_image';
 	export let stableDiffusionStyle: 'none' | 'minimalist' | 'polygonal' | 'fantasy' | 'comics' | 'arcane' | 'spontaneous' | 'realistic' | 'manga' | 'pixelated' = 'none';
 	const imageStyleOptions = [
 		{ id: 'none', label: 'Sem estilo', image: '' },
 		{ id: 'realistic', label: 'Realista', image: '/static/realista.webp' },
 		{ id: 'spontaneous', label: 'Espontâneo', image: '/static/espontaneo.webp' },
-		{ id: 'fantasy', label: 'Fantasia', image: '/static/fantasia.webp' },
 		{ id: 'minimalist', label: 'Minimalista', image: '/static/minimalista.webp' },
-		{ id: 'polygonal', label: 'Poligonal', image: '/static/poligonal.webp' },
+		{ id: 'fantasy', label: 'Fantasia', image: '/static/fantasia.webp' },
 		{ id: 'manga', label: 'Mangá', image: '/static/manga.webp' },
 		{ id: 'comics', label: 'Quadrinhos', image: '/static/quadrinhos.webp' },
+		{ id: 'polygonal', label: 'Poligonal', image: '/static/poligonal.webp' },
 		{ id: 'pixelated', label: 'Pixelado', image: '/static/pixelado.webp' },
 		{ id: 'arcane', label: 'Arcano', image: '/static/arcano.webp' }
 	] as const;
@@ -624,6 +624,7 @@
 	let showThinkingDropdown = false;
 	let showImageQualityDropdown = false;
 	let showImageStyleDropdown = false;
+	let imageStyleDropdownBottom: number | null = null;
 	let showImageResolutionDropdown = false;
 	let showVideoResolutionDropdown = false;
 	let showVideoDurationDropdown = false;
@@ -636,6 +637,26 @@
 	$: if (stableDiffusionEnabled || videoGenerationEnabled) {
 		showThinkingDropdown = false;
 	}
+
+	const toggleImageStyleDropdown = () => {
+		showImageQualityDropdown = false;
+		showImageResolutionDropdown = false;
+		const opening = !showImageStyleDropdown;
+
+		if (opening && history?.currentId) {
+			const composer = document.getElementById('message-input-container');
+			const anchor = document.getElementById('image-style-dropdown-container');
+			if (composer && anchor) {
+				const composerRect = composer.getBoundingClientRect();
+				const anchorRect = anchor.getBoundingClientRect();
+				imageStyleDropdownBottom = Math.max(0, composerRect.bottom - anchorRect.top + 6);
+			}
+		} else {
+			imageStyleDropdownBottom = null;
+		}
+
+		showImageStyleDropdown = opening;
+	};
 	$: if (!stableDiffusionEnabled) {
 		showImageQualityDropdown = false;
 		showImageStyleDropdown = false;
@@ -1786,7 +1807,7 @@
 							<div class="{isCompact ? 'flex-1 min-w-0 px-1 flex items-center' : 'px-2.5'}">
 								<div
 									bind:this={chatInputContainerEl}
-									class="scrollbar-hidden chat-input-scroll rtl:text-right ltr:text-left bg-transparent dark:text-gray-100 outline-hidden w-full px-1 resize-none h-fit max-h-47 overflow-auto {files.length ===
+									class="chat-input-scroll rtl:text-right ltr:text-left bg-transparent dark:text-gray-100 outline-hidden w-full px-1 resize-none h-fit max-h-47 overflow-auto {files.length ===
 									0
 										? atSelectedModel !== undefined
 											? 'pt-1.5'
@@ -2046,8 +2067,9 @@
 							{/if}
 
 							{#if !isCompact}
-							<div class=" flex justify-between mt-2 mb-2.5 mx-0.5 max-w-full" dir="ltr">
-								<div class="ml-1 self-end flex items-center flex-1 max-w-[80%] @container">
+							<div class="message-input-actions flex justify-between mt-2 mb-2.5 mx-0.5 max-w-full {stableDiffusionEnabled && stableDiffusionQuality !== 'neve_image' ? 'stable-image-actions' : ''} {stableDiffusionEnabled && (stableDiffusionQuality === 'qwen_image_2_1' || stableDiffusionQuality === 'qwen_image_2s') ? 'stable-image-actions-no-style' : ''}" dir="ltr">
+								<div class="message-input-actions-primary ml-1 self-end flex items-center flex-1 max-w-[80%] @container">
+									<div class="message-input-add-control shrink-0">
 									<InputMenu
 										bind:files
 										selectedModels={atSelectedModel ? [atSelectedModel.id] : selectedModels}
@@ -2129,7 +2151,8 @@
 									>
 										<PlusAlt className="size-5.5" />
 									</div>
-								</InputMenu>
+									</InputMenu>
+									</div>
 									{#if selectedModelIds.length === 1 && $models.find((m) => m.id === selectedModelIds[0])?.has_user_valves}
 										<div class="ml-1 flex gap-1.5">
 											<Tooltip content={$i18n.t('Valves')} placement="top">
@@ -2149,7 +2172,7 @@
 										</div>
 									{/if}
 
-									<div class="ml-2.5 flex gap-1.5">
+									<div class="message-input-active-controls ml-2.5 flex gap-1.5">
 										{#if (selectedToolIds ?? []).length > 0}
 											<Tooltip
 												content={$i18n.t('{{COUNT}} Available Tools', {
@@ -2282,7 +2305,7 @@
 											<button
 												on:click|preventDefault={() => (stableDiffusionEnabled = !stableDiffusionEnabled)}
 												type="button"
-												class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-pink-500 dark:text-pink-300 hover:bg-pink-100 dark:hover:bg-pink-700/10"
+												class="stable-image-toggle group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-pink-500 dark:text-pink-300 hover:bg-pink-100 dark:hover:bg-pink-700/10"
 											>
 												<div class="relative size-4 shrink-0 flex items-center justify-center">
 													<span class="group-hover:hidden flex items-center justify-center">
@@ -2294,14 +2317,14 @@
 												</div>
 												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Imagem</span>
 											</button>
-										<div class="relative shrink-0" id="image-quality-dropdown-container">
+										<div class="image-quality-control relative shrink-0" id="image-quality-dropdown-container">
 											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label="Modelo de imagem" aria-expanded={showImageQualityDropdown} on:click|preventDefault={() => { showImageStyleDropdown = false; showImageResolutionDropdown = false; showImageQualityDropdown = !showImageQualityDropdown; }}>
-												<span>{stableDiffusionQuality === 'qwen_image_2_1' ? 'Neve Image 2' : stableDiffusionQuality === 'neve_image_2' ? 'Neve Image 1.4' : 'Neve Image 1'}</span>
+												<span>{stableDiffusionQuality === 'qwen_image_2s' ? 'Neve Image 2 Fast' : stableDiffusionQuality === 'qwen_image_2_1' ? 'Neve Image 2' : stableDiffusionQuality === 'neve_image_2' ? 'Neve Image 1.4' : 'Neve Image 1'}</span>
 												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageQualityDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
 											</button>
 											{#if showImageQualityDropdown}
 												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-													{#each [{ id: 'neve_image', label: 'Neve Image 1' }, { id: 'neve_image_2', label: 'Neve Image 1.4' }, { id: 'qwen_image_2_1', label: 'Neve Image 2' }] as quality}
+													{#each [{ id: 'neve_image', label: 'Neve Image 1' }, { id: 'neve_image_2', label: 'Neve Image 1.4' }, { id: 'qwen_image_2_1', label: 'Neve Image 2' }, { id: 'qwen_image_2s', label: 'Neve Image 2 Fast' }] as quality}
 													<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { stableDiffusionQuality = quality.id as typeof stableDiffusionQuality; localStorage.setItem('neveai.imageQuality', stableDiffusionQuality); showImageQualityDropdown = false; }}>
 															<span>{quality.label}</span>{#if stableDiffusionQuality === quality.id}<CheckCircle strokeWidth="1.7" />{/if}
 														</button>
@@ -2310,25 +2333,21 @@
 											{/if}
 										</div>
 										{#if stableDiffusionQuality === 'neve_image_2'}
-										<div class="relative shrink-0" id="image-style-dropdown-container">
+										<div class="image-style-control relative shrink-0" id="image-style-dropdown-container">
 											<button
 												type="button"
 												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
 												aria-label="Estilo da imagem"
 												aria-expanded={showImageStyleDropdown}
-												on:click|preventDefault={() => {
-													showImageQualityDropdown = false;
-													showImageResolutionDropdown = false;
-													showImageStyleDropdown = !showImageStyleDropdown;
-												}}
+												on:click|preventDefault={toggleImageStyleDropdown}
 											>
 												<span>{selectedImageStyleLabel}</span>
 												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageStyleDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
 											</button>
 										</div>
 										{/if}
-										{#if stableDiffusionQuality === 'neve_image_2' || stableDiffusionQuality === 'qwen_image_2_1'}
-										<div class="relative shrink-0" id="image-resolution-dropdown-container">
+										{#if stableDiffusionQuality === 'neve_image_2' || stableDiffusionQuality === 'qwen_image_2_1' || stableDiffusionQuality === 'qwen_image_2s'}
+										<div class="image-resolution-control relative shrink-0" id="image-resolution-dropdown-container">
 											<button
 												type="button"
 												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
@@ -2483,7 +2502,7 @@
 
 									</div>
 								</div>
-								<div class="self-end flex space-x-1 mr-1 shrink-0 gap-[0.5px]">
+								<div class="message-input-actions-secondary self-end flex space-x-1 mr-1 shrink-0 gap-[0.5px]">
 									{#if generating || (history?.currentId && history?.messages[history.currentId]?.done !== true) || uploadPending}
 										<Tooltip content={$i18n.t('Stop')}>
 											<button
@@ -2678,7 +2697,8 @@
 							{#if showImageStyleDropdown && stableDiffusionEnabled && stableDiffusionQuality === 'neve_image_2'}
 								<div
 									id="image-style-dropdown-panel"
-									class="absolute {history?.currentId ? 'bottom-full -mb-1' : 'top-full -mt-1'} inset-x-0 z-50 w-full rounded-lg border border-gray-200 bg-white p-1.5 text-sm shadow-md dark:border-gray-800 dark:bg-gray-850"
+									class="absolute {history?.currentId ? '' : 'top-full -mt-1'} inset-x-0 z-50 w-full rounded-lg border border-gray-200 bg-white p-1.5 text-sm shadow-md dark:border-gray-800 dark:bg-gray-850"
+									style:bottom={history?.currentId && imageStyleDropdownBottom !== null ? `${imageStyleDropdownBottom}px` : undefined}
 									transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
 								>
 									<div class="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
@@ -2722,6 +2742,64 @@
 {/if}
 
 <style>
+	@media (max-width: 640px) {
+		.message-input-actions.stable-image-actions {
+			align-items: end;
+		}
+
+		.stable-image-actions .message-input-actions-primary {
+			display: grid;
+			grid-template-columns: 2rem max-content max-content max-content;
+			max-width: calc(100% - 2.75rem);
+			column-gap: 0.125rem;
+			row-gap: 0.25rem;
+		}
+
+		.stable-image-actions .message-input-add-control {
+			grid-column: 1;
+			grid-row: 2;
+		}
+
+		.stable-image-actions .message-input-active-controls {
+			display: contents;
+		}
+
+		.stable-image-actions .image-quality-control {
+			grid-column: 1 / 3;
+			grid-row: 1;
+		}
+
+		.stable-image-actions .image-style-control {
+			grid-column: 3;
+			grid-row: 1;
+		}
+
+		.stable-image-actions .image-resolution-control {
+			grid-column: 4;
+			grid-row: 1;
+		}
+
+		.stable-image-actions-no-style .message-input-actions-primary {
+			grid-template-columns: 2rem max-content max-content;
+		}
+
+		.stable-image-actions-no-style .image-resolution-control {
+			grid-column: 3;
+		}
+
+		.stable-image-actions .stable-image-toggle {
+			grid-column: 2;
+			grid-row: 2;
+			justify-self: start;
+			padding-left: 0.5rem;
+			padding-right: 0.5rem;
+		}
+
+		.stable-image-actions .stable-image-toggle > span:last-child {
+			display: none;
+		}
+	}
+
 	.chat-input-scroll::-webkit-scrollbar-track {
 		margin-top: 0.625rem;
 		margin-bottom: 0.625rem;

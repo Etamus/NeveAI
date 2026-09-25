@@ -16,7 +16,6 @@
 
 	import FolderModal from '$lib/components/layout/Sidebar/Folders/FolderModal.svelte';
 
-	import Folder from '$lib/components/icons/Folder.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import FolderMenu from '$lib/components/layout/Sidebar/Folders/FolderMenu.svelte';
 	import EllipsisHorizontal from '$lib/components/icons/EllipsisHorizontal.svelte';
@@ -137,19 +136,11 @@
 		</div>
 	</DeleteConfirmDialog>
 
-	<div class="mb-3 px-6 @md:max-w-2xl justify-between w-full flex relative group items-center">
-		<div class="text-center flex gap-3.5 items-center">
-			<div
-				class=" rounded-full bg-gray-50 dark:bg-gray-800 size-11 flex justify-center items-center"
-			>
-				<Folder className="size-4.5" strokeWidth="2" />
-			</div>
-
-			<div class="text-3xl line-clamp-1">
+	<div class="mb-3 w-full px-6 @md:max-w-2xl">
+		<div class="flex w-full justify-center text-center">
+			<div class="max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-3xl">
 				{folder.name}
 			</div>
 		</div>
-
-
 	</div>
 {/if}

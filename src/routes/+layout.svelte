@@ -921,7 +921,83 @@
 				? 'dark'
 				: 'light'
 			: 'light'}
-	richColors
 	position="top-right"
 	closeButton
+	expand
 />
+
+<style>
+	:global([data-sonner-toaster][data-y-position='top'][data-x-position='right']) {
+		top: calc(max(var(--offset), env(safe-area-inset-top)) + 20px + var(--neve-update-toast-offset, 0px) + var(--neve-download-toast-offset, 0px));
+	}
+
+	:global([data-sonner-toaster] [data-sonner-toast][data-styled='true']) {
+		width: 20.75rem;
+		max-width: calc(100vw - 2rem);
+		margin-left: -4px;
+		padding-right: 44px;
+		border-radius: 12px;
+		background: #fff;
+		border-color: var(--color-gray-200);
+		color: var(--color-gray-900);
+		font-family: 'Segoe UI', 'Vazirmatn', ui-sans-serif, system-ui, sans-serif;
+		font-size: 14px;
+	}
+
+	:global([data-sonner-toaster][data-theme='dark'] [data-sonner-toast][data-styled='true']) {
+		background: var(--color-gray-900);
+		border-color: var(--color-gray-800);
+		color: var(--color-gray-100);
+	}
+
+	:global([data-sonner-toast][data-styled='true'] [data-icon]) {
+		color: var(--color-gray-500);
+	}
+
+	:global([data-sonner-toaster][data-theme='dark'] [data-sonner-toast][data-styled='true'] [data-icon]) {
+		color: var(--color-gray-400);
+	}
+
+	:global([data-sonner-toast][data-styled='true'] [data-close-button]) {
+		left: auto;
+		right: 8px;
+		top: 50%;
+		width: 24px;
+		height: 24px;
+		transform: translateY(-50%);
+		border: 0;
+		border-radius: 6px;
+		background: transparent;
+		color: var(--color-gray-500);
+	}
+
+	:global([data-sonner-toast][data-styled='true'] [data-close-button] svg) {
+		width: 16px;
+		height: 16px;
+		stroke-width: 2;
+	}
+
+	:global([data-sonner-toast][data-styled='true'] [data-close-button]:hover) {
+		background: var(--color-gray-100);
+		color: var(--color-gray-900);
+	}
+
+	:global([data-sonner-toaster][data-theme='dark'] [data-sonner-toast][data-styled='true'] [data-close-button]) {
+		color: var(--color-gray-400);
+	}
+
+	:global([data-sonner-toaster][data-theme='dark'] [data-sonner-toast][data-styled='true'] [data-close-button]:hover) {
+		background: var(--color-gray-800);
+		color: #fff;
+	}
+
+	@media (max-width: 600px) {
+		:global([data-sonner-toaster][data-y-position='top'][data-x-position='right']) {
+			top: calc(40px + var(--neve-update-toast-offset, 0px) + var(--neve-download-toast-offset, 0px));
+		}
+
+		:global([data-sonner-toaster] [data-sonner-toast][data-styled='true']) {
+			width: calc(100% - 32px);
+		}
+	}
+</style>

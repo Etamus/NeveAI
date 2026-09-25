@@ -99,10 +99,9 @@
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
-	import DownloadProgressToast from '$lib/components/chat/DownloadNeveModelsProgressToast.svelte';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 	import { getModels } from '$lib/apis';
-	import { models, showArtifacts } from '$lib/stores';
+	import { models, neveDownloadToast, showArtifacts } from '$lib/stores';
 
 	import {
 		cancelNeveDownload,
@@ -118,8 +117,6 @@
 
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher<{ modelsChanged: void }>();
-	const downloadProgressToastId = 'neveai-download-model-progress';
-
 	export let show = false;
 
 	let loading = false;
@@ -266,30 +263,23 @@
 		);
 	};
 
-	const showDownloadProgressToast = (name: string, progressValue: number, label: string) => {
-		if (!downloading || show || !name) return;
+	const showDownloadProgressToast = () => {
+		if (!downloading || show || !downloadingModelName) return;
 		progressToastVisible = true;
-		toast.custom(DownloadProgressToast, {
-			id: downloadProgressToastId,
-			class: 'neve-download-progress-toast-shell',
-			componentProps: {
-				name,
-				progress: progressValue,
-				label,
-				cancelling,
-				onCancel: handleCancelDownload
-			},
-			duration: Number.POSITIVE_INFINITY,
-			dismissable: false,
-			unstyled: true
-		});
 	};
 
 	const dismissDownloadProgressToast = () => {
 		if (!progressToastVisible) return;
-		toast.dismiss(downloadProgressToastId);
 		progressToastVisible = false;
 	};
+
+	$: neveDownloadToast.set(progressToastVisible ? {
+		name: downloadingModelName,
+		progress,
+		label: progressLabel,
+		cancelling,
+		onCancel: handleCancelDownload
+	} : null);
 
 	const applyDownloadState = (state: NeveDownloadState) => {
 		if (state.task_id) {
@@ -454,7 +444,6 @@
 			if (activeDownload?.task_id) {
 				attachToDownload(activeDownload.task_id, activeDownload);
 			} else {
-				toast.dismiss(downloadProgressToastId);
 				progressToastVisible = false;
 			}
 		} catch {
@@ -478,7 +467,7 @@
 	}
 
 	$: if (downloading && !show && !interfaceBlockersOpen && !$showArtifacts && downloadingModelName) {
-		showDownloadProgressToast(downloadingModelName, progress, progressLabel);
+		showDownloadProgressToast();
 	} else {
 		dismissDownloadProgressToast();
 	}
@@ -597,6 +586,7 @@
 	onDestroy(() => {
 		modalObserver?.disconnect();
 		modalObserver = null;
+		neveDownloadToast.set(null);
 		if (currentEs) {
 			currentEs.close();
 			currentEs = null;

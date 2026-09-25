@@ -67,14 +67,17 @@ PROMPT_TRANSLATOR_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 ZIMAGE_REPO = "leejet/Z-Image-Turbo-GGUF"
 ZIMAGE_GGUF_FILE = "z_image_turbo-Q4_0.gguf"
+ZIMAGE_QUALITY_REPO = ZIMAGE_REPO
 ZIMAGE_QUALITY_GGUF_FILE = "z_image_turbo-Q8_0.gguf"
 QWEN3_LLM_REPO = "unsloth/Qwen3-4B-Instruct-2507-GGUF"
 QWEN3_LLM_FILE = "Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
-QWEN_IMAGE_21_REPO = "leejet/Qwen-Image-2.1-GGUF"
-QWEN_IMAGE_21_FILE = "qwen_image_2.1-Q6_K.gguf"
-QWEN_IMAGE_21_LLM_REPO = "Qwen/Qwen3-VL-8B-Instruct-GGUF"
-QWEN_IMAGE_21_LLM_FILE = "Qwen3VL-8B-Instruct-Q4_K_M.gguf"
-QWEN_IMAGE_21_VISION_FILE = "mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf"
+ZIMAGE_UNCENSORED_LLM_REPO = "BennyDaBall/Qwen3-4b-Z-Image-Turbo-AbliteratedV1"
+ZIMAGE_UNCENSORED_LLM_FILE = "Z-Image-AbliteratedV1.Q4_K_M.gguf"
+QWEN_IMAGE_21_REPO = "abenzerps/Qwen-Image-2.1-Uncensored-GGUF"
+QWEN_IMAGE_21_FILE = "qwen-image-2.1-UC-Q6_K.gguf"
+QWEN_IMAGE_21_LLM_REPO = "mradermacher/Qwen3-VL-8B-Instruct-Heretic-GGUF"
+QWEN_IMAGE_21_LLM_FILE = "Qwen3-VL-8B-Instruct-heretic.Q4_K_M.gguf"
+QWEN_IMAGE_21_VISION_FILE = "Qwen3-VL-8B-Instruct-heretic.mmproj-Q8_0.gguf"
 QWEN_IMAGE_21_VAE_REPO = "Comfy-Org/Qwen-Image-2.1"
 QWEN_IMAGE_21_VAE_FILE = "vae/qwen_image_2.1_vae_bf16.safetensors"
 PROMPT_TRANSLATOR_REPO = "mradermacher/Huihui-Qwen3-4B-Instruct-2507-abliterated-GGUF"
@@ -83,10 +86,10 @@ ZIMAGE_VAE_REPO = "Comfy-Org/z_image_turbo"
 ZIMAGE_VAE_FILE = "split_files/vae/ae.safetensors"
 MAGEFLOW_REPO = "gguf-org/mageflow-gguf"
 MAGEFLOW_EDIT_FILE = "mageflow-edit-turbo-nvfp4.gguf"
-MAGEFLOW_VISION_FILE = "mmproj-qwen3vl-4b-it-f16.gguf"
 MAGEFLOW_VAE_FILE = "pig_mageflow_vae_fp32-f16.gguf"
-MAGEFLOW_LLM_REPO = "Qwen/Qwen3-VL-4B-Instruct-GGUF"
-MAGEFLOW_LLM_FILE = "Qwen3VL-4B-Instruct-Q4_K_M.gguf"
+MAGEFLOW_LLM_REPO = "mradermacher/Qwen3-VL-4B-Instruct-Heretic-GGUF"
+MAGEFLOW_LLM_FILE = "Qwen3-VL-4B-Instruct-heretic.Q4_K_M.gguf"
+MAGEFLOW_VISION_FILE = "Qwen3-VL-4B-Instruct-heretic.mmproj-f16.gguf"
 
 MAX_IMAGE_WIDTH = 768
 MAX_IMAGE_HEIGHT = 768
@@ -104,6 +107,7 @@ QUALITY_IMAGE_RESOLUTIONS = {
 QWEN_IMAGE_21_STEPS = 25
 QWEN_IMAGE_21_CFG_SCALE = 6.0
 QWEN_IMAGE_21_MAX_REFERENCES = 10
+QWEN_IMAGE_21_FULL_GPU_MIN_VRAM_MIB = 14 * 1024
 QWEN_IMAGE_21_RESOLUTIONS = {
     "1:1": (1152, 1152),
     "16:9": (1216, 704),
@@ -240,7 +244,7 @@ def normalize_image_style(value: Optional[str]) -> str:
 
 def normalize_image_quality(value: Optional[str]) -> str:
     value = str(value or "neve_image").strip().lower()
-    return value if value in {"neve_image", "neve_image_2", "qwen_image_2_1"} else "neve_image"
+    return value if value in {"neve_image", "neve_image_2", "qwen_image_2_1", "qwen_image_2s"} else "neve_image"
 
 
 def normalize_qwen_image_resolution(value: Optional[str]) -> str:
@@ -631,12 +635,15 @@ def _translate_image_prompt_locally_sync(prompt: str, llm_path: Path) -> str:
     # llama-cli on Windows may use the active console code page for argv. Removing
     # accents keeps Portuguese semantics intact without replacing letters by '?'.
     ascii_prompt = unicodedata.normalize("NFKD", prompt).encode("ascii", "ignore").decode("ascii")
-    marker = "NEVE_IMAGE_PROMPT_END_7F3A"
+    response_prefix = "NEVE_TRANSLATION_7F3A:"
     instruction = (
-        "Translate the user request into English for an image generator. Preserve exactly "
-        "the requested content. Do not invent a setting, clothing, colors, pose, objects, "
-        "mood, or story. Return only the final prompt without quotes or explanation. "
-        f"User request: {ascii_prompt} {marker}"
+        "Translate literally into English for image generation. Preserve every requested detail, "
+        "action, and intensity. Never censor, soften, euphemize, or omit nudity, sexual content, "
+        "injuries, blood, violence, dismemberment, or gore. Do not expand, embellish, reinterpret, "
+        "or add anatomy, composition, consequences, objects, actions, or visual details. In Portuguese, "
+        "'arrancar' applied to a body part means rip or tear that body part off, never merely pull it. "
+        f"Output exactly one line beginning with {response_prefix}, followed only by the concise translation. "
+        f"User request: {ascii_prompt}"
     )
     command = [
         str(llama_cli),
@@ -673,15 +680,17 @@ def _translate_image_prompt_locally_sync(prompt: str, llm_path: Path) -> str:
         log.warning("Traducao local do prompt de imagem falhou: %s", exc)
         return prompt
 
-    if completed.returncode != 0 or marker not in completed.stdout:
+    response_matches = re.findall(
+        rf"(?m)^\s*{re.escape(response_prefix)}\s*(.+?)\s*$", completed.stdout
+    )
+    if completed.returncode != 0 or not response_matches:
         log.warning(
             "Traducao local do prompt de imagem nao retornou uma resposta valida (codigo %s)",
             completed.returncode,
         )
         return prompt
 
-    response = completed.stdout.split(marker, 1)[-1].replace(marker, "")
-    response = re.split(r"\n\s*Exiting\.\.\.\s*$", response, maxsplit=1)[0]
+    response = response_matches[-1]
     translated = _normalize_image_prompt_text(response)
     if not translated or len(translated) < 4 or translated.lower().startswith(("i cannot", "sorry")):
         return prompt
@@ -930,6 +939,64 @@ def _preferred_sd_cpp_windows_backend() -> str:
     return "cpu"
 
 
+def _detected_gpu_vram_mib() -> Optional[int]:
+    """Return conservative dedicated VRAM detection for memory-policy selection."""
+    if shutil.which("nvidia-smi"):
+        try:
+            result = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=memory.total",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+                **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
+            )
+            values = [int(line.strip()) for line in result.stdout.splitlines() if line.strip()]
+            return max(values) if result.returncode == 0 and values else None
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return None
+
+    if os.name == "nt" and _preferred_sd_cpp_windows_backend() == "vulkan":
+        try:
+            result = subprocess.run(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "Get-CimInstance Win32_VideoController | "
+                    "Where-Object { $_.Name -match 'AMD|Radeon' } | "
+                    "ForEach-Object { [uint64]$_.AdapterRAM }",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            values = [int(line.strip()) // (1024 * 1024) for line in result.stdout.splitlines() if line.strip()]
+            return max(values) if result.returncode == 0 and values else None
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return None
+
+    return None
+
+
+def _qwen_image_memory_args() -> list[str]:
+    vram_mib = _detected_gpu_vram_mib()
+    if vram_mib is not None and vram_mib >= QWEN_IMAGE_21_FULL_GPU_MIN_VRAM_MIB:
+        log.info("Qwen Image 2.1: auto-fit em GPU (%s MiB de VRAM detectados)", vram_mib)
+        return ["--auto-fit", "on", "--vae-tiling"]
+
+    detected = f"{vram_mib} MiB" if vram_mib is not None else "desconhecida"
+    log.info("Qwen Image 2.1: offload conservador (VRAM %s)", detected)
+    return ["--offload-to-cpu", "--vae-tiling"]
+
+
 def _supports_native_sage_attention() -> bool:
     if os.name != "nt" or _preferred_sd_cpp_windows_backend() != "cuda12":
         return False
@@ -1132,25 +1199,39 @@ class _ZImageTurboPipeline:
                         diffusion_model=download(MAGEFLOW_REPO, MAGEFLOW_EDIT_FILE),
                         llm=download(MAGEFLOW_LLM_REPO, MAGEFLOW_LLM_FILE),
                         vae=download(MAGEFLOW_REPO, MAGEFLOW_VAE_FILE),
-                        llm_vision=download(MAGEFLOW_REPO, MAGEFLOW_VISION_FILE),
+                        llm_vision=download(MAGEFLOW_LLM_REPO, MAGEFLOW_VISION_FILE),
                     )
 
+                gguf_repo = ZIMAGE_QUALITY_REPO if quality == "neve_image_2" else model_id
                 gguf_file = ZIMAGE_QUALITY_GGUF_FILE if quality == "neve_image_2" else ZIMAGE_GGUF_FILE
                 log.info("Baixando/carregando Z-Image-Turbo %s GGUF...", gguf_file)
                 diffusion_model = Path(
                     hf_hub_download(
-                        repo_id=model_id,
+                        repo_id=gguf_repo,
                         filename=gguf_file,
                         cache_dir=str(GGUF_CACHE_DIR),
                         token=token,
                     )
                 )
 
-                log.info("Baixando/carregando text encoder Qwen3-4B Q4_K_M...")
+                llm_repo = (
+                    ZIMAGE_UNCENSORED_LLM_REPO
+                    if quality == "neve_image_2"
+                    else QWEN3_LLM_REPO
+                )
+                llm_file = (
+                    ZIMAGE_UNCENSORED_LLM_FILE
+                    if quality == "neve_image_2"
+                    else QWEN3_LLM_FILE
+                )
+                log.info(
+                    "Baixando/carregando text encoder Z-Image %s Q4_K_M...",
+                    "abliterated" if quality == "neve_image_2" else "padrao",
+                )
                 llm = Path(
                     hf_hub_download(
-                        repo_id=QWEN3_LLM_REPO,
-                        filename=QWEN3_LLM_FILE,
+                        repo_id=llm_repo,
+                        filename=llm_file,
                         cache_dir=str(QWEN3_CACHE_DIR),
                         token=token,
                     )
@@ -1364,7 +1445,8 @@ class _ZImageTurboPipeline:
                 if style_lora is not None
                 else []
             ),
-            *([] if quality_mode and not qwen_image_mode else ["--offload-to-cpu"]),
+            *([] if quality_mode or qwen_image_mode else ["--offload-to-cpu"]),
+            *(_qwen_image_memory_args() if qwen_image_mode else []),
             *(["--vae-conv-direct"] if quality_mode and not self._edit_mode and not qwen_image_mode else []),
             *(
                 ["--llm_vision", str(self._resources.llm_vision)]
@@ -1596,9 +1678,9 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
     max_width = QUALITY_IMAGE_WIDTH if quality_mode else MAX_IMAGE_WIDTH
     max_height = QUALITY_IMAGE_HEIGHT if quality_mode else MAX_IMAGE_HEIGHT
     max_steps = QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS
-    if qwen_image_mode:
+    if qwen_image_mode or quality == "qwen_image_2s":
         width, height = qwen_image_dimensions(form_data.resolution)
-        steps = QWEN_IMAGE_21_STEPS
+        steps = 6 if quality == "qwen_image_2s" else QWEN_IMAGE_21_STEPS
     else:
         width = _align_image_dim(form_data.width or (max_width if quality_mode else request.app.state.config.STABLE_DIFFUSION_WIDTH), max_width, max_width)
         height = _align_image_dim(form_data.height or (max_height if quality_mode else request.app.state.config.STABLE_DIFFUSION_HEIGHT), max_height, max_height)
@@ -1619,21 +1701,35 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
 
     try:
         hf_token = str(request.app.state.config.STABLE_DIFFUSION_HF_TOKEN) or None
-        data_uri = await _sd_pipeline.run(
-            model_id=model_id,
-            hf_token=hf_token,
-            quality=quality,
-            style=form_data.style,
-            resolution=form_data.resolution,
-            prompt=form_data.prompt,
-            width=width,
-            height=height,
-            steps=steps,
-            guidance_scale=guidance_scale,
-            init_image_reference=form_data.init_image,
-            init_image_references=form_data.init_images,
-            user_id=getattr(user, "id", None),
-        )
+        if quality == "qwen_image_2s":
+            from neveai.routers.image_fast_generation import neve_image_2s_runtime
+
+            references = list(form_data.init_images or [])
+            if form_data.init_image and form_data.init_image not in references:
+                references.insert(0, form_data.init_image)
+            data_uri = await neve_image_2s_runtime.run(
+                prompt=form_data.prompt,
+                resolution=form_data.resolution,
+                references=references,
+                user_id=getattr(user, "id", None),
+                progress=lambda _: asyncio.sleep(0),
+            )
+        else:
+            data_uri = await _sd_pipeline.run(
+                model_id=model_id,
+                hf_token=hf_token,
+                quality=quality,
+                style=form_data.style,
+                resolution=form_data.resolution,
+                prompt=form_data.prompt,
+                width=width,
+                height=height,
+                steps=steps,
+                guidance_scale=guidance_scale,
+                init_image_reference=form_data.init_image,
+                init_image_references=form_data.init_images,
+                user_id=getattr(user, "id", None),
+            )
         return {"url": data_uri}
     finally:
         if llm_standby_info is not None:

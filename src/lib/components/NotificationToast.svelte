@@ -85,7 +85,7 @@
 <div
 	role="status"
 	aria-live="polite"
-	class="group relative flex gap-2.5 text-left min-w-[var(--width)] w-full dark:bg-gray-850 dark:text-white bg-white text-black border border-gray-100 dark:border-gray-800 rounded-3xl px-4 py-3.5 cursor-pointer select-none"
+	class="group relative flex w-[20.75rem] max-w-[calc(100vw-2rem)] -translate-x-1 gap-2.5 rounded-xl border border-gray-200 bg-white px-4 py-3.5 pr-10 text-left text-gray-900 shadow-lg cursor-pointer select-none dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
 	on:dragstart|preventDefault
 	on:pointerdown={onPointerDown}
 	on:pointermove={onPointerMove}
@@ -98,14 +98,13 @@
 		}
 	}}
 >
-	<!-- Close button (visible on hover) -->
 	<button
 		bind:this={closeButtonElement}
-		class="absolute -top-0.5 -left-0.5 p-0.5 rounded-full opacity-0 group-hover:opacity-100 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-opacity z-10"
+		class="absolute right-2 top-1/2 z-10 grid size-6 -translate-y-1/2 place-items-center rounded-md text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
 		on:click|stopPropagation={closeHandler}
 		aria-label="Fechar notificação"
 	>
-		<XMark className="size-3" />
+		<XMark className="size-4" />
 	</button>
 
 	<div class="shrink-0 self-top -translate-y-0.5">
@@ -117,7 +116,7 @@
 			<div class=" text-[13px] font-medium mb-0.5 line-clamp-1">{title}</div>
 		{/if}
 
-		<div class=" line-clamp-2 text-xs self-center dark:text-gray-300 font-normal">
+		<div class="line-clamp-2 self-center text-xs font-normal text-gray-500 dark:text-gray-400">
 			{@html DOMPurify.sanitize(marked(DOMPurify.sanitize(content, { ALLOWED_TAGS: [] })))}
 		</div>
 	</div>

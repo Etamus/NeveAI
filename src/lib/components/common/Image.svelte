@@ -10,6 +10,7 @@
 	export let alt = '';
 
 	export let className = ` w-full ${($settings?.highContrastMode ?? false) ? '' : 'outline-hidden focus:outline-hidden'}`;
+	export let containerClassName = 'w-fit';
 
 	export let imageClassName = 'rounded-lg';
 
@@ -26,7 +27,7 @@
 
 <ImagePreview bind:show={showImagePreview} src={_src} {alt} />
 
-<div class=" relative group w-fit flex items-center">
+<div class="relative group flex items-center {containerClassName}">
 	<button
 		class={className}
 		on:click={() => {

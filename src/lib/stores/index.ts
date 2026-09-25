@@ -8,6 +8,16 @@ import type { AudioQueue } from '$lib/utils/audio';
 // Lazy-loaded emoji shortcodes (avoid blocking startup with 116KB JSON processing)
 export const shortCodesToEmojis = writable({});
 
+export type NeveDownloadToastState = {
+	name: string;
+	progress: number;
+	label: string;
+	cancelling: boolean;
+	onCancel: () => void;
+};
+
+export const neveDownloadToast: Writable<NeveDownloadToastState | null> = writable(null);
+
 let _emojiLoaded = false;
 export async function loadShortCodesToEmojis() {
 	if (_emojiLoaded) return;
