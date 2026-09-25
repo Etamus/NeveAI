@@ -172,6 +172,7 @@
 								{:else}
 									<FileItem
 										item={file}
+										chatAttachment={true}
 										url={file.url}
 										name={file.name}
 										type={file.type}
@@ -232,6 +233,7 @@
 								{:else}
 									<FileItem
 										item={file}
+										chatAttachment={true}
 										name={file.name}
 										type={file.type}
 										size={file?.size}

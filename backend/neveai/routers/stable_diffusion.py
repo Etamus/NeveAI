@@ -101,15 +101,15 @@ QUALITY_IMAGE_RESOLUTIONS = {
     "4:3": (1152, 864),
     "3:4": (864, 1152),
 }
-QWEN_IMAGE_21_STEPS = 28
+QWEN_IMAGE_21_STEPS = 25
 QWEN_IMAGE_21_CFG_SCALE = 6.0
 QWEN_IMAGE_21_MAX_REFERENCES = 10
 QWEN_IMAGE_21_RESOLUTIONS = {
-    "1:1": (1280, 1280),
-    "16:9": (1280, 720),
-    "9:16": (720, 1280),
-    "4:3": (1280, 960),
-    "3:4": (960, 1280),
+    "1:1": (1152, 1152),
+    "16:9": (1216, 704),
+    "9:16": (704, 1216),
+    "4:3": (1152, 864),
+    "3:4": (864, 1152),
 }
 DEFAULT_CFG_SCALE = 1.0
 DEFAULT_IMG2IMG_STRENGTH = 0.55
@@ -127,16 +127,6 @@ class _ZImageStyle:
 
 
 ZIMAGE_STYLE_SPECS = {
-    "realistic": _ZImageStyle(
-        download_urls=(
-            "https://huggingface.co/Kutches/ImageZ/resolve/main/aestheticphotoz4.safetensors?download=true",
-            "https://civitai.com/api/download/models/2512057",
-        ),
-        filename="neve-realistic.safetensors",
-        sha256="3e9b33455a0437d64e61a94baf1cb8e3e9e28f2026b3af4786a96514e9e1bcf2",
-        weight=0.7,
-        prompt_prefix="aesthetic amateur photo",
-    ),
     "minimalist": _ZImageStyle(
         download_urls=(
             "https://huggingface.co/atMrMattV/Visione/resolve/main/models/styles/MinimalistVectorArtZ.safetensors?download=true",
@@ -146,6 +136,16 @@ ZIMAGE_STYLE_SPECS = {
         sha256="14e6caed34e1a718c13f54617494db5e47fc5606815915f60e882d2518d6c221",
         weight=1.0,
         prompt_prefix="Minimalist Vector Art, ArsMJStyle",
+    ),
+    "polygonal": _ZImageStyle(
+        download_urls=(
+            "https://huggingface.co/alexrzem/zit-loras/resolve/main/turbo/3D_%26_Craft_-_Low_Poly_Papercraft_-_ZImageTurbo_-_bblink787.safetensors?download=true",
+            "https://civitai.com/api/download/models/2474853?fileId=2363302",
+        ),
+        filename="neve-polygonal.safetensors",
+        sha256="fc39e5bfa1a9b1b3d112e55d1b4c064ea67268f89622822759f16b93fdf6cd68",
+        weight=0.8,
+        prompt_prefix="vibrantly colored low poly papercraft scene, bold colors",
     ),
     "fantasy": _ZImageStyle(
         download_urls=(
@@ -157,26 +157,6 @@ ZIMAGE_STYLE_SPECS = {
         weight=1.0,
         prompt_prefix="raz'sdarkfantasystyle-zit-mk.1",
     ),
-    "surreal": _ZImageStyle(
-        download_urls=(
-            "https://huggingface.co/alexrzem/zit-loras/resolve/main/turbo/Artist_-_Daubrez_Painterly_Style_-_ZImageTurbo_-_blairesilver13.safetensors?download=true",
-            "https://civitai.com/api/download/models/2477908",
-        ),
-        filename="neve-surreal.safetensors",
-        sha256="a3827f602c19b8f6310a4cd4d6c3095a9c7b18e416099c47e0827694a7cd3e48",
-        weight=1.0,
-        prompt_prefix="DBRZ",
-    ),
-    "conceptual": _ZImageStyle(
-        download_urls=(
-            "https://huggingface.co/ThirdTimesTheCiarc/stylish/resolve/main/832858/2921054/Anime_art_v7_E10.safetensors?download=true",
-            "https://civitai.com/api/download/models/2921054",
-        ),
-        filename="neve-conceptual.safetensors",
-        sha256="561f707182a2881da2f656d0ce64399386ce0438fbe8c1c4d350f04a1af17f61",
-        weight=0.7,
-        prompt_prefix="Bradhamel art style",
-    ),
     "comics": _ZImageStyle(
         download_urls=(
             "https://huggingface.co/ThirdTimesTheCiarc/stylish/resolve/main/1764315/2961085/Comic%20Book%20V4T3_E10.safetensors?download=true",
@@ -187,61 +167,53 @@ ZIMAGE_STYLE_SPECS = {
         weight=0.75,
         prompt_prefix="Bradhamel art style, comic book illustration",
     ),
+    "spontaneous": _ZImageStyle(
+        download_urls=(
+            "https://civitai.com/api/download/models/2452071?fileId=2343134",
+        ),
+        filename="neve-spontaneous.safetensors",
+        sha256="b77465f098a65455364d1118a0c2465091f38fa3ced7cfb64be7ac123ec0e773",
+        weight=0.85,
+        prompt_prefix="l3n0v0, candid analog photography",
+    ),
+    "realistic": _ZImageStyle(
+        download_urls=(
+            "https://huggingface.co/JExomgmt/Z-Image/resolve/main/RealisticSnapshot-Zimage-Turbov5.safetensors?download=true",
+            "https://civitai.com/api/download/models/2617751?fileId=2505151",
+        ),
+        filename="neve-realistic.safetensors",
+        sha256="182d7f92475b8d7f792203127738d31270403e86e007fdc7792d324a3406e556",
+        weight=0.65,
+        prompt_prefix="photorealistic candid snapshot",
+    ),
     "arcane": _ZImageStyle(
-        download_urls=(
-            "https://huggingface.co/UnifiedHorusRA/Theslicedbread2/resolve/main/Arcane_Style_LORA_Z-Image/ZImageTurbo/ArcanstyleZ2.safetensors?download=true",
-            "https://civitai.com/api/download/models/3259905?fileId=3143187",
-        ),
-        filename="neve-arcane.safetensors",
-        sha256="fa743e979716bddd0cee41fea2ab46e9398bc7a98810bfd6695cdb75f5008e03",
-        weight=1.0,
-        prompt_prefix="Arcane style, painterly stylized 3D animation",
-    ),
-    "conceptual_2": _ZImageStyle(
-        download_urls=(
-            "https://civitai.com/api/download/models/2533098?fileId=2420944",
-        ),
-        filename="neve-conceptual-2.safetensors",
-        sha256="551d5a71438ba3ab634b3b88411ab4704840b6f0108bc0fbdcfacba60e43db09",
-        weight=0.7,
-    ),
-    "realistic_2": _ZImageStyle(
-        download_urls=(
-            "https://huggingface.co/Kutches/ImageZ/resolve/main/Z-Real-v1.0.safetensors?download=true",
-            "https://civitai.com/api/download/models/2474931?fileId=2363398",
-        ),
-        filename="neve-realistic-2.safetensors",
-        sha256="924bb750f20e1b8465f6017198caad337be622620507ce37eb527c7817d1fa39",
-        weight=1.0,
-        prompt_prefix="z-realism",
-    ),
-    "realistic_4": _ZImageStyle(
-        download_urls=(
-            "https://huggingface.co/Sentinel7/z-image/resolve/main/1862761/2526600/NIceAsians_Zimage.safetensors?download=true",
-            "https://civitai.com/api/download/models/2526600?fileId=2414362",
-        ),
-        filename="neve-realistic-4.safetensors",
-        sha256="b51a0a20fd93ba3fec2f0e9a99c3f3e4957164711605df0e17c79734af3949fb",
-        weight=0.8,
-    ),
-    "arcane_2": _ZImageStyle(
         download_urls=(
             "https://huggingface.co/ThirdTimesTheCiarc/stylish/resolve/main/2337762/2629656/Studio%20Fortiche_E15.safetensors?download=true",
             "https://civitai.com/api/download/models/2629656?fileId=2517602",
         ),
-        filename="neve-arcane-2.safetensors",
+        filename="neve-arcane-fortiche.safetensors",
         sha256="216ade991f3b1422dbfcd1a8d29b8d1e0818039ed46e5fba3ec167c855e0a8c7",
         weight=0.8,
         prompt_prefix="StudiFort art style",
     ),
-    "flat_pop": _ZImageStyle(
+    "manga": _ZImageStyle(
         download_urls=(
-            "https://civitai.com/api/download/models/2551241?fileId=2439570",
+            "https://civitai.com/api/download/models/2577798?fileId=2465041",
         ),
-        filename="neve-flat-pop.safetensors",
-        sha256="8be0825d1c0613e02fd81e6e93093db5d00b1eaec9990f7b7939435ec97f6901",
-        weight=0.85,
-        prompt_prefix="Flatpop Art style",
+        filename="neve-manga.safetensors",
+        sha256="c5cf2e4ef21548e85ef718e7cae9d72fbdabcb02c72f7e7bb1c0e4bd124267ed",
+        weight=0.9,
+        prompt_prefix="black and white manga style",
+    ),
+    "pixelated": _ZImageStyle(
+        download_urls=(
+            "https://huggingface.co/camenduru/Z-Image-Loras/resolve/main/aziib_pixel_style_zit.safetensors?download=true",
+            "https://civitai.com/api/download/models/2495486?fileId=2383838",
+        ),
+        filename="neve-pixelated.safetensors",
+        sha256="33a98b2e10695d3d8bae76372bdaa1cd0bf3b3418d32a9614d83e2d2eab4af8d",
+        weight=0.8,
+        prompt_prefix="aziib_pixel_style, crisp pixel art",
     ),
 }
 
@@ -867,7 +839,10 @@ def _ensure_style_lora(style: str, hf_token: Optional[str] = None) -> Optional[P
             temporary.unlink(missing_ok=True)
             try:
                 headers: dict[str, str] = {}
-                if "civitai.com/" in source_url:
+                source_host = urllib.parse.urlsplit(source_url).netloc.casefold()
+                if source_host == "huggingface.co" and hf_token:
+                    headers["Authorization"] = f"Bearer {hf_token}"
+                elif "civitai.com" in source_host:
                     if civitai_token:
                         separator = "&" if "?" in source_url else "?"
                         source_url = (
@@ -885,12 +860,6 @@ def _ensure_style_lora(style: str, hf_token: Optional[str] = None) -> Optional[P
             except Exception as exc:
                 failures.append(f"{urllib.parse.urlsplit(source_url).netloc}: {exc}")
 
-        if style == "flat_pop" and not civitai_token:
-            raise RuntimeError(
-                "O estilo Flat pop exige autenticacao para baixar o arquivo original do "
-                "Civitai. Configure NEVEAI_CIVITAI_TOKEN ou CIVITAI_API_TOKEN e reinicie "
-                "o backend."
-            )
         raise RuntimeError(
             f"Nao foi possivel baixar o estilo {style} com integridade verificada. "
             + " | ".join(failures)

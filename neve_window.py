@@ -27,7 +27,7 @@ _SW_RESTORE = 9
 _TARGET_TITLE = "NeveAI"
 _STATE_POLL_INTERVAL = 0.2
 _STATE_STABLE_SAMPLES = 3
-_ICON_GUARD_INTERVAL = 0.005
+_ICON_GUARD_INTERVAL = 0.05
 _HWND_TOPMOST = -1
 _HWND_NOTOPMOST = -2
 _SWP_NOSIZE = 0x0001
@@ -440,13 +440,11 @@ def _clear_caption_text(hwnd: int) -> None:
         _user32.SetWindowTextW(hwnd, "")
 
 
-def _guard_window_identity(hwnd: int, process_id: int | None = None) -> None:
+def _guard_window_identity(hwnd: int) -> None:
     """Keep Chromium favicon updates from replacing the native taskbar icon."""
     while True:
         if not _user32.IsWindow(hwnd):
-            hwnd = _find_app_window(process_id)
-            if hwnd is None:
-                return
+            return
 
         _hide_caption_icon(hwnd)
         _clear_caption_text(hwnd)
@@ -500,32 +498,23 @@ def _bring_app_to_front(
 
 def _remember_window_state(
     hwnd: int,
-    process_id: int | None = None,
     initial_state: dict | None = None,
 ) -> None:
     last_saved_state = initial_state
     pending_state: dict | None = None
     stable_samples = 0
-    missing_since: float | None = None
 
     while True:
-        if not _user32.IsWindow(hwnd) or not _user32.IsWindowVisible(hwnd):
-            replacement = _find_app_window(process_id)
-            if replacement is None:
-                if missing_since is None:
-                    missing_since = time.monotonic()
-                elif time.monotonic() - missing_since >= 2.0:
-                    return
-                time.sleep(_STATE_POLL_INTERVAL)
-                continue
+        if not _user32.IsWindow(hwnd):
+            return
 
-            hwnd = replacement
-            _hide_caption_icon(hwnd)
-            _clear_caption_text(hwnd)
-            pending_state = None
-            stable_samples = 0
+        if not _user32.IsWindowVisible(hwnd):
+            # Chromium may temporarily hide the app HWND while presenting video.
+            # Never adopt another window from the process: it may be a fullscreen
+            # surface, and changing its frame/placement makes every transition jump.
+            time.sleep(_STATE_POLL_INTERVAL)
+            continue
 
-        missing_since = None
         _hide_caption_icon(hwnd)
         _clear_caption_text(hwnd)
         current_state = _capture_window_state(hwnd)
@@ -574,7 +563,7 @@ def main():
     if hwnd:
         threading.Thread(
             target=_guard_window_identity,
-            args=(hwnd, process.pid),
+            args=(hwnd,),
             daemon=True,
         ).start()
         if _READY_FILE_PATH:
@@ -584,7 +573,7 @@ def main():
                     ready_file.write("ready")
             except OSError:
                 pass
-        _remember_window_state(hwnd, process.pid, saved_state)
+        _remember_window_state(hwnd, saved_state)
 
 
 if __name__ == "__main__":

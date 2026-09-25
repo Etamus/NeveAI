@@ -1149,7 +1149,7 @@
 							}
 						}
 						eventDispatch('keydown', { event });
-						return false;
+						return event.defaultPrevented;
 					},
 					paste: (view, event) => {
 						if (event.clipboardData) {

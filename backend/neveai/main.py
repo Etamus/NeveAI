@@ -2951,6 +2951,7 @@ async def healthcheck_with_db():
     return {"status": True}
 
 
+mimetypes.add_type("image/webp", ".webp")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 

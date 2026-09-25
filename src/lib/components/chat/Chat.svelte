@@ -147,6 +147,8 @@
 	let lastMessagesScrollTop = 0;
 	let generationSpacerUpwardScrollIntentUntil = 0;
 	let visualMediaAutoFollowMessageId: string | null = null;
+	let textGenerationAnchorScrollTop: number | null = null;
+	let textGenerationAnchorUserMoved = false;
 	let messagesBottomWheelLockUntil = 0;
 	let messagesBottomWheelLockRAF: ReturnType<typeof requestAnimationFrame> | null = null;
 	let processing = '';
@@ -182,7 +184,7 @@
 	let fileGenerationEnabled = getFileGenerationPreference(false);
 	let stableDiffusionEnabled = false;
 	let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' = 'neve_image';
-	let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'arcane' | 'conceptual_2' | 'realistic_2' | 'realistic_4' | 'arcane_2' | 'flat_pop' = 'none';
+	let stableDiffusionStyle: 'none' | 'minimalist' | 'polygonal' | 'fantasy' | 'comics' | 'arcane' | 'spontaneous' | 'realistic' | 'manga' | 'pixelated' = 'none';
 	let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
@@ -1892,8 +1894,9 @@
 		stableDiffusionQuality = ['neve_image', 'neve_image_2', 'qwen_image_2_1'].includes(savedImageQuality ?? '')
 			? (savedImageQuality as typeof stableDiffusionQuality)
 			: 'neve_image';
-		const savedImageStyle = localStorage.getItem('neveai.imageStyle');
-		stableDiffusionStyle = ['realistic', 'minimalist', 'fantasy', 'surreal', 'conceptual', 'comics', 'arcane', 'conceptual_2', 'realistic_2', 'realistic_4', 'arcane_2', 'flat_pop'].includes(
+		const previousImageStyle = localStorage.getItem('neveai.imageStyle');
+		const savedImageStyle = ({ analog: 'spontaneous', realistic_2: 'realistic', arcane_2: 'arcane' } as Record<string, string>)[previousImageStyle ?? ''] ?? previousImageStyle;
+		stableDiffusionStyle = ['realistic', 'spontaneous', 'fantasy', 'minimalist', 'polygonal', 'manga', 'comics', 'pixelated', 'arcane'].includes(
 			savedImageStyle ?? ''
 		)
 			? (savedImageStyle as typeof stableDiffusionStyle)
@@ -2889,6 +2892,8 @@
 		generationSpacerScrollAllowance = null;
 		activeGenerationSpacerHeightLimit = null;
 		generationSpacerUpwardScrollIntentUntil = 0;
+		textGenerationAnchorScrollTop = null;
+		textGenerationAnchorUserMoved = false;
 		autoScroll = false;
 		cancelGenerationAnchorRAF();
 
@@ -2941,6 +2946,8 @@
 		await fitGenerationSpacerToViewport(messagesContainerElement?.scrollTop ?? 0);
 		activeGenerationSpacerHeightLimit = generationBottomSpacerHeight;
 		lastMessagesScrollTop = messagesContainerElement?.scrollTop ?? 0;
+		textGenerationAnchorScrollTop = messagesContainerElement?.scrollTop ?? null;
+		textGenerationAnchorUserMoved = false;
 		generationSpacerUpwardScrollIntentUntil = 0;
 		autoScroll = false;
 		if (stabilizeAcrossFrames) {
@@ -2959,6 +2966,8 @@
 		await scrollToContentBottom('auto');
 		activeGenerationSpacerHeightLimit = generationBottomSpacerHeight;
 		lastMessagesScrollTop = messagesContainerElement?.scrollTop ?? 0;
+		textGenerationAnchorScrollTop = messagesContainerElement?.scrollTop ?? null;
+		textGenerationAnchorUserMoved = false;
 		generationSpacerUpwardScrollIntentUntil = 0;
 		autoScroll = false;
 		scheduleScrollStateUpdate({ updateAutoScroll: false });
@@ -3017,6 +3026,8 @@
 				setGenerationSpacerScrollLimit(messagesContainerElement.scrollTop);
 			}
 			anchoredGeneratingMessageId = null;
+			textGenerationAnchorScrollTop = null;
+			textGenerationAnchorUserMoved = false;
 			activeGenerationSpacerHeightLimit = null;
 			generationSpacerUpwardScrollIntentUntil = 0;
 			cancelGenerationAnchorRAF();
@@ -3128,6 +3139,9 @@
 
 	const beginGenerationSpacerPointerScroll = () => {
 		if (!messagesContainerElement) return;
+		if (anchoredGeneratingMessageId) {
+			textGenerationAnchorUserMoved = true;
+		}
 		cancelGenerationAnchorRAF();
 		lastMessagesScrollTop = messagesContainerElement.scrollTop;
 		if (generationBottomSpacerHeight > 0) {
@@ -3188,6 +3202,7 @@
 	const preventMessagesBottomWheelJitter = (event: WheelEvent) => {
 		if (!messagesContainerElement) return;
 		if (anchoredGeneratingMessageId) {
+			textGenerationAnchorUserMoved = true;
 			cancelGenerationAnchorRAF();
 		}
 
@@ -3264,6 +3279,14 @@
 					visualMediaAutoFollowMessageId === anchoredGeneratingMessageId
 				) {
 					scrollToContentBottom('auto');
+				} else if (
+					anchoredGeneratingMessageId &&
+					!textGenerationAnchorUserMoved &&
+					textGenerationAnchorScrollTop !== null &&
+					messagesContainerElement
+				) {
+					messagesContainerElement.scrollTop = textGenerationAnchorScrollTop;
+					updateScrollStateFromContainer({ updateAutoScroll: false });
 				} else {
 					updateScrollStateFromContainer({ updateAutoScroll: false });
 				}
@@ -3294,6 +3317,9 @@
 
 	const scrollToBottomFromInput = async () => {
 		const isAnchoredGeneration = Boolean(anchoredGeneratingMessageId);
+		if (isAnchoredGeneration) {
+			textGenerationAnchorUserMoved = true;
+		}
 
 		scrollToBottomButtonSuppressUntil = Date.now() + (isAnchoredGeneration ? 120 : 350);
 		showScrollToBottomButton = false;
@@ -4028,8 +4054,8 @@
 			selectedModels = _selectedModels;
 		}
 
-		if (userPrompt === '' && files.length === 0) {
-			toast.error($i18n.t('Please enter a prompt'));
+		if (!userPrompt.trim() && !files.some((file) => file?.pastedText === true)) {
+			toast.error(files.length > 0 ? 'Escreva uma mensagem para enviar o anexo.' : $i18n.t('Please enter a prompt'));
 			return;
 		}
 		if (selectedModels.includes('')) {
@@ -4039,7 +4065,9 @@
 
 		// ── LlamaCpp model-loaded check ──────────────────────────────
 		for (const selectedModelId of selectedModels) {
-			if (requestFeatures.video_generation) break;
+			// These pipelines do not use the selected chat LLM. Loading it here can
+			// compete with a media job that still owns the GPU in another chat.
+			if (requestFeatures.stable_diffusion || requestFeatures.video_generation) break;
 			const localSelection = resolveLocalModelSelection(selectedModelId);
 			if (localSelection?.model) {
 				const { model, modelId } = localSelection;
@@ -5322,11 +5350,17 @@
 		return '';
 	};
 
+	const getPastedTextTitle = (message) => {
+		const pastedFile = message?.files?.find((file) => file?.pastedText === true);
+		const content = pastedFile?.pastedTextTitle ?? pastedFile?.content ?? pastedFile?.file?.data?.content ?? '';
+		return String(content).replace(/\s+/g, ' ').trim().slice(0, 100);
+	};
+
 	const getInitialImageChatTitle = (history) => {
 		const firstUserMessage = createMessagesList(history, history.currentId).find(
 			(message) => message?.role === 'user'
 		);
-		const title = getMessageTextForTitle(firstUserMessage?.content)
+		const title = (getMessageTextForTitle(firstUserMessage?.content).trim() || getPastedTextTitle(firstUserMessage))
 			.replace(/<\$[^>]+>/g, '')
 			.replace(/\s+/g, ' ')
 			.trim();
@@ -5337,9 +5371,15 @@
 		let _chatId = $chatId;
 
 		if (!$temporaryChatEnabled) {
+			const firstUserMessage = createMessagesList(history, history.currentId).find(
+				(message) => message?.role === 'user'
+			);
+			const pastedOnlyTitle = getMessageTextForTitle(firstUserMessage?.content).trim()
+				? ''
+				: getPastedTextTitle(firstUserMessage);
 			const initialTitle = stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled
 				? getInitialImageChatTitle(history) || $i18n.t('New Chat')
-				: $i18n.t('New Chat');
+				: pastedOnlyTitle || $i18n.t('New Chat');
 
 			chat = await createNewChat(
 				localStorage.token,

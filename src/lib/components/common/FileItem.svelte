@@ -28,6 +28,7 @@
 	export let edit = false;
 	export let small = false;
 	export let inputChip = false;
+	export let chatAttachment = false;
 
 	export let name: string;
 	export let type: string;
@@ -172,7 +173,7 @@
 					{/if}
 				</div>
 			{:else}
-				<div class="pl-1 shrink-0">
+				<div class={chatAttachment ? 'ml-1 flex size-4 shrink-0 items-center justify-center' : 'pl-1 shrink-0'}>
 					{#if !loading}
 						{#if type === 'collection'}
 							<Database />

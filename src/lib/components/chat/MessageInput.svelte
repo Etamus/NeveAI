@@ -135,6 +135,7 @@
 	export let prompt = '';
 	export let files = [];
 	export let sendDisabled = false;
+	$: canSubmitMessage = prompt.trim().length > 0 || files.some((file) => file?.pastedText === true);
 
 	export let selectedToolIds = [];
 	export let selectedFilterIds = [];
@@ -146,21 +147,18 @@
 	export let fileGenerationEnabled = false;
 	export let stableDiffusionEnabled = false;
 	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' = 'neve_image';
-	export let stableDiffusionStyle: 'none' | 'realistic' | 'minimalist' | 'fantasy' | 'surreal' | 'conceptual' | 'comics' | 'arcane' | 'conceptual_2' | 'realistic_2' | 'realistic_4' | 'arcane_2' | 'flat_pop' = 'none';
+	export let stableDiffusionStyle: 'none' | 'minimalist' | 'polygonal' | 'fantasy' | 'comics' | 'arcane' | 'spontaneous' | 'realistic' | 'manga' | 'pixelated' = 'none';
 	const imageStyleOptions = [
-		{ id: 'none', label: 'Sem estilo' },
-		{ id: 'realistic', label: 'Realista' },
-		{ id: 'minimalist', label: 'Minimalista' },
-		{ id: 'fantasy', label: 'Fantasia' },
-		{ id: 'surreal', label: 'Surreal' },
-		{ id: 'conceptual', label: 'Conceitual' },
-		{ id: 'comics', label: 'Quadrinhos' },
-		{ id: 'arcane', label: 'Arcano' },
-		{ id: 'conceptual_2', label: 'Conceitual 2' },
-		{ id: 'realistic_2', label: 'Realista 2' },
-		{ id: 'realistic_4', label: 'Realista 4' },
-		{ id: 'arcane_2', label: 'Arcano 2' },
-		{ id: 'flat_pop', label: 'Flat pop' }
+		{ id: 'none', label: 'Sem estilo', image: '' },
+		{ id: 'realistic', label: 'Realista', image: '/static/realista.webp' },
+		{ id: 'spontaneous', label: 'Espontâneo', image: '/static/espontaneo.webp' },
+		{ id: 'fantasy', label: 'Fantasia', image: '/static/fantasia.webp' },
+		{ id: 'minimalist', label: 'Minimalista', image: '/static/minimalista.webp' },
+		{ id: 'polygonal', label: 'Poligonal', image: '/static/poligonal.webp' },
+		{ id: 'manga', label: 'Mangá', image: '/static/manga.webp' },
+		{ id: 'comics', label: 'Quadrinhos', image: '/static/quadrinhos.webp' },
+		{ id: 'pixelated', label: 'Pixelado', image: '/static/pixelado.webp' },
+		{ id: 'arcane', label: 'Arcano', image: '/static/arcano.webp' }
 	] as const;
 	$: selectedImageStyleLabel =
 		imageStyleOptions.find((style) => style.id === stableDiffusionStyle)?.label ?? 'Sem estilo';
@@ -1070,7 +1068,7 @@
 		const clipboardData = event.clipboardData;
 		const pastedText = clipboardData?.getData('text/plain') ?? '';
 
-		if (!shiftKey && pastedText.length > PASTED_TEXT_CHARACTER_LIMIT) {
+		if (!shiftKey && !stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled && pastedText.length > PASTED_TEXT_CHARACTER_LIMIT) {
 			event.preventDefault();
 			const pastedTextLineCount = pastedText.split(/\r\n|\r|\n/).length;
 			const file = new File(
@@ -1080,6 +1078,8 @@
 			);
 			await uploadFileHandler(file, true, {
 				name: 'Texto colado',
+				pastedText: true,
+				pastedTextTitle: pastedText.replace(/\s+/g, ' ').trim().slice(0, 100),
 				...(pastedTextLineCount <= PASTED_TEXT_FULL_CONTEXT_LINE_LIMIT
 					? { context: 'full' }
 					: {})
@@ -1402,7 +1402,10 @@
 	if (showImageQualityDropdown && !(e.target as HTMLElement).closest('#image-quality-dropdown-container')) {
 		showImageQualityDropdown = false;
 	}
-	if (showImageStyleDropdown && !(e.target as HTMLElement).closest('#image-style-dropdown-container')) {
+	if (
+		showImageStyleDropdown &&
+		!(e.target as HTMLElement).closest('#image-style-dropdown-container, #image-style-dropdown-panel')
+	) {
 		showImageStyleDropdown = false;
 	}
 	if (showImageResolutionDropdown && !(e.target as HTMLElement).closest('#image-resolution-dropdown-container')) {
@@ -1531,7 +1534,7 @@
 						class="relative w-full flex flex-col gap-1.5"
 						on:submit|preventDefault={() => {
 							// check if selectedModels support image input
-							if (!sendDisabled && (prompt !== '' || files.length > 0)) {
+							if (!sendDisabled && canSubmitMessage) {
 								dispatch('submit', prompt);
 							}
 						}}
@@ -1848,7 +1851,7 @@
 															navigator.msMaxTouchPoints > 0
 														)}
 													placeholder={placeholder ? placeholder : $i18n.t('Send a Message')}
-													largeTextAsFile={!shiftKey}
+													largeTextAsFile={!shiftKey && !stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled}
 													autocomplete={$config?.features?.enable_autocomplete_generation &&
 														($settings?.promptAutocomplete ?? false)}
 													generateAutoCompletion={async (text) => {
@@ -1928,11 +1931,11 @@
 																		? (e.key === 'Enter' || e.keyCode === 13) && isCtrlPressed
 																		: (e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey;
 
-																if (enterPressed) {
-																	e.preventDefault();
-																	if (!sendDisabled && (prompt !== '' || files.length > 0)) {
-																		dispatch('submit', prompt);
-																	}
+														if (enterPressed) {
+															e.preventDefault();
+															if (!sendDisabled && canSubmitMessage) {
+																dispatch('submit', prompt);
+															}
 																}
 															}
 														}
@@ -2028,13 +2031,13 @@
 									<Tooltip content={$i18n.t('Send message')}>
 										<button
 											id="send-message-button"
-											class="{!sendDisabled && (prompt !== '' || files.length > 0)
+											class="{!sendDisabled && canSubmitMessage
 												? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 '
 												: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full p-1.5 self-center"
 											type="submit"
-											disabled={sendDisabled || (prompt === '' && files.length === 0)}
+											disabled={sendDisabled || !canSubmitMessage}
 										>
-											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-5">
+											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-5 translate-x-[0.5px]">
 												<path fill-rule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clip-rule="evenodd" />
 											</svg>
 										</button>
@@ -2322,39 +2325,6 @@
 												<span>{selectedImageStyleLabel}</span>
 												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageStyleDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
 											</button>
-											{#if showImageStyleDropdown}
-												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-72 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-2 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-													<button
-														type="button"
-														class="grid min-h-10 w-full grid-cols-[1fr_16px] items-center gap-2 rounded-md border px-3 py-2 text-left font-medium transition-colors {stableDiffusionStyle === 'none' ? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100' : 'border-transparent text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'}"
-														on:click={() => {
-															stableDiffusionStyle = 'none';
-															localStorage.setItem('neveai.imageStyle', stableDiffusionStyle);
-															showImageStyleDropdown = false;
-														}}
-													>
-														<span>Sem estilo</span>
-														<span class="flex size-4 items-center justify-center">{#if stableDiffusionStyle === 'none'}<CheckCircle className="size-4" strokeWidth="1.7" />{/if}</span>
-													</button>
-													<hr class="my-1.5 border-gray-200 dark:border-gray-800" />
-													<div class="grid grid-cols-2 gap-1.5">
-														{#each imageStyleOptions.slice(1) as style}
-															<button
-																type="button"
-																class="grid min-h-10 w-full grid-cols-[1fr_16px] items-center gap-2 rounded-md border px-3 py-2 text-left font-medium transition-colors {stableDiffusionStyle === style.id ? 'border-gray-300 bg-gray-100 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100' : 'border-transparent text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'}"
-																on:click={() => {
-																	stableDiffusionStyle = style.id;
-																	localStorage.setItem('neveai.imageStyle', stableDiffusionStyle);
-																	showImageStyleDropdown = false;
-																}}
-															>
-																<span class="truncate">{style.label}</span>
-																<span class="flex size-4 items-center justify-center">{#if stableDiffusionStyle === style.id}<CheckCircle className="size-4" strokeWidth="1.7" />{/if}</span>
-															</button>
-														{/each}
-													</div>
-												</div>
-											{/if}
 										</div>
 										{/if}
 										{#if stableDiffusionQuality === 'neve_image_2' || stableDiffusionQuality === 'qwen_image_2_1'}
@@ -2682,18 +2652,18 @@
 
 										<div class=" flex items-center">
 											<Tooltip content={uploadPending ? $i18n.t('Waiting for upload...') : $i18n.t('Send message')}>
-												<button
-													id="send-message-button"
-													class="grid size-8 shrink-0 place-items-center p-0 {!sendDisabled && (prompt !== '' || files.length > 0 || uploadPending)
-														? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 '
-														: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full self-center"
-													type="submit"
-													disabled={sendDisabled || (prompt === '' && files.length === 0) || uploadPending}
+											<button
+												id="send-message-button"
+												class="grid size-8 shrink-0 place-items-center p-0 {!sendDisabled && (canSubmitMessage || uploadPending)
+													? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 '
+													: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full self-center"
+												type="submit"
+												disabled={sendDisabled || !canSubmitMessage || uploadPending}
 												>
 													{#if uploadPending}
 														<Spinner className="size-5" />
 													{:else}
-														<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="block size-5 -translate-x-px">
+														<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="block size-5 -translate-x-[0.5px]">
 															<path fill-rule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clip-rule="evenodd" />
 														</svg>
 													{/if}
@@ -2703,6 +2673,45 @@
 									{/if}
 								</div>
 							</div>
+							{/if}
+
+							{#if showImageStyleDropdown && stableDiffusionEnabled && stableDiffusionQuality === 'neve_image_2'}
+								<div
+									id="image-style-dropdown-panel"
+									class="absolute {history?.currentId ? 'bottom-full -mb-1' : 'top-full -mt-1'} inset-x-0 z-50 w-full rounded-lg border border-gray-200 bg-white p-1.5 text-sm shadow-md dark:border-gray-800 dark:bg-gray-850"
+									transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
+								>
+									<div class="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+										{#each imageStyleOptions as style}
+											<button
+												type="button"
+												class="group relative aspect-[4/5] w-full overflow-hidden rounded-md border-0 p-0 text-left outline-hidden transition-[filter,background-color] focus-visible:ring-2 focus-visible:ring-gray-400 {style.image ? 'bg-gray-200 hover:brightness-110 dark:bg-gray-800' : stableDiffusionStyle === style.id ? 'bg-gray-200 dark:bg-gray-700' : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700'}"
+												aria-pressed={stableDiffusionStyle === style.id}
+												on:click={() => {
+													stableDiffusionStyle = style.id;
+													localStorage.setItem('neveai.imageStyle', stableDiffusionStyle);
+													showImageStyleDropdown = false;
+												}}
+											>
+												{#if style.image}
+													<img src={style.image} alt="Exemplo do estilo {style.label}" width="640" height="360" class="absolute inset-0 block size-full object-cover" />
+													<span class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/80 via-black/35 to-transparent px-2 pb-2 pt-8 text-xs font-medium leading-5 text-white">
+														<span class="block truncate">{style.label}</span>
+													</span>
+												{:else}
+													<span class="absolute inset-x-0 bottom-0 px-2 pb-2 text-xs font-medium leading-5 text-gray-700 dark:text-gray-200">{style.label}</span>
+												{/if}
+												{#if stableDiffusionStyle === style.id}
+													{#if style.image}
+														<CheckCircle className="absolute right-2 top-2 size-4 text-white drop-shadow-md" strokeWidth="2" />
+													{:else}
+														<CheckCircle className="absolute right-2 top-2 size-4 text-gray-700 dark:text-gray-100" strokeWidth="2" />
+													{/if}
+												{/if}
+											</button>
+										{/each}
+									</div>
+								</div>
 							{/if}
 						</div>
 					</form>

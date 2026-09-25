@@ -1416,8 +1416,20 @@ $ctl.BtnPrimary.Add_Click({
         }
         function Resolve-FrontendNodeLaunch {
             $nodeCandidates = @()
-            $portableNode = Join-Path $ROOT 'tools\nodejs\node.exe'
-            if (Test-Path -LiteralPath $portableNode) { $nodeCandidates += $portableNode }
+            $portableRoots = @(
+                (Join-Path $ROOT 'tools'),
+                (Join-Path $env:LocalAppData 'NeveAI\tools'),
+                (Join-Path $env:TEMP 'NeveAI\tools')
+            ) | Select-Object -Unique
+            foreach ($portableRoot in $portableRoots) {
+                $portableNode = Join-Path $portableRoot 'nodejs\node.exe'
+                if (Test-Path -LiteralPath $portableNode) { $nodeCandidates += $portableNode }
+                if (Test-Path -LiteralPath $portableRoot) {
+                    $nodeCandidates += @(Get-ChildItem -LiteralPath $portableRoot -Directory -Filter 'nodejs-*' -EA SilentlyContinue |
+                        ForEach-Object { Join-Path $_.FullName 'node.exe' } |
+                        Where-Object { Test-Path -LiteralPath $_ })
+                }
+            }
             if ($NODE_EXE) { $nodeCandidates += $NODE_EXE }
 
             foreach ($cmd in @(Get-Command node.exe -All -EA SilentlyContinue)) {
@@ -1460,13 +1472,15 @@ $ctl.BtnPrimary.Add_Click({
             } catch {
                 Log "[!] Falha ao consultar versões do Node.js: $($_.Exception.Message)" 'warn'
             }
-            if (-not $release) { throw 'Não foi possível encontrar Node.js 22 win-x64 no site oficial.' }
+            if (-not $release) {
+                $release = [pscustomobject]@{ version = 'v22.23.3'; files = @('win-x64-zip') }
+                Log '[!] Índice do Node.js indisponível; usando a versão LTS de fallback v22.23.3.' 'warn'
+            }
 
             $version = [string]$release.version
             $url = "https://nodejs.org/dist/$version/node-$version-win-x64.zip"
-            $zipPath = Join-Path $env:TEMP "neve_node_$version.zip"
+            $zipPath = Join-Path $env:TEMP "neve_node_$version-$([guid]::NewGuid().ToString('N')).zip"
             $stageParent = Join-Path $env:TEMP "neve_node_stage_$([guid]::NewGuid().ToString('N'))"
-            $stageTarget = Join-Path $toolsDir "nodejs-stage-$([guid]::NewGuid().ToString('N'))"
             try {
                 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue }
                 New-Item -ItemType Directory -Path $stageParent -Force | Out-Null
@@ -1475,32 +1489,57 @@ $ctl.BtnPrimary.Add_Click({
                 Expand-Archive $zipPath -DestinationPath $stageParent -Force
                 $extracted = Get-ChildItem -LiteralPath $stageParent -Directory | Select-Object -First 1
                 if (-not $extracted) { throw 'Arquivo do Node.js não extraiu a pasta esperada.' }
-                Move-Item -LiteralPath $extracted.FullName -Destination $stageTarget -Force
-
-                $stagedNode = Join-Path $stageTarget 'node.exe'
-                $stagedNpm = Join-Path $stageTarget 'npm.cmd'
-                $stagedPair = Test-FrontendNodePair $stagedNode $stagedNpm
+                $stagedPair = Test-FrontendNodePair (Join-Path $extracted.FullName 'node.exe') (Join-Path $extracted.FullName 'npm.cmd')
                 if (-not $stagedPair) { throw 'Node.js portátil extraído não passou na validação.' }
 
-                if (Test-Path -LiteralPath $nodeDir) {
-                    Remove-Item -LiteralPath $nodeDir -Recurse -Force -EA Stop
-                    if (Test-Path -LiteralPath $nodeDir) { throw 'A instalação anterior do Node.js portátil não pôde ser substituída.' }
-                }
-                Move-Item -LiteralPath $stageTarget -Destination $nodeDir -Force -EA Stop
-                Get-ChildItem -LiteralPath $nodeDir -Recurse -File -EA SilentlyContinue | Unblock-File -EA SilentlyContinue
+                $installParents = @(
+                    $toolsDir,
+                    (Join-Path $env:LocalAppData 'NeveAI\tools'),
+                    (Join-Path $env:TEMP 'NeveAI\tools')
+                ) | Select-Object -Unique
+                $installErrors = @()
+                foreach ($installParent in $installParents) {
+                    $candidateDir = Join-Path $installParent 'nodejs'
+                    $createdCandidate = $false
+                    try {
+                        if (-not (Test-Path -LiteralPath $installParent)) {
+                            New-Item -ItemType Directory -Path $installParent -Force -EA Stop | Out-Null
+                        }
+                        $candidateExisting = Test-FrontendNodePair (Join-Path $candidateDir 'node.exe') (Join-Path $candidateDir 'npm.cmd')
+                        if ($candidateExisting) { return $candidateExisting }
+                        if (Test-Path -LiteralPath $candidateDir) {
+                            try { Remove-Item -LiteralPath $candidateDir -Recurse -Force -EA Stop } catch {}
+                            if (Test-Path -LiteralPath $candidateDir) {
+                                $candidateDir = Join-Path $installParent ("nodejs-{0}-{1}" -f $version.TrimStart('v'), [guid]::NewGuid().ToString('N').Substring(0, 8))
+                            }
+                        }
+                        $createdCandidate = $true
+                        Copy-Item -LiteralPath $extracted.FullName -Destination $candidateDir -Recurse -Force -EA Stop
+                        Get-ChildItem -LiteralPath $candidateDir -Recurse -File -EA SilentlyContinue | Unblock-File -EA SilentlyContinue
 
-                $pair = $null
-                for ($attempt = 1; $attempt -le 10 -and -not $pair; $attempt++) {
-                    $pair = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
-                    if (-not $pair) { Start-Sleep -Milliseconds 500 }
+                        $pair = $null
+                        for ($attempt = 1; $attempt -le 10 -and -not $pair; $attempt++) {
+                            $pair = Test-FrontendNodePair (Join-Path $candidateDir 'node.exe') (Join-Path $candidateDir 'npm.cmd')
+                            if (-not $pair) { Start-Sleep -Milliseconds 500 }
+                        }
+                        if (-not $pair) { throw 'Os arquivos foram copiados, mas Node.js/npm não responderam.' }
+                        if ($candidateDir -ne $nodeDir) {
+                            Log "[!] Node.js portátil instalado no fallback: $candidateDir" 'warn'
+                        }
+                        Log "[OK] Node.js portátil pronto: $($pair.NodeVersion) / npm $($pair.NpmVersion)"
+                        return $pair
+                    } catch {
+                        $installErrors += "$candidateDir -> $($_.Exception.Message)"
+                        Log "[!] Não foi possível preparar Node.js em '$candidateDir': $($_.Exception.Message)" 'warn'
+                        if ($createdCandidate) {
+                            try { Remove-Item -LiteralPath $candidateDir -Recurse -Force -EA SilentlyContinue } catch {}
+                        }
+                    }
                 }
-                if (-not $pair) { throw 'Node.js portátil foi copiado, mas não respondeu após a instalação.' }
-                Log "[OK] Node.js portátil pronto: $($pair.NodeVersion) / npm $($pair.NpmVersion)"
-                return $pair
+                throw "Não foi possível preparar Node.js portátil em nenhum local permitido. $($installErrors -join ' | ')"
             } finally {
                 try { if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue } } catch {}
                 try { if (Test-Path -LiteralPath $stageParent) { Remove-Item -LiteralPath $stageParent -Recurse -Force -EA SilentlyContinue } } catch {}
-                try { if (Test-Path -LiteralPath $stageTarget) { Remove-Item -LiteralPath $stageTarget -Recurse -Force -EA SilentlyContinue } } catch {}
             }
         }
         function Normalize-PythonPackageName([string]$name) {
@@ -3988,8 +4027,20 @@ $ctl.BtnPrimary.Add_Click({
         }
         function Resolve-FrontendNodeLaunch {
             $nodeCandidates = @()
-            $portableNode = Join-Path $ROOT 'tools\nodejs\node.exe'
-            if (Test-Path -LiteralPath $portableNode) { $nodeCandidates += $portableNode }
+            $portableRoots = @(
+                (Join-Path $ROOT 'tools'),
+                (Join-Path $env:LocalAppData 'NeveAI\tools'),
+                (Join-Path $env:TEMP 'NeveAI\tools')
+            ) | Select-Object -Unique
+            foreach ($portableRoot in $portableRoots) {
+                $portableNode = Join-Path $portableRoot 'nodejs\node.exe'
+                if (Test-Path -LiteralPath $portableNode) { $nodeCandidates += $portableNode }
+                if (Test-Path -LiteralPath $portableRoot) {
+                    $nodeCandidates += @(Get-ChildItem -LiteralPath $portableRoot -Directory -Filter 'nodejs-*' -EA SilentlyContinue |
+                        ForEach-Object { Join-Path $_.FullName 'node.exe' } |
+                        Where-Object { Test-Path -LiteralPath $_ })
+                }
+            }
             if ($env:NODE_EXE) { $nodeCandidates += $env:NODE_EXE }
 
             foreach ($cmd in @(Get-Command node.exe -All -EA SilentlyContinue)) {
@@ -4037,45 +4088,82 @@ $ctl.BtnPrimary.Add_Click({
             } catch {
                 L "[!] Falha ao consultar versões do Node.js: $($_.Exception.Message)" 'warn'
             }
-            if (-not $release) { throw 'Não foi possível encontrar Node.js 22 win-x64 no site oficial.' }
+            if (-not $release) {
+                $release = [pscustomobject]@{ version = 'v22.23.3'; files = @('win-x64-zip') }
+                L '[!] Índice do Node.js indisponível; usando a versão LTS de fallback v22.23.3.' 'warn'
+            }
 
             $version = [string]$release.version
             $url = "https://nodejs.org/dist/$version/node-$version-win-x64.zip"
-            $zipPath = Join-Path $env:TEMP "neve_node_$version.zip"
+            $zipPath = Join-Path $env:TEMP "neve_node_$version-$([guid]::NewGuid().ToString('N')).zip"
             $stageParent = Join-Path $env:TEMP "neve_node_stage_$([guid]::NewGuid().ToString('N'))"
-            $stageTarget = Join-Path $toolsDir "nodejs-stage-$([guid]::NewGuid().ToString('N'))"
             try {
                 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue }
                 New-Item -ItemType Directory -Path $stageParent -Force | Out-Null
                 L "==> Baixando $url"
-                Invoke-WebRequest $url -OutFile $zipPath -UseBasicParsing -Headers @{ 'User-Agent' = $UA } -TimeoutSec 300
+                try {
+                    Invoke-WebRequest $url -OutFile $zipPath -UseBasicParsing -Headers @{ 'User-Agent' = $UA } -TimeoutSec 300
+                } catch {
+                    L "[!] Download pelo PowerShell falhou: $($_.Exception.Message). Tentando curl." 'warn'
+                    $curl = Get-Command curl.exe -EA SilentlyContinue | Select-Object -First 1
+                    if (-not $curl) { throw }
+                    $rc = Run $curl.Source @('-L','--fail','--silent','--show-error','--compressed','--retry','3','--retry-delay','2','--connect-timeout','30','--max-time','300','--output',$zipPath,$url) 'Baixando Node.js com curl'
+                    if ($rc -ne 0 -or -not (Test-Path -LiteralPath $zipPath) -or (Get-Item -LiteralPath $zipPath).Length -le 0) {
+                        throw "curl não conseguiu baixar Node.js (exit $rc)."
+                    }
+                }
                 Expand-Archive $zipPath -DestinationPath $stageParent -Force
                 $extracted = Get-ChildItem -LiteralPath $stageParent -Directory | Select-Object -First 1
                 if (-not $extracted) { throw 'Arquivo do Node.js não extraiu a pasta esperada.' }
-                Move-Item -LiteralPath $extracted.FullName -Destination $stageTarget -Force
-
-                $stagedPair = Test-FrontendNodePair (Join-Path $stageTarget 'node.exe') (Join-Path $stageTarget 'npm.cmd')
+                $stagedPair = Test-FrontendNodePair (Join-Path $extracted.FullName 'node.exe') (Join-Path $extracted.FullName 'npm.cmd')
                 if (-not $stagedPair) { throw 'Node.js portátil extraído não passou na validação.' }
 
-                if (Test-Path -LiteralPath $nodeDir) {
-                    Remove-Item -LiteralPath $nodeDir -Recurse -Force -EA Stop
-                    if (Test-Path -LiteralPath $nodeDir) { throw 'A instalação anterior do Node.js portátil não pôde ser substituída.' }
-                }
-                Move-Item -LiteralPath $stageTarget -Destination $nodeDir -Force -EA Stop
-                Get-ChildItem -LiteralPath $nodeDir -Recurse -File -EA SilentlyContinue | Unblock-File -EA SilentlyContinue
+                $installParents = @(
+                    $toolsDir,
+                    (Join-Path $env:LocalAppData 'NeveAI\tools'),
+                    (Join-Path $env:TEMP 'NeveAI\tools')
+                ) | Select-Object -Unique
+                $installErrors = @()
+                foreach ($installParent in $installParents) {
+                    $candidateDir = Join-Path $installParent 'nodejs'
+                    $createdCandidate = $false
+                    try {
+                        if (-not (Test-Path -LiteralPath $installParent)) {
+                            New-Item -ItemType Directory -Path $installParent -Force -EA Stop | Out-Null
+                        }
+                        $candidateExisting = Test-FrontendNodePair (Join-Path $candidateDir 'node.exe') (Join-Path $candidateDir 'npm.cmd')
+                        if ($candidateExisting) { return $candidateExisting }
+                        if (Test-Path -LiteralPath $candidateDir) {
+                            try { Remove-Item -LiteralPath $candidateDir -Recurse -Force -EA Stop } catch {}
+                            if (Test-Path -LiteralPath $candidateDir) {
+                                $candidateDir = Join-Path $installParent ("nodejs-{0}-{1}" -f $version.TrimStart('v'), [guid]::NewGuid().ToString('N').Substring(0, 8))
+                            }
+                        }
+                        $createdCandidate = $true
+                        Copy-Item -LiteralPath $extracted.FullName -Destination $candidateDir -Recurse -Force -EA Stop
+                        Get-ChildItem -LiteralPath $candidateDir -Recurse -File -EA SilentlyContinue | Unblock-File -EA SilentlyContinue
 
-                $pair = $null
-                for ($attempt = 1; $attempt -le 10 -and -not $pair; $attempt++) {
-                    $pair = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
-                    if (-not $pair) { Start-Sleep -Milliseconds 500 }
+                        $pair = $null
+                        for ($attempt = 1; $attempt -le 10 -and -not $pair; $attempt++) {
+                            $pair = Test-FrontendNodePair (Join-Path $candidateDir 'node.exe') (Join-Path $candidateDir 'npm.cmd')
+                            if (-not $pair) { Start-Sleep -Milliseconds 500 }
+                        }
+                        if (-not $pair) { throw 'Os arquivos foram copiados, mas Node.js/npm não responderam.' }
+                        if ($candidateDir -ne $nodeDir) { L "[!] Node.js portátil instalado no fallback: $candidateDir" 'warn' }
+                        L "[OK] Node.js portátil pronto: $($pair.NodeVersion) / npm $($pair.NpmVersion)"
+                        return $pair
+                    } catch {
+                        $installErrors += "$candidateDir -> $($_.Exception.Message)"
+                        L "[!] Não foi possível preparar Node.js em '$candidateDir': $($_.Exception.Message)" 'warn'
+                        if ($createdCandidate) {
+                            try { Remove-Item -LiteralPath $candidateDir -Recurse -Force -EA SilentlyContinue } catch {}
+                        }
+                    }
                 }
-                if (-not $pair) { throw 'Node.js portátil foi copiado, mas não respondeu após a instalação.' }
-                L "[OK] Node.js portátil pronto: $($pair.NodeVersion) / npm $($pair.NpmVersion)"
-                return $pair
+                throw "Não foi possível preparar Node.js portátil em nenhum local permitido. $($installErrors -join ' | ')"
             } finally {
                 try { if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue } } catch {}
                 try { if (Test-Path -LiteralPath $stageParent) { Remove-Item -LiteralPath $stageParent -Recurse -Force -EA SilentlyContinue } } catch {}
-                try { if (Test-Path -LiteralPath $stageTarget) { Remove-Item -LiteralPath $stageTarget -Recurse -Force -EA SilentlyContinue } } catch {}
             }
         }
         function Test-NeveAppIntegrity([string]$root) {
@@ -5279,8 +5367,20 @@ function Test-FrontendNodePair([string]$nodeExe, [string]$npmExe) {
 
 function Resolve-FrontendNodeLaunch {
     $nodeCandidates = @()
-    $portableNode = Join-Path $ROOT 'tools\nodejs\node.exe'
-    if (Test-Path -LiteralPath $portableNode) { $nodeCandidates += $portableNode }
+    $portableRoots = @(
+        (Join-Path $ROOT 'tools'),
+        (Join-Path $env:LocalAppData 'NeveAI\tools'),
+        (Join-Path $env:TEMP 'NeveAI\tools')
+    ) | Select-Object -Unique
+    foreach ($portableRoot in $portableRoots) {
+        $portableNode = Join-Path $portableRoot 'nodejs\node.exe'
+        if (Test-Path -LiteralPath $portableNode) { $nodeCandidates += $portableNode }
+        if (Test-Path -LiteralPath $portableRoot) {
+            $nodeCandidates += @(Get-ChildItem -LiteralPath $portableRoot -Directory -Filter 'nodejs-*' -EA SilentlyContinue |
+                ForEach-Object { Join-Path $_.FullName 'node.exe' } |
+                Where-Object { Test-Path -LiteralPath $_ })
+        }
+    }
     if ($env:NODE_EXE) { $nodeCandidates += $env:NODE_EXE }
 
     foreach ($cmd in @(Get-Command node.exe -All -EA SilentlyContinue)) {
@@ -5332,48 +5432,85 @@ function Install-PortableNode22 {
         Append-Log "Falha ao consultar versoes do Node.js: $($_.Exception.Message)" 'warn'
     }
 
-    if (-not $release) { throw 'Nao foi possivel encontrar Node.js 22 win-x64 no site oficial.' }
+    if (-not $release) {
+        $release = [pscustomobject]@{ version = 'v22.23.3'; files = @('win-x64-zip') }
+        Append-Log 'Indice do Node.js indisponivel; usando a versao LTS de fallback v22.23.3.' 'warn'
+    }
 
     $version = [string]$release.version
     $url = "https://nodejs.org/dist/$version/node-$version-win-x64.zip"
-    $zipPath = Join-Path $env:TEMP "neve_node_$version.zip"
+    $zipPath = Join-Path $env:TEMP "neve_node_$version-$([guid]::NewGuid().ToString('N')).zip"
     $stageParent = Join-Path $env:TEMP "neve_node_stage_$([guid]::NewGuid().ToString('N'))"
-    $stageTarget = Join-Path $toolsDir "nodejs-stage-$([guid]::NewGuid().ToString('N'))"
 
     try {
         if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue }
         New-Item -ItemType Directory -Path $stageParent -Force | Out-Null
         Append-Log "Baixando $url"
-        Invoke-WebRequest $url -OutFile $zipPath -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Buildar/1.0' } -TimeoutSec 300
+        try {
+            Invoke-WebRequest $url -OutFile $zipPath -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Buildar/1.0' } -TimeoutSec 300
+        } catch {
+            Append-Log "Download pelo PowerShell falhou: $($_.Exception.Message). Tentando curl." 'warn'
+            $curl = Get-Command curl.exe -EA SilentlyContinue | Select-Object -First 1
+            if (-not $curl) { throw }
+            & $curl.Source -L --fail --silent --show-error --compressed --retry 3 --retry-delay 2 --connect-timeout 30 --max-time 300 --output $zipPath $url
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $zipPath) -or (Get-Item -LiteralPath $zipPath).Length -le 0) {
+                throw "curl nao conseguiu baixar Node.js (exit $LASTEXITCODE)."
+            }
+        }
 
         Append-Log 'Extraindo Node.js portatil'
         Expand-Archive $zipPath -DestinationPath $stageParent -Force
         $extracted = Get-ChildItem -LiteralPath $stageParent -Directory | Select-Object -First 1
         if (-not $extracted) { throw 'Arquivo do Node.js nao extraiu a pasta esperada.' }
-        Move-Item -LiteralPath $extracted.FullName -Destination $stageTarget -Force
-
-        $stagedPair = Test-FrontendNodePair (Join-Path $stageTarget 'node.exe') (Join-Path $stageTarget 'npm.cmd')
+        $stagedPair = Test-FrontendNodePair (Join-Path $extracted.FullName 'node.exe') (Join-Path $extracted.FullName 'npm.cmd')
         if (-not $stagedPair) { throw 'Node.js portatil extraido nao passou na validacao.' }
 
-        if (Test-Path -LiteralPath $nodeDir) {
-            Remove-Item -LiteralPath $nodeDir -Recurse -Force -EA Stop
-            if (Test-Path -LiteralPath $nodeDir) { throw 'A instalacao anterior do Node.js portatil nao pode ser substituida.' }
-        }
-        Move-Item -LiteralPath $stageTarget -Destination $nodeDir -Force -EA Stop
-        Get-ChildItem -LiteralPath $nodeDir -Recurse -File -EA SilentlyContinue | Unblock-File -EA SilentlyContinue
+        $installParents = @(
+            $toolsDir,
+            (Join-Path $env:LocalAppData 'NeveAI\tools'),
+            (Join-Path $env:TEMP 'NeveAI\tools')
+        ) | Select-Object -Unique
+        $installErrors = @()
+        foreach ($installParent in $installParents) {
+            $candidateDir = Join-Path $installParent 'nodejs'
+            $createdCandidate = $false
+            try {
+                if (-not (Test-Path -LiteralPath $installParent)) {
+                    New-Item -ItemType Directory -Path $installParent -Force -EA Stop | Out-Null
+                }
+                $candidateExisting = Test-FrontendNodePair (Join-Path $candidateDir 'node.exe') (Join-Path $candidateDir 'npm.cmd')
+                if ($candidateExisting) { return $candidateExisting }
+                if (Test-Path -LiteralPath $candidateDir) {
+                    try { Remove-Item -LiteralPath $candidateDir -Recurse -Force -EA Stop } catch {}
+                    if (Test-Path -LiteralPath $candidateDir) {
+                        $candidateDir = Join-Path $installParent ("nodejs-{0}-{1}" -f $version.TrimStart('v'), [guid]::NewGuid().ToString('N').Substring(0, 8))
+                    }
+                }
+                $createdCandidate = $true
+                Copy-Item -LiteralPath $extracted.FullName -Destination $candidateDir -Recurse -Force -EA Stop
+                Get-ChildItem -LiteralPath $candidateDir -Recurse -File -EA SilentlyContinue | Unblock-File -EA SilentlyContinue
 
-        $pair = $null
-        for ($attempt = 1; $attempt -le 10 -and -not $pair; $attempt++) {
-            $pair = Test-FrontendNodePair (Join-Path $nodeDir 'node.exe') (Join-Path $nodeDir 'npm.cmd')
-            if (-not $pair) { Start-Sleep -Milliseconds 500 }
+                $pair = $null
+                for ($attempt = 1; $attempt -le 10 -and -not $pair; $attempt++) {
+                    $pair = Test-FrontendNodePair (Join-Path $candidateDir 'node.exe') (Join-Path $candidateDir 'npm.cmd')
+                    if (-not $pair) { Start-Sleep -Milliseconds 500 }
+                }
+                if (-not $pair) { throw 'Os arquivos foram copiados, mas Node.js/npm nao responderam.' }
+                if ($candidateDir -ne $nodeDir) { Append-Log "Node.js portatil instalado no fallback: $candidateDir" 'warn' }
+                Append-Log "Node.js portatil pronto: $($pair.NodeVersion) / npm $($pair.NpmVersion)" 'ok'
+                return $pair
+            } catch {
+                $installErrors += "$candidateDir -> $($_.Exception.Message)"
+                Append-Log "Nao foi possivel preparar Node.js em '$candidateDir': $($_.Exception.Message)" 'warn'
+                if ($createdCandidate) {
+                    try { Remove-Item -LiteralPath $candidateDir -Recurse -Force -EA SilentlyContinue } catch {}
+                }
+            }
         }
-        if (-not $pair) { throw 'Node.js portatil foi copiado, mas nao respondeu apos a instalacao.' }
-        Append-Log "Node.js portatil pronto: $($pair.NodeVersion) / npm $($pair.NpmVersion)" 'ok'
-        return $pair
+        throw "Nao foi possivel preparar Node.js portatil em nenhum local permitido. $($installErrors -join ' | ')"
     } finally {
         try { if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -EA SilentlyContinue } } catch {}
         try { if (Test-Path -LiteralPath $stageParent) { Remove-Item -LiteralPath $stageParent -Recurse -Force -EA SilentlyContinue } } catch {}
-        try { if (Test-Path -LiteralPath $stageTarget) { Remove-Item -LiteralPath $stageTarget -Recurse -Force -EA SilentlyContinue } } catch {}
     }
 }
 

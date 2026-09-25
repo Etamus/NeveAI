@@ -153,6 +153,22 @@ logging.basicConfig(stream=sys.stdout, level=GLOBAL_LOG_LEVEL)
 log = logging.getLogger(__name__)
 
 
+# Image, music and video runtimes share the same GPU. Their own per-runtime locks
+# do not prevent one integration from unloading resources used by another.
+_MEDIA_GENERATION_LOCK = asyncio.Lock()
+
+
+async def _acquire_media_generation_slot(waiting_callback) -> None:
+    if _MEDIA_GENERATION_LOCK.locked():
+        await waiting_callback()
+    await _MEDIA_GENERATION_LOCK.acquire()
+
+
+def _release_media_generation_slot(acquired: bool) -> None:
+    if acquired and _MEDIA_GENERATION_LOCK.locked():
+        _MEDIA_GENERATION_LOCK.release()
+
+
 DEFAULT_REASONING_TAGS = [
     ("<think>", "</think>"),
     ("<thinking>", "</thinking>"),
@@ -1923,6 +1939,13 @@ def _collect_stable_diffusion_prompt(
     return _get_all_text_from_message(last_user_message)
 
 
+def _is_pasted_text_attachment(item: dict) -> bool:
+    return item.get("pastedText") is True or item.get("name") in {
+        "Texto colado",
+        "Texto colado.txt",
+    }
+
+
 _EXPLICIT_MUSIC_LYRICS_PATTERN = re.compile(
     r"(?is)\b(?:"
     r"com\s+(?:esse|este|esta|essa|o\s+seguinte|a\s+seguinte)\s+(?:texto|letra)"
@@ -2366,7 +2389,30 @@ async def chat_stable_diffusion_handler(
 
     await emit_image_progress(0)
 
+    media_slot_acquired = False
     try:
+        async def emit_image_waiting() -> None:
+            await __event_emitter__(
+                {
+                    "type": "status",
+                    "data": {
+                        "action": "stable_diffusion",
+                        "description": "Aguardando a criação anterior...",
+                        "quality": quality,
+                        "style": style,
+                        "resolution": resolution,
+                        "width": progress_width,
+                        "height": progress_height,
+                        "progress": 0,
+                        "done": False,
+                    },
+                }
+            )
+
+        await _acquire_media_generation_slot(emit_image_waiting)
+        media_slot_acquired = True
+        await emit_image_progress(0)
+
         from neveai.routers.stable_diffusion import _sd_pipeline, normalize_sd_model_id
         from neveai.routers.llamacpp import model_manager
 
@@ -2528,6 +2574,9 @@ async def chat_stable_diffusion_handler(
             }
         )
 
+    finally:
+        _release_media_generation_slot(media_slot_acquired)
+
     return form_data
 
 
@@ -2565,6 +2614,7 @@ async def chat_music_generation_handler(
 
     await emit_progress("Preparando a criação de música...")
 
+    media_slot_acquired = False
     try:
         if not request.app.state.config.ENABLE_MUSIC_GENERATION:
             raise RuntimeError("A geração de música está desativada.")
@@ -2574,6 +2624,11 @@ async def chat_music_generation_handler(
             request.app.state.config.USER_PERMISSIONS,
         ):
             raise RuntimeError("Você não tem permissão para gerar músicas.")
+
+        await _acquire_media_generation_slot(
+            lambda: emit_progress("Aguardando a criação anterior...")
+        )
+        media_slot_acquired = True
 
         from neveai.routers.llamacpp import model_manager
         from neveai.routers.music_generation import ace_step_runtime
@@ -2697,6 +2752,9 @@ async def chat_music_generation_handler(
             }
         )
 
+    finally:
+        _release_media_generation_slot(media_slot_acquired)
+
     return form_data
 
 
@@ -2787,6 +2845,7 @@ async def chat_video_generation_handler(
     await emit_progress("Preparando a criação de vídeo...", 0)
     runtime = None
     cancelled = False
+    media_slot_acquired = False
     try:
         if not request.app.state.config.ENABLE_VIDEO_GENERATION:
             raise RuntimeError("A geracao de video esta desativada.")
@@ -2796,6 +2855,11 @@ async def chat_video_generation_handler(
             request.app.state.config.USER_PERMISSIONS,
         ):
             raise RuntimeError("Voce nao tem permissao para gerar videos.")
+
+        await _acquire_media_generation_slot(
+            lambda: emit_progress("Aguardando a criação anterior...", 0)
+        )
+        media_slot_acquired = True
 
         from neveai.routers.llamacpp import model_manager
         from neveai.routers.stable_diffusion import _prepare_init_image_sync
@@ -2949,6 +3013,7 @@ async def chat_video_generation_handler(
                 log.warning("Video handler: failed to stop worker: %s", exc)
         if cancelled:
             log.info("MiniMax H3 generation cancelled and resources released.")
+        _release_media_generation_slot(media_slot_acquired)
 
     return form_data
 
@@ -5650,6 +5715,21 @@ def _get_accessible_file_content(
     return content.strip(), name or "Arquivo", metadata
 
 
+def _pasted_text_chat_title(message: Optional[dict], user: UserModel) -> str:
+    if not isinstance(message, dict) or str(message.get("content") or "").strip():
+        return ""
+    for item in message.get("files") or []:
+        if not isinstance(item, dict) or not _is_pasted_text_attachment(item):
+            continue
+        title = item.get("pastedTextTitle") or item.get("content")
+        if not title:
+            payload = _get_accessible_file_content(item, user)
+            title = payload[0] if payload else ""
+        if title:
+            return " ".join(str(title).split())[:100]
+    return ""
+
+
 def _build_file_source(
     item: dict, content: list[str], name: str, metadata: dict
 ) -> dict:
@@ -7525,7 +7605,12 @@ async def background_tasks_handler(ctx):
                         user_message = user_message[:100] + "..."
 
                     title = None
-                    if tasks[TASKS.TITLE_GENERATION]:
+                    pasted_title = _pasted_text_chat_title(metadata.get("parent_message"), user)
+                    if pasted_title:
+                        title = pasted_title
+                        Chats.update_chat_title_by_id(metadata["chat_id"], title)
+                        await event_emitter({"type": "chat:title", "data": title})
+                    elif tasks[TASKS.TITLE_GENERATION]:
                         res = await generate_title(
                             request,
                             {
@@ -7564,7 +7649,12 @@ async def background_tasks_handler(ctx):
                                 title = ""
 
                             if not title:
-                                title = messages[0].get("content", user_message)
+                                title = (
+                                    messages[0].get("content")
+                                    or Chats.get_chat_title_by_id(metadata["chat_id"])
+                                    or user_message
+                                    or "New Chat"
+                                )
 
                             Chats.update_chat_title_by_id(metadata["chat_id"], title)
 
@@ -7576,14 +7666,19 @@ async def background_tasks_handler(ctx):
                             )
 
                     if title == None and len(messages) == 2:
-                        title = messages[0].get("content", user_message)
+                        title = (
+                            messages[0].get("content")
+                            or Chats.get_chat_title_by_id(metadata["chat_id"])
+                            or user_message
+                            or "New Chat"
+                        )
 
                         Chats.update_chat_title_by_id(metadata["chat_id"], title)
 
                         await event_emitter(
                             {
                                 "type": "chat:title",
-                                "data": message.get("content", user_message),
+                                "data": title,
                             }
                         )
 
