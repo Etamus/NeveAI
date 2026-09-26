@@ -28,6 +28,7 @@ from neveai.config import CACHE_DIR, STABLE_DIFFUSION_HF_TOKEN
 from neveai.constants import ERROR_MESSAGES
 from neveai.utils.access_control import has_permission
 from neveai.utils.auth import get_admin_user, get_verified_user
+from neveai.utils.gpu_selection import preferred_amd_adapter, preferred_vulkan_device
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -914,34 +915,25 @@ def _download_and_extract_sd_cpp_asset(asset: dict, destination_dir: Path = SD_C
 
 def _preferred_sd_cpp_windows_backend() -> str:
     if shutil.which("nvidia-smi"):
-        return "cuda12"
-    try:
-        command = [
-            "powershell.exe",
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            "Get-CimInstance Win32_VideoController | ForEach-Object Name",
-        ]
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
-        )
-        gpu_names = result.stdout.lower()
-        if any(name in gpu_names for name in ("amd", "radeon")):
-            return "vulkan"
-    except Exception as exc:
-        log.debug("Nao foi possivel detectar a GPU para o sd-cli: %s", exc)
+        try:
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                capture_output=True, text=True, timeout=10, check=False,
+                **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return "cuda12"
+        except (OSError, subprocess.SubprocessError):
+            pass
+    if os.name == "nt" and preferred_amd_adapter():
+        return "vulkan"
     return "cpu"
 
 
 def _detected_gpu_vram_mib() -> Optional[int]:
     """Return conservative dedicated VRAM detection for memory-policy selection."""
-    if shutil.which("nvidia-smi"):
+    backend = _preferred_sd_cpp_windows_backend() if os.name == "nt" else "cuda12" if shutil.which("nvidia-smi") else "cpu"
+    if backend == "cuda12":
         try:
             result = subprocess.run(
                 [
@@ -960,34 +952,35 @@ def _detected_gpu_vram_mib() -> Optional[int]:
         except (OSError, ValueError, subprocess.SubprocessError):
             return None
 
-    if os.name == "nt" and _preferred_sd_cpp_windows_backend() == "vulkan":
-        try:
-            result = subprocess.run(
-                [
-                    "powershell.exe",
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    "Get-CimInstance Win32_VideoController | "
-                    "Where-Object { $_.Name -match 'AMD|Radeon' } | "
-                    "ForEach-Object { [uint64]$_.AdapterRAM }",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-            )
-            values = [int(line.strip()) // (1024 * 1024) for line in result.stdout.splitlines() if line.strip()]
-            return max(values) if result.returncode == 0 and values else None
-        except (OSError, ValueError, subprocess.SubprocessError):
-            return None
+    if os.name == "nt" and backend == "vulkan":
+        adapter = preferred_amd_adapter()
+        if adapter:
+            try:
+                value = int(adapter.get("AdapterRAM") or 0)
+                return value // (1024 * 1024) if value > 0 else None
+            except (TypeError, ValueError):
+                return None
 
     return None
 
 
 def _qwen_image_memory_args() -> list[str]:
     vram_mib = _detected_gpu_vram_mib()
+    if os.name == "nt" and _preferred_sd_cpp_windows_backend() == "vulkan":
+        device = (preferred_vulkan_device(SD_CLI_PATH) or "vulkan0").lower()
+        if vram_mib is not None and vram_mib >= QWEN_IMAGE_21_FULL_GPU_MIN_VRAM_MIB:
+            log.info("Qwen Image 2.1 Vulkan: auto-fit em %s (%s MiB de VRAM detectados)", device, vram_mib)
+            return ["--backend", device, "--auto-fit", "on", "--vae-tiling"]
+        if vram_mib is None:
+            budget = "-2"
+        else:
+            budget = f"{max(0.75, min(vram_mib / 1024 - 2, vram_mib / 1024 * 0.7)):g}"
+        log.info("Qwen Image 2.1 Vulkan: difusao limitada a %s GiB de VRAM (detectada: %s MiB)", budget, vram_mib)
+        return [
+            "--backend", f"te=cpu,vae=cpu,diffusion={device}",
+            "--auto-fit", "on",
+            "--max-vram", budget, "--vae-tiling",
+        ]
     if vram_mib is not None and vram_mib >= QWEN_IMAGE_21_FULL_GPU_MIN_VRAM_MIB:
         log.info("Qwen Image 2.1: auto-fit em GPU (%s MiB de VRAM detectados)", vram_mib)
         return ["--auto-fit", "on", "--vae-tiling"]
@@ -995,6 +988,14 @@ def _qwen_image_memory_args() -> list[str]:
     detected = f"{vram_mib} MiB" if vram_mib is not None else "desconhecida"
     log.info("Qwen Image 2.1: offload conservador (VRAM %s)", detected)
     return ["--offload-to-cpu", "--vae-tiling"]
+
+
+def _qwen_image_cpu_fallback_command(command: list[str]) -> list[str]:
+    memory_start = command.index("--auto-fit", command.index("--cfg-scale") + 2)
+    if "--backend" in command[command.index("--cfg-scale") + 2:memory_start]:
+        memory_start = command.index("--backend", command.index("--cfg-scale") + 2)
+    memory_end = command.index("--vae-tiling", memory_start) + 1
+    return command[:memory_start] + ["--backend", "cpu", "--auto-fit", "off", "--vae-tiling"] + command[memory_end:]
 
 
 def _supports_native_sage_attention() -> bool:
@@ -1441,6 +1442,12 @@ class _ZImageTurboPipeline:
             f"{cfg:g}",
             *attention_args,
             *(
+                ["--backend", preferred_vulkan_device(self._resources.sd_cli)]
+                if not qwen_image_mode and os.name == "nt" and _preferred_sd_cpp_windows_backend() == "vulkan"
+                and preferred_vulkan_device(self._resources.sd_cli)
+                else []
+            ),
+            *(
                 ["--lora-model-dir", str(LORA_CACHE_DIR)]
                 if style_lora is not None
                 else []
@@ -1479,84 +1486,95 @@ class _ZImageTurboPipeline:
                 mode = "image-edit" if has_input else "txt2img"
                 runtime_name = "Qwen Image 2.1" if qwen_image_mode else "Z-Image-Turbo"
                 log.info("Gerando imagem %s %s %sx%s, steps=%s, cfg=%s", runtime_name, mode, width, height, steps, cfg)
-                process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    cwd=str(SD_CPP_DIR),
-                    env=env,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-
-                stdout_chunks: list[bytes] = []
-                stderr_chunks: list[bytes] = []
                 last_progress = 33
+                retry_on_cpu = qwen_image_mode and os.name == "nt" and _preferred_sd_cpp_windows_backend() == "vulkan"
+                commands = [cmd]
+                if retry_on_cpu:
+                    commands.append(_qwen_image_cpu_fallback_command(cmd))
 
-                async def read_stream(
-                    stream: Optional[asyncio.StreamReader], chunks: list[bytes]
-                ) -> None:
-                    nonlocal last_progress
-                    if stream is None:
-                        return
-                    carry = ""
-                    while True:
-                        chunk = await stream.read(2048)
-                        if not chunk:
-                            break
-                        chunks.append(chunk)
-                        carry = (carry + chunk.decode("utf-8", errors="replace"))[-1024:]
-                        for match in re.finditer(r"(?<!\d)(\d+)\s*/\s*(\d+)(?!\d)", carry):
-                            current = int(match.group(1))
-                            total = int(match.group(2))
-                            if total != steps or current < 0 or current > total:
-                                continue
-                            percent = min(
-                                91,
-                                max(34, 34 + round((current / total) * 57)),
-                            )
-                            if percent <= last_progress:
-                                continue
-                            last_progress = percent
-                            if progress_callback is not None:
-                                try:
-                                    await progress_callback(percent)
-                                except Exception as exc:
-                                    log.debug("Image progress callback failed: %s", exc)
+                for attempt, command in enumerate(commands):
+                    process = await asyncio.create_subprocess_exec(
+                        *command,
+                        cwd=str(SD_CPP_DIR),
+                        env=env,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout_chunks: list[bytes] = []
+                    stderr_chunks: list[bytes] = []
 
-                async def communicate_with_progress() -> None:
-                    async def pulse_progress() -> None:
+                    async def read_stream(
+                        stream: Optional[asyncio.StreamReader], chunks: list[bytes]
+                    ) -> None:
                         nonlocal last_progress
-                        while process.returncode is None:
-                            await asyncio.sleep(1.0)
-                            if process.returncode is not None:
+                        if stream is None:
+                            return
+                        carry = ""
+                        while True:
+                            chunk = await stream.read(2048)
+                            if not chunk:
                                 break
-                            if last_progress < 98:
-                                last_progress += 1
+                            chunks.append(chunk)
+                            carry = (carry + chunk.decode("utf-8", errors="replace"))[-1024:]
+                            for match in re.finditer(r"(?<!\d)(\d+)\s*/\s*(\d+)(?!\d)", carry):
+                                current = int(match.group(1))
+                                total = int(match.group(2))
+                                if total != steps or current < 0 or current > total:
+                                    continue
+                                percent = min(91, max(34, 34 + round((current / total) * 57)))
+                                if percent <= last_progress:
+                                    continue
+                                last_progress = percent
                                 if progress_callback is not None:
                                     try:
-                                        await progress_callback(last_progress)
+                                        await progress_callback(percent)
                                     except Exception as exc:
-                                        log.debug("Image progress pulse failed: %s", exc)
+                                        log.debug("Image progress callback failed: %s", exc)
 
-                    await asyncio.gather(
-                        read_stream(process.stdout, stdout_chunks),
-                        read_stream(process.stderr, stderr_chunks),
-                        process.wait(),
-                        pulse_progress(),
-                    )
+                    async def communicate_with_progress() -> None:
+                        async def pulse_progress() -> None:
+                            nonlocal last_progress
+                            while process.returncode is None:
+                                await asyncio.sleep(1.0)
+                                if process.returncode is not None:
+                                    break
+                                if last_progress < 98:
+                                    last_progress += 1
+                                    if progress_callback is not None:
+                                        try:
+                                            await progress_callback(last_progress)
+                                        except Exception as exc:
+                                            log.debug("Image progress pulse failed: %s", exc)
 
-                try:
-                    await asyncio.wait_for(
-                        communicate_with_progress(), timeout=SD_CLI_TIMEOUT_SECONDS
-                    )
-                except asyncio.CancelledError:
-                    if process.returncode is None:
+                        await asyncio.gather(
+                            read_stream(process.stdout, stdout_chunks),
+                            read_stream(process.stderr, stderr_chunks),
+                            process.wait(),
+                            pulse_progress(),
+                        )
+
+                    try:
+                        await asyncio.wait_for(
+                            communicate_with_progress(), timeout=SD_CLI_TIMEOUT_SECONDS
+                        )
+                    except asyncio.CancelledError:
+                        if process.returncode is None:
+                            process.kill()
+                            await process.wait()
+                        raise
+                    except asyncio.TimeoutError:
                         process.kill()
                         await process.wait()
-                    raise
-                except asyncio.TimeoutError:
-                    process.kill()
-                    await process.wait()
-                    raise RuntimeError("Geracao de imagem excedeu o tempo limite do stable-diffusion.cpp")
+                        raise RuntimeError("Geracao de imagem excedeu o tempo limite do stable-diffusion.cpp")
+
+                    output = b"".join(stdout_chunks) + b"\n" + b"".join(stderr_chunks)
+                    output_text = output.decode("utf-8", errors="replace")
+                    if process.returncode == 0:
+                        break
+                    if attempt == 0 and retry_on_cpu and re.search(r"ErrorDeviceLost|device lost", output_text, re.IGNORECASE):
+                        log.warning("Qwen Image 2.1: dispositivo Vulkan perdido; repetindo esta geracao em CPU")
+                        continue
+                    raise RuntimeError(f"stable-diffusion.cpp falhou (codigo {process.returncode}): {output_text[-4000:]}")
         finally:
             temporary_images = [*reference_images]
             if init_image is not None:
@@ -1569,11 +1587,6 @@ class _ZImageTurboPipeline:
                         temporary_image.path.unlink()
                 except Exception as e:
                     log.debug("Nao foi possivel remover imagem temporaria de referencia: %s", e)
-
-        output = b"".join(stdout_chunks) + b"\n" + b"".join(stderr_chunks)
-        output_text = output.decode("utf-8", errors="replace")
-        if process.returncode != 0:
-            raise RuntimeError(f"stable-diffusion.cpp falhou (codigo {process.returncode}): {output_text[-4000:]}")
 
         if not output_path.exists() or output_path.stat().st_size <= 0:
             raise RuntimeError(f"stable-diffusion.cpp terminou sem gerar a imagem: {output_text[-4000:]}")

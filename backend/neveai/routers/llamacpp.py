@@ -31,6 +31,7 @@ from neveai.env import SRC_LOG_LEVELS, GLOBAL_LOG_LEVEL, BASE_DIR, DATA_DIR
 from neveai.models.models import ModelForm, Models
 from neveai.utils.model_defaults import get_effective_model_params
 from neveai.utils.payload import apply_model_params_to_body_openai, apply_system_prompt_to_body
+from neveai.utils.gpu_selection import preferred_vulkan_device
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS.get("MODELS", GLOBAL_LOG_LEVEL))
@@ -878,6 +879,10 @@ class LocalModelManager:
             "--cache-type-v", cache_type,
             "--no-webui",
         ]
+        if sys.platform == "win32" and n_gpu_layers != 0:
+            vulkan_device = preferred_vulkan_device(LLAMACPP_SERVER_BIN)
+            if vulkan_device:
+                cmd += ["--device", vulkan_device]
 
         context_shift = _normalize_context_shift(context_shift)
         if context_shift != "off":

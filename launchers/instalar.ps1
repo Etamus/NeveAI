@@ -614,11 +614,13 @@ try {
 
 if ($detected.Vendor -eq 'CPU') {
     try {
-        $gpus = Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name -EA SilentlyContinue
-        $amdGpu = $gpus | Where-Object { $_ -match 'AMD|Radeon|RX\s' } | Select-Object -First 1
+        $gpus = Get-CimInstance Win32_VideoController -EA SilentlyContinue
+        $amdGpu = $gpus | Where-Object { $_.Name -match 'AMD|Radeon|RX\s' } |
+            Sort-Object @{ Expression = { if ($_.Name -match '\bRX\s*\d|Radeon\s+Pro\b') { 0 } elseif ($_.Name -match 'Vega\s*\d+\s*Graphics|Radeon(?:\(TM\))?\s+Graphics') { 2 } else { 1 } } },
+                        @{ Expression = { [long]$_.AdapterRAM }; Descending = $true } | Select-Object -First 1
         if ($amdGpu) {
             $detected.Vendor = 'AMD'
-            $detected.Name   = $amdGpu.Trim()
+            $detected.Name   = $amdGpu.Name.Trim()
         }
     } catch {}
 }
@@ -3355,10 +3357,12 @@ $ctl.BtnLlama.Add_Click({
             }
 
             try {
-                $gpus = Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name -EA SilentlyContinue
-                $amdGpu = $gpus | Where-Object { $_ -match 'AMD|Radeon|RX\s' } | Select-Object -First 1
+                $gpus = Get-CimInstance Win32_VideoController -EA SilentlyContinue
+                $amdGpu = $gpus | Where-Object { $_.Name -match 'AMD|Radeon|RX\s' } |
+                    Sort-Object @{ Expression = { if ($_.Name -match '\bRX\s*\d|Radeon\s+Pro\b') { 0 } elseif ($_.Name -match 'Vega\s*\d+\s*Graphics|Radeon(?:\(TM\))?\s+Graphics') { 2 } else { 1 } } },
+                                @{ Expression = { [long]$_.AdapterRAM }; Descending = $true } | Select-Object -First 1
                 if ($amdGpu) {
-                    return New-LlamaTarget 'AMD' $amdGpu.Trim() 'AMD Vulkan' @('vulkan') "GPU AMD detectada: $($amdGpu.Trim())."
+                    return New-LlamaTarget 'AMD' $amdGpu.Name.Trim() 'AMD Vulkan' @('vulkan') "GPU AMD detectada: $($amdGpu.Name.Trim())."
                 }
             } catch {}
 
@@ -4585,9 +4589,11 @@ $ctl.BtnPrimary.Add_Click({
                 throw "GPU NVIDIA detectada ($name), mas não foi possível determinar com segurança o binário CUDA correto. Nada foi instalado."
             }
             try {
-                $gpus = Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name -EA SilentlyContinue
-                $amdGpu = $gpus | Where-Object { $_ -match 'AMD|Radeon|RX\s' } | Select-Object -First 1
-                if ($amdGpu) { return New-LlamaTarget 'AMD' $amdGpu.Trim() 'AMD Vulkan' @('vulkan') "GPU AMD detectada: $($amdGpu.Trim())." }
+                $gpus = Get-CimInstance Win32_VideoController -EA SilentlyContinue
+                $amdGpu = $gpus | Where-Object { $_.Name -match 'AMD|Radeon|RX\s' } |
+                    Sort-Object @{ Expression = { if ($_.Name -match '\bRX\s*\d|Radeon\s+Pro\b') { 0 } elseif ($_.Name -match 'Vega\s*\d+\s*Graphics|Radeon(?:\(TM\))?\s+Graphics') { 2 } else { 1 } } },
+                                @{ Expression = { [long]$_.AdapterRAM }; Descending = $true } | Select-Object -First 1
+                if ($amdGpu) { return New-LlamaTarget 'AMD' $amdGpu.Name.Trim() 'AMD Vulkan' @('vulkan') "GPU AMD detectada: $($amdGpu.Name.Trim())." }
             } catch {}
             return New-LlamaTarget 'CPU' '' 'CPU' @('cpu') 'Nenhuma GPU NVIDIA/AMD compatível foi detectada.'
         }

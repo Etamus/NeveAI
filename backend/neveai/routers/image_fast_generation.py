@@ -367,7 +367,7 @@ for repo, filename, subdir in items:
 
             if _preferred_sd_cpp_windows_backend() == "vulkan":
                 width, height = DIMENSIONS.get(resolution, DIMENSIONS["1:1"])
-                log.warning("Neve Image 2 Fast: ComfyUI CUDA indisponivel; usando Qwen Image 2.1 no backend Vulkan AMD")
+                log.warning("Neve Image 2 Fast: modo AMD Vulkan usa Qwen Image 2.1 sem o LoRA Viggle de 6 passos")
                 return await _sd_pipeline.run(
                     model_id=QWEN_IMAGE_21_REPO,
                     hf_token=None,
