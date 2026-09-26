@@ -713,7 +713,7 @@
 
 							<div class="mt-4 mb-1">
 								<label class="text-xs font-medium text-gray-800 dark:text-gray-200 block mb-1">
-									Descrição
+									{$i18n.t('Description')}
 								</label>
 								<Textarea
 									className="h-10 w-full pr-6 bg-transparent text-[15px]! leading-5 text-gray-400 outline-hidden resize-none overflow-y-auto"
@@ -783,7 +783,7 @@
 						<div class="border-l border-gray-300/50 dark:border-gray-600/30"></div>
 						<div class="w-[45%] min-w-0 pl-6 h-full overflow-hidden">
 							<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2">
-								Capacidades padrão
+								{$i18n.t('Capacidades padrão')}
 							</div>
 							<DefaultFeatures
 							availableFeatures={[

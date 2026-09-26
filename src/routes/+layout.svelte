@@ -777,7 +777,7 @@
 		} catch (error) {
 			console.error('Error loading backend config:', error);
 		}
-		// Initialize i18n with pt-BR (hardcoded)
+		// Portuguese is the default; a supported language saved locally takes precedence.
 		initI18n('pt-BR');
 
 		if (backendConfig) {

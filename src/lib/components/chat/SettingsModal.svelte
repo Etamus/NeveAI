@@ -20,7 +20,8 @@
 	import UserBadgeCheck from '../icons/UserBadgeCheck.svelte';
 	import Info from '../icons/Info.svelte';
 
-	const i18n = getContext('i18n');
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 
 	export let show = false;
 
@@ -338,7 +339,7 @@
 								}}
 							>
 								<Info strokeWidth="2" />
-								<span>Sobre</span>
+								<span>{$i18n.t('About')}</span>
 							</button>
 						{/if}
 					{/each}

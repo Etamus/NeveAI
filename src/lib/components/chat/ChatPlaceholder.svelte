@@ -10,7 +10,8 @@
 	import { sanitizeResponseContent } from '$lib/utils';
 	import { getUserFirstName } from '$lib/utils/user';
 
-	const i18n = getContext('i18n');
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 
 	export let modelIds = [];
 	export let models = [];
@@ -27,7 +28,9 @@
 
 	$: models = modelIds.map((id) => $_models.find((m) => m.id === id));
 	$: userName = getUserFirstName($user?.name);
-	$: greeting = userName ? `O que quer explorar hoje, ${userName}?` : 'O que quer explorar hoje?';
+	$: greeting = userName
+		? $i18n.t('What would you like to explore today, {{name}}?', { name: userName })
+		: $i18n.t('What would you like to explore today?');
 
 	onMount(() => {
 		mounted = true;

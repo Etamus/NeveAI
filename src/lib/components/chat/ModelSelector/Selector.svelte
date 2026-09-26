@@ -41,7 +41,8 @@
 
 	import ModelItem from './ModelItem.svelte';
 
-	const i18n = getContext('i18n');
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 	const dispatch = createEventDispatcher();
 
 	export let id = '';
@@ -654,11 +655,11 @@
 			</span>
 		</DropdownMenu.Trigger>
 		{#if selectedModel && onGearClick}
-			<Tooltip content="Configurações" placement="top" className="relative z-20 -mr-2 flex shrink-0 self-center">
+			<Tooltip content={$i18n.t('Settings')} placement="top" className="relative z-20 -mr-2 flex shrink-0 self-center">
 				<button
 					class="shrink-0 p-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
 					type="button"
-					aria-label="Configurações"
+					aria-label={$i18n.t('Settings')}
 					on:pointerdown|stopPropagation|preventDefault
 					on:click|stopPropagation|preventDefault={() => { show = false; onGearClick(); }}
 				>

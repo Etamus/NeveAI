@@ -610,7 +610,7 @@
 												<path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/>
 											</svg>
 										</div>
-										<div class=" truncate">{$i18n.t('Code Execution')}</div>
+										<div class=" truncate">{$i18n.t('Artifacts')}</div>
 									</div>
 								</div>
 								<div class="size-4 shrink-0">{#if codeExecutionEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
@@ -702,7 +702,7 @@
 											<path d="M9 21V9" />
 										</svg>
 									</div>
-									<div class="truncate">Ferramentas</div>
+									<div class="truncate">{$i18n.t('Tools')}</div>
 								</div>
 								<div class="pointer-events-none shrink-0">
 									<Switch

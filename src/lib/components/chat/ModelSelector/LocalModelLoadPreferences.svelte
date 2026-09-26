@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { getContext, onDestroy, onMount } from 'svelte';
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 	import { DropdownMenu } from 'bits-ui';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -9,7 +11,6 @@
 	import {
 		LOCAL_MODEL_CONTEXT_OPTIONS,
 		getCachePreferenceLabel,
-		getContextPreferenceLabel,
 		getContextShiftPreferenceLabel,
 		getLocalModelLoadPreferences,
 		getSpeculativePreferenceLabel,
@@ -31,6 +32,9 @@
 
 	let show = false;
 	let contextPreference: LocalModelContextPreference = 'ask';
+	$: contextPreferenceDisplay = contextPreference === 'ask'
+		? $i18n.t('Perguntar')
+		: contextPreference.toLocaleString($i18n.language);
 	let visionPreference: LocalModelVisionPreference = 'ask';
 	let cachePreference: LocalModelCachePreference = 'default';
 	let speculativePreference: LocalModelSpeculativePreference = 'default';
@@ -385,11 +389,11 @@
 </script>
 
 <DropdownMenu.Root bind:open={show}>
-	<Tooltip content="Predefinições" placement="top">
+	<Tooltip content={$i18n.t('Predefinições')} placement="top">
 		<DropdownMenu.Trigger
 			class="relative z-20 shrink-0 self-center p-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
 			type="button"
-			aria-label="Predefinições"
+			aria-label={$i18n.t('Predefinições')}
 			on:pointerdown={stopEventPropagation}
 			on:click={stopEventPropagation}
 		>
@@ -408,7 +412,7 @@
 		alignOffset={6}
 	>
 		<div class="flex items-center justify-between gap-2 px-3 pt-2 pb-1.5">
-			<div class="text-sm font-semibold text-gray-800 dark:text-gray-100">Predefinições</div>
+			<div class="text-sm font-semibold text-gray-800 dark:text-gray-100">{$i18n.t('Predefinições')}</div>
 			<button
 				bind:this={presetButtonElement}
 				type="button"
@@ -417,11 +421,11 @@
 						? 'text-gray-500 dark:text-gray-400'
 						: 'text-gray-800 dark:text-gray-100'
 				}`}
-				aria-label="Abrir presets de carregamento"
+				aria-label={$i18n.t('Abrir presets de carregamento')}
 				aria-expanded={showPresetDropdown}
 				on:click={togglePresetDropdown}
 			>
-				<span class="truncate">{selectedPresetLabel}</span>
+				<span class="truncate">{$i18n.t(selectedPresetLabel)}</span>
 				<ChevronRight className="size-3 shrink-0" strokeWidth="2" />
 			</button>
 		</div>
@@ -443,10 +447,10 @@
 						on:click|stopPropagation={() => applyLocalModelPreset(preset.id)}
 					>
 						<div class="min-w-0 flex-1">
-							<div class="truncate text-sm leading-5">{preset.label}</div>
+							<div class="truncate text-sm leading-5">{$i18n.t(preset.label)}</div>
 							{#if preset.description}
 								<div class="truncate text-[11px] leading-4 text-gray-400 dark:text-gray-500">
-									{preset.description}
+									{$i18n.t(preset.description)}
 								</div>
 							{/if}
 						</div>
@@ -470,14 +474,14 @@
 		>
 			<div class="flex h-[34px] w-full justify-between gap-2 items-center px-3 py-0 rounded-sm">
 				{#if contextPreference === 'ask'}
-					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Tamanho do contexto</div>
+					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">{$i18n.t('Tamanho do contexto')}</div>
 				{:else}
 					<button
 						type="button"
 						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
 						on:click|stopPropagation={resetContextPreference}
 					>
-						Tamanho do contexto
+						{$i18n.t('Tamanho do contexto')}
 					</button>
 				{/if}
 				{#if contextPreference === 'ask'}
@@ -486,7 +490,7 @@
 						class="w-[4.75rem] px-0 py-0.5 rounded-md border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
 						on:click|stopPropagation={cycleContextPreference}
 					>
-						{getContextPreferenceLabel(contextPreference)}
+					{contextPreferenceDisplay}
 					</button>
 				{:else}
 					<div
@@ -497,21 +501,21 @@
 							class="h-7 w-6 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 transition disabled:opacity-30"
 							on:click|stopPropagation={() => stepContextPreference(-1)}
 							disabled={contextOptionIndex <= 0}
-							aria-label="Diminuir contexto"
+							aria-label={$i18n.t('Diminuir contexto')}
 						>
 							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="size-3" aria-hidden="true">
 								<path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14" />
 							</svg>
 						</button>
 						<div class="h-7 w-12 flex items-center justify-center text-xs tabular-nums whitespace-nowrap">
-							{getContextPreferenceLabel(contextPreference)}
+							{contextPreferenceDisplay}
 						</div>
 						<button
 							type="button"
 							class="h-7 w-6 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 transition disabled:opacity-30"
 							on:click|stopPropagation={() => stepContextPreference(1)}
 							disabled={contextOptionIndex >= LOCAL_MODEL_CONTEXT_OPTIONS.length - 1}
-							aria-label="Aumentar contexto"
+							aria-label={$i18n.t('Aumentar contexto')}
 						>
 							<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="size-3" aria-hidden="true">
 								<path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14M5 12h14" />
@@ -523,14 +527,14 @@
 
 			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
 				{#if visionPreference === 'ask'}
-					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Visão multimodal</div>
+					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">{$i18n.t('Visão multimodal')}</div>
 				{:else}
 					<button
 						type="button"
 						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
 						on:click|stopPropagation={resetVisionPreference}
 					>
-						Visão multimodal
+						{$i18n.t('Visão multimodal')}
 					</button>
 				{/if}
 				<button
@@ -538,20 +542,20 @@
 					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
 					on:click|stopPropagation={cycleVisionPreference}
 				>
-					{getVisionPreferenceLabel(visionPreference)}
+					{$i18n.t(getVisionPreferenceLabel(visionPreference))}
 				</button>
 			</div>
 
 			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
 				{#if cachePreference === 'default'}
-					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Cache KV quantizado</div>
+					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">{$i18n.t('Cache KV quantizado')}</div>
 				{:else}
 					<button
 						type="button"
 						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
 						on:click|stopPropagation={resetCachePreference}
 					>
-						Cache KV quantizado
+						{$i18n.t('Cache KV quantizado')}
 					</button>
 				{/if}
 				<button
@@ -559,20 +563,20 @@
 					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
 					on:click|stopPropagation={cycleCachePreference}
 				>
-					{getCachePreferenceLabel(cachePreference)}
+					{$i18n.t(getCachePreferenceLabel(cachePreference))}
 				</button>
 			</div>
 
 			<div class="flex w-full justify-between gap-2 items-center px-3 py-1 rounded-sm">
 				{#if contextShiftPreference === 'default'}
-					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">Deslocamento contextual</div>
+					<div class="text-sm text-gray-700 dark:text-gray-200 whitespace-nowrap">{$i18n.t('Deslocamento contextual')}</div>
 				{:else}
 					<button
 						type="button"
 						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
 						on:click|stopPropagation={resetContextShiftPreference}
 					>
-						Deslocamento contextual
+						{$i18n.t('Deslocamento contextual')}
 					</button>
 				{/if}
 				<button
@@ -580,7 +584,7 @@
 					class="w-[4.75rem] px-0 py-0.5 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition shrink-0 whitespace-nowrap"
 					on:click|stopPropagation={cycleContextShiftPreference}
 				>
-					{getContextShiftPreferenceLabel(contextShiftPreference)}
+					{$i18n.t(getContextShiftPreferenceLabel(contextShiftPreference))}
 				</button>
 			</div>
 
@@ -596,7 +600,7 @@
 								: 'text-gray-700 dark:text-gray-200'
 						}`}
 					>
-						Decodificação especulativa
+						{$i18n.t('Decodificação especulativa')}
 					</div>
 				{:else}
 					<button
@@ -604,7 +608,7 @@
 						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
 						on:click|stopPropagation={resetSpeculativePreference}
 					>
-						Decodificação especulativa
+						{$i18n.t('Decodificação especulativa')}
 					</button>
 				{/if}
 				<button
@@ -613,7 +617,7 @@
 					on:click|stopPropagation={cycleSpeculativePreference}
 					disabled={speculativeLocked}
 				>
-					{getSpeculativePreferenceLabel(effectiveSpeculativePreference)}
+					{$i18n.t(getSpeculativePreferenceLabel(effectiveSpeculativePreference))}
 				</button>
 			</div>
 
@@ -629,7 +633,7 @@
 								: 'text-gray-700 dark:text-gray-200'
 						}`}
 					>
-						Predição de tokens
+						{$i18n.t('Predição de tokens')}
 					</div>
 				{:else}
 					<button
@@ -637,7 +641,7 @@
 						class="text-sm text-gray-700 dark:text-gray-200 underline decoration-dotted underline-offset-2 cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition whitespace-nowrap"
 						on:click|stopPropagation={resetTokenPredictionPreference}
 					>
-						Predição de tokens
+						{$i18n.t('Predição de tokens')}
 					</button>
 				{/if}
 				<button
@@ -646,7 +650,7 @@
 					on:click|stopPropagation={cycleTokenPredictionPreference}
 					disabled={tokenPredictionLocked}
 				>
-					{getTokenPredictionPreferenceLabel(effectiveTokenPredictionPreference)}
+					{$i18n.t(getTokenPredictionPreferenceLabel(effectiveTokenPredictionPreference))}
 				</button>
 			</div>
 		</div>

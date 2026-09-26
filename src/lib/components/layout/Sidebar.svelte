@@ -1123,7 +1123,7 @@
 				<Folder
 					id="sidebar-chats"
 					className="px-2 mt-0.5"
-					name="Conversas"
+					name={$i18n.t('Chats')}
 					chevron={true}
 					collapsible={true}
 					bind:open={showChats}

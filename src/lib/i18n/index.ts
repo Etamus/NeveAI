@@ -1,7 +1,16 @@
 import i18next from 'i18next';
-import resourcesToBackend from 'i18next-resources-to-backend';
 import type { i18n as i18nType } from 'i18next';
-import { writable } from 'svelte/store';
+import { writable, type Writable } from 'svelte/store';
+
+export type I18nStore = Writable<i18nType>;
+import ptBR from './locales/pt-BR/translation.json';
+import enUS from './locales/en-US/translation.json';
+import dayjs from '$lib/dayjs';
+
+const supportedLocales = ['pt-BR', 'en-US'] as const;
+type SupportedLocale = (typeof supportedLocales)[number];
+const isSupportedLocale = (locale: string | null | undefined): locale is SupportedLocale =>
+	supportedLocales.includes(locale as SupportedLocale);
 
 const createI18nStore = (i18n: i18nType) => {
 	const i18nWritable = writable(i18n);
@@ -37,23 +46,30 @@ const createIsLoadingStore = (i18n: i18nType) => {
 };
 
 export const initI18n = (defaultLocale?: string | undefined) => {
-	// Force pt-BR as the only locale
-	const forcedLocale = 'pt-BR';
+	const storedLocale = typeof localStorage !== 'undefined' ? localStorage.getItem('neveai.language') : null;
+	const locale = isSupportedLocale(storedLocale)
+		? storedLocale
+		: isSupportedLocale(defaultLocale)
+			? defaultLocale
+			: 'pt-BR';
 
 	if (i18next.isInitialized) {
-		document.documentElement.setAttribute('lang', forcedLocale);
+		document.documentElement.setAttribute('lang', i18next.language);
+		dayjs.locale(i18next.language === 'pt-BR' ? 'pt-br' : 'en');
 		return;
 	}
 
-	const loadResource = (language: string, namespace: string) =>
-		import(`./locales/${language}/${namespace}.json`);
-
 	i18next
-		.use(resourcesToBackend(loadResource))
 		.init({
 			debug: false,
-			lng: forcedLocale,
-			fallbackLng: [forcedLocale],
+			lng: locale,
+			fallbackLng: false,
+			supportedLngs: [...supportedLocales],
+			resources: {
+				'pt-BR': { translation: ptBR },
+				'en-US': { translation: enUS }
+			},
+			initImmediate: false,
 			ns: 'translation',
 			returnEmptyString: false,
 			interpolation: {
@@ -61,18 +77,25 @@ export const initI18n = (defaultLocale?: string | undefined) => {
 			}
 		});
 
-	document.documentElement.setAttribute('lang', forcedLocale);
+	document.documentElement.setAttribute('lang', locale);
+	dayjs.locale(locale === 'pt-BR' ? 'pt-br' : 'en');
 };
 
 const i18n = createI18nStore(i18next);
 const isLoadingStore = createIsLoadingStore(i18next);
 
 export const getLanguages = async () => {
-	return [{ code: 'pt-BR', title: 'Português (Brasil)' }];
+	return [
+		{ code: 'pt-BR', title: 'Português (Brasil)' },
+		{ code: 'en-US', title: 'English' }
+	];
 };
 export const changeLanguage = (lang: string) => {
+	if (!isSupportedLocale(lang)) return;
+	localStorage.setItem('neveai.language', lang);
 	document.documentElement.setAttribute('lang', lang);
-	i18next.changeLanguage(lang);
+	dayjs.locale(lang === 'pt-BR' ? 'pt-br' : 'en');
+	void i18next.changeLanguage(lang);
 };
 
 export default i18n;

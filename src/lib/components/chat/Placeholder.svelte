@@ -27,7 +27,8 @@
 	import FolderPlaceholder from './Placeholder/FolderPlaceholder.svelte';
 	import FolderTitle from './Placeholder/FolderTitle.svelte';
 
-	const i18n = getContext('i18n');
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 
 	export let createMessagePair: Function;
 	export let stopResponse: Function;
@@ -59,7 +60,7 @@
 	export let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
-	export let videoGenerationResolution: '384p' | '480p' | '544p' = '480p';
+	export let videoGenerationResolution: '384p' | '480p' | '544p' = '384p';
 	export let videoGenerationDuration: '5s' | '8s' = '5s';
 	export let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
 	export let onNativeIntegrationChange: Function = () => {};
@@ -84,7 +85,9 @@
 
 	$: models = selectedModels.map((id) => $_models.find((m) => m.id === id));
 	$: userName = getUserFirstName($user?.name);
-	$: greeting = userName ? `O que quer explorar hoje, ${userName}?` : 'O que quer explorar hoje?';
+	$: greeting = userName
+		? $i18n.t('What would you like to explore today, {{name}}?', { name: userName })
+		: $i18n.t('What would you like to explore today?');
 </script>
 
 <div class="m-auto w-full max-w-6xl px-2 @2xl:px-20 -translate-y-20 py-24 text-center">

@@ -971,15 +971,22 @@ def _qwen_image_memory_args() -> list[str]:
         if vram_mib is not None and vram_mib >= QWEN_IMAGE_21_FULL_GPU_MIN_VRAM_MIB:
             log.info("Qwen Image 2.1 Vulkan: auto-fit em %s (%s MiB de VRAM detectados)", device, vram_mib)
             return ["--backend", device, "--auto-fit", "on", "--vae-tiling"]
+        tight_eight_gib = False
         if vram_mib is None:
             budget = "-2"
         else:
-            budget = f"{max(0.75, min(vram_mib / 1024 - 2, vram_mib / 1024 * 0.7)):g}"
+            vram_gib = vram_mib / 1024
+            tight_eight_gib = 7.5 <= vram_gib <= 8.5
+            if tight_eight_gib:
+                budget = f"{min(vram_gib - 1.75, vram_gib * 0.8):g}"
+            else:
+                budget = f"{max(0.75, min(vram_gib - 2, vram_gib * 0.7)):g}"
         log.info("Qwen Image 2.1 Vulkan: difusao limitada a %s GiB de VRAM (detectada: %s MiB)", budget, vram_mib)
         return [
             "--backend", f"te=cpu,vae=cpu,diffusion={device}",
             "--auto-fit", "on",
             "--max-vram", budget, "--vae-tiling",
+            *(["--disable-prefetch"] if tight_eight_gib else []),
         ]
     if vram_mib is not None and vram_mib >= QWEN_IMAGE_21_FULL_GPU_MIN_VRAM_MIB:
         log.info("Qwen Image 2.1: auto-fit em GPU (%s MiB de VRAM detectados)", vram_mib)
@@ -996,6 +1003,15 @@ def _qwen_image_cpu_fallback_command(command: list[str]) -> list[str]:
         memory_start = command.index("--backend", command.index("--cfg-scale") + 2)
     memory_end = command.index("--vae-tiling", memory_start) + 1
     return command[:memory_start] + ["--backend", "cpu", "--auto-fit", "off", "--vae-tiling"] + command[memory_end:]
+
+
+def _is_vulkan_memory_failure(output: str) -> bool:
+    return bool(re.search(
+        r"ErrorDeviceLost|device lost|ErrorOutOfDeviceMemory|cannot make enough memory available|"
+        r"failed during weight preparation|out of memory",
+        output,
+        re.IGNORECASE,
+    ))
 
 
 def _supports_native_sage_attention() -> bool:
@@ -1571,8 +1587,8 @@ class _ZImageTurboPipeline:
                     output_text = output.decode("utf-8", errors="replace")
                     if process.returncode == 0:
                         break
-                    if attempt == 0 and retry_on_cpu and re.search(r"ErrorDeviceLost|device lost", output_text, re.IGNORECASE):
-                        log.warning("Qwen Image 2.1: dispositivo Vulkan perdido; repetindo esta geracao em CPU")
+                    if attempt == 0 and retry_on_cpu and _is_vulkan_memory_failure(output_text):
+                        log.warning("Qwen Image 2.1: falha de memoria no Vulkan; repetindo esta geracao em CPU")
                         continue
                     raise RuntimeError(f"stable-diffusion.cpp falhou (codigo {process.returncode}): {output_text[-4000:]}")
         finally:

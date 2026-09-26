@@ -12,22 +12,9 @@
 	dayjs.extend(duration);
 	dayjs.extend(relativeTime);
 
-	async function loadLocale(locales) {
-		for (const locale of locales) {
-			try {
-				dayjs.locale(locale);
-				break; // Stop after successfully loading the first available locale
-			} catch (error) {
-				console.error(`Could not load locale '${locale}':`, error);
-			}
-		}
-	}
-
 	import { onMount, getContext, onDestroy } from 'svelte';
 
 	const i18n = getContext('i18n');
-	// Assuming $i18n.languages is an array of language codes
-	$: loadLocale($i18n.languages);
 
 	import { goto } from '$app/navigation';
 	import { NEVEAI_NAME, config, user } from '$lib/stores';

@@ -25,7 +25,8 @@
 	import LinkSlash from '../icons/LinkSlash.svelte';
 	import Clipboard from '../icons/Clipboard.svelte';
 
-	const i18n = getContext('i18n');
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 
 	export let show = false;
 
@@ -277,11 +278,11 @@
 									<div class="{showUserInfo ? 'w-28' : 'basis-2/5'} flex items-center justify-end">
 										<div class="hidden sm:flex text-gray-500 dark:text-gray-400 text-xs">
 											{dayjs(chat?.updated_at * 1000).calendar(null, {
-												sameDay: '[Hoje]',
-												nextDay: '[Amanhã]',
+												sameDay: `[${$i18n.t('Today')}]`,
+												nextDay: `[${$i18n.t('Tomorrow')}]`,
 												nextWeek: 'dddd',
-												lastDay: '[Ontem]',
-												lastWeek: '[Última] dddd',
+												lastDay: `[${$i18n.t('Yesterday')}]`,
+												lastWeek: `[${$i18n.t('Last')}] dddd`,
 												sameElse: 'L'
 											})}
 										</div>

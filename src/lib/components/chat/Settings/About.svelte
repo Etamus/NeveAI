@@ -4,7 +4,7 @@
 </script>
 
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { getContext, onMount } from 'svelte';
 	import { get } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
 	import { getVersionUpdates, startAppUpdater } from '$lib/apis';
@@ -14,6 +14,8 @@
 	import { NEVEAI_VERSION, user } from '$lib/stores';
 	import { compareVersion } from '$lib/utils';
 	import bundledProjectVersion from '../../../../../version.txt?raw';
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 
 	let projectVersion = get(NEVEAI_VERSION) || bundledProjectVersion.trim();
 	const githubUrl = 'https://github.com/Etamus/NeveAI';
@@ -113,12 +115,12 @@
 
 		if (started) {
 			startingUpdater = false;
-			toast.success('Atualizador aberto.');
+			toast.success($i18n.t('Updater opened.'));
 			return;
 		}
 
 		startingUpdater = false;
-		toast.error('Falha ao abrir o atualizador.');
+		toast.error($i18n.t('Failed to open updater.'));
 	};
 
 	const openExternalUrl = async (url: string) => {
@@ -151,9 +153,9 @@
 	});
 </script>
 
-<div id="tab-about" class="flex flex-col gap-5 text-sm text-gray-700 dark:text-gray-200">
+<div id="tab-about" class="flex flex-col gap-5 pt-2 text-sm text-gray-700 dark:text-gray-100">
 	<section class="space-y-1.5">
-		<div class="text-sm font-medium text-gray-900 dark:text-white">Versão</div>
+		<div class="text-sm font-medium">{$i18n.t('Version')}</div>
 		<div class="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
 			<span>{projectVersion}</span>
 			{#if updateAvailable}
@@ -161,27 +163,27 @@
 					type="button"
 					class="bg-transparent p-0 text-sm font-medium text-gray-700 transition-opacity hover:opacity-60 disabled:cursor-default disabled:opacity-60 dark:text-gray-200"
 					aria-label={latestProjectVersion
-						? `Atualizar NeveAI para ${latestProjectVersion}`
-						: 'Atualizar NeveAI'}
+						? $i18n.t('Update NeveAI to {{version}}', { version: latestProjectVersion })
+						: $i18n.t('Update NeveAI')}
 					disabled={startingUpdater}
 					on:click={startUpdate}
 				>
-					{startingUpdater ? 'Abrindo...' : 'Atualizar'}
+					{startingUpdater ? $i18n.t('Opening...') : $i18n.t('Update')}
 				</button>
 			{/if}
 		</div>
 	</section>
 
 	<section class="space-y-1.5">
-		<div class="text-sm font-medium text-gray-900 dark:text-white">NeveAI</div>
+		<div class="text-sm font-medium">NeveAI</div>
 		<p class="text-sm leading-6 text-gray-600 dark:text-gray-300">
 			Copyright © 2026 Mateus Lopes<br />
-			Todos os direitos reservados.
+			{$i18n.t('All rights reserved.')}
 		</p>
 	</section>
 
 	<section class="space-y-2">
-		<div class="text-sm font-medium text-gray-900 dark:text-white">Repositórios</div>
+		<div class="text-sm font-medium">{$i18n.t('Repositories')}</div>
 		<div class="flex flex-col gap-2">
 			<a
 				class="inline-flex items-center gap-2 text-sm text-gray-600 underline-offset-2 hover:underline dark:text-gray-300"
@@ -208,7 +210,7 @@
 	</section>
 
 	<section class="space-y-2">
-		<div class="text-sm font-medium text-gray-900 dark:text-white">Informações Legais</div>
+		<div class="text-sm font-medium">{$i18n.t('Legal Information')}</div>
 		<a
 			class="inline-flex items-center gap-2 text-sm text-gray-600 underline-offset-2 hover:underline dark:text-gray-300"
 			href={licenseUrl}
@@ -217,7 +219,7 @@
 			on:click|preventDefault={() => openExternalUrl(licenseUrl)}
 		>
 			<Scale className="size-4" strokeWidth="1.6" />
-			<span>Licença</span>
+			<span>{$i18n.t('License')}</span>
 		</a>
 	</section>
 </div>

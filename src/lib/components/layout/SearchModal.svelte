@@ -15,7 +15,8 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { getContext, onDestroy, onMount, tick } from 'svelte';
-	const i18n = getContext('i18n');
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 
 	import Modal from '$lib/components/common/Modal.svelte';
 	import SearchInput from './Sidebar/SearchInput.svelte';
@@ -38,7 +39,7 @@
 	export let show = false;
 	export let onClose = () => {};
 
-	let actions = [
+	$: actions = [
 		{
 			label: $i18n.t('Start a new conversation'),
 			onClick: async () => {
@@ -439,11 +440,11 @@
 
 							<div class=" pl-3 shrink-0 text-gray-500 dark:text-gray-400 text-xs">
 								{dayjs(chat?.updated_at * 1000).calendar(null, {
-									sameDay: '[Hoje]',
-									nextDay: '[Amanhã]',
+									sameDay: `[${$i18n.t('Today')}]`,
+									nextDay: `[${$i18n.t('Tomorrow')}]`,
 									nextWeek: 'dddd',
-									lastDay: '[Ontem]',
-									lastWeek: '[Última] dddd',
+									lastDay: `[${$i18n.t('Yesterday')}]`,
+									lastWeek: `[${$i18n.t('Last')}] dddd`,
 									sameElse: 'L'
 								})}
 							</div>

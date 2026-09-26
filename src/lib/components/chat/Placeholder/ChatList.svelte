@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getContext, onMount } from 'svelte';
-	const i18n = getContext('i18n');
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 
 	import dayjs from 'dayjs';
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
@@ -131,11 +132,11 @@
 				<div class="hidden sm:flex sm:basis-2/5 items-center justify-end">
 					<div class=" text-gray-500 dark:text-gray-400 text-xs">
 						{dayjs(chat?.updated_at * 1000).calendar(null, {
-							sameDay: '[Hoje]',
-							nextDay: '[Amanhã]',
+							sameDay: `[${$i18n.t('Today')}]`,
+							nextDay: `[${$i18n.t('Tomorrow')}]`,
 							nextWeek: 'dddd',
-							lastDay: '[Ontem]',
-							lastWeek: '[Última] dddd',
+							lastDay: `[${$i18n.t('Yesterday')}]`,
+							lastWeek: `[${$i18n.t('Last')}] dddd`,
 							sameElse: 'L'
 						})}
 					</div>

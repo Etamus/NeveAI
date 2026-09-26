@@ -1,11 +1,14 @@
 <script lang="ts">
+	import { getContext } from 'svelte';
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 	export let kind: 'image' | 'video' = 'image';
 	export let progress = 0;
 	export let width = 1;
 	export let height = 1;
 
 	$: percent = Math.min(100, Math.max(0, Math.round(Number(progress) || 0)));
-	$: label = kind === 'video' ? 'Criando vídeo' : 'Criando imagem';
+	$: label = kind === 'video' ? $i18n.t('Creating video') : $i18n.t('Creating image');
 	$: safeWidth = Math.max(1, Number(width) || 1);
 	$: safeHeight = Math.max(1, Number(height) || 1);
 	$: aspectRatio = safeWidth / safeHeight;

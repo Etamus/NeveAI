@@ -4030,7 +4030,7 @@ $ctl.BtnPrimary.Add_Click({
             $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1')
             return '"' + $escaped + '"'
         }
-        function Run([string]$exe, [string[]]$argv, [string]$desc) {
+        function Run([string]$exe, [string[]]$argv, [string]$desc, [int]$timeoutSeconds = 3600) {
             L "==> $desc"
             if ([string]::IsNullOrWhiteSpace($exe)) { throw "Executável vazio ao executar '$desc'." }
             $safeArgs = @()
@@ -4539,24 +4539,48 @@ $ctl.BtnPrimary.Add_Click({
             $script:CopiedReleaseFiles++
         }
         function Invoke-ReleaseDownload([string]$uri, [string]$destination) {
-            $lastError = $null
-            for ($attempt = 1; $attempt -le 4; $attempt++) {
-                try {
-                    Remove-Item -LiteralPath $destination -Force -EA SilentlyContinue
-                    Invoke-WebRequest $uri -OutFile $destination -UseBasicParsing -Headers @{ 'User-Agent' = 'Neve-Updater/2.0'; 'Accept' = 'application/octet-stream' } -TimeoutSec 600 -EA Stop
-                    if (-not (Test-Path -LiteralPath $destination)) { throw 'O download não criou o arquivo esperado.' }
-                    if ((Get-Item -LiteralPath $destination).Length -lt 1KB) { throw 'O pacote baixado está vazio ou incompleto.' }
-                    return
-                } catch {
-                    $lastError = $_
-                    Remove-Item -LiteralPath $destination -Force -EA SilentlyContinue
-                    if ($attempt -lt 4) {
-                        L "[!] Download interrompido (tentativa $attempt/4). Tentando novamente..." 'warn'
-                        Start-Sleep -Seconds ([math]::Min(8, [math]::Pow(2, $attempt)))
+            if ($uri -notmatch '^https://api\.github\.com/repos/Etamus/NeveAI/zipball/') {
+                throw 'URL de origem da release inesperada; atualização cancelada.'
+            }
+            $tagPath = [uri]::EscapeDataString($latestTag)
+            $sources = @(
+                $uri,
+                "https://github.com/Etamus/NeveAI/archive/refs/tags/$tagPath.zip",
+                "https://codeload.github.com/Etamus/NeveAI/zip/refs/tags/$tagPath"
+            ) | Select-Object -Unique
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $failures = @()
+            foreach ($source in $sources) {
+                $headers = @{ 'User-Agent' = 'Neve-Updater/2.0' }
+                if ($source -like 'https://api.github.com/*') { $headers['Accept'] = 'application/vnd.github+json' }
+                for ($attempt = 1; $attempt -le 3; $attempt++) {
+                    try {
+                        Remove-Item -LiteralPath $destination -Force -EA SilentlyContinue
+                        Invoke-WebRequest $source -OutFile $destination -UseBasicParsing -Headers $headers -TimeoutSec 600 -EA Stop
+                        if (-not (Test-Path -LiteralPath $destination)) { throw 'O download não criou o arquivo esperado.' }
+                        if ((Get-Item -LiteralPath $destination).Length -lt 1KB) { throw 'O pacote baixado está vazio ou incompleto.' }
+                        $archive = [System.IO.Compression.ZipFile]::OpenRead($destination)
+                        try { if ($archive.Entries.Count -eq 0) { throw 'O ZIP da release não contém arquivos.' } }
+                        finally { $archive.Dispose() }
+                        L "[OK] ZIP validado: $source"
+                        return
+                    } catch {
+                        $errorMessage = $_.Exception.Message
+                        $failures += "$source (tentativa $attempt): $errorMessage"
+                        Remove-Item -LiteralPath $destination -Force -EA SilentlyContinue
+                        $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+                        if ($status -in @(400, 401, 403, 404, 415)) {
+                            L "[!] Fonte recusou o download (HTTP $status); tentando outra origem." 'warn'
+                            break
+                        }
+                        if ($attempt -lt 3) {
+                            L "[!] Download falhou na tentativa $attempt/3: $errorMessage. Tentando novamente..." 'warn'
+                            Start-Sleep -Seconds ([math]::Min(8, [math]::Pow(2, $attempt)))
+                        }
                     }
                 }
             }
-            throw "Não foi possível baixar a release após 4 tentativas: $($lastError.Exception.Message)"
+            throw "Não foi possível baixar um ZIP válido da release $latestTag. Última falha: $($failures[-1])"
         }
         function New-ReleaseRollbackSnapshot([string]$sourceRoot, [string]$snapshotRoot, [string[]]$excludeDirs, [string[]]$excludeFiles) {
             New-Item -ItemType Directory -Path $snapshotRoot -Force | Out-Null
@@ -4853,8 +4877,12 @@ $ctl.BtnPrimary.Add_Click({
                     $script:FrontendNodeDir = $frontendNode.NodeDir
                     $npmExe = $frontendNode.NpmExecutable
                     L "[OK] Node.js do frontend: $($frontendNode.NodeVersion) / npm $($frontendNode.NpmVersion) em $($frontendNode.NodeDir)"
-                    $rc = Run $npmExe @('install', '--no-audit', '--no-fund') 'npm install' 2700
-                    if ($rc -ne 0) { throw "npm install falhou (código $rc)" }
+                    $rc = Run $npmExe @('install', '--no-audit', '--no-fund', '--prefer-offline') 'npm install' 2700
+                    if ($rc -ne 0) {
+                        L '[!] npm install falhou; tentando novamente com preferência pela rede.' 'warn'
+                        $rc = Run $npmExe @('install', '--no-audit', '--no-fund', '--prefer-online') 'npm install de recuperação' 2700
+                    }
+                    if ($rc -ne 0) { throw "npm install falhou após duas tentativas (código $rc)" }
 
                     $previousOfficeCliSkipUpdate = $env:OFFICECLI_SKIP_UPDATE
                     $previousOfficeCliNoAutoResident = $env:OFFICECLI_NO_AUTO_RESIDENT
@@ -4879,7 +4907,22 @@ $ctl.BtnPrimary.Add_Click({
                     PN 76 'Gerando build do frontend'
                     Remove-Item -LiteralPath (Join-Path $ROOT 'build') -Recurse -Force -EA SilentlyContinue
                     $rc = Run $npmExe @('run', 'build', '--', '--logLevel', 'error') 'npm run build' 1800
-                    if ($rc -ne 0) { throw "npm run build falhou (código $rc)" }
+                    if ($rc -ne 0) {
+                        L '[!] O build falhou; tentando novamente após liberar os arquivos.' 'warn'
+                        Start-Sleep -Seconds 3
+                        $rc = Run $npmExe @('run', 'build', '--', '--logLevel', 'error') 'npm run build novamente' 1800
+                    }
+                    if ($rc -ne 0) {
+                        L '[!] O build falhou duas vezes; reparando as dependências npm antes da última tentativa.' 'warn'
+                        $npmRc = Run $npmExe @('install', '--no-audit', '--no-fund', '--prefer-online') 'npm install de recuperação do build' 2700
+                        if ($npmRc -ne 0) { throw "Build falhou e npm install de recuperação também falhou (código $npmRc)." }
+                        if (-not (Test-Path -LiteralPath $officeCli)) {
+                            $officeRc = Run $npmExe @('exec', '--', 'officecli', '--version') 'preparar OfficeCLI após recuperação npm' 600
+                            if ($officeRc -ne 0 -or -not (Test-Path -LiteralPath $officeCli)) { throw 'OfficeCLI ausente após recuperação npm.' }
+                        }
+                        $rc = Run $npmExe @('run', 'build', '--', '--logLevel', 'error') 'npm run build após recuperação npm' 1800
+                    }
+                    if ($rc -ne 0) { throw "npm run build falhou após recuperação (código $rc). Consulte logs\update.log." }
 
                     PN 91 'Publicando frontend'
                     $buildDir = Join-Path $ROOT 'build'

@@ -231,7 +231,7 @@
 						bind:value={username}
 						maxlength={USER_NAME_MAX_LENGTH}
 						class="w-full text-sm bg-transparent outline-hidden placeholder:text-gray-300 dark:placeholder:text-gray-700"
-						placeholder="Digite seu nome"
+						placeholder={$i18n.t('Digite seu nome')}
 						autocomplete="off"
 					/>
 				</div>

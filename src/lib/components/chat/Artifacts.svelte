@@ -9,7 +9,8 @@
 	import { indentUnit } from '@codemirror/language';
 	import { toast } from 'svelte-sonner';
 	import { onMount, getContext, createEventDispatcher } from 'svelte';
-	const i18n = getContext('i18n');
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 	const dispatch = createEventDispatcher();
 
 	import {
@@ -293,7 +294,7 @@
 						? 'text-gray-900 dark:text-white'
 						: 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}"
 					on:click={() => { activeTab = 'preview'; }}
-					title="Visualização"
+					title={$i18n.t('Preview')}
 				>
 					<!-- arc + circle: single arc above a small ball -->
 					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="size-[17px]">
@@ -308,7 +309,7 @@
 						? 'text-gray-900 dark:text-white'
 						: 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}"
 					on:click={() => { activeTab = 'code'; }}
-					title="Código"
+					title={$i18n.t('Code')}
 				>
 					<!-- </> code icon -->
 					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="size-[17px]">

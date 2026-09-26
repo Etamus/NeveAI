@@ -325,7 +325,7 @@
 											<div class="border-l border-gray-300/50 dark:border-gray-600/30"></div>
 											<div class="w-[48%] min-w-0 pl-5 h-full overflow-hidden">
 											<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2 py-1 shrink-0 whitespace-nowrap">
-											Capacidades padrão
+												{$i18n.t('Capacidades padrão')}
 												</div>
 												<DefaultFeatures
 										availableFeatures={[

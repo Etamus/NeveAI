@@ -15,7 +15,7 @@
 
 	const i18n = getContext<I18nStore>('i18n');
 
-	const featureLabels = {
+	$: featureLabels = {
 		web_search: {
 			label: $i18n.t('Busca na web'),
 			description: $i18n.t('Modelo pode buscar informações na web')

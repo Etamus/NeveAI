@@ -188,7 +188,7 @@
 	let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
-	let videoGenerationResolution: '384p' | '480p' | '544p' = '480p';
+	let videoGenerationResolution: '384p' | '480p' | '544p' = '384p';
 	let videoGenerationDuration: '5s' | '8s' = '5s';
 	let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
 	let videoPreferencesReady = false;
@@ -1908,7 +1908,7 @@
 		const savedVideoResolution = localStorage.getItem('neveai.videoResolution');
 		videoGenerationResolution = ['384p', '480p', '544p'].includes(savedVideoResolution ?? '')
 			? (savedVideoResolution as typeof videoGenerationResolution)
-			: '480p';
+			: '384p';
 		videoGenerationDuration = localStorage.getItem('neveai.videoDuration') === '8s' ? '8s' : '5s';
 		videoGenerationAspectRatio =
 			localStorage.getItem('neveai.videoAspectRatio') === '9:16' ? '9:16' : '16:9';
@@ -4610,7 +4610,7 @@
 			timeoutId = setTimeout(() => {
 				finish(
 					undefined,
-					new Error('Não foi possível conectar ao backend. Verifique se ele está em execução e tente novamente.')
+					new Error($i18n.t('Could not connect to the backend. Check that it is running and try again.'))
 				);
 			}, CHAT_SOCKET_READY_TIMEOUT_MS);
 
@@ -4636,7 +4636,7 @@
 			const errorMessage =
 				error instanceof Error
 					? error.message
-					: 'Não foi possível conectar ao backend. Tente novamente.';
+					: $i18n.t('Could not connect to the backend. Try again.');
 
 			toast.error(errorMessage);
 			responseMessage.error = { content: errorMessage };
@@ -5507,7 +5507,7 @@
 {#if showContextModal}
 	<div class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40" transition:fade={{ duration: 80 }}>
 		<div class="bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-xl mx-4 w-80 flex flex-col gap-3">
-			<p class="text-sm font-semibold text-gray-900 dark:text-white">Tamanho do Contexto</p>
+			<p class="text-sm font-semibold text-gray-900 dark:text-white">{$i18n.t('Context size')}</p>
 			<div class="flex flex-col gap-1.5 max-h-80 overflow-y-auto scrollbar-none">
 				{#each LOCAL_MODEL_CONTEXT_OPTIONS as sz}
 					<button
@@ -5516,7 +5516,7 @@
 					>
 						<span>{sz.toLocaleString()} tokens</span>
 						{#if sz === 8192}
-							<span class="text-[11px] opacity-60">Padrão</span>
+							<span class="text-[11px] opacity-60">{$i18n.t('Default')}</span>
 						{/if}
 					</button>
 				{/each}
@@ -5525,11 +5525,11 @@
 				<button
 					class="px-4 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
 					on:click={cancelContextModal}
-				>Cancelar</button>
+				>{$i18n.t('Cancel')}</button>
 				<button
 					class="px-4 py-1.5 text-xs rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium"
 					on:click={confirmContextModal}
-				>Confirmar</button>
+				>{$i18n.t('Confirm')}</button>
 			</div>
 		</div>
 	</div>
@@ -5538,19 +5538,19 @@
 {#if showVisionModal}
 	<div class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40" transition:fade={{ duration: 80 }}>
 		<div class="bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-xl mx-4 w-80 flex flex-col gap-3">
-			<p class="text-sm font-semibold text-gray-900 dark:text-white">Deseja carregar a visão?</p>
+			<p class="text-sm font-semibold text-gray-900 dark:text-white">{$i18n.t('Load vision?')}</p>
 			<p class="text-xs text-gray-500 dark:text-gray-400">
-				{visionModalModelName} será carregado com suporte a análise de imagens.
+				{$i18n.t('{{model}} will load with image analysis support.', { model: visionModalModelName })}
 			</p>
 			<div class="flex justify-end gap-2 mt-1">
 				<button
 					class="px-4 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
 					on:click={declineVisionModal}
-				>Não</button>
+				>{$i18n.t('No')}</button>
 				<button
 					class="px-4 py-1.5 text-xs rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium"
 					on:click={confirmVisionModal}
-				>Sim</button>
+				>{$i18n.t('Yes')}</button>
 			</div>
 		</div>
 	</div>

@@ -1,4 +1,9 @@
 <script lang="ts">
+	import { getContext } from 'svelte';
+	import type { I18nStore } from '$lib/i18n';
+
+	const i18n = getContext<I18nStore>('i18n');
+
 	export let name = 'Modelo';
 	export let progress = 0;
 	export let label = '';
@@ -22,7 +27,7 @@
 			disabled={cancelling}
 			on:click={onCancel}
 		>
-			{cancelling ? 'Cancelando...' : 'Cancelar'}
+			{$i18n.t(cancelling ? 'Cancelando...' : 'Cancelar')}
 		</button>
 	</div>
 

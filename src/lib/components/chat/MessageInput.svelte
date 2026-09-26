@@ -108,7 +108,8 @@
 	import InputModal from '../common/InputModal.svelte';
 	import QueuedMessageItem from './MessageInput/QueuedMessageItem.svelte';
 
-	const i18n = getContext('i18n');
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 	const PASTED_TEXT_FULL_CONTEXT_LINE_LIMIT = 1000;
 
 	export let onUpload: Function = (e) => {};
@@ -160,8 +161,9 @@
 		{ id: 'pixelated', label: 'Pixelado', image: '/static/pixelado.webp' },
 		{ id: 'arcane', label: 'Arcano', image: '/static/arcano.webp' }
 	] as const;
-	$: selectedImageStyleLabel =
-		imageStyleOptions.find((style) => style.id === stableDiffusionStyle)?.label ?? 'Sem estilo';
+	$: selectedImageStyleLabel = $i18n.t(
+		imageStyleOptions.find((style) => style.id === stableDiffusionStyle)?.label ?? 'Sem estilo'
+	);
 	export let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	const imageResolutionOptions = [
 		{ id: '1:1', shape: 'h-4 w-4' },
@@ -172,7 +174,7 @@
 	] as const;
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
-	export let videoGenerationResolution: '384p' | '480p' | '544p' = '480p';
+	export let videoGenerationResolution: '384p' | '480p' | '544p' = '384p';
 	export let videoGenerationDuration: '5s' | '8s' = '5s';
 	export let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
 	const videoAspectRatioOptions = [
@@ -192,7 +194,7 @@
 		const savedResolution = localStorage.getItem('neveai.videoResolution');
 		videoGenerationResolution = ['384p', '480p', '544p'].includes(savedResolution ?? '')
 			? (savedResolution as typeof videoGenerationResolution)
-			: '480p';
+			: '384p';
 		videoGenerationDuration = localStorage.getItem('neveai.videoDuration') === '8s' ? '8s' : '5s';
 		videoGenerationAspectRatio =
 			localStorage.getItem('neveai.videoAspectRatio') === '9:16' ? '9:16' : '16:9';
@@ -1990,12 +1992,12 @@
 												type="button"
 												class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition cursor-pointer bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
 												style="font-size: 0.79rem; font-family: 'Segoe UI', sans-serif; font-weight: 400; letter-spacing: 0.01em;"
-												aria-label={`${thinkingEnabled ? 'Raciocínio' : 'Rápido'}${thinkingExtendedEnabled ? ' Aprimorado' : ''}`}
+												aria-label={`${$i18n.t(thinkingEnabled ? 'Raciocínio' : 'Rápido')}${thinkingExtendedEnabled ? ` ${$i18n.t('Aprimorado')}` : ''}`}
 												on:click|preventDefault={() => { showThinkingDropdown = !showThinkingDropdown; }}
 											>
-												<span>{thinkingEnabled ? 'Raciocínio' : 'Rápido'}</span>
+												<span>{thinkingEnabled ? $i18n.t('Raciocínio') : $i18n.t('Rápido')}</span>
 												{#if thinkingExtendedEnabled}
-													<span class="text-gray-500 dark:text-gray-500">Aprimorado</span>
+													<span class="text-gray-500 dark:text-gray-500">{$i18n.t('Aprimorado')}</span>
 												{/if}
 												<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform {showThinkingDropdown ? '' : 'rotate-180'}">
 													<path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
@@ -2014,7 +2016,7 @@
 														class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
 														on:click={() => setThinkingMode(false)}
 													>
-														<div class="flex-1 text-left"><div>Rápido</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Para respostas imediatas</div></div>
+													<div class="flex-1 text-left"><div>{$i18n.t('Rápido')}</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">{$i18n.t('Para respostas imediatas')}</div></div>
 														{#if !thinkingEnabled}
 															<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
 																<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
@@ -2026,7 +2028,7 @@
 														class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
 														on:click={() => setThinkingMode(true)}
 													>
-														<div class="flex-1 text-left"><div>Raciocínio</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Para tarefas complexas</div></div>
+													<div class="flex-1 text-left"><div>{$i18n.t('Raciocínio')}</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">{$i18n.t('Para tarefas complexas')}</div></div>
 														{#if thinkingEnabled}
 															<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
 																<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
@@ -2036,8 +2038,8 @@
 													<div class="my-1 border-t border-gray-100 dark:border-gray-800"></div>
 													<div class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200">
 														<div class="flex-1 text-left">
-															<div>Aprimorado</div>
-															<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Aumenta esforço do pensamento</div>
+																	<div>{$i18n.t('Aprimorado')}</div>
+																	<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">{$i18n.t('Aumenta esforço do pensamento')}</div>
 														</div>
 														<Switch
 															bind:state={thinkingExtendedEnabled}
@@ -2241,7 +2243,7 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Busca</span>
+																<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Busca')}</span>
 											</button>
 										{/if}
 
@@ -2277,7 +2279,7 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Imagem</span>
+												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Image')}</span>
 											</button>
 										{/if}
 
@@ -2297,7 +2299,7 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Artefatos</span>
+												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Artifacts')}</span>
 											</button>
 										{/if}
 
@@ -2315,10 +2317,10 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Imagem</span>
+												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Image')}</span>
 											</button>
 										<div class="image-quality-control relative shrink-0" id="image-quality-dropdown-container">
-											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label="Modelo de imagem" aria-expanded={showImageQualityDropdown} on:click|preventDefault={() => { showImageStyleDropdown = false; showImageResolutionDropdown = false; showImageQualityDropdown = !showImageQualityDropdown; }}>
+											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label={$i18n.t('Image model')} aria-expanded={showImageQualityDropdown} on:click|preventDefault={() => { showImageStyleDropdown = false; showImageResolutionDropdown = false; showImageQualityDropdown = !showImageQualityDropdown; }}>
 												<span>{stableDiffusionQuality === 'qwen_image_2s' ? 'Neve Image 2 Fast' : stableDiffusionQuality === 'qwen_image_2_1' ? 'Neve Image 2' : stableDiffusionQuality === 'neve_image_2' ? 'Neve Image 1.4' : 'Neve Image 1'}</span>
 												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageQualityDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
 											</button>
@@ -2337,7 +2339,7 @@
 											<button
 												type="button"
 												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-												aria-label="Estilo da imagem"
+												aria-label={$i18n.t('Image style')}
 												aria-expanded={showImageStyleDropdown}
 												on:click|preventDefault={toggleImageStyleDropdown}
 											>
@@ -2351,7 +2353,7 @@
 											<button
 												type="button"
 												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-												aria-label="Proporção da imagem"
+												aria-label={$i18n.t('Image aspect ratio')}
 												aria-expanded={showImageResolutionDropdown}
 												on:click|preventDefault={() => {
 													showImageQualityDropdown = false;
@@ -2393,7 +2395,7 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Música</span>
+												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Music')}</span>
 											</button>
 										{/if}
 
@@ -2414,14 +2416,14 @@
 														<XMark className="size-4" strokeWidth="1.75" />
 													</span>
 												</div>
-											<span class="text-[0.8125rem] font-medium {activeChipTextClass}">Vídeo</span>
+											<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Video')}</span>
 										</button>
 
 										<div class="relative shrink-0" id="video-resolution-dropdown-container">
 											<button
 												type="button"
 												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-												aria-label="Resolução do vídeo"
+												aria-label={$i18n.t('Video resolution')}
 												aria-expanded={showVideoResolutionDropdown}
 												on:click|preventDefault={() => {
 											showVideoDurationDropdown = false;
@@ -2447,7 +2449,7 @@
 											<button
 												type="button"
 												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-												aria-label="Duração do vídeo"
+												aria-label={$i18n.t('Video duration')}
 												aria-expanded={showVideoDurationDropdown}
 											on:click|preventDefault={() => {
 												showVideoResolutionDropdown = false;
@@ -2473,7 +2475,7 @@
 										<button
 											type="button"
 											class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-											aria-label="Proporção do vídeo"
+															aria-label={$i18n.t('Video aspect ratio')}
 											aria-expanded={showVideoAspectRatioDropdown}
 											on:click|preventDefault={() => {
 												showVideoResolutionDropdown = false;
@@ -2534,12 +2536,12 @@
 													type="button"
 													class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition cursor-pointer bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
 													style="font-size: 0.79rem; font-family: 'Segoe UI', sans-serif; font-weight: 400; letter-spacing: 0.01em;"
-													aria-label={`${thinkingEnabled ? 'Raciocínio' : 'Rápido'}${thinkingExtendedEnabled ? ' Aprimorado' : ''}`}
+													aria-label={`${$i18n.t(thinkingEnabled ? 'Raciocínio' : 'Rápido')}${thinkingExtendedEnabled ? ` ${$i18n.t('Aprimorado')}` : ''}`}
 													on:click|preventDefault={() => { showThinkingDropdown = !showThinkingDropdown; }}
 												>
-													<span>{thinkingEnabled ? 'Raciocínio' : 'Rápido'}</span>
+													<span>{thinkingEnabled ? $i18n.t('Raciocínio') : $i18n.t('Rápido')}</span>
 													{#if thinkingExtendedEnabled}
-														<span class="text-gray-500 dark:text-gray-500">Aprimorado</span>
+														<span class="text-gray-500 dark:text-gray-500">{$i18n.t('Aprimorado')}</span>
 													{/if}
 													<svg
 														xmlns="http://www.w3.org/2000/svg"
@@ -2571,7 +2573,7 @@
 															class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
 															on:click={() => setThinkingMode(false)}
 														>
-															<div class="flex-1 text-left"><div>Rápido</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Para respostas imediatas</div></div>
+																	<div class="flex-1 text-left"><div>{$i18n.t('Rápido')}</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">{$i18n.t('Para respostas imediatas')}</div></div>
 															{#if !thinkingEnabled}
 																<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
 																	<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
@@ -2583,7 +2585,7 @@
 															class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
 															on:click={() => setThinkingMode(true)}
 														>
-															<div class="flex-1 text-left"><div>Raciocínio</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Para tarefas complexas</div></div>
+																	<div class="flex-1 text-left"><div>{$i18n.t('Raciocínio')}</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">{$i18n.t('Para tarefas complexas')}</div></div>
 															{#if thinkingEnabled}
 																<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
 																	<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
@@ -2593,8 +2595,8 @@
 														<div class="my-1 border-t border-gray-100 dark:border-gray-800"></div>
 														<div class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200">
 															<div class="flex-1 text-left">
-																<div>Aprimorado</div>
-																<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">Aumenta esforço do pensamento</div>
+																		<div>{$i18n.t('Aprimorado')}</div>
+																		<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">{$i18n.t('Aumenta esforço do pensamento')}</div>
 															</div>
 															<Switch
 																bind:state={thinkingExtendedEnabled}
@@ -2660,7 +2662,7 @@
 																<span class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200">{formatTokens(contextWindow)}</span>
 															</div>
 															<div class="flex justify-between items-center pt-1.5 mt-1 border-t border-gray-100 dark:border-gray-700/50">
-																<span class="text-[14px] text-gray-500 dark:text-gray-400">Utilização</span>
+																		<span class="text-[14px] text-gray-500 dark:text-gray-400">{$i18n.t('Utilização')}</span>
 																<span class="text-[14px] font-semibold tabular-nums" style="color: {ringColor}">{(usageRatio * 100).toFixed(1)}%</span>
 															</div>
 														</div>
@@ -2714,12 +2716,12 @@
 												}}
 											>
 												{#if style.image}
-													<img src={style.image} alt="Exemplo do estilo {style.label}" width="640" height="360" class="absolute inset-0 block size-full object-cover" />
+											<img src={style.image} alt={$i18n.t('Style example: {{style}}', { style: $i18n.t(style.label) })} width="640" height="360" class="absolute inset-0 block size-full object-cover" />
 													<span class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/80 via-black/35 to-transparent px-2 pb-2 pt-8 text-xs font-medium leading-5 text-white">
-														<span class="block truncate">{style.label}</span>
+												<span class="block truncate">{$i18n.t(style.label)}</span>
 													</span>
 												{:else}
-													<span class="absolute inset-x-0 bottom-0 px-2 pb-2 text-xs font-medium leading-5 text-gray-700 dark:text-gray-200">{style.label}</span>
+											<span class="absolute inset-x-0 bottom-0 px-2 pb-2 text-xs font-medium leading-5 text-gray-700 dark:text-gray-200">{$i18n.t(style.label)}</span>
 												{/if}
 												{#if stableDiffusionStyle === style.id}
 													{#if style.image}

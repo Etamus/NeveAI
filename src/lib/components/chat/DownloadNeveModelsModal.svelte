@@ -115,7 +115,8 @@
 		type NeveDownloadState
 	} from '$lib/apis/llamacpp';
 
-	const i18n = getContext('i18n');
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 	const dispatch = createEventDispatcher<{ modelsChanged: void }>();
 	export let show = false;
 
@@ -171,7 +172,7 @@
 			catalog = filterRetiredCatalogModels(await getNeveCatalog(localStorage.token));
 			writeCachedNeveCatalog(catalog);
 		} catch (e: any) {
-			catalogError = normalizeLlamaCppErrorMessage(e, 'Falha ao carregar catálogo');
+			catalogError = normalizeLlamaCppErrorMessage(e, $i18n.t('Failed to load catalog'));
 			toast.error(catalogError);
 			if (catalog.length === 0) {
 				catalog = readCachedNeveCatalog();
@@ -297,23 +298,27 @@
 		progress = typeof state.progress === 'number' ? state.progress : progress;
 
 		if (state.status === 'resolving') {
-			progressLabel = 'Procurando arquivos...';
+			progressLabel = $i18n.t('Searching for files...');
 		} else if (state.status === 'downloading') {
 			const fileLabel = state.file_total && state.file_total > 1 ? ` (${state.file_index}/${state.file_total})` : '';
 			const sz = state.total ? `${fmtBytes(state.downloaded ?? 0)} / ${fmtBytes(state.total)}` : '';
-			const verb = state.resumed ? 'Retomando' : 'Baixando';
+			const verb = state.resumed ? $i18n.t('Resuming') : $i18n.t('Downloading');
 			progressLabel = `${verb}${fileLabel} ${sz}`.trim();
 		} else if (state.status === 'queued') {
-			progressLabel = queuedModelIds.length > 0 ? `Na fila (${queuedModelIds.length} restante${queuedModelIds.length === 1 ? '' : 's'})...` : 'Na fila...';
+			progressLabel = queuedModelIds.length > 0
+				? queuedModelIds.length === 1
+					? $i18n.t('Queued (1 remaining)...')
+					: $i18n.t('Queued ({{count}} remaining)...', { count: queuedModelIds.length })
+				: $i18n.t('Queued...');
 		} else if (state.status === 'cancelling') {
-			progressLabel = 'Cancelando e limpando arquivos...';
+			progressLabel = $i18n.t('Canceling and cleaning up files...');
 		} else if (state.status === 'completed') {
 			progress = 1;
-			progressLabel = 'Download concluído';
+			progressLabel = $i18n.t('Download complete');
 		} else if (state.status === 'cancelled') {
-			progressLabel = 'Download cancelado';
+			progressLabel = $i18n.t('Download canceled');
 		} else if (state.status === 'error') {
-			progressLabel = 'Falha no download';
+			progressLabel = $i18n.t('Download failed');
 		}
 	};
 
@@ -325,7 +330,7 @@
 		downloading = queueContinues;
 		cancelling = false;
 		progress = 0;
-		progressLabel = queueContinues ? 'Preparando próximo download...' : '';
+		progressLabel = queueContinues ? $i18n.t('Preparing next download...') : '';
 		currentTaskId = null;
 		downloadingModelId = null;
 		downloadingModelName = '';
@@ -379,9 +384,9 @@
 				removeSelection(completedId);
 
 				if (state.message === 'Já instalado') {
-					toast.info(`${name}: já instalado`);
+					toast.info($i18n.t('{{name}}: already installed', { name }));
 				} else {
-					toast.success(`${name} baixado com sucesso`);
+					toast.success($i18n.t('{{name}} downloaded successfully', { name }));
 				}
 
 				await loadCatalog();
@@ -392,7 +397,7 @@
 			(err: any) => {
 				queuedModelIds = [];
 				clearDownloadState();
-				toast.error(normalizeLlamaCppErrorMessage(err, 'Falha no download'));
+				toast.error(normalizeLlamaCppErrorMessage(err, $i18n.t('Download failed')));
 			},
 			async (state) => {
 				queuedModelIds = [];
@@ -419,7 +424,7 @@
 		} else {
 			catalogError = normalizeLlamaCppErrorMessage(
 				catalogResult.reason,
-				'Falha ao carregar catálogo'
+				$i18n.t('Failed to load catalog')
 			);
 			toast.error(catalogError);
 			if (catalog.length === 0) {
@@ -481,7 +486,7 @@
 		downloadingModelId = entry.id;
 		downloadingModelName = entry.name;
 		progress = 0;
-		progressLabel = 'Conectando...';
+		progressLabel = $i18n.t('Connecting...');
 
 		try {
 			const activeDownload = await getActiveNeveDownload(localStorage.token);
@@ -489,7 +494,7 @@
 				attachToDownload(activeDownload.task_id, activeDownload);
 				if (activeDownload.model_id !== entry.id) {
 					queuedModelIds = [];
-					toast.info('Já existe um download de modelo em andamento');
+					toast.info($i18n.t('A model download is already in progress'));
 				}
 				return;
 			}
@@ -524,7 +529,7 @@
 
 		cancelling = true;
 		queuedModelIds = [];
-		progressLabel = 'Cancelando e limpando arquivos...';
+		progressLabel = $i18n.t('Canceling and cleaning up files...');
 		try {
 			const state = await cancelNeveDownload(localStorage.token, currentTaskId);
 			applyDownloadState(state);
@@ -735,7 +740,9 @@
 									? 'border-black bg-black text-white dark:border-white dark:bg-white dark:text-black'
 									: 'border-gray-300 bg-white text-transparent dark:border-gray-700 dark:bg-gray-900'} {item.installed ? 'cursor-default opacity-50' : downloading ? 'cursor-default' : 'cursor-pointer hover:border-gray-500 dark:hover:border-gray-500'}"
 								disabled={item.installed || downloading}
-								aria-label={selected ? `Remover ${item.name} da seleção` : `Selecionar ${item.name}`}
+								aria-label={selected
+									? $i18n.t('Remove {{name}} from selection', { name: item.name })
+									: $i18n.t('Select {{name}}', { name: item.name })}
 								aria-pressed={isDownloadMarked}
 								on:click|stopPropagation={() => toggleSelection(item)}
 								>
@@ -779,28 +786,28 @@
 										type="button"
 										class="group inline-flex h-7 w-full cursor-pointer items-center justify-center px-2 text-center text-xs font-medium text-gray-500 transition hover:text-gray-900 disabled:cursor-default disabled:opacity-60 dark:text-gray-400 dark:hover:text-gray-100"
 										disabled={uninstallingModelId === item.id}
-										title="Desinstalar"
-										aria-label="Desinstalar {item.name}"
+										title={$i18n.t('Uninstall')}
+										aria-label={$i18n.t('Uninstall {{name}}', { name: item.name })}
 										on:click|preventDefault|stopPropagation={() => requestUninstall(item)}
 									>
 										{#if uninstallingModelId === item.id}
 											<Spinner className="size-3.5" />
 										{:else}
-											<span class="group-hover:hidden">Instalado</span>
-											<span class="hidden group-hover:block">Desinstalar</span>
+											<span class="group-hover:hidden">{$i18n.t('Installed')}</span>
+											<span class="hidden group-hover:block">{$i18n.t('Uninstall')}</span>
 										{/if}
 									</button>
 							{:else if isCurrentDownload}
 								<span
 									class="inline-flex h-7 w-full items-center justify-center px-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400"
 									>
-									Baixando
+									{$i18n.t('Downloading')}
 								</span>
 							{:else if isQueuedDownload}
 								<span
 									class="inline-flex h-7 w-full items-center justify-center px-2 text-center text-xs font-medium text-gray-500 dark:text-gray-400"
 								>
-									Em fila
+									{$i18n.t('Queued')}
 								</span>
 							{/if}
 								</div>
@@ -826,7 +833,7 @@
 								disabled={loading}
 								on:click={selectedDownloadCount > 0 ? clearSelections : selectAllModels}
 							>
-								{selectedDownloadCount > 0 ? 'Desmarcar tudo' : 'Selecionar tudo'}
+								{selectedDownloadCount > 0 ? $i18n.t('Clear selection') : $i18n.t('Select all')}
 							</button>
 							{#if selectedDownloadCount > 0}
 								<div class="flex min-w-0 items-center justify-end gap-2 text-xs text-gray-500 dark:text-gray-400">
@@ -875,10 +882,10 @@
 <ConfirmDialog
 	bind:show={showUninstallConfirm}
 	animated={false}
-	title="Desinstalar modelo?"
+	title={$i18n.t('Uninstall model?')}
 	message={`Tem certeza que deseja desinstalar ${uninstallTarget?.name ?? 'este modelo'}?`}
 	confirmLabel="Confirmar"
-	cancelLabel="Cancelar"
+	cancelLabel={$i18n.t('Cancel')}
 	onConfirm={confirmUninstall}
 	on:cancel={() => {
 		uninstallTarget = null;

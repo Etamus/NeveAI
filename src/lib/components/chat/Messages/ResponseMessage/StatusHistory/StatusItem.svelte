@@ -19,10 +19,12 @@
 	$: statusDescription = String(status?.description ?? '').toLowerCase();
 	$: statusLabel =
 		status?.description === 'Imagem gerada'
-			? 'Imagem criada'
+			? $i18n.t('Imagem criada')
 			: status?.description === 'Video criado'
-				? 'Vídeo criado'
-				: status?.description;
+				? $i18n.t('Vídeo criado')
+				: status?.description
+					? $i18n.t(status.description)
+					: '';
 	$: isGitHubStatus =
 		statusAction.includes('github_repository') || status?.source_type === 'github_repository';
 	$: isFileSourceStatus = status?.source_type === 'file';

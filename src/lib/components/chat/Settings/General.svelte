@@ -7,8 +7,11 @@
 	import { config, models, settings, theme, user } from '$lib/stores';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import ManageFloatingActionButtonsModal from './Interface/ManageFloatingActionButtonsModal.svelte';
+	import { changeLanguage } from '$lib/i18n';
+	import CheckCircle from '../../icons/CheckCircle.svelte';
 
-	const i18n = getContext('i18n');
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 
 	import AdvancedParams from './Advanced/AdvancedParams.svelte';
 	import Textarea from '$lib/components/common/Textarea.svelte';
@@ -25,6 +28,8 @@
 		return themeSelectorOptions.includes(storedTheme) ? storedTheme : 'system';
 	};
 	let selectedTheme = getSelectedTheme();
+	let selectedLanguage = 'pt-BR';
+	let showLanguageDropdown = false;
 	let themeSwitchGeneration = 0;
 
 	let enableMessageQueue = true;
@@ -34,7 +39,6 @@
 	let showManageFloatingActionButtonsModal = false;
 	let largeTextAsFile = false;
 	let widescreenMode = false;
-	let expandDetails = false;
 	let streamResponse = true;
 	let chatBubble = true;
 	let backgroundImageUrl: string | null = null;
@@ -113,6 +117,7 @@
 
 	onMount(async () => {
 		selectedTheme = getSelectedTheme();
+		selectedLanguage = $i18n.language === 'en-US' ? 'en-US' : 'pt-BR';
 
 		enableMessageQueue = $settings?.enableMessageQueue ?? true;
 		temporaryChatByDefault = $settings?.temporaryChatByDefault ?? false;
@@ -120,7 +125,6 @@
 		floatingActionButtons = $settings?.floatingActionButtons ?? null;
 		largeTextAsFile = $settings?.largeTextAsFile ?? false;
 		widescreenMode = $settings?.widescreenMode ?? false;
-		expandDetails = $settings?.expandDetails ?? false;
 		streamResponse = $settings?.streamResponse ?? true;
 		chatBubble = $settings?.chatBubble ?? true;
 		backgroundImageUrl = $settings?.backgroundImageUrl ?? null;
@@ -203,7 +207,24 @@
 			});
 		});
 	};
+
+	const selectLanguage = (language: 'pt-BR' | 'en-US') => {
+		selectedLanguage = language;
+		showLanguageDropdown = false;
+		changeLanguage(language);
+	};
 </script>
+
+<svelte:window
+	on:click={(event) => {
+		if (!(event.target as HTMLElement).closest('#interface-language-control')) {
+			showLanguageDropdown = false;
+		}
+	}}
+	on:keydown={(event) => {
+		if (event.key === 'Escape') showLanguageDropdown = false;
+	}}
+/>
 
 <ManageFloatingActionButtonsModal
 	bind:show={showManageFloatingActionButtonsModal}
@@ -258,6 +279,31 @@
 				</div>
 			</div>
 
+			<div class="mt-2 py-0.5 flex w-full items-center justify-between gap-3">
+				<div id="interface-language-label" class="self-center text-sm font-medium">{$i18n.t('Language')}</div>
+				<div id="interface-language-control" class="relative shrink-0">
+					<button
+					type="button"
+					class="flex items-center gap-1 rounded-full px-2 py-[7px] text-[0.8125rem] text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+					aria-labelledby="interface-language-label"
+					aria-expanded={showLanguageDropdown}
+					on:click={() => { showLanguageDropdown = !showLanguageDropdown; }}
+					>
+						<span>{selectedLanguage === 'en-US' ? $i18n.t('English') : 'Português (Brasil)'}</span>
+						<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showLanguageDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
+					</button>
+					{#if showLanguageDropdown}
+						<div class="absolute right-0 top-full z-50 mt-1.5 w-44 rounded-lg border border-gray-200 bg-white p-1 text-sm shadow-md dark:border-gray-800 dark:bg-gray-850">
+							{#each [{ id: 'pt-BR', label: 'Português (Brasil)' }, { id: 'en-US', label: $i18n.t('English') }] as language}
+								<button type="button" class="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800" on:click={() => selectLanguage(language.id as 'pt-BR' | 'en-US')}>
+									<span>{language.label}</span>{#if selectedLanguage === language.id}<CheckCircle className="size-4" strokeWidth="1.7" />{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			</div>
+
 			<div class="mt-2">
 				<div class=" py-0.5 flex w-full justify-between">
 					<div id="widescreen-mode-label" class=" self-center text-sm">
@@ -278,26 +324,8 @@
 
 			<div>
 				<div class=" py-0.5 flex w-full justify-between">
-					<div id="always-expand-label" class=" self-center text-sm">
-						{$i18n.t('Always Expand Details')}
-					</div>
-
-					<div class="flex items-center gap-2 p-1">
-						<Switch
-							ariaLabelledbyId="always-expand-label"
-							bind:state={expandDetails}
-							on:change={() => {
-								saveSettings({ expandDetails });
-							}}
-						/>
-					</div>
-				</div>
-			</div>
-
-			<div>
-				<div class=" py-0.5 flex w-full justify-between">
 					<div id="stream-response-label" class=" self-center text-sm">
-						{$i18n.t('Resposta em transmissão')}
+						{$i18n.t('Stream response')}
 					</div>
 
 					<div class="flex items-center gap-2 p-1">

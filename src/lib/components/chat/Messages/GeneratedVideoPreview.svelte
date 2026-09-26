@@ -1,5 +1,7 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { getContext, onDestroy } from 'svelte';
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 	import XMark from '$lib/components/icons/XMark.svelte';
 
 	export let show = false;
@@ -77,17 +79,17 @@
 		class="modal fixed inset-0 z-9999 flex h-[100dvh] w-full items-center justify-center overflow-hidden bg-black text-white"
 		role="dialog"
 		aria-modal="true"
-		aria-label="Visualização do vídeo"
+		aria-label={$i18n.t('Video preview')}
 	>
 		<div class="absolute inset-x-0 top-0 z-20 flex items-center justify-between">
-			<button type="button" class="p-5 text-white" aria-label="Fechar" title="Fechar" on:click={close}>
+			<button type="button" class="p-5 text-white" aria-label={$i18n.t('Close')} title={$i18n.t('Close')} on:click={close}>
 				<XMark className="size-6" />
 			</button>
 			<button
 				type="button"
 				class="p-5 text-white"
-				aria-label="Baixar"
-				title="Baixar"
+				aria-label={$i18n.t('Download')}
+				title={$i18n.t('Download')}
 				on:click={() => onDownload()}
 			>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-6" aria-hidden="true">
@@ -123,7 +125,7 @@
 			></video>
 
 			<div class="absolute inset-x-1 bottom-1 flex h-11 items-center gap-2.5 px-3">
-				<button type="button" class="grid size-8 shrink-0 place-items-center p-0 text-white drop-shadow-md" aria-label={playing ? 'Pausar' : 'Reproduzir'} title={playing ? 'Pausar' : 'Reproduzir'} on:click={togglePlayback}>
+				<button type="button" class="grid size-8 shrink-0 place-items-center p-0 text-white drop-shadow-md" aria-label={$i18n.t(playing ? 'Pause' : 'Play')} title={$i18n.t(playing ? 'Pause' : 'Play')} on:click={togglePlayback}>
 					{#if playing}
 						<svg viewBox="0 0 24 24" fill="currentColor" class="block size-5" aria-hidden="true"><rect x="6.5" y="5" width="4.25" height="14" rx="0.8" /><rect x="13.25" y="5" width="4.25" height="14" rx="0.8" /></svg>
 					{:else}
@@ -131,9 +133,9 @@
 					{/if}
 				</button>
 				<span class="w-[2.3rem] shrink-0 text-[0.6875rem] tabular-nums drop-shadow-md">{formatTime(currentTime)}</span>
-				<input type="range" min="0" max="100" step="0.1" value={progress} aria-label="Posição da reprodução" class="preview-progress min-w-0 flex-1 cursor-pointer" style="--preview-progress: {progress}%" on:input={seek} />
+				<input type="range" min="0" max="100" step="0.1" value={progress} aria-label={$i18n.t('Playback position')} class="preview-progress min-w-0 flex-1 cursor-pointer" style="--preview-progress: {progress}%" on:input={seek} />
 				<span class="w-[2.3rem] shrink-0 text-right text-[0.6875rem] tabular-nums drop-shadow-md">{formatTime(duration)}</span>
-				<button type="button" class="grid size-8 place-items-center text-white drop-shadow-md" aria-label={muted ? 'Desilenciar' : 'Silenciar'} title={muted ? 'Desilenciar' : 'Silenciar'} on:click={toggleMuted}>
+				<button type="button" class="grid size-8 place-items-center text-white drop-shadow-md" aria-label={$i18n.t(muted ? 'Unmute' : 'Mute')} title={$i18n.t(muted ? 'Unmute' : 'Mute')} on:click={toggleMuted}>
 					{#if muted}
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-[1.05rem]" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5 6.8 8.5H4.5v7h2.3L11 19V5Zm5.2 5.2 4 4m0-4-4 4" /></svg>
 					{:else}

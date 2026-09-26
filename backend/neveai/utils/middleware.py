@@ -2789,7 +2789,7 @@ async def chat_video_generation_handler(
     )
     video_features = extra_params.get("__features__") or {}
     requested_resolution = str(
-        video_features.get("video_generation_resolution") or "480p"
+        video_features.get("video_generation_resolution") or "384p"
     )
     resolution = (
         requested_resolution
@@ -6617,7 +6617,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         # rebuilt the payload. Video owns the request and is mutually exclusive.
         features["video_generation"] = True
         features["video_generation_resolution"] = submitted_features.get(
-            "video_generation_resolution", "480p"
+            "video_generation_resolution", "384p"
         )
         features["video_generation_duration"] = submitted_features.get(
             "video_generation_duration", "5s"

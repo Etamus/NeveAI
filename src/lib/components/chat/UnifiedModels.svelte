@@ -30,7 +30,8 @@
 	import { marked } from 'marked';
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
-	const i18n = getContext('i18n');
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 
 	import { config, models as _models, settings, user, showSettingsModelId } from '$lib/stores';
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
@@ -893,19 +894,19 @@
 			? `height: ${modelListMaxHeight}; max-height: ${modelListMaxHeight}; scrollbar-gutter: stable;`
 			: `max-height: ${modelListMaxHeight}; scrollbar-gutter: stable;`;
 	$: modelEmptyTitle = localAccessError
-		? 'Não foi possível acessar modelos locais'
+		? $i18n.t('Could not access local models')
 		: llamacppStatus && !llamacppStatus.server_binary_exists
-			? 'llama.cpp não encontrado'
+			? $i18n.t('llama.cpp not found')
 			: searchValue
-				? 'Nenhum modelo encontrado'
-				: 'Nenhum modelo instalado';
+				? $i18n.t('No models found')
+				: $i18n.t('No models installed');
 	$: modelEmptyDescription = localAccessError
-		? 'Verifique se o backend está em execução e tente reabrir esta janela.'
+		? $i18n.t('Check that the backend is running and reopen this window.')
 		: llamacppStatus && !llamacppStatus.server_binary_exists
-			? 'Execute o instalador para baixar o llama.cpp antes de carregar modelos locais.'
+			? $i18n.t('Run the installer to download llama.cpp before loading local models.')
 			: searchValue
-				? 'Tente ajustar sua pesquisa para encontrar o modelo que está procurando.'
-				: 'Clique em "Baixar modelos" para instalar um modelo ou coloque arquivos .gguf na pasta models.';
+				? $i18n.t('Adjust your search to find the model you are looking for.')
+				: $i18n.t('Click "Download models" to install one, or place .gguf files in the models folder.');
 	$: if (hasHighlightedLoadedModel && searchValue) {
 		searchValue = '';
 	}
@@ -1227,7 +1228,10 @@
 				getContextShiftForLoad()
 			);
 			markLocalModelLoaded(model, result, mmprojFile);
-			localSuccess = `${model.filename} carregado! (visão: ${mmprojFile})`;
+			localSuccess = $i18n.t('{{name}} loaded! (vision: {{file}})', {
+				name: model.filename,
+				file: mmprojFile
+			});
 			completed = true;
 			await refreshUntilLocalActionSettles(model.filename);
 			void refreshGlobalModelsStore();
@@ -1566,7 +1570,7 @@
 		<div class="bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-xl mx-4 w-80 flex flex-col gap-3">
 
 			{#if loadModalStep === 'context'}
-				<p class="text-sm font-semibold text-gray-900 dark:text-white">Tamanho do Contexto</p>
+				<p class="text-sm font-semibold text-gray-900 dark:text-white">{$i18n.t('Context size')}</p>
 				<div class="flex flex-col gap-1.5 max-h-80 overflow-y-auto scrollbar-none">
 					{#each LOCAL_MODEL_CONTEXT_OPTIONS as sz}
 						<button
@@ -1575,7 +1579,7 @@
 						>
 							<span>{sz.toLocaleString()} tokens</span>
 							{#if sz === 8192}
-								<span class="text-[11px] opacity-60">Padrão</span>
+								<span class="text-[11px] opacity-60">{$i18n.t('Default')}</span>
 							{/if}
 						</button>
 					{/each}
@@ -1584,25 +1588,25 @@
 					<button
 						class="px-4 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
 						on:click={() => (loadModalModel = null)}
-					>Cancelar</button>
+					>{$i18n.t('Cancel')}</button>
 					<button
 						class="px-4 py-1.5 text-xs rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium"
 						on:click={confirmContextAndProceed}
-					>Confirmar</button>
+					>{$i18n.t('Confirm')}</button>
 				</div>
 
 			{:else if loadModalStep === 'vision'}
-				<p class="text-sm font-semibold text-gray-900 dark:text-white">Deseja carregar a visão?</p>
-				<p class="text-xs text-gray-500 dark:text-gray-400">O modelo será carregado com suporte a análise de imagens.</p>
+				<p class="text-sm font-semibold text-gray-900 dark:text-white">{$i18n.t('Load vision?')}</p>
+				<p class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('The model will load with image analysis support.')}</p>
 				<div class="flex justify-end gap-2 mt-1">
 					<button
 						class="px-4 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
 						on:click={handleVisionNo}
-					>Não</button>
+					>{$i18n.t('No')}</button>
 					<button
 						class="px-4 py-1.5 text-xs rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium"
 						on:click={handleVisionYes}
-					>Sim</button>
+					>{$i18n.t('Yes')}</button>
 				</div>
 
 			{/if}
@@ -1649,7 +1653,7 @@
 			<div class="rounded-xl border border-gray-200/70 dark:border-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
 				<div class="flex items-center justify-between gap-3">
 					<span class="font-medium text-gray-700 dark:text-gray-200">VRAM</span>
-					<span>Detectando...</span>
+					<span>{$i18n.t('Detectando...')}</span>
 				</div>
 				<div class="mt-2 h-2 rounded-full bg-gray-100 dark:bg-gray-800 overflow-hidden">
 					<div class="h-full w-1/4 rounded-full bg-gray-300 dark:bg-gray-700 animate-pulse"></div>
@@ -1674,14 +1678,14 @@
 
 				<div class="mt-1.5 flex items-center justify-between gap-3">
 					<span class="min-w-0 truncate">
-						Uso: {formatBytes(vramDisplayedUsedBytes)} / {formatBytes(vramInfo.total)}
+						{$i18n.t('Uso:')} {formatBytes(vramDisplayedUsedBytes)} / {formatBytes(vramInfo.total)}
 					</span>
 					{#if vramPreviewModel && vramProjectedOffloadBytes > 0}
 						<span class="shrink-0 text-red-600 dark:text-red-300">RAM: {formatBytes(vramProjectedOffloadBytes)}</span>
 					{:else if loadedModelHasOffload}
-						<span class="shrink-0 text-red-600 dark:text-red-300">RAM: uso parcial</span>
+						<span class="shrink-0 text-red-600 dark:text-red-300">{$i18n.t('RAM: uso parcial')}</span>
 					{:else}
-						<span class="shrink-0">Livre: {formatBytes(vramDisplayedFreeBytes)}</span>
+						<span class="shrink-0">{$i18n.t('Livre:')} {formatBytes(vramDisplayedFreeBytes)}</span>
 					{/if}
 				</div>
 			</div>
@@ -1691,7 +1695,7 @@
 					<span class="font-medium text-gray-700 dark:text-gray-200">VRAM</span>
 				</div>
 				<div class="mt-1">
-					Use modelos CPU ou instale drivers compatíveis.
+					{$i18n.t('Use CPU models or install compatible drivers.')}
 				</div>
 			</div>
 		{/if}
@@ -1774,9 +1778,9 @@
 									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">DE: {getSpeculativeChipLabel(gm.speculative_decoding)}</span>
 								{/if}
 								{#if gm?.mmproj_filename}
-									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Visão: Sim</span>
+									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">{$i18n.t('Vision: Yes')}</span>
 								{:else}
-									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">Visão: Não</span>
+									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">{$i18n.t('Vision: No')}</span>
 								{/if}
 							{:else}
 								<span>{gm.file_size_human}</span>
@@ -1878,7 +1882,7 @@
 			<!-- Header -->
 			<div class="flex items-center justify-between px-4 pt-4 pb-2 shrink-0">
 				<div class="flex items-center gap-2 text-xl font-medium px-0.5">
-					<span>Modelos</span>
+					<span>{$i18n.t('Models')}</span>
 				</div>
 
 				<div class="flex items-center gap-1.5">
