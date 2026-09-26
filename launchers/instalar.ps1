@@ -86,10 +86,15 @@ $LOG_DIR  = Join-Path $ROOT 'logs'
 if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
 $LOG = Join-Path $LOG_DIR 'install.log'
 $STATE_FILE = Join-Path $LOG_DIR 'install-state.txt'
-$INSTALLER_REVISION = '2026-09-25-update-validation-v2'
-'' | Set-Content $LOG
+$INSTALLER_REVISION = '2026-09-25-resumable-install-v1'
+$PREVIOUS_INSTALL_STATE = if (Test-Path -LiteralPath $STATE_FILE) {
+    ([string](Get-Content -LiteralPath $STATE_FILE -Raw -EA SilentlyContinue)).Trim()
+} else { 'pending' }
+if (-not (Test-Path -LiteralPath $STATE_FILE)) {
+    [System.IO.File]::WriteAllText($STATE_FILE, 'pending', [System.Text.UTF8Encoding]::new($false))
+}
+Add-Content -LiteralPath $LOG -Value ("`r`n[INSTALLER] nova sessão {0}; estado anterior={1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $PREVIOUS_INSTALL_STATE) -Encoding UTF8
 Add-Content -LiteralPath $LOG -Value ("[INSTALLER] revision={0}; script={1}; root={2}" -f $INSTALLER_REVISION, $SCRIPT_PATH, $ROOT) -Encoding UTF8
-[System.IO.File]::WriteAllText($STATE_FILE, 'idle', [System.Text.UTF8Encoding]::new($false))
 
 # Logo (favicon do projeto)
 $LOGO_PATH = Join-Path $ROOT 'static\favicon.png'
@@ -493,7 +498,8 @@ function Restore-InstallSelectionView {
     $ctl.BtnCancel.Content = 'Cancelar'
     $ctl.BtnPrimary.Visibility = 'Visible'
     $ctl.BtnPrimary.IsEnabled = $true
-    $ctl.BtnPrimary.Content = 'Instalar'
+    $currentState = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -EA SilentlyContinue)).Trim()
+    $ctl.BtnPrimary.Content = if ($currentState -in @('done', 'idle', 'pending')) { 'Instalar' } else { 'Retomar' }
     $ctl.BtnPrimary.Tag = $null
     $ctl.Progress.Value = 0
     $ctl.LblProgressTxt.Text = '0%'
@@ -815,6 +821,9 @@ $ctl.CmbBackend.SelectedIndex = $detected.Backend
 $ctl.CmbVram.SelectedIndex    = 0
 $ctl.ChkInstallPython.IsChecked = (-not $pyOk)
 $ctl.ChkDesktopShortcut.IsChecked = $true
+if ($PREVIOUS_INSTALL_STATE -notin @('done', 'idle', 'pending')) {
+    $ctl.BtnPrimary.Content = 'Retomar'
+}
 
 # Se faltar Python, o instalador ja deixa a instalacao automatica marcada.
 # Node.js pode ser baixado em modo portatil pelo instalador.
@@ -903,7 +912,8 @@ $ctl.BtnPrimary.Add_Click({
         $ctl.InstallPanel.Visibility = 'Collapsed'
         $ctl.ConfigPanel.Visibility = 'Visible'
         $ctl.BtnCancel.Visibility = 'Collapsed'
-        $ctl.BtnPrimary.Content = 'Instalar'
+        $currentState = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -EA SilentlyContinue)).Trim()
+        $ctl.BtnPrimary.Content = if ($currentState -in @('done', 'idle', 'pending')) { 'Instalar' } else { 'Retomar' }
         $ctl.BtnPrimary.Tag = $null
         $ctl.Progress.Value = 0
         $window.Tag = 'idle'
@@ -948,6 +958,7 @@ $ctl.BtnPrimary.Add_Click({
         default { @{ torchIndex='https://download.pytorch.org/whl/cpu'; llamaAsset='cpu'; cudaVer='CPU'; useOnnxGpu=$false; vendor='CPU' } }
     }
 
+    $stateBeforeAttempt = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -EA SilentlyContinue)).Trim()
     # Trocar para a tela de instalacao
     $window.Tag = 'installing'
     $script:InstallControl.CancelRequested = $false
@@ -972,14 +983,16 @@ $ctl.BtnPrimary.Add_Click({
             $torchOk = ($LASTEXITCODE -eq 0)
         } catch { $torchOk = $false }
     }
-    $llamaOk    = (Get-ChildItem (Join-Path $ROOT 'llamacpp-server\bin') -Filter '*.exe' -EA SilentlyContinue | Measure-Object).Count -gt 0
-    $nodeModsOk = Test-Path (Join-Path $ROOT 'node_modules')
-    $frontendOk = Test-Path (Join-Path $BACKEND 'neveai\frontend\index.html')
+    $llamaOk    = Test-Path -LiteralPath (Join-Path $ROOT 'llamacpp-server\bin\llama-server.exe')
+    $nodeModsOk = Test-Path -LiteralPath (Join-Path $ROOT 'node_modules\vite\bin\vite.js')
+    $officeCliOk = Test-Path -LiteralPath (Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe')
+    $frontendIndex = Join-Path $BACKEND 'neveai\frontend\index.html'
+    $frontendOk = (Test-Path -LiteralPath $frontendIndex) -and (Get-Item -LiteralPath $frontendIndex).Length -gt 0
     $envOk      = Test-Path (Join-Path $ROOT '.env')
     $python311Target = Join-Path $env:LocalAppData 'Programs\Python\Python311\python.exe'
     $needsPython311Install = $installPython311 -and -not (Test-PythonLaunch $python311Target)
 
-    if ($venvOk -and $torchOk -and $llamaOk -and $nodeModsOk -and $frontendOk -and $envOk -and -not $needsPython311Install) {
+    if ($stateBeforeAttempt -in @('done', 'idle') -and $venvOk -and $torchOk -and $llamaOk -and $nodeModsOk -and $officeCliOk -and $frontendOk -and $envOk -and -not $needsPython311Install) {
         $ctl.LogBox.AppendText("[OK] Tudo já está instalado. Nada a fazer.`r`n")
         if ($createDesktopShortcut) {
             $shortcutPath = New-NeveDesktopShortcut $ROOT $LOG
@@ -1199,6 +1212,57 @@ $ctl.BtnPrimary.Add_Click({
         }
         function Run([string]$exe, [string[]]$argv, [string]$desc, [int]$timeoutSeconds = 3600) {
             return Run-NoPipe $exe $argv $desc
+        }
+        function Run-LoggedBuild([string]$exe, [string[]]$argv) {
+            Test-InstallCancelled
+            $buildLog = Join-Path (Split-Path -Parent $LOG) 'frontend-build.log'
+            $psi = New-Object System.Diagnostics.ProcessStartInfo
+            $psi.FileName = $exe
+            $psi.Arguments = (($argv | ForEach-Object { ConvertTo-ProcessArgument $_ }) -join ' ')
+            $psi.WorkingDirectory = $ROOT
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            if ($script:FrontendNodeDir) {
+                $psi.EnvironmentVariables['PATH'] = "$script:FrontendNodeDir;$($psi.EnvironmentVariables['PATH'])"
+            }
+            Log '==> npm run build'
+            Log "CMD: $exe $($argv -join ' ')"
+            $process = New-Object System.Diagnostics.Process
+            $process.StartInfo = $psi
+            try {
+                [void]$process.Start()
+                if ($INSTALL_CONTROL -and $INSTALL_CONTROL.Processes) { [void]$INSTALL_CONTROL.Processes.Add($process) }
+                $stdout = $process.StandardOutput.ReadToEndAsync()
+                $stderr = $process.StandardError.ReadToEndAsync()
+                $startedAt = Get-Date
+                $lastHeartbeat = $startedAt
+                while (-not $process.WaitForExit(1000)) {
+                    if ($INSTALL_CONTROL -and $INSTALL_CONTROL.CancelRequested) {
+                        Stop-ProcessTree ([int]$process.Id)
+                        throw [System.OperationCanceledException]::new('Instalação cancelada pelo usuário.')
+                    }
+                    $now = Get-Date
+                    if (($now - $lastHeartbeat).TotalSeconds -ge 10) {
+                        Log ("... npm run build ainda em andamento ({0}s)." -f [math]::Floor(($now - $startedAt).TotalSeconds))
+                        $lastHeartbeat = $now
+                    }
+                }
+                $process.WaitForExit()
+                $text = $stdout.Result + "`r`n" + $stderr.Result
+                [System.IO.File]::AppendAllText($buildLog, "`r`n=== $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') exit $($process.ExitCode) ===`r`n$text", [System.Text.UTF8Encoding]::new($false))
+                Log "[exit $($process.ExitCode)] npm run build; saída em logs\frontend-build.log"
+                if ($process.ExitCode -ne 0) {
+                    foreach ($line in @($text -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 20)) {
+                        Log "    $line" 'warn'
+                    }
+                }
+                return $process.ExitCode
+            } finally {
+                try { if ($INSTALL_CONTROL -and $INSTALL_CONTROL.Processes) { [void]$INSTALL_CONTROL.Processes.Remove($process) } } catch {}
+                try { $process.Dispose() } catch {}
+            }
         }
         function Save-RemoteFile([string]$Url, [string]$Destination, [int]$TimeoutSec = 300) {
             Test-InstallCancelled
@@ -1833,7 +1897,7 @@ USER_AGENT=NeveAI
             $env:PIP_PROGRESS_BAR = 'off'
             $env:PYTHONUNBUFFERED = '1'
             $pipLog = Join-Path (Split-Path -Parent $LOG) 'pip-install.log'
-            try { [System.IO.File]::WriteAllText($pipLog, '', [System.Text.UTF8Encoding]::new($false)) } catch {}
+            try { [System.IO.File]::AppendAllText($pipLog, "`r`n=== tentativa $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ===`r`n", [System.Text.UTF8Encoding]::new($false)) } catch {}
             Log "[OK] Log detalhado do pip: $pipLog"
             $pipCommon = @('--isolated','--log',$pipLog)
             $pipInstallBase = @('install','--disable-pip-version-check','--no-input','--prefer-binary','--progress-bar','off','--retries','5','--timeout','60')
@@ -2215,9 +2279,19 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
 
             $packageLockPath = Join-Path $ROOT 'package-lock.json'
             $nodeModulesPath = Join-Path $ROOT 'node_modules'
-            if ((Test-Path -LiteralPath $packageLockPath) -and -not (Test-Path -LiteralPath $nodeModulesPath)) {
+            $npmReadyPath = Join-Path (Split-Path -Parent $LOG) 'npm-dependencies.sha256'
+            $lockHash = if (Test-Path -LiteralPath $packageLockPath) { (Get-FileHash -LiteralPath $packageLockPath -Algorithm SHA256).Hash } else { '' }
+            $installedLockHash = if (Test-Path -LiteralPath $npmReadyPath) { ([string](Get-Content -LiteralPath $npmReadyPath -Raw -EA SilentlyContinue)).Trim() } else { '' }
+            if ($lockHash -and ($installedLockHash -ne $lockHash -or -not (Test-Path -LiteralPath (Join-Path $nodeModulesPath 'vite\bin\vite.js')))) {
                 $rc = Run $NPM_EXE @('ci','--no-audit','--no-fund','--prefer-offline','--progress=false') 'npm ci'
+                if ($rc -ne 0) {
+                    Log '[!] npm ci falhou; tentando novamente com preferência pela rede.' 'warn'
+                    Start-Sleep -Seconds 3
+                    $rc = Run $NPM_EXE @('ci','--no-audit','--no-fund','--prefer-online','--progress=false') 'npm ci de recuperação'
+                }
                 if ($rc -ne 0) { throw "Falha em npm ci (exit $rc)" }
+            } elseif ($lockHash) {
+                Log '[OK] Pacotes npm íntegros para o package-lock.json atual; reutilizando cache.'
             } else {
                 $rc = Run $NPM_EXE @('install','--no-audit','--no-fund','--prefer-offline','--progress=false') 'npm install incremental'
                 if ($rc -ne 0) { throw "Falha em npm install (exit $rc)" }
@@ -2244,23 +2318,55 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 if ($null -eq $previousOfficeCliNoAutoResident) { Remove-Item Env:\OFFICECLI_NO_AUTO_RESIDENT -ErrorAction SilentlyContinue } else { $env:OFFICECLI_NO_AUTO_RESIDENT = $previousOfficeCliNoAutoResident }
             }
             Log "[OK] OfficeCLI pronto para gerar DOCX, XLSX e PPTX"
+            if ($lockHash) { [System.IO.File]::WriteAllText($npmReadyPath, $lockHash, [System.Text.UTF8Encoding]::new($false)) }
 
             # ---- 11. npm run build
             P 92 'Compilando frontend (~2-5 min)'
-            $rc = Run $NPM_EXE @('run','build','--','--logLevel','error') 'npm run build'
-            if ($rc -ne 0) { throw "Falha no build do frontend (exit $rc)" }
+            Set-InstallState 'building_frontend'
+            $rc = Run-LoggedBuild $NPM_EXE @('run','build','--','--logLevel','error')
+            if ($rc -ne 0) {
+                Log '[!] Primeiro build falhou. Aguardando arquivos liberarem e tentando novamente.' 'warn'
+                Start-Sleep -Seconds 3
+                $rc = Run-LoggedBuild $NPM_EXE @('run','build','--','--logLevel','error')
+            }
+            if ($rc -ne 0 -and $lockHash) {
+                Log '[!] Build falhou duas vezes. Reinstalando dependências npm pelo lockfile antes da última tentativa.' 'warn'
+                Remove-Item -LiteralPath $npmReadyPath -Force -EA SilentlyContinue
+                $npmRc = Run $NPM_EXE @('ci','--no-audit','--no-fund','--prefer-online','--progress=false') 'npm ci de recuperação'
+                if ($npmRc -ne 0) { throw "Falha no build e na recuperação npm ci (exit $npmRc). Consulte logs\frontend-build.log." }
+                if (-not (Test-Path -LiteralPath $officeCli)) {
+                    $officeRc = Run $NPM_EXE @('exec','--','officecli','--version') 'preparar OfficeCLI após recuperação npm'
+                    if ($officeRc -ne 0 -or -not (Test-Path -LiteralPath $officeCli)) {
+                        throw 'OfficeCLI ausente após recuperação npm. Consulte logs\install.log.'
+                    }
+                }
+                $officeRc = Run $officeCli @('--version') 'revalidar OfficeCLI após recuperação npm'
+                if ($officeRc -ne 0) { throw "OfficeCLI falhou após recuperação npm (exit $officeRc)." }
+                $rc = Run-LoggedBuild $NPM_EXE @('run','build','--','--logLevel','error')
+                if ($rc -eq 0) { [System.IO.File]::WriteAllText($npmReadyPath, $lockHash, [System.Text.UTF8Encoding]::new($false)) }
+            }
+            if ($rc -ne 0) { throw "Falha no build do frontend (exit $rc). Consulte logs\frontend-build.log para a causa completa." }
             Log "[OK] Frontend compilado"
 
             # ---- 12. Deploy frontend para backend\neveai\frontend
             P 97 'Implantando frontend no backend'
+            Set-InstallState 'publishing_frontend'
             $frontDir = Join-Path $BACKEND 'neveai\frontend'
             if (Test-Path $frontDir) { Remove-Item $frontDir -Recurse -Force }
             New-Item $frontDir -ItemType Directory -Force | Out-Null
             Copy-Item (Join-Path $ROOT 'build\*') $frontDir -Recurse -Force
+            if (-not (Test-Path -LiteralPath (Join-Path $frontDir 'index.html'))) {
+                throw 'O frontend foi compilado, mas index.html não foi publicado. Execute instalar.bat novamente.'
+            }
             Log "[OK] Frontend copiado para backend\neveai\frontend"
 
             # ---- Done
-            Set-InstallState 'done'
+            $finalInstallState = if ($pythonDependencyFailures.Count -eq 0) { 'done' } else { 'incomplete' }
+            Set-InstallState $finalInstallState
+            $recordedInstallState = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -ErrorAction SilentlyContinue)).Trim()
+            if ($recordedInstallState -ne $finalInstallState) {
+                throw 'Não foi possível confirmar o estado final da instalação. Verifique o acesso à pasta logs e retome pelo instalar.bat.'
+            }
             P 100 'Concluído'
             if ($createDesktopShortcut) { [void](New-NeveDesktopShortcut $ROOT) }
 
@@ -5982,7 +6088,7 @@ function Update-HubActionButtonStyles {
 		foreach ($button in $panel.Children) {
 			if (-not ($button -is [System.Windows.Controls.Button])) { continue }
 			$label = [string]$button.Content
-			$targetStyle = if ($label -in @('Instalar', 'Atualizar', 'Publicar')) {
+			$targetStyle = if ($label -in @('Instalar', 'Retomar', 'Atualizar', 'Publicar')) {
 				$accentStyle
 			} elseif ($label -in @('Cancelar', 'Concluir', 'Fechar')) {
 				$completionStyle
@@ -6043,10 +6149,14 @@ function Test-HubActivePageBusy {
 }
 
 function Test-HubProjectInstalled {
+    $state = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -ErrorAction SilentlyContinue)).Trim()
+    if ($state -notin @('done', 'idle')) { return $false }
     $requiredPaths = @(
         (Join-Path $ROOT '.env'),
         (Join-Path $ROOT 'backend\neveai\venv\Scripts\python.exe'),
-        (Join-Path $ROOT 'node_modules'),
+        (Join-Path $ROOT 'llamacpp-server\bin\llama-server.exe'),
+        (Join-Path $ROOT 'node_modules\vite\bin\vite.js'),
+        (Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe'),
         (Join-Path $ROOT 'backend\neveai\frontend\index.html')
     )
     foreach ($path in $requiredPaths) {

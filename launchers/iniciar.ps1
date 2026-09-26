@@ -15,6 +15,7 @@ $WindowIconPath = Join-Path $Root 'static\static\faviconbar.ico'
 $LogDir = Join-Path $Root 'logs'
 $LogPath = Join-Path $LogDir 'start-launcher.log'
 $VersionPath = Join-Path $Root 'version.txt'
+$InstallStatePath = Join-Path $LogDir 'install-state.txt'
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
@@ -225,6 +226,40 @@ $progressBar = $window.FindName('Progress')
 
 if (Test-Path -LiteralPath $VersionPath) {
 	$versionText.Text = (Get-Content -LiteralPath $VersionPath -Raw).Trim()
+}
+
+function Test-NeveInstallReady {
+	$state = if (Test-Path -LiteralPath $InstallStatePath) {
+		([string](Get-Content -LiteralPath $InstallStatePath -Raw -ErrorAction SilentlyContinue)).Trim()
+	} else { '' }
+	if ($state -notin @('done', 'idle')) { return $false }
+	$required = @(
+		(Join-Path $Root '.env'),
+		$VenvPy,
+		(Join-Path $Root 'llamacpp-server\bin\llama-server.exe'),
+		(Join-Path $Root 'node_modules\vite\bin\vite.js'),
+		(Join-Path $Root 'node_modules\@officecli\officecli\vendor\officecli.exe'),
+		(Join-Path $Backend 'neveai\frontend\index.html'),
+		(Join-Path $Backend 'neveai\models\users.py'),
+		$WindowScript
+	)
+	foreach ($path in $required) {
+		if (-not (Test-Path -LiteralPath $path)) { return $false }
+	}
+	return (Get-Item -LiteralPath (Join-Path $Backend 'neveai\frontend\index.html')).Length -gt 0
+}
+
+if (-not $ValidateOnly -and -not (Test-NeveInstallReady)) {
+	$installer = Join-Path $LauncherDir 'instalar.vbs'
+	if (-not (Test-Path -LiteralPath $installer)) {
+		Write-StartLog '[FATAL] instalação incompleta e instalar.vbs não encontrado'
+		exit 1
+	}
+	Write-StartLog 'instalação ausente ou incompleta; abrindo instalar.bat pelo launcher'
+	Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') `
+		-ArgumentList @("`"$installer`"", '--page', 'install') `
+		-WorkingDirectory $Root -WindowStyle Hidden | Out-Null
+	exit 0
 }
 
 if (Test-Path -LiteralPath $WindowIconPath) {

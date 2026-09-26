@@ -1695,7 +1695,7 @@ async def generate_chat_completion(
         )
         raise HTTPException(
             status_code=409,
-            detail=f"Model '{model_id}' is not loaded. Please load it first via the model selector.",
+            detail=f"O modelo '{model_id}' não está carregado. Carregue-o pelo seletor de modelos antes de enviar a mensagem.",
         )
     else:
         loaded_info = model_manager._loaded.get(model_id)
