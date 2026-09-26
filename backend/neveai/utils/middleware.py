@@ -2340,6 +2340,7 @@ async def chat_stable_diffusion_handler(
         normalize_qwen_image_resolution,
         quality_image_dimensions,
         qwen_image_dimensions,
+        QWEN_IMAGE_21_CFG_SCALE,
         QWEN_IMAGE_21_STEPS,
     )
 
@@ -2428,7 +2429,7 @@ async def chat_stable_diffusion_handler(
         elif quality in {"qwen_image_2_1", "qwen_image_2s"}:
             width, height = qwen_image_dimensions(resolution)
             steps = 6 if quality == "qwen_image_2s" else QWEN_IMAGE_21_STEPS
-            guidance_scale = 1.0 if quality == "qwen_image_2s" else 6.0
+            guidance_scale = 1.0 if quality == "qwen_image_2s" else QWEN_IMAGE_21_CFG_SCALE
 
         # Put LLM in standby
         llm_standby_info = None

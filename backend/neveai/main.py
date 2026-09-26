@@ -648,6 +648,11 @@ async def lifespan(app: FastAPI):
     app.state.instance_id = INSTANCE_ID
     start_logger()
 
+    if app.state.config.RAG_EMBEDDING_ENGINE == "":
+        app.state.embedding_init_task = asyncio.create_task(
+            _initialize_local_embedding_model(app)
+        )
+
     if RESET_CONFIG_ON_START:
         reset_config()
 
@@ -1162,14 +1167,91 @@ app.state.EMBEDDING_FUNCTION = None
 app.state.RERANKING_FUNCTION = None
 app.state.ef = None
 app.state.rf = None
+app.state.embedding_init_task = None
 
 app.state.YOUTUBE_LOADER_TRANSLATION = None
 
 
-try:
-    app.state.ef = get_ef(
-        app.state.config.RAG_EMBEDDING_ENGINE, app.state.config.RAG_EMBEDDING_MODEL
+def _build_embedding_function(app: FastAPI, embedding_function=None):
+    engine = app.state.config.RAG_EMBEDDING_ENGINE
+    return get_embedding_function(
+        engine,
+        app.state.config.RAG_EMBEDDING_MODEL,
+        embedding_function=embedding_function,
+        url=(
+            app.state.config.RAG_OPENAI_API_BASE_URL
+            if engine == "openai"
+            else app.state.config.RAG_OLLAMA_BASE_URL
+            if engine == "ollama"
+            else app.state.config.RAG_AZURE_OPENAI_BASE_URL
+            if engine == "azure_openai"
+            else ""
+        ),
+        key=(
+            app.state.config.RAG_OPENAI_API_KEY
+            if engine == "openai"
+            else app.state.config.RAG_OLLAMA_API_KEY
+            if engine == "ollama"
+            else app.state.config.RAG_AZURE_OPENAI_API_KEY
+            if engine == "azure_openai"
+            else ""
+        ),
+        embedding_batch_size=app.state.config.RAG_EMBEDDING_BATCH_SIZE,
+        azure_api_version=(
+            app.state.config.RAG_AZURE_OPENAI_API_VERSION
+            if engine == "azure_openai"
+            else None
+        ),
+        enable_async=app.state.config.ENABLE_ASYNC_EMBEDDING,
+        concurrent_requests=app.state.config.RAG_EMBEDDING_CONCURRENT_REQUESTS,
     )
+
+
+async def _deferred_embedding_function(query, prefix=None, user=None):
+    task = app.state.embedding_init_task
+    if task is None or (
+        task.done()
+        and app.state.EMBEDDING_FUNCTION is _deferred_embedding_function
+    ):
+        task = asyncio.create_task(_initialize_local_embedding_model(app))
+        app.state.embedding_init_task = task
+    await asyncio.shield(task)
+    embedding_function = app.state.EMBEDDING_FUNCTION
+    if embedding_function is _deferred_embedding_function:
+        raise RuntimeError("O modelo local de embeddings nao pode ser carregado")
+    return await embedding_function(query, prefix=prefix, user=user)
+
+
+async def _initialize_local_embedding_model(app: FastAPI):
+    engine = app.state.config.RAG_EMBEDDING_ENGINE
+    model = app.state.config.RAG_EMBEDDING_MODEL
+    if engine != "":
+        return
+    try:
+        embedding_model = await asyncio.to_thread(get_ef, engine, model)
+        if model and embedding_model is None:
+            raise RuntimeError(f"Nao foi possivel carregar o modelo de embeddings {model}")
+        if (
+            app.state.config.RAG_EMBEDDING_ENGINE == engine
+            and app.state.config.RAG_EMBEDDING_MODEL == model
+            and app.state.EMBEDDING_FUNCTION is _deferred_embedding_function
+        ):
+            app.state.ef = embedding_model
+            app.state.EMBEDDING_FUNCTION = _build_embedding_function(
+                app, embedding_function=embedding_model
+            )
+            log.info("Modelo local de embeddings pronto em segundo plano")
+    except Exception as e:
+        log.error("Falha ao carregar o modelo local de embeddings: %s", e)
+
+
+if app.state.config.RAG_EMBEDDING_ENGINE == "":
+    app.state.EMBEDDING_FUNCTION = _deferred_embedding_function
+else:
+    app.state.EMBEDDING_FUNCTION = _build_embedding_function(app)
+
+
+try:
     if (
         app.state.config.ENABLE_RAG_HYBRID_SEARCH
         and not app.state.config.BYPASS_EMBEDDING_AND_RETRIEVAL
@@ -1181,52 +1263,8 @@ try:
             app.state.config.RAG_EXTERNAL_RERANKER_API_KEY,
             app.state.config.RAG_EXTERNAL_RERANKER_TIMEOUT,
         )
-    else:
-        app.state.rf = None
 except Exception as e:
-    log.error(f"Error updating models: {e}")
-    pass
-
-
-app.state.EMBEDDING_FUNCTION = get_embedding_function(
-    app.state.config.RAG_EMBEDDING_ENGINE,
-    app.state.config.RAG_EMBEDDING_MODEL,
-    embedding_function=app.state.ef,
-    url=(
-        app.state.config.RAG_OPENAI_API_BASE_URL
-        if app.state.config.RAG_EMBEDDING_ENGINE == "openai"
-        else (
-            app.state.config.RAG_OLLAMA_BASE_URL
-            if app.state.config.RAG_EMBEDDING_ENGINE == "ollama"
-            else (
-                app.state.config.RAG_AZURE_OPENAI_BASE_URL
-                if app.state.config.RAG_EMBEDDING_ENGINE == "azure_openai"
-                else ""
-            )
-        )
-    ),
-    key=(
-        app.state.config.RAG_OPENAI_API_KEY
-        if app.state.config.RAG_EMBEDDING_ENGINE == "openai"
-        else (
-            app.state.config.RAG_OLLAMA_API_KEY
-            if app.state.config.RAG_EMBEDDING_ENGINE == "ollama"
-            else (
-                app.state.config.RAG_AZURE_OPENAI_API_KEY
-                if app.state.config.RAG_EMBEDDING_ENGINE == "azure_openai"
-                else ""
-            )
-        )
-    ),
-    embedding_batch_size=app.state.config.RAG_EMBEDDING_BATCH_SIZE,
-    azure_api_version=(
-        app.state.config.RAG_AZURE_OPENAI_API_VERSION
-        if app.state.config.RAG_EMBEDDING_ENGINE == "azure_openai"
-        else None
-    ),
-    enable_async=app.state.config.ENABLE_ASYNC_EMBEDDING,
-    concurrent_requests=app.state.config.RAG_EMBEDDING_CONCURRENT_REQUESTS,
-)
+    log.error("Error updating reranking model: %s", e)
 
 app.state.RERANKING_FUNCTION = get_reranking_function(
     app.state.config.RAG_RERANKING_ENGINE,

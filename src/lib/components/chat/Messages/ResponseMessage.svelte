@@ -1253,20 +1253,6 @@
 							}}
 						/>
 					{/if}
-					{#if (isLastMessage || ($settings?.keepFollowUpPrompts ?? false)) && message.done && !readOnly && (message?.followUps ?? []).length > 0}
-						<div class="mt-2.5" in:fade={{ duration: 100 }}>
-							<FollowUps
-								followUps={message?.followUps}
-								onClick={(prompt) => {
-									if ($settings?.insertFollowUpPrompt ?? false) {
-										setInputText(prompt);
-									} else {
-										submitMessage(message?.id, prompt);
-									}
-								}}
-							/>
-						</div>
-					{/if}
 				{/if}
 			</div>
 		</div>

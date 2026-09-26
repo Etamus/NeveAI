@@ -8,7 +8,6 @@
 	import { getBackendConfig } from '$lib/apis';
 
 	import Models from './Settings/Models.svelte';
-	import Documents from './Settings/Documents.svelte';
 	import CodeExecution from './Settings/CodeExecution.svelte';
 	import StableDiffusion from './Settings/StableDiffusion.svelte';
 
@@ -24,7 +23,6 @@
 		const tabFromPath = pathParts[pathParts.length - 1];
 		selectedTab = [
 			'models',
-			'documents',
 			'code-execution',
 			'stable-diffusion'
 		].includes(tabFromPath)
@@ -144,7 +142,6 @@
 		<!-- {$i18n.t('General')} -->
 		<!-- {$i18n.t('Models')} -->
 		<!-- {$i18n.t('Evaluations')} -->
-		<!-- {$i18n.t('Documents')} -->
 		<!-- {$i18n.t('Web Search')} -->
 		<!-- {$i18n.t('Code Execution')} -->
 		<!-- {$i18n.t('Interface')} -->

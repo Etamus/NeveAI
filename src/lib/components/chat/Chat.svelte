@@ -1894,6 +1894,13 @@
 		stableDiffusionQuality = ['neve_image', 'neve_image_2', 'qwen_image_2_1', 'qwen_image_2s'].includes(savedImageQuality ?? '')
 			? (savedImageQuality as typeof stableDiffusionQuality)
 			: 'neve_image';
+		if (!localStorage.getItem('neveai.image2Mode')) {
+			if (stableDiffusionQuality === 'qwen_image_2s') {
+				localStorage.setItem('neveai.image2Mode', 'fast');
+			} else if (stableDiffusionQuality === 'qwen_image_2_1') {
+				localStorage.setItem('neveai.image2Mode', 'quality');
+			}
+		}
 		const previousImageStyle = localStorage.getItem('neveai.imageStyle');
 		const savedImageStyle = ({ analog: 'spontaneous', realistic_2: 'realistic', arcane_2: 'arcane' } as Record<string, string>)[previousImageStyle ?? ''] ?? previousImageStyle;
 		stableDiffusionStyle = ['realistic', 'spontaneous', 'fantasy', 'minimalist', 'polygonal', 'manga', 'comics', 'pixelated', 'arcane'].includes(
@@ -1901,7 +1908,10 @@
 		)
 			? (savedImageStyle as typeof stableDiffusionStyle)
 			: 'none';
-		const savedImageResolution = localStorage.getItem('neveai.imageResolution');
+		const savedImageResolution =
+			(stableDiffusionQuality === 'qwen_image_2_1' || stableDiffusionQuality === 'qwen_image_2s'
+				? localStorage.getItem(`neveai.imageResolution.${stableDiffusionQuality}`)
+				: null) ?? localStorage.getItem('neveai.imageResolution');
 		stableDiffusionResolution = ['1:1', '16:9', '9:16', '4:3', '3:4'].includes(savedImageResolution ?? '')
 			? (savedImageResolution as typeof stableDiffusionResolution)
 			: '1:1';

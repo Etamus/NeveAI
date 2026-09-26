@@ -845,11 +845,13 @@
 			modelsBelowLoadedCollapsed = true;
 			void refreshUnifiedModelData(false);
 			void refreshLocalActionsAfterOpen();
+			scheduleRealtimeRefresh();
 		} else if (closingModal) {
 			pinUnsettledUnloadsBeforeClose();
 			disableCollapseAnimation();
 			modelsBelowLoadedCollapsed = true;
 			selectedModelId = null;
+			scheduleRealtimeRefresh();
 		}
 	}
 	$: highlightedLoadedItem =
@@ -1383,7 +1385,11 @@
 		if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer);
 
 		const hasActiveAction = Object.keys(getStoreValue(localModelProcessingStore).actions).length > 0;
-		const delay = hasActiveAction ? 700 : show ? 1000 : 2500;
+		if (!show && !hasActiveAction) {
+			realtimeRefreshTimer = null;
+			return;
+		}
+		const delay = hasActiveAction ? 700 : 1000;
 		realtimeRefreshTimer = setTimeout(async () => {
 			realtimeRefreshTimer = null;
 			if (destroyed) return;
@@ -1513,15 +1519,18 @@
 			handleLocalModelRuntimeEvent(latestRuntimeEvent);
 		}
 
-		void (async () => {
-			await refreshUnifiedModelData(!preloadApplied);
-			await refreshLocalActionsAfterOpen();
-			scheduleRealtimeRefresh();
-		})();
+		if (show || Object.keys(getStoreValue(localModelProcessingStore).actions).length > 0) {
+			void (async () => {
+				await refreshUnifiedModelData(!preloadApplied);
+				await refreshLocalActionsAfterOpen();
+				scheduleRealtimeRefresh();
+			})();
+		}
 
 		const refreshOnFocus = () => {
 			if (destroyed) return;
-			void refreshUnifiedModelData(false);
+			const hasActiveAction = Object.keys(getStoreValue(localModelProcessingStore).actions).length > 0;
+			if (show || hasActiveAction) void refreshUnifiedModelData(false);
 			scheduleRealtimeRefresh();
 		};
 		const refreshOnVisibility = () => {

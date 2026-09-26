@@ -245,8 +245,10 @@ for repo, filename, subdir in items:
         if not 1 <= len(refs) + 1 <= 4:
             raise ValueError("Neve Image 2 Fast aceita no maximo tres imagens de referencia.")
         if refs:
+            from neveai.routers.stable_diffusion import _normalize_qwen_reference_tokens
+
+            prompt = _normalize_qwen_reference_tokens(prompt, len(refs))
             prompt = (
-                f"The {len(refs)} attached reference images are numbered in their original attachment order. "
                 "Follow the user's assignment of subject, pose, background and visual style to each numbered image exactly. "
                 "Never substitute a subject from an image assigned only as a style reference. "
                 f"User request: {prompt}"
@@ -378,7 +380,7 @@ for repo, filename, subdir in items:
                     width=width,
                     height=height,
                     steps=QWEN_IMAGE_21_STEPS,
-                    guidance_scale=6.0,
+                    guidance_scale=1.0,
                     init_image_references=references,
                     user_id=user_id,
                     progress_callback=progress,

@@ -105,7 +105,7 @@ QUALITY_IMAGE_RESOLUTIONS = {
     "4:3": (1152, 864),
     "3:4": (864, 1152),
 }
-QWEN_IMAGE_21_STEPS = 25
+QWEN_IMAGE_21_STEPS = 30
 QWEN_IMAGE_21_CFG_SCALE = 6.0
 QWEN_IMAGE_21_MAX_REFERENCES = 10
 QWEN_IMAGE_21_FULL_GPU_MIN_VRAM_MIB = 14 * 1024
@@ -459,6 +459,40 @@ def _looks_english(text: str) -> bool:
 
 def _normalize_image_prompt_text(prompt: str) -> str:
     return re.sub(r"\s+", " ", str(prompt or "")).strip()
+
+
+_QWEN_REFERENCE_GROUP_RE = re.compile(
+    r"(?<!<)\b(?:imagem|imagens|image|images|fotos?|pictures?|refer[eê]ncias?|references?)\s+"
+    r"((?:#?\s*\d+)(?:\s*(?:,|e|and|&)\s*#?\s*\d+)*)",
+    flags=re.IGNORECASE,
+)
+
+
+def _normalize_qwen_reference_tokens(prompt: str, reference_count: int) -> str:
+    """Map explicit PT-BR/English reference numbers to Qwen's native tokens."""
+    prompt = _normalize_image_prompt_text(prompt)
+    if not prompt or reference_count <= 0:
+        return prompt
+
+    def replace_group(match: re.Match[str]) -> str:
+        number_group = match.group(1)
+
+        def replace_number(number_match: re.Match[str]) -> str:
+            index = int(number_match.group(0))
+            return f"<image{index}>" if 1 <= index <= reference_count else number_match.group(0)
+
+        return re.sub(r"\d+", replace_number, number_group)
+
+    normalized = _QWEN_REFERENCE_GROUP_RE.sub(replace_group, prompt)
+    referenced = {
+        int(value)
+        for value in re.findall(r"<image(\d+)>", normalized, flags=re.IGNORECASE)
+        if 1 <= int(value) <= reference_count
+    }
+    missing = [f"<image{index}>" for index in range(1, reference_count + 1) if index not in referenced]
+    if missing:
+        normalized = f"Reference images in attachment order: {', '.join(missing)}. {normalized}"
+    return normalized
 
 
 def _short_log_prompt(prompt: str, limit: int = 500) -> str:
@@ -1486,7 +1520,7 @@ class _ZImageTurboPipeline:
             for reference_image in reference_images:
                 cmd.extend(["-r", str(reference_image.path)])
             if reference_images:
-                cmd.extend(["--ref-image-args", "preset=qwen,vlm_size=768"])
+                cmd.extend(["--ref-image-args", "preset=qwen"])
         elif init_image is not None:
             if self._edit_mode:
                 cmd.extend(["--ref-image", str(init_image.path)])

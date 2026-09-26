@@ -1,6 +1,6 @@
 import unittest
 
-from neveai.routers.image_fast_generation import _style_only_references
+from neveai.routers.image_fast_generation import NeveImage2SRuntime, _style_only_references
 
 
 class StyleReferenceTests(unittest.TestCase):
@@ -21,6 +21,20 @@ class StyleReferenceTests(unittest.TestCase):
 
     def test_subjects_without_style_remain_untouched(self):
         self.assertEqual(_style_only_references("Misture as imagens 1 e 2", 2), set())
+
+    def test_workflow_uses_native_reference_tokens_for_portuguese_prompt(self):
+        workflow = NeveImage2SRuntime.build_workflow(
+            "Use a imagem 1 como personagem e a imagem 2 como estilo",
+            1152,
+            1152,
+            ["first.png", "second.png"],
+            42,
+        )
+
+        prompt = workflow["5"]["inputs"]["prompt"]
+        self.assertIn("<image1>", prompt)
+        self.assertIn("<image2>", prompt)
+        self.assertIn("Use a <image1> como personagem", prompt)
 
 
 if __name__ == "__main__":

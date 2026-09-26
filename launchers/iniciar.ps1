@@ -232,24 +232,42 @@ function Test-NeveInstallReady {
 	$state = if (Test-Path -LiteralPath $InstallStatePath) {
 		([string](Get-Content -LiteralPath $InstallStatePath -Raw -ErrorAction SilentlyContinue)).Trim()
 	} else { '' }
-	if ($state -notin @('done', 'idle')) { return $false }
+	if ($state -notin @('done', 'idle')) {
+		Write-StartLog "instalação indisponível: estado '$state'"
+		return $false
+	}
+
+	# Node/Vite and OfficeCLI are installer/build tools. Their absence must not
+	# prevent an already published NeveAI runtime from starting.
 	$required = @(
 		(Join-Path $Root '.env'),
 		$VenvPy,
 		(Join-Path $Root 'llamacpp-server\bin\llama-server.exe'),
-		(Join-Path $Root 'node_modules\vite\bin\vite.js'),
-		(Join-Path $Root 'node_modules\@officecli\officecli\vendor\officecli.exe'),
 		(Join-Path $Backend 'neveai\frontend\index.html'),
 		(Join-Path $Backend 'neveai\models\users.py'),
 		$WindowScript
 	)
 	foreach ($path in $required) {
-		if (-not (Test-Path -LiteralPath $path)) { return $false }
+		if (-not (Test-Path -LiteralPath $path)) {
+			Write-StartLog "instalação indisponível: arquivo essencial ausente: $path"
+			return $false
+		}
 	}
-	return (Get-Item -LiteralPath (Join-Path $Backend 'neveai\frontend\index.html')).Length -gt 0
+	$frontendIndex = Join-Path $Backend 'neveai\frontend\index.html'
+	if ((Get-Item -LiteralPath $frontendIndex).Length -le 0) {
+		Write-StartLog "instalação indisponível: frontend publicado está vazio: $frontendIndex"
+		return $false
+	}
+	return $true
 }
 
-if (-not $ValidateOnly -and -not (Test-NeveInstallReady)) {
+$installReady = Test-NeveInstallReady
+if ($ValidateOnly) {
+	if ($installReady) { exit 0 }
+	exit 1
+}
+
+if (-not $installReady) {
 	$installer = Join-Path $LauncherDir 'instalar.vbs'
 	if (-not (Test-Path -LiteralPath $installer)) {
 		Write-StartLog '[FATAL] instalação incompleta e instalar.vbs não encontrado'
@@ -300,10 +318,6 @@ function Set-SplashProgress {
 	$statusText.Text = $Text
 	$progressBar.Value = [Math]::Max(0, [Math]::Min(100, $Value))
 	Pump-Ui
-}
-
-if ($ValidateOnly) {
-	exit 0
 }
 
 try {
