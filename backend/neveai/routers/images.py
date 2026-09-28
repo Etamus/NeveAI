@@ -20,7 +20,7 @@ from neveai.config import (
     IMAGE_URL_RESPONSE_MODELS_REGEX_PATTERN,
 )
 from neveai.constants import ERROR_MESSAGES
-from neveai.retrieval.web.utils import validate_url
+from neveai.utils.url import validate_url
 from neveai.env import ENABLE_FORWARD_USER_INFO_HEADERS
 
 from neveai.models.chats import Chats

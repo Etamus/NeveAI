@@ -10,6 +10,7 @@
 	export let className = 'bg-white dark:bg-gray-900 rounded-xl';
 	export let keepMounted = false;
 	export let animated = true;
+	export let onOutsideClick: (() => boolean | void) | null = null;
 
 	let modalElement = null;
 	let mounted = false;
@@ -128,6 +129,7 @@
 		style="scrollbar-gutter: stable;"
 		in:fade={{ duration: animated ? 150 : 0 }}
 		on:mousedown={() => {
+			if (onOutsideClick?.() === true) return;
 			show = false;
 		}}
 	>

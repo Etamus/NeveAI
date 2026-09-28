@@ -2348,6 +2348,8 @@ async def chat_stable_diffusion_handler(
     resolution = normalize_qwen_image_resolution(
         image_features.get("stable_diffusion_resolution")
     )
+    if quality == "neve_image":
+        resolution = "1:1"
     style = (
         normalize_image_style(image_features.get("stable_diffusion_style"))
         if quality == "neve_image_2"
@@ -2794,8 +2796,8 @@ async def chat_video_generation_handler(
     )
     resolution = (
         requested_resolution
-        if requested_resolution in {"384p", "480p", "544p"}
-        else "480p"
+        if requested_resolution in {"384p", "480p", "544p", "576p"}
+        else "384p"
     )
     duration = "8s" if video_features.get("video_generation_duration") == "8s" else "5s"
     aspect_ratio = (
@@ -2807,6 +2809,7 @@ async def chat_video_generation_handler(
         "384p": (672, 384),
         "480p": (864, 480),
         "544p": (960, 544),
+        "576p": (1024, 576),
     }
     width, height = landscape_dimensions[resolution]
     if aspect_ratio == "9:16":

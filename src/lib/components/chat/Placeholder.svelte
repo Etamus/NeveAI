@@ -60,7 +60,7 @@
 	export let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
-	export let videoGenerationResolution: '384p' | '480p' | '544p' = '384p';
+	export let videoGenerationResolution: '384p' | '480p' | '544p' | '576p' = '384p';
 	export let videoGenerationDuration: '5s' | '8s' = '5s';
 	export let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
 	export let onNativeIntegrationChange: Function = () => {};

@@ -10,11 +10,6 @@ import re
 
 from urllib.parse import quote
 from huggingface_hub import snapshot_download
-from langchain_classic.retrievers import (
-    ContextualCompressionRetriever,
-    EnsembleRetriever,
-)
-from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 
 from neveai.config import VECTOR_DB
@@ -33,7 +28,6 @@ from neveai.retrieval.vector.main import GetResult
 from neveai.utils.headers import include_user_info_headers
 from neveai.utils.misc import get_message_list
 
-from neveai.retrieval.web.utils import get_web_loader
 from neveai.retrieval.loaders.youtube import YoutubeLoader
 
 
@@ -71,6 +65,8 @@ def get_loader(request, url: str):
             proxy_url=request.app.state.config.YOUTUBE_LOADER_PROXY_URL,
         )
     else:
+        from neveai.retrieval.web.utils import get_web_loader
+
         return get_web_loader(
             url,
             verify_ssl=request.app.state.config.ENABLE_WEB_LOADER_SSL_VERIFICATION,
@@ -227,6 +223,12 @@ async def query_doc_with_hybrid_search(
     hybrid_bm25_weight: float,
     enable_enriched_texts: bool = False,
 ) -> dict:
+    from langchain_classic.retrievers import (
+        ContextualCompressionRetriever,
+        EnsembleRetriever,
+    )
+    from langchain_community.retrievers import BM25Retriever
+
     try:
         # First check if collection_result has the required attributes
         if (

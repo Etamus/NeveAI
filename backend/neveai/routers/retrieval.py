@@ -35,11 +35,6 @@ from pydantic import BaseModel
 import tiktoken
 
 
-from langchain_text_splitters import (
-    RecursiveCharacterTextSplitter,
-    TokenTextSplitter,
-    MarkdownHeaderTextSplitter,
-)
 from langchain_core.documents import Document
 
 from neveai.models.files import FileModel, FileUpdateForm, Files
@@ -61,13 +56,8 @@ from neveai.retrieval.github import (
     save_repository_manifest,
 )
 
-# Document loaders
-from neveai.retrieval.loaders.main import Loader
-from neveai.retrieval.loaders.youtube import YoutubeLoader
-
 # Web search engines
 from neveai.retrieval.web.main import SearchResult
-from neveai.retrieval.web.utils import get_web_loader
 from neveai.retrieval.web.ollama import search_ollama_cloud
 from neveai.retrieval.web.perplexity_search import search_perplexity_search
 from neveai.retrieval.web.brave import search_brave
@@ -1424,6 +1414,12 @@ def save_docs_to_vector_db(
     add: bool = False,
     user=None,
 ) -> bool:
+    from langchain_text_splitters import (
+        MarkdownHeaderTextSplitter,
+        RecursiveCharacterTextSplitter,
+        TokenTextSplitter,
+    )
+
     def _get_docs_info(docs: list[Document]) -> str:
         docs_info = set()
 
@@ -1701,6 +1697,8 @@ def process_file(
                 # Usage: /files/
                 file_path = file.path
                 if file_path:
+                    from neveai.retrieval.loaders.main import Loader
+
                     file_path = Storage.get_file(file_path)
                     loader = Loader(
                         engine=request.app.state.config.CONTENT_EXTRACTION_ENGINE,
@@ -2662,6 +2660,8 @@ async def process_web_search(
                 if hasattr(result, "snippet") and result.snippet is not None
             ]
         else:
+            from neveai.retrieval.web.utils import get_web_loader
+
             loader = get_web_loader(
                 urls,
                 verify_ssl=request.app.state.config.ENABLE_WEB_LOADER_SSL_VERIFICATION,

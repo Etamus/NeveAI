@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel
 
-from neveai.retrieval.web.utils import resolve_hostname
+from neveai.utils.url import resolve_hostname
 from neveai.utils.misc import is_string_allowed
 
 

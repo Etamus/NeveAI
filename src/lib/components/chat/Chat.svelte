@@ -188,7 +188,7 @@
 	let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
-	let videoGenerationResolution: '384p' | '480p' | '544p' = '384p';
+	let videoGenerationResolution: '384p' | '480p' | '544p' | '576p' = '384p';
 	let videoGenerationDuration: '5s' | '8s' = '5s';
 	let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
 	let videoPreferencesReady = false;
@@ -1908,15 +1908,48 @@
 		)
 			? (savedImageStyle as typeof stableDiffusionStyle)
 			: 'none';
-		const savedImageResolution =
-			(stableDiffusionQuality === 'qwen_image_2_1' || stableDiffusionQuality === 'qwen_image_2s'
-				? localStorage.getItem(`neveai.imageResolution.${stableDiffusionQuality}`)
-				: null) ?? localStorage.getItem('neveai.imageResolution');
+		const legacyImageResolution = localStorage.getItem('neveai.imageResolution');
+		const imageResolutionKeys = [
+			'neveai.imageResolution.neve_image_1_4',
+			'neveai.imageResolution.neve_image_2'
+		];
+		const legacyQwenImageResolution =
+			localStorage.getItem(`neveai.imageResolution.${stableDiffusionQuality}`) ??
+			localStorage.getItem('neveai.imageResolution.qwen_image_2_1') ??
+			localStorage.getItem('neveai.imageResolution.qwen_image_2s');
+		if (['1:1', '16:9', '9:16', '4:3', '3:4'].includes(legacyImageResolution ?? '')) {
+			if (!localStorage.getItem(imageResolutionKeys[0])) {
+				localStorage.setItem(imageResolutionKeys[0], legacyImageResolution!);
+			}
+		}
+		const migratedQwenImageResolution = ['1:1', '16:9', '9:16', '4:3', '3:4'].includes(
+			legacyQwenImageResolution ?? ''
+		)
+			? legacyQwenImageResolution
+			: legacyImageResolution;
+		if (
+			['1:1', '16:9', '9:16', '4:3', '3:4'].includes(migratedQwenImageResolution ?? '') &&
+			!localStorage.getItem(imageResolutionKeys[1])
+		) {
+			localStorage.setItem(imageResolutionKeys[1], migratedQwenImageResolution!);
+		}
+		localStorage.removeItem('neveai.imageResolution');
+		localStorage.removeItem('neveai.imageResolution.qwen_image_2_1');
+		localStorage.removeItem('neveai.imageResolution.qwen_image_2s');
+		const activeImageResolutionKey =
+			stableDiffusionQuality === 'neve_image_2'
+				? imageResolutionKeys[0]
+				: stableDiffusionQuality === 'qwen_image_2_1' || stableDiffusionQuality === 'qwen_image_2s'
+					? imageResolutionKeys[1]
+					: null;
+		const savedImageResolution = activeImageResolutionKey
+			? localStorage.getItem(activeImageResolutionKey)
+			: null;
 		stableDiffusionResolution = ['1:1', '16:9', '9:16', '4:3', '3:4'].includes(savedImageResolution ?? '')
 			? (savedImageResolution as typeof stableDiffusionResolution)
 			: '1:1';
 		const savedVideoResolution = localStorage.getItem('neveai.videoResolution');
-		videoGenerationResolution = ['384p', '480p', '544p'].includes(savedVideoResolution ?? '')
+		videoGenerationResolution = ['384p', '480p', '544p', '576p'].includes(savedVideoResolution ?? '')
 			? (savedVideoResolution as typeof videoGenerationResolution)
 			: '384p';
 		videoGenerationDuration = localStorage.getItem('neveai.videoDuration') === '8s' ? '8s' : '5s';

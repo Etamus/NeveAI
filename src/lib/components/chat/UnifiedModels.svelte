@@ -1571,6 +1571,13 @@
 		ignoredRuntimeOperationIds.clear();
 		unsubscribeLocalModelProcessing();
 	});
+
+	export const handleOutsideClick = () => {
+		if (!selectedModelId) return false;
+		selectedModelId = null;
+		void initAdmin();
+		return true;
+	};
 </script>
 
 <!-- ─── Unified load modal ──────────────────────────────────────────────── -->

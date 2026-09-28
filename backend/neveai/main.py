@@ -74,7 +74,6 @@ from neveai.routers import (
     audio,
     images,
     llamacpp,
-    ollama,
     retrieval,
     pipelines,
     tasks,
@@ -1640,10 +1639,6 @@ app.mount("/ws", socket_app)
 
 
 app.include_router(llamacpp.router, prefix="/llamacpp", tags=["llamacpp"])
-# Ollama external router disabled (NeveAI uses llamacpp by default)
-# app.include_router(ollama.router, prefix="/ollama", tags=["ollama"])
-
-
 app.include_router(pipelines.router, prefix="/api/v1/pipelines", tags=["pipelines"])
 app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
 app.include_router(images.router, prefix="/api/v1/images", tags=["images"])

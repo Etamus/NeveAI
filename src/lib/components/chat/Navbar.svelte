@@ -70,6 +70,7 @@
 	let unifiedModelsPreloadPromise: Promise<void> | null = null;
 	let unifiedModelsVramInfo: LocalVramInfo | null = null;
 	let unifiedModelsVramPromise: Promise<void> | null = null;
+	let unifiedModels: UnifiedModels | null = null;
 	const unifiedModelsVramCacheKey = 'neveai.unifiedModels.vramInfo';
 	const unifiedModelsPreloadCacheKey = 'neveai.unifiedModels.preload';
 
@@ -245,8 +246,14 @@
 <ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
 
 {#if unifiedModelsPreload?.loaded}
-	<Modal size="md" className="bg-white dark:bg-gray-900 rounded-xl w-[36rem]!" bind:show={$showLocalModelsModal} keepMounted>
-		<UnifiedModels preload={unifiedModelsPreload} show={$showLocalModelsModal} />
+	<Modal
+		size="md"
+		className="bg-white dark:bg-gray-900 rounded-xl w-[36rem]!"
+		bind:show={$showLocalModelsModal}
+		keepMounted
+		onOutsideClick={() => unifiedModels?.handleOutsideClick() ?? false}
+	>
+		<UnifiedModels bind:this={unifiedModels} preload={unifiedModelsPreload} show={$showLocalModelsModal} />
 	</Modal>
 {/if}
 

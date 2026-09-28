@@ -86,7 +86,21 @@ $LOG_DIR  = Join-Path $ROOT 'logs'
 if (-not (Test-Path $LOG_DIR)) { New-Item $LOG_DIR -ItemType Directory | Out-Null }
 $LOG = Join-Path $LOG_DIR 'install.log'
 $STATE_FILE = Join-Path $LOG_DIR 'install-state.txt'
-$INSTALLER_REVISION = '2026-09-25-resumable-install-v1'
+$INSTALLER_SETTINGS_DIR = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'NeveAI'
+$INSTALLER_LANGUAGE_FILE = Join-Path $INSTALLER_SETTINGS_DIR 'installer-language.txt'
+try {
+    if (-not (Test-Path -LiteralPath $INSTALLER_SETTINGS_DIR)) {
+        New-Item -Path $INSTALLER_SETTINGS_DIR -ItemType Directory -Force | Out-Null
+    }
+} catch {
+    $INSTALLER_LANGUAGE_FILE = Join-Path $LOG_DIR 'installer-language.txt'
+}
+$script:InstallerLanguage = 'pt-BR'
+try {
+    $savedInstallerLanguage = ([string](Get-Content -LiteralPath $INSTALLER_LANGUAGE_FILE -Raw -ErrorAction Stop)).Trim()
+    if ($savedInstallerLanguage -in @('pt-BR', 'en-US')) { $script:InstallerLanguage = $savedInstallerLanguage }
+} catch {}
+$INSTALLER_REVISION = '2026-09-27-resumable-install-i18n-v2'
 $PREVIOUS_INSTALL_STATE = if (Test-Path -LiteralPath $STATE_FILE) {
     ([string](Get-Content -LiteralPath $STATE_FILE -Raw -EA SilentlyContinue)).Trim()
 } else { 'pending' }
@@ -172,9 +186,56 @@ if (-not (Test-Path $LOGO_PATH)) {
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="Background" Value="Transparent"/><Setter Property="Padding" Value="10,8"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem"><Border x:Name="ItemBorder" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}" Margin="3,1"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="#303030"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
         </Style>
+        <Style x:Key="LanguageComboBoxItem" TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="#B8B8B8"/><Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontSize" Value="14"/><Setter Property="FontWeight" Value="Normal"/><Setter Property="MinHeight" Value="38"/><Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem">
+                <Border x:Name="LanguageItem" Background="Transparent" CornerRadius="5" Margin="2,1" Padding="11,0,8,0">
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/></Grid.ColumnDefinitions>
+                        <ContentPresenter VerticalAlignment="Center"/>
+                        <Viewbox x:Name="SelectedCheckCircle" Grid.Column="1" Width="16" Height="16" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="Collapsed">
+                            <Path Width="24" Height="24" Stretch="None" Data="M 9 12.75 L 11.25 15 L 15 9.75 M 21 12 A 9 9 0 1 1 3 12 A 9 9 0 1 1 21 12" Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.7" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Fill="Transparent"/>
+                        </Viewbox>
+                    </Grid>
+                </Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="LanguageItem" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/></Trigger>
+                    <Trigger Property="IsSelected" Value="True"><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter TargetName="SelectedCheckCircle" Property="Visibility" Value="Visible"/></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
         <Style TargetType="ComboBox">
             <Setter Property="Background" Value="{DynamicResource InputBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="11,0"/><Setter Property="MinHeight" Value="36"/><Setter Property="FontSize" Value="13"/><Setter Property="MaxDropDownHeight" Value="260"/><Setter Property="ItemContainerStyle" Value="{StaticResource ComboBoxItemStyle}"/>
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox"><Grid><ToggleButton x:Name="DropDownToggle" Background="Transparent" BorderThickness="0" Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"><ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="ComboBorder" Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderThickness="{Binding BorderThickness, RelativeSource={RelativeSource AncestorType=ComboBox}}" CornerRadius="6"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="34"/></Grid.ColumnDefinitions><ContentPresenter Margin="11,0,6,0" VerticalAlignment="Center" HorizontalAlignment="Stretch" TextElement.Foreground="{DynamicResource TextPrimaryBrush}" Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}" ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"/><Path Grid.Column="1" Width="10" Height="6" HorizontalAlignment="Center" VerticalAlignment="Center" Stroke="{DynamicResource TextSecondaryBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 1 1 L 5 5 L 9 1"/></Grid></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ComboBorder" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template></ToggleButton><Popup x:Name="Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" PlacementTarget="{Binding ElementName=DropDownToggle}" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade"><Border Width="{Binding ActualWidth, ElementName=DropDownToggle}" MaxHeight="{TemplateBinding MaxDropDownHeight}" Margin="0,4,0,0" Padding="3" Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1" CornerRadius="6"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel IsItemsHost="True"/></ScrollViewer></Border></Popup></Grid><ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter TargetName="DropDownToggle" Property="Opacity" Value="0.48"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style x:Key="LanguageComboBox" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="#B8B8B8"/><Setter Property="MinHeight" Value="46"/><Setter Property="FontSize" Value="16"/><Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontWeight" Value="Medium"/><Setter Property="Cursor" Value="Hand"/><Setter Property="MaxDropDownHeight" Value="160"/><Setter Property="ItemContainerStyle" Value="{StaticResource LanguageComboBoxItem}"/>
+            <Setter Property="Template"><Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton x:Name="DropDownToggle" Background="Transparent" BorderThickness="0" Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
+                                <Border x:Name="LanguageButton" Background="Transparent" CornerRadius="6" Padding="14,0">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="21"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                        <Viewbox Width="21" Height="21" VerticalAlignment="Center">
+                                            <Path Width="24" Height="24" Stretch="None" Data="M 5 8 L 11 14 M 4 14 L 10 8 L 12 5 H 2 M 2 5 H 14 M 7 2 H 8 M 22 22 L 17 12 L 12 22 M 14 18 H 20" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Fill="Transparent"/>
+                                        </Viewbox>
+                                        <TextBlock Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}}" Text="{Binding Tag, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
+                                    </Grid>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="LanguageButton" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/></Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate></ToggleButton.Template>
+                        </ToggleButton>
+                        <Popup x:Name="Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Top" VerticalOffset="-5" PlacementTarget="{Binding ElementName=DropDownToggle}" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                            <Border Width="{Binding ActualWidth, ElementName=DropDownToggle}" MaxHeight="{TemplateBinding MaxDropDownHeight}" Padding="4" Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="7" TextOptions.TextFormattingMode="Ideal"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel IsItemsHost="True"/></ScrollViewer></Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter TargetName="DropDownToggle" Property="Opacity" Value="0.48"/></Trigger></ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value></Setter>
+            <Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/></Trigger></Style.Triggers>
         </Style>
         <Style x:Key="OptionCheckBox" TargetType="CheckBox">
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="FontSize" Value="13"/><Setter Property="Cursor" Value="Hand"/>
@@ -200,7 +261,7 @@ if (-not (Test-Path $LOGO_PATH)) {
             </Border>
             <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition x:Name="SidebarColumn" Width="210"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                 <Border x:Name="SidebarPanel" Grid.Column="0" Background="{DynamicResource SidebarBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0" CornerRadius="0,0,0,17">
-                    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+                    <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                         <StackPanel Margin="20,26,16,24"><TextBlock Text="NeveAI" FontSize="21" FontWeight="Bold"/></StackPanel>
                         <StackPanel Grid.Row="1">
                             <Button x:Name="NavOverview" Style="{StaticResource NavigationButton}" Tag="active">
@@ -213,6 +274,10 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <StackPanel Orientation="Horizontal"><Viewbox Width="21" Height="21"><Path Width="24" Height="24" Fill="Transparent" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Data="M 3 4 L 21 4 L 21 20 L 3 20 Z M 7 8 L 11 12 L 7 16 M 13 16 L 17 16"/></Viewbox><TextBlock Margin="10,0,0,0" VerticalAlignment="Center" FontFamily="Segoe UI" FontSize="16" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Text="Buildar"/></StackPanel>
                             </Button>
                         </StackPanel>
+                        <ComboBox x:Name="CmbLanguage" Grid.Row="2" Margin="10,0,10,14" Style="{StaticResource LanguageComboBox}" SelectedIndex="0" Tag="Idioma" ToolTip="Idioma">
+                            <ComboBoxItem Content="Português (Brasil)" Tag="pt-BR"/>
+                            <ComboBoxItem Content="Inglês" Tag="en-US"/>
+                        </ComboBox>
                     </Grid>
                 </Border>
                 <Border Grid.Column="1" Background="{DynamicResource BackgroundBrush}" CornerRadius="0,0,17,0">
@@ -343,9 +408,26 @@ if (-not (Test-Path $LOGO_PATH)) {
 $reader = New-Object System.Xml.XmlNodeReader $xaml
 $window = [Windows.Markup.XamlReader]::Load($reader)
 $window.Tag = 'idle'
+$window.Resources['InstallerLanguage'] = $script:InstallerLanguage
 
 if (Test-Path -LiteralPath $WINDOW_ICON_PATH) {
-    $window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([Uri]$WINDOW_ICON_PATH)
+    $iconStream = [System.IO.File]::Open(
+        $WINDOW_ICON_PATH,
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Read,
+        ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
+    )
+    try {
+        $windowIcon = [System.Windows.Media.Imaging.BitmapFrame]::Create(
+            $iconStream,
+            [System.Windows.Media.Imaging.BitmapCreateOptions]::PreservePixelFormat,
+            [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        )
+        $windowIcon.Freeze()
+        $window.Icon = $windowIcon
+    } finally {
+        $iconStream.Dispose()
+    }
     $window.Add_SourceInitialized({
         $interop = New-Object System.Windows.Interop.WindowInteropHelper($window)
         [NeveInstallerWindowIdentity]::ApplyIcon($interop.Handle, $WINDOW_ICON_PATH)
@@ -355,6 +437,7 @@ if (Test-Path -LiteralPath $WINDOW_ICON_PATH) {
 # Atalhos para controles
 $ctl = @{}
 foreach ($name in 'TitleBar','BtnMinimize','BtnMaximize','BtnClose','SidebarColumn','SidebarPanel','NavOverview','NavSettings','NavDiagnostics','LblPageContext','LblPageSubtitle','HeaderActions','InstallActions',
+                  'CmbLanguage',
                   'LblGpu','CmbBackend','CmbVram','ChkInstallPython','ChkDesktopShortcut',
                   'ConfigPanel','InstallPanel','DonePanel',
                   'LblStep','LblPhase','LblProgressTxt','Progress','LogBox','LogScroll',
@@ -363,6 +446,524 @@ foreach ($name in 'TitleBar','BtnMinimize','BtnMaximize','BtnClose','SidebarColu
                   'InstallBodyHost','InstallFooterHost','HubPageHost') {
     $ctl[$name] = $window.FindName($name)
 }
+
+$script:InstallerPtToEn = [ordered]@{
+    'Idioma' = 'Language'
+    'Português (Brasil)' = 'Portuguese (Brazillian)'
+    'Inglês' = 'English'
+    'Instalar' = 'Install'
+    'Retomar' = 'Resume'
+    'Atualizar' = 'Update'
+    'Buildar' = 'Build'
+    '  -  Buildar' = '  -  Build'
+    '  ·  Atualizador' = '  ·  Updater'
+    'Publicar' = 'Publish'
+    'Cancelar' = 'Cancel'
+    'Cancelando...' = 'Cancelling...'
+    'Concluir' = 'Finish'
+    'Fechar' = 'Close'
+    'Minimizar' = 'Minimize'
+    'Maximizar' = 'Maximize'
+    'Instalação' = 'Installation'
+    'Atualização' = 'Update'
+    'Publicação' = 'Build'
+    'Detecte o hardware e instale tudo o que a NeveAI precisa.' = 'Detect the hardware and install everything NeveAI needs.'
+    'Verifique e instale novas versões da NeveAI e do llama.cpp.' = 'Check for and install new versions of NeveAI and llama.cpp.'
+    'Compile e publique o projeto na pasta do backend.' = 'Build and publish the project to the backend folder.'
+    'Conclua a instalação antes de acessar esta aba.' = 'Complete the installation before opening this section.'
+    'GPU detectada:' = 'Detected GPU:'
+    'Detectando...' = 'Detecting...'
+    'Nenhuma GPU detectada (modo CPU)' = 'No GPU detected (CPU mode)'
+    'Tipo de aceleração:' = 'Acceleration type:'
+    'CPU (sem GPU)' = 'CPU (no GPU)'
+    'NVIDIA - GTX 10xx ou anterior (Pascal)' = 'NVIDIA - GTX 10xx or earlier (Pascal)'
+    'NVIDIA - Profissional (RTX A/Quadro/Tesla)' = 'NVIDIA - Professional (RTX A/Quadro/Tesla)'
+    'VRAM (GB):' = 'VRAM (GB):'
+    'Pular' = 'Skip'
+    '32 GB ou mais' = '32 GB or more'
+    'Instalar Python 3.11' = 'Install Python 3.11'
+    'Adicionar ícone à área de trabalho' = 'Add desktop shortcut'
+    'Preparando' = 'Preparing'
+    'Preparando...' = 'Preparing...'
+    'Preparando…' = 'Preparing...'
+    'Iniciando' = 'Starting'
+    'Aguardando…' = 'Waiting...'
+    'Cancelando instalação...' = 'Cancelling installation...'
+    'Concluído' = 'Completed'
+    'Concluido' = 'Completed'
+    'Tudo pronto!' = 'All set!'
+    'Já está tudo pronto!' = 'Everything is already set!'
+    'Use iniciar.bat para iniciar o NeveAI.' = 'Use iniciar.bat to start NeveAI.'
+    'Use iniciar.bat para iniciar a NeveAI.' = 'Use iniciar.bat to start NeveAI.'
+    'Nenhuma pendência detectada. Use iniciar.bat para iniciar o NeveAI.' = 'No pending tasks detected. Use iniciar.bat to start NeveAI.'
+    'venv existente' = 'existing virtual environment'
+    'não verificado' = 'not checked'
+    'Pendências:' = 'Pending tasks:'
+    'dependência(s) Python; rode instalar.bat novamente para tentar só o que faltou.' = 'Python dependency issue(s); run instalar.bat again to retry only what is missing.'
+    'Concluído com pendências' = 'Completed with pending tasks'
+    'O NeveAI tentou todas as dependências e registrou as pendências para retry incremental.' = 'NeveAI attempted every dependency and recorded pending tasks for incremental retry.'
+    'Falha inesperada no instalador.' = 'Unexpected installer failure.'
+    'Falha fatal durante a instalação.' = 'Fatal installation failure.'
+    'Falha durante a instalação.' = 'Installation failed.'
+    'Preparando ambiente Python' = 'Preparing Python environment'
+    'Instalando Python 3.11' = 'Installing Python 3.11'
+    'Instalando Python 3.11 silenciosamente' = 'Installing Python 3.11 silently'
+    'Instalando PyTorch' = 'Installing PyTorch'
+    'Detectando hardware' = 'Detecting hardware'
+    'Otimizando instalação para o hardware' = 'Optimizing installation for the hardware'
+    'Criando estrutura de pastas' = 'Creating folder structure'
+    'Baixando llama.cpp' = 'Downloading llama.cpp'
+    'Baixando CUDA Runtime' = 'Downloading CUDA Runtime'
+    'Preparando ferramentas de instalação' = 'Preparing installation tools'
+    'Preparando geração de imagem local' = 'Preparing local image generation'
+    'Instalando dependências do backend (~5-15 min)' = 'Installing backend dependencies (~5-15 min)'
+    'Instalando onnxruntime-gpu opcional' = 'Installing optional onnxruntime-gpu'
+    'Preparando Node.js 22 portátil' = 'Preparing portable Node.js 22'
+    'Preparando Node.js 22 portatil' = 'Preparing portable Node.js 22'
+    'Preparando Node.js portatil' = 'Preparing portable Node.js'
+    'Instalando pacotes npm' = 'Installing npm packages'
+    'Instalando dependências do frontend' = 'Installing frontend dependencies'
+    'Baixando NeveAI' = 'Downloading NeveAI'
+    'Validando dependências Python' = 'Validating Python dependencies'
+    'Validando pip do venv' = 'Validating virtual environment pip'
+    'Compilando frontend (~2-5 min)' = 'Building frontend (~2-5 min)'
+    'Implantando frontend no backend' = 'Deploying frontend to the backend'
+    'Registrando versão' = 'Recording version'
+    'Aplicando arquivos do NeveAI' = 'Applying NeveAI files'
+    'Atualizando dependências do backend' = 'Updating backend dependencies'
+    'Finalizando atualização' = 'Finishing update'
+    'Gerando build do frontend' = 'Building the frontend'
+    'Publicando frontend' = 'Publishing frontend'
+    'Verificando atualizações…' = 'Checking for updates...'
+    'Consultando GitHub…' = 'Checking GitHub...'
+    'Consultando releases do llama.cpp' = 'Checking llama.cpp releases'
+    'Versão instalada:' = 'Installed version:'
+    'Última disponível:' = 'Latest available:'
+    'Status:' = 'Status:'
+    'Atualizado' = 'Up to date'
+    'Pendente' = 'Pending'
+    'Não instalado' = 'Not installed'
+    'Erro ao verificar' = 'Check failed'
+    'Erro de rede' = 'Network error'
+    'Atualização disponível' = 'Update available'
+    'Atualizações disponíveis' = 'Updates available'
+    'Você já está atualizado' = 'You are up to date'
+    'Falha ao verificar atualizações' = 'Failed to check for updates'
+    'Nenhuma atualização pendente para a NeveAI ou llama.cpp.' = 'There are no pending updates for NeveAI or llama.cpp.'
+    'Uma nova versão está pronta para ser instalada.' = 'A new version is ready to install.'
+    'Marque uma ou mais atualizações para continuar.' = 'Select one or more updates to continue.'
+    'Reparo disponível' = 'Repair available'
+    'Reparo necessário' = 'Repair required'
+    'Arquivos locais estão faltando; o release do GitHub será reaplicado.' = 'Local files are missing; the GitHub release will be reapplied.'
+    'Atualizar llama.cpp' = 'Update llama.cpp'
+    'Atualização opcional, separada do NeveAI' = 'Optional update, separate from NeveAI'
+    'Preparando atualização do llama.cpp...' = 'Preparing llama.cpp update...'
+    'Baixando binários' = 'Downloading binaries'
+    'Preparando troca segura' = 'Preparing safe replacement'
+    'Extraindo e validando' = 'Extracting and validating'
+    'Instalando llama.cpp' = 'Installing llama.cpp'
+    'llama.cpp atualizado' = 'llama.cpp updated'
+    'llama.cpp já está atualizado' = 'llama.cpp is already up to date'
+    'A versão instalada já é a última release disponível.' = 'The installed version is already the latest available release.'
+    'llama.cpp atualizado!' = 'llama.cpp updated!'
+    'Atualização opcional concluída sem alterar o projeto principal.' = 'Optional update completed without changing the main project.'
+    'Falha ao atualizar llama.cpp.' = 'Failed to update llama.cpp.'
+    'Atualização concluída!' = 'Update completed!'
+    'Atualizações concluídas!' = 'Updates completed!'
+    'NeveAI atualizado!' = 'NeveAI updated!'
+    'Falha durante a atualização.' = 'Update failed.'
+    'Release instalada:' = 'Installed release:'
+    'Status: atualizado' = 'Status: up to date'
+    'Build:' = 'Build:'
+    'Destino:' = 'Destination:'
+    'Realizar build do projeto' = 'Build the project'
+    'Compila e publica a pasta build no backend da NeveAI.' = 'Builds and publishes the build folder to the NeveAI backend.'
+    'Buildando...' = 'Building...'
+    'Preparando build...' = 'Preparing build...'
+    'Preparando Node.js/npm' = 'Preparing Node.js/npm'
+    'Limpando build antigo' = 'Cleaning previous build'
+    'Executando npm run build' = 'Running npm run build'
+    'Limpando destino do backend' = 'Cleaning backend destination'
+    'Copiando build para o backend' = 'Copying build to the backend'
+    'Verificando hash do deploy' = 'Verifying deployment hash'
+    'Build publicado!' = 'Build published!'
+    'O frontend do backend esta atualizado.' = 'The backend frontend is up to date.'
+    'Build falhou' = 'Build failed'
+    'Confira o log para ver o ponto da falha.' = 'Check the log to locate the failure.'
+}
+$script:InstallerEnToPt = @{}
+foreach ($entry in $script:InstallerPtToEn.GetEnumerator()) {
+    if (-not $script:InstallerEnToPt.ContainsKey($entry.Value)) {
+        $script:InstallerEnToPt[$entry.Value] = $entry.Key
+    }
+}
+$script:InstallerElementTexts = @{}
+$script:InstallerLogStates = @{}
+$script:InstallerLogPtToEn = [ordered]@{
+    '... ainda em andamento' = '... still running'
+    ' ainda em andamento' = ' still running'
+    'Para instalar a lista completa antiga, defina NEVE_INSTALL_FULL_REQUIREMENTS=1 antes de abrir o instalador.' = 'To install the previous full dependency list, set NEVE_INSTALL_FULL_REQUIREMENTS=1 before opening the installer.'
+    'Rode instalar.bat para concluir a instalação antes de gerar frontend.' = 'Run instalar.bat to complete installation before building the frontend.'
+    'A atualização não foi concluída; restaurando a instalação anterior...' = 'The update did not complete; restoring the previous installation...'
+    'Binário do OfficeCLI ausente após o npm install; executando a recuperação oficial.' = 'OfficeCLI binary missing after npm install; running the official recovery.'
+    'Build falhou duas vezes. Reinstalando dependências npm pelo lockfile antes da última tentativa.' = 'The build failed twice. Reinstalling npm dependencies from the lockfile before the final attempt.'
+    'Criação padrão do venv falhou' = 'Standard virtual environment creation failed'
+    'curl não concluiu o download' = 'curl did not complete the download'
+    'Download falhou na tentativa ' = 'Download failed on attempt '
+    'Download pelo PowerShell falhou:' = 'PowerShell download failed:'
+    'ensurepip falhou' = 'ensurepip failed'
+    'Falha ao aplicar binários; restaurando backup:' = 'Failed to apply binaries; restoring backup:'
+    'Falha ao aplicar llama.cpp; restaurando backup:' = 'Failed to apply llama.cpp; restoring backup:'
+    'Falha ao consultar release do llama.cpp:' = 'Failed to check the llama.cpp release:'
+    'Falha ao consultar versões do Node.js:' = 'Failed to check Node.js versions:'
+    'Falha ao consultar versoes do Node.js:' = 'Failed to check Node.js versions:'
+    'Falha ao instalar llama.cpp ' = 'Failed to install llama.cpp '
+    'Falha ao restaurar backup automaticamente:' = 'Failed to restore backup automatically:'
+    'Fonte recusou o download' = 'The source rejected the download'
+    'GitHub API limitada; usando o feed de releases compatíveis.' = 'GitHub API rate limited; using the compatible releases feed.'
+    'Índice do Node.js indisponível; usando a versão LTS de fallback v22.23.3.' = 'Node.js index unavailable; using fallback LTS version v22.23.3.'
+    'Instalação cancelada pelo usuário.' = 'Installation cancelled by the user.'
+    'Instalação em lote falhou' = 'Batch installation failed'
+    'Instalação incompleta detectada. Build/deploy serão pulados.' = 'Incomplete installation detected. Build and deployment will be skipped.'
+    'Invoke-WebRequest falhou para get-pip.py:' = 'Invoke-WebRequest failed for get-pip.py:'
+    'Não foi possível criar o atalho na área de trabalho:' = 'Could not create the desktop shortcut:'
+    'Não foi possível limpar todas as variáveis do processo para ' = 'Could not clear all process variables for '
+    'Não foi possível preparar Node.js em ' = 'Could not prepare Node.js in '
+    'Não foi possível priorizar Node.js portátil para ' = 'Could not prioritize portable Node.js for '
+    'Não foi possível ressincronizar todas as dependências antigas; os arquivos do projeto foram restaurados.' = 'Could not resynchronize all previous dependencies; project files were restored.'
+    'Node.js portátil instalado no fallback:' = 'Portable Node.js installed at fallback location:'
+    'Node.js portatil instalado no fallback:' = 'Portable Node.js installed at fallback location:'
+    'npm ci falhou; tentando novamente com preferência pela rede.' = 'npm ci failed; retrying with network preference.'
+    'npm install falhou; tentando novamente com preferência pela rede.' = 'npm install failed; retrying with network preference.'
+    'O build falhou duas vezes; reparando as dependências npm antes da última tentativa.' = 'The build failed twice; repairing npm dependencies before the final attempt.'
+    'O build falhou; tentando novamente após liberar os arquivos.' = 'The build failed; retrying after files are released.'
+    'O instalador continuará. Ao executar de novo, pacotes já instalados serão pulados e estas pendências serão tentadas novamente.' = 'The installer will continue. On the next run, installed packages will be skipped and pending ones retried.'
+    'onnxruntime-gpu falhou' = 'onnxruntime-gpu failed'
+    'pip não respondeu; preparando pelo ensurepip do Python.' = 'pip did not respond; preparing it with Python ensurepip.'
+    'Preparação de pip/setuptools/wheel falhou' = 'Preparing pip/setuptools/wheel failed'
+    'Primeiro build falhou. Aguardando arquivos liberarem e tentando novamente.' = 'The first build failed. Waiting for files to be released before retrying.'
+    'PyTorch CUDA em ' = 'PyTorch CUDA at '
+    'Runtime CUDA separado não encontrado no release; prosseguindo apenas com o pacote principal.' = 'Separate CUDA runtime not found in the release; continuing with the main package.'
+    'stable-diffusion.cpp não pôde ser preparado agora:' = 'stable-diffusion.cpp could not be prepared now:'
+    'Usando llama.cpp existente porque o download novo não pôde ser concluído.' = 'Using existing llama.cpp because the new download could not be completed.'
+    'WebClient falhou para get-pip.py:' = 'WebClient failed for get-pip.py:'
+    ' .env preservado' = ' .env preserved'
+    'saída em logs\frontend-build.log' = 'output in logs\frontend-build.log'
+    ' instalado em uma única resolução pip' = ' installed in a single pip resolution'
+    'Ambiente pip isolado para o venv (config global ignorada; PIP_REQUIRE_VIRTUALENV removido)' = 'pip environment isolated for the virtual environment (global config ignored; PIP_REQUIRE_VIRTUALENV removed)'
+    'Arquivos de release aplicados' = 'Release files applied'
+    ' arquivos, ' = ' files, '
+    ' órfãos removidos, ' = ' orphaned items removed, '
+    ' itens preservados' = ' items preserved'
+    'Arquivos essenciais do app validados' = 'Essential application files validated'
+    'Atalho criado na área de trabalho:' = 'Desktop shortcut created:'
+    'Atualização concluída.' = 'Update completed.'
+    'Backup temporário criado' = 'Temporary backup created'
+    'Build e deploy pulados porque o projeto ainda não foi instalado.' = 'Build and deployment skipped because the project is not installed yet.'
+    'Dependências do backend sincronizadas' = 'Backend dependencies synchronized'
+    'Etapa de dependências do backend concluída' = 'Backend dependency stage completed'
+    'Frontend copiado para backend\neveai\frontend' = 'Frontend copied to backend\neveai\frontend'
+    'Instalador revisão:' = 'Installer revision:'
+    'Integridade dos arquivos essenciais validada' = 'Essential file integrity validated'
+    ' já instalado; pulando download' = ' already installed; skipping download'
+    ' já está na última release' = ' is already at the latest release'
+    'Nenhum download necessário.' = 'No download needed.'
+    'NeveAI atualizado para ' = 'NeveAI updated to '
+    'Node.js portátil já disponível:' = 'Portable Node.js already available:'
+    'Node.js portatil ja disponivel:' = 'Portable Node.js already available:'
+    'Node.js portátil pronto:' = 'Portable Node.js ready:'
+    'Node.js portatil pronto:' = 'Portable Node.js ready:'
+    'OfficeCLI pronto para gerar DOCX, XLSX e PPTX' = 'OfficeCLI ready to generate DOCX, XLSX and PPTX'
+    'onnxruntime-gpu já instalado; pulando' = 'onnxruntime-gpu already installed; skipping'
+    'onnxruntime-gpu opcional ignorado no runtime mínimo. Defina NEVE_INSTALL_ONNXRUNTIME_GPU=1 para instalar.' = 'Optional onnxruntime-gpu skipped in the minimal runtime. Set NEVE_INSTALL_ONNXRUNTIME_GPU=1 to install it.'
+    'Pacote validado' = 'Package validated'
+    'Pacotes npm íntegros para o package-lock.json atual; reutilizando cache.' = 'npm packages valid for the current package-lock.json; reusing cache.'
+    'Pasta da instalação:' = 'Installation folder:'
+    'Pasta de instalação:' = 'Installation folder:'
+    'Pasta da release validada:' = 'Release folder validated:'
+    'pip check sem conflitos' = 'pip check found no conflicts'
+    'pip existente preservado; bootstrap redundante ignorado' = 'Existing pip preserved; redundant bootstrap skipped'
+    'Ponto de restauração criado' = 'Restore point created'
+    'Python 3.11 já disponível:' = 'Python 3.11 already available:'
+    'PyTorch já instalado e válido; pulando' = 'PyTorch already installed and valid; skipping'
+    'Script em execução:' = 'Running script:'
+    ' instalado para Z-Image-Turbo' = ' installed for Z-Image-Turbo'
+    ' já disponível; pulando download' = ' already available; skipping download'
+    ' ignorado para ' = ' skipped for '
+    'Última release compatível:' = 'Latest compatible release:'
+    'Usando requirements-runtime.txt (dependências essenciais do NeveAI)' = 'Using requirements-runtime.txt (essential NeveAI dependencies)'
+    'venv existente preservado para retry incremental' = 'Existing virtual environment preserved for incremental retry'
+    'Falha ao remover venv:' = 'Failed to remove virtual environment:'
+    'FALHA:' = 'FAILURE:'
+    'Não foi possível baixar get-pip.py para reparar o pip.' = 'Could not download get-pip.py to repair pip.'
+    '==> Baixando ' = '==> Downloading '
+    'Baixando Node.js 22 LTS portátil porque o Node do sistema está ausente ou fora da faixa suportada (18-22)' = 'Downloading portable Node.js 22 LTS because the system Node.js is missing or outside the supported range (18-22)'
+    'Baixando Node.js 22 LTS portatil porque nenhum Node.js 18-22 valido foi encontrado' = 'Downloading portable Node.js 22 LTS because no valid Node.js 18-22 was found'
+    'Baixando Python 3.11.9 oficial:' = 'Downloading official Python 3.11.9:'
+    'Baixando get-pip.py com ' = 'Downloading get-pip.py with '
+    'Instalando ' = 'Installing '
+    ' em lote para compartilhar resolução e downloads' = ' in a batch to share dependency resolution and downloads'
+    'Arquivos copiados para backend\neveai\frontend' = 'Files copied to backend\neveai\frontend'
+    'Nenhuma pasta build antiga encontrada' = 'No previous build folder found'
+    'Pasta build antiga removida' = 'Previous build folder removed'
+    'Pasta do build:' = 'Build folder:'
+    ' falhou com codigo ' = ' failed with code '
+    'Nao foi possivel ler toda a saida de erro de ' = 'Could not read all error output from '
+    'Nao foi possivel ler toda a saida de ' = 'Could not read all output from '
+    ' concluido' = ' completed'
+    'Tentando novamente com --copies.' = 'Retrying with --copies.'
+    'Tentando novamente...' = 'Retrying...'
+    'Tentando curl.' = 'Trying curl.'
+    'Tentando reparar pip com get-pip.py oficial.' = 'Trying to repair pip with the official get-pip.py.'
+    'Tentando CPU.' = 'Trying CPU.'
+    'tentando outra origem.' = 'trying another source.'
+    'Ativando recuperação incremental apenas para os pacotes pendentes.' = 'Enabling incremental recovery for pending packages only.'
+    'Etapa opcional ignorada; sem fallback CPU silencioso.' = 'Optional step skipped; no silent CPU fallback.'
+    'Reparando pip e tentando novamente.' = 'Repairing pip and retrying.'
+    'falhou (exit $rc). Tentando outro índice CUDA compatível.' = 'failed (exit $rc). Trying another compatible CUDA index.'
+    'falhou (exit ' = 'failed (exit '
+    ' arquivos)' = ' files)'
+    'Baixando ' = 'Downloading '
+    'A atualização falhou e a restauração automática também encontrou um erro:' = 'The update failed and automatic restoration also encountered an error:'
+    'Erro original:' = 'Original error:'
+    'A pasta fonte da release é igual à pasta de instalação; atualização abortada.' = 'The release source folder is the same as the installation folder; update aborted.'
+    'A release não contém a lista de dependências do backend.' = 'The release does not contain the backend dependency list.'
+    'Arquivo de dependências não encontrado em ' = 'Dependency file not found in '
+    'Arquivo do Node.js nao extraiu a pasta esperada.' = 'The Node.js archive did not extract the expected folder.'
+    'Arquivo do Node.js não extraiu a pasta esperada.' = 'The Node.js archive did not extract the expected folder.'
+    'Atualização das dependências do backend falhou' = 'Backend dependency update failed'
+    'backend\neveai\frontend\index.html nao foi publicado.' = 'backend\neveai\frontend\index.html was not published.'
+    'Build falhou e npm install de recuperação também falhou' = 'The build failed and recovery with npm install also failed'
+    'build\index.html nao foi gerado.' = 'build\index.html was not generated.'
+    'curl não conseguiu baixar Node.js' = 'curl could not download Node.js'
+    'Download vazio ou ausente:' = 'Empty or missing download:'
+    'Executável vazio ao executar ' = 'Empty executable when running '
+    'Falha ao criar venv' = 'Failed to create the virtual environment'
+    'Python usado:' = 'Python used:'
+    'Pasta alvo:' = 'Target folder:'
+    'Falha ao iniciar ' = 'Failed to start '
+    'Falha ao instalar Python 3.11' = 'Failed to install Python 3.11'
+    'Falha ao instalar PyTorch sem comprometer a aceleração escolhida.' = 'Failed to install PyTorch without compromising the selected acceleration.'
+    'Falha ao preparar o OfficeCLI para geracao de DOCX, XLSX e PPTX.' = 'Failed to prepare OfficeCLI for DOCX, XLSX and PPTX generation.'
+    'Falha ao preparar o OfficeCLI para geração de DOCX, XLSX e PPTX.' = 'Failed to prepare OfficeCLI for DOCX, XLSX and PPTX generation.'
+    'Falha ao preparar pip/setuptools/wheel após múltiplas rotas' = 'Failed to prepare pip/setuptools/wheel after multiple attempts'
+    'Tentativas:' = 'Attempts:'
+    'Falha ao remover item antigo ' = 'Failed to remove old item '
+    'Falha ao trocar os launchers; os anteriores foram restaurados:' = 'Failed to replace the launchers; the previous ones were restored:'
+    'Falha em npm ci' = 'npm ci failed'
+    'Falha em npm install' = 'npm install failed'
+    'Falha no build do frontend' = 'Frontend build failed'
+    'Falha no build e na recuperação npm ci' = 'The build and npm ci recovery failed'
+    'Consulte logs\frontend-build.log para a causa completa.' = 'See logs\frontend-build.log for the full cause.'
+    'Consulte logs\frontend-build.log.' = 'See logs\frontend-build.log.'
+    'GPU NVIDIA detectada' = 'NVIDIA GPU detected'
+    'mas não foi possível determinar com segurança o binário CUDA correto. Nada foi instalado.' = 'but the correct CUDA binary could not be determined safely. Nothing was installed.'
+    'launchers\iniciar.vbs não encontrado em ' = 'launchers\iniciar.vbs not found in '
+    'llama-server.exe não ficou disponível após a cópia.' = 'llama-server.exe was not available after copying.'
+    'NÃ£o foi possÃ­vel determinar o caminho do build.' = 'Could not determine the build path.'
+    'Não foi possível baixar um ZIP válido da release ' = 'Could not download a valid ZIP for release '
+    'Última falha:' = 'Last failure:'
+    'Não foi possível confirmar o estado final da instalação.' = 'Could not confirm the final installation state.'
+    'Verifique o acesso à pasta logs e retome pelo instalar.bat.' = 'Check access to the logs folder and resume using instalar.bat.'
+    'Não foi possível determinar o caminho do atualizador.' = 'Could not determine the updater path.'
+    'Não foi possível determinar o caminho do instalador.' = 'Could not determine the installer path.'
+    'Não foi possível instalar o llama.cpp e nenhum llama-server.exe existente foi encontrado.' = 'Could not install llama.cpp and no existing llama-server.exe was found.'
+    'Verifique a conexão com a internet e tente novamente.' = 'Check your internet connection and try again.'
+    'Não foi possível localizar a área de trabalho do usuário.' = 'Could not locate the user desktop.'
+    'Nao foi possivel localizar o XAML legado de ' = 'Could not locate the legacy XAML for '
+    'Não foi possível localizar uma release compatível do llama.cpp:' = 'Could not find a compatible llama.cpp release:'
+    'Nao foi possivel preparar Node.js portatil em nenhum local permitido.' = 'Could not prepare portable Node.js in any permitted location.'
+    'Não foi possível preparar Node.js portátil em nenhum local permitido.' = 'Could not prepare portable Node.js in any permitted location.'
+    'Não foi possível substituir ' = 'Could not replace '
+    'Nenhum arquivo extraído do pacote do llama.cpp.' = 'No files were extracted from the llama.cpp package.'
+    'Nenhuma release recente do llama.cpp contém binários Windows compatíveis.' = 'No recent llama.cpp release contains compatible Windows binaries.'
+    'Nenhuma release recente do llama.cpp contém os binários Windows necessários.' = 'No recent llama.cpp release contains the required Windows binaries.'
+    'Node.js 18-22 com npm nao encontrado e o Node.js 22 portatil nao pode ser preparado.' = 'Node.js 18-22 with npm was not found and portable Node.js 22 could not be prepared.'
+    'Node.js 18-22 com npm não encontrado e o Node.js 22 portátil não pôde ser preparado.' = 'Node.js 18-22 with npm was not found and portable Node.js 22 could not be prepared.'
+    'Node.js portátil extraído não passou na validação.' = 'Extracted portable Node.js failed validation.'
+    'npm install falhou após duas tentativas' = 'npm install failed after two attempts'
+    'npm run build falhou após recuperação' = 'npm run build failed after recovery'
+    'Consulte logs\update.log.' = 'See logs\update.log.'
+    'O build novo não contém index.html; o frontend atual foi mantido.' = 'The new build does not contain index.html; the current frontend was kept.'
+    'O download não criou o arquivo esperado.' = 'The download did not create the expected file.'
+    'O frontend foi compilado, mas index.html não foi publicado.' = 'The frontend was built, but index.html was not published.'
+    'Execute instalar.bat novamente.' = 'Run instalar.bat again.'
+    'O GitHub retornou uma versão inválida:' = 'GitHub returned an invalid version:'
+    'O instalador do Python não foi baixado.' = 'The Python installer was not downloaded.'
+    ' não contém llama-server.exe.' = ' does not contain llama-server.exe.'
+    ' não contém sd-cli.exe.' = ' does not contain sd-cli.exe.'
+    ' não extraiu arquivos.' = ' did not extract any files.'
+    'O pacote baixado está vazio ou incompleto.' = 'The downloaded package is empty or incomplete.'
+    ' não contém um asset Windows x64 para ' = ' does not contain a Windows x64 asset for '
+    'Nada foi instalado.' = 'Nothing was installed.'
+    'O venv foi criado, mas o Python interno não foi encontrado em ' = 'The virtual environment was created, but its Python executable was not found in '
+    'O ZIP da release não contém arquivos.' = 'The release ZIP contains no files.'
+    'OfficeCLI ausente após recuperação npm.' = 'OfficeCLI missing after npm recovery.'
+    'OfficeCLI falhou após recuperação npm' = 'OfficeCLI failed after npm recovery'
+    'OfficeCLI instalado, mas a validação falhou' = 'OfficeCLI installed, but validation failed'
+    'Os arquivos foram copiados, mas Node.js/npm nao responderam.' = 'Files were copied, but Node.js/npm did not respond.'
+    'Os arquivos foram copiados, mas Node.js/npm não responderam.' = 'Files were copied, but Node.js/npm did not respond.'
+    'Pacote local incompleto; faltam arquivos essenciais:' = 'Local package incomplete; essential files are missing:'
+    'pip do venv não respondeu após bootstrap e reparo' = 'Virtual environment pip did not respond after bootstrap and repair'
+    'Python 3.11 foi instalado, mas não respondeu na validação com venv/ensurepip.' = 'Python 3.11 was installed, but failed venv/ensurepip validation.'
+    'Python 3.11/3.12 válido não encontrado para criar o venv.' = 'Valid Python 3.11/3.12 not found for creating the virtual environment.'
+    'Instale pelo python.org e desative aliases Python da Microsoft Store, se existirem.' = 'Install Python from python.org and disable Microsoft Store Python aliases, if present.'
+    'Python 3.11/3.12 válido não encontrado.' = 'Valid Python 3.11/3.12 not found.'
+    'Marque a opção de instalar Python 3.11 automaticamente ou instale pelo python.org.' = 'Select the option to install Python 3.11 automatically or install it from python.org.'
+    'Python do ambiente virtual não encontrado para atualizar as dependências do backend.' = 'Virtual environment Python not found for updating backend dependencies.'
+    'Release aplicada sem arquivos essenciais:' = 'Release applied without essential files:'
+    'Release do GitHub não contém ' = 'GitHub release does not contain '
+    'atualização abortada antes de alterar os launchers atuais.' = 'update aborted before changing the current launchers.'
+    'Release do llama.cpp sem tag_name.' = 'llama.cpp release has no tag_name.'
+    'Release do NeveAI indisponível para atualização.' = 'NeveAI release unavailable for update.'
+    'Release do stable-diffusion.cpp sem binário Windows ' = 'stable-diffusion.cpp release has no Windows binary for '
+    'Release incompleta; nenhum arquivo local foi alterado.' = 'Incomplete release; no local files were changed.'
+    'Faltando:' = 'Missing:'
+    'Runtime CUDA ' = 'CUDA runtime '
+    'sd-cli.exe foi copiado, mas não passou na validação.' = 'sd-cli.exe was copied, but failed validation.'
+    'Snapshot de restauração não encontrado.' = 'Restore snapshot not found.'
+    'URL de origem da release inesperada; atualização cancelada.' = 'Unexpected release source URL; update cancelled.'
+    ' não encontrado.' = ' not found.'
+    ' (código ' = ' (code '
+    ' (codigo ' = ' (code '
+    ' encontrado:' = ' found:'
+    'Instalação anterior restaurada.' = 'Previous installation restored.'
+    'Nao foi possivel preparar Node.js em ' = 'Could not prepare Node.js in '
+}
+
+function Convert-InstallerText([string]$Text, [string]$Language = $script:InstallerLanguage) {
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    if ($Language -ne 'en-US') {
+        if ($script:InstallerEnToPt.ContainsKey($Text)) { return [string]$script:InstallerEnToPt[$Text] }
+        return $Text
+    }
+    if ($script:InstallerPtToEn.Contains($Text)) { return [string]$script:InstallerPtToEn[$Text] }
+
+    $translated = $Text
+    foreach ($key in @($script:InstallerPtToEn.Keys | Sort-Object { ([string]$_).Length } -Descending)) {
+        if (([string]$key).Length -lt 5) { continue }
+        $translated = $translated.Replace([string]$key, [string]$script:InstallerPtToEn[$key])
+    }
+    return $translated
+}
+
+function Convert-InstallerLogText([string]$Text) {
+    if ($script:InstallerLanguage -ne 'en-US' -or [string]::IsNullOrEmpty($Text)) { return $Text }
+    $translated = $Text
+    foreach ($key in @($script:InstallerLogPtToEn.Keys | Sort-Object { ([string]$_).Length } -Descending)) {
+        $translated = $translated.Replace([string]$key, [string]$script:InstallerLogPtToEn[$key])
+    }
+    return $translated
+}
+
+function Set-InstallerLogLanguage([System.Windows.Controls.TextBox]$LogBox) {
+    $state = $script:InstallerLogStates[$LogBox]
+    if ($null -eq $state) {
+        $state = @{ Original = [string]$LogBox.Text; Rendered = ''; Language = ''; Busy = $false }
+        $script:InstallerLogStates[$LogBox] = $state
+        $LogBox.Add_TextChanged({
+            param($sender, $eventArgs)
+            Set-InstallerLogLanguage $sender
+        })
+    }
+    if ($state.Busy) { return }
+
+    $current = [string]$LogBox.Text
+    if ($current -cne $state.Rendered) {
+        if ($current.StartsWith([string]$state.Rendered, [System.StringComparison]::Ordinal)) {
+            $tail = $current.Substring(([string]$state.Rendered).Length)
+            $state.Original += $tail
+            $translated = if ($state.Language -eq $script:InstallerLanguage) {
+                $state.Rendered + (Convert-InstallerLogText $tail)
+            } else {
+                Convert-InstallerLogText $state.Original
+            }
+        } else {
+            $state.Original = $current
+            $translated = Convert-InstallerLogText $state.Original
+        }
+    } elseif ($state.Language -ne $script:InstallerLanguage) {
+        $translated = Convert-InstallerLogText $state.Original
+    } else {
+        return
+    }
+
+    $state.Rendered = $translated
+    $state.Language = $script:InstallerLanguage
+    if ($current -cne $translated) {
+        $state.Busy = $true
+        try { $LogBox.Text = $translated } finally { $state.Busy = $false }
+    }
+}
+
+function Set-InstallerTextProperty($Element, [string]$Property) {
+    $current = [string]$Element.$Property
+    if (-not $script:InstallerElementTexts.ContainsKey($Element)) {
+        $script:InstallerElementTexts[$Element] = @{}
+    }
+    $properties = $script:InstallerElementTexts[$Element]
+    $state = $properties[$Property]
+    if ($state -and $current -ceq $state.Rendered -and $state.Language -eq $script:InstallerLanguage) {
+        return
+    }
+    if ($null -eq $state -or $current -cne $state.Rendered) {
+        $state = @{ Original = $current; Rendered = $null; Language = $null }
+        $properties[$Property] = $state
+    }
+    $translated = Convert-InstallerText $state.Original
+    if ($current -cne $translated) { $Element.$Property = $translated }
+    $state.Rendered = $translated
+    $state.Language = $script:InstallerLanguage
+}
+
+function Set-InstallerElementLanguage($Element) {
+    if ($null -eq $Element) { return }
+    try {
+        if ($Element -is [System.Windows.Controls.TextBox] -and $Element.Name -eq 'LogBox') {
+            Set-InstallerLogLanguage $Element
+        } elseif ($Element -is [System.Windows.Controls.TextBlock]) {
+            Set-InstallerTextProperty $Element 'Text'
+        } elseif ($Element -is [System.Windows.Controls.ContentControl] -and $Element.Content -is [string]) {
+            Set-InstallerTextProperty $Element 'Content'
+        }
+        if ($Element -is [System.Windows.FrameworkElement] -and $Element.ToolTip -is [string]) {
+            Set-InstallerTextProperty $Element 'ToolTip'
+        }
+    } catch {}
+
+    try {
+        foreach ($child in [System.Windows.LogicalTreeHelper]::GetChildren($Element)) {
+            if ($child -is [System.Windows.DependencyObject]) { Set-InstallerElementLanguage $child }
+        }
+    } catch {}
+}
+
+function Apply-InstallerLanguage {
+    Set-InstallerElementLanguage $window
+    if ($ctl.CmbLanguage) {
+        $ctl.CmbLanguage.Tag = if ($script:InstallerLanguage -eq 'en-US') { 'Language' } else { 'Idioma' }
+        foreach ($item in $ctl.CmbLanguage.Items) {
+            Set-InstallerTextProperty $item 'Content'
+        }
+    }
+}
+
+if ($ctl.CmbLanguage) {
+    $ctl.CmbLanguage.SelectedIndex = if ($script:InstallerLanguage -eq 'en-US') { 1 } else { 0 }
+    $ctl.CmbLanguage.Add_SelectionChanged({
+        $selectedItem = $ctl.CmbLanguage.SelectedItem
+        if (-not $selectedItem -or [string]::IsNullOrWhiteSpace([string]$selectedItem.Tag)) { return }
+        $script:InstallerLanguage = [string]$selectedItem.Tag
+        $window.Resources['InstallerLanguage'] = $script:InstallerLanguage
+        try {
+            [System.IO.File]::WriteAllText($INSTALLER_LANGUAGE_FILE, $script:InstallerLanguage, [System.Text.UTF8Encoding]::new($false))
+        } catch {}
+        Apply-InstallerLanguage
+        Set-HubHeaderState $script:HubActiveMode
+        Apply-InstallerLanguage
+    })
+}
+Apply-InstallerLanguage
 
 $script:InstallProcessList = [System.Collections.ArrayList]::Synchronized((New-Object System.Collections.ArrayList))
 $script:InstallControl = [hashtable]::Synchronized(@{
@@ -389,7 +990,13 @@ $window.Dispatcher.add_UnhandledException({
         $ctl.LogBox.AppendText("[FATAL UI] $msg`r`n")
         $ctl.LogScroll.ScrollToEnd()
     } catch {}
-    [System.Windows.MessageBox]::Show("O instalador encontrou uma falha, mas a janela ficará aberta.`n`nVeja logs\install.log`n`n$msg", 'NeveAI - Instalador', 'OK', 'Error') | Out-Null
+    $dialogText = if ($script:InstallerLanguage -eq 'en-US') {
+        "The installer encountered a failure, but the window will remain open.`n`nSee logs\install.log`n`n$msg"
+    } else {
+        "O instalador encontrou uma falha, mas a janela ficará aberta.`n`nVeja logs\install.log`n`n$msg"
+    }
+    $dialogTitle = if ($script:InstallerLanguage -eq 'en-US') { 'NeveAI - Installer' } else { 'NeveAI - Instalador' }
+    [System.Windows.MessageBox]::Show($dialogText, $dialogTitle, 'OK', 'Error') | Out-Null
     $eventArgs.Handled = $true
 })
 
@@ -931,9 +1538,14 @@ $ctl.BtnPrimary.Add_Click({
         }
     }
     if (([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) -and -not $installPython311) {
+        $pythonWarning = if ($script:InstallerLanguage -eq 'en-US') {
+            "A valid Python 3.11/3.12 installation was not found.`n`nSelect `"Install Python 3.11`" or install Python manually from python.org."
+        } else {
+            "Python 3.11/3.12 válido não encontrado.`n`nMarque `"Instalar Python 3.11 automaticamente`" ou instale o Python manualmente pelo python.org."
+        }
+        $installerTitle = if ($script:InstallerLanguage -eq 'en-US') { 'NeveAI - Installer' } else { 'NeveAI - Instalador' }
         [System.Windows.MessageBox]::Show(
-            "Python 3.11/3.12 válido não encontrado.`n`nMarque `"Instalar Python 3.11 automaticamente`" ou instale o Python manualmente pelo python.org.",
-            'NeveAI - Instalador', 'OK', 'Warning') | Out-Null
+            $pythonWarning, $installerTitle, 'OK', 'Warning') | Out-Null
         return
     }
     # Coleta selecoes
@@ -2423,7 +3035,12 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 $script:Ctl.BtnCancel.IsEnabled  = $false
                 $script:Ctl.BtnClose.IsEnabled   = $true
                 $script:Window.Tag = 'failed'
-                [System.Windows.MessageBox]::Show("A instalação falhou. A janela ficará aberta para você ler o log.`n`nVeja logs\install.log`n`n$errMsg", 'NeveAI', 'OK', 'Error') | Out-Null
+                $failureText = if ([string]$script:Window.Resources['InstallerLanguage'] -eq 'en-US') {
+                    "The installation failed. The window will remain open so you can read the log.`n`nSee logs\install.log`n`n$errMsg"
+                } else {
+                    "A instalação falhou. A janela ficará aberta para você ler o log.`n`nVeja logs\install.log`n`n$errMsg"
+                }
+                [System.Windows.MessageBox]::Show($failureText, 'NeveAI', 'OK', 'Error') | Out-Null
             })
         }
     }
@@ -3692,9 +4309,15 @@ $ctl.BtnLlama.Add_Click({
                 $script:Ctl.BtnLlama.IsEnabled   = $true
                 $script:Ctl.BtnCancel.Visibility = 'Collapsed'
                 $script:Ctl.BtnCancel.IsEnabled  = $false
+                $failureText = if ([string]$script:Window.Resources['InstallerLanguage'] -eq 'en-US') {
+                    "The llama.cpp update failed.`r`n`r`nSee logs\update.log`r`n`r`n$errMsg"
+                } else {
+                    "A atualização do llama.cpp falhou.`r`n`r`nVeja o log em logs\update.log`r`n`r`n$errMsg"
+                }
+                $failureTitle = if ([string]$script:Window.Resources['InstallerLanguage'] -eq 'en-US') { 'NeveAI - Updater' } else { 'NeveAI - Atualizador' }
                 [System.Windows.MessageBox]::Show(
-                    "A atualização do llama.cpp falhou.`r`n`r`nVeja o log em logs\update.log`r`n`r`n$errMsg",
-                    'NeveAI - Atualizador',
+                    $failureText,
+                    $failureTitle,
                     [System.Windows.MessageBoxButton]::OK,
                     [System.Windows.MessageBoxImage]::Error) | Out-Null
             })
@@ -4511,6 +5134,65 @@ $ctl.BtnPrimary.Add_Click({
                 Remove-ReleaseItem $child
             }
         }
+        function Test-ReleaseFileContentEqual([string]$sourcePath, [string]$destinationPath) {
+            if (-not (Test-Path -LiteralPath $destinationPath -PathType Leaf)) { return $false }
+
+            $sourceStream = $null
+            $destinationStream = $null
+            try {
+                $sourceStream = [System.IO.File]::Open(
+                    $sourcePath,
+                    [System.IO.FileMode]::Open,
+                    [System.IO.FileAccess]::Read,
+                    ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
+                )
+                $destinationStream = [System.IO.File]::Open(
+                    $destinationPath,
+                    [System.IO.FileMode]::Open,
+                    [System.IO.FileAccess]::Read,
+                    ([System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
+                )
+                if ($sourceStream.Length -ne $destinationStream.Length) { return $false }
+
+                $sourceBuffer = New-Object byte[] 65536
+                $destinationBuffer = New-Object byte[] 65536
+                while ($true) {
+                    $sourceRead = $sourceStream.Read($sourceBuffer, 0, $sourceBuffer.Length)
+                    $destinationRead = $destinationStream.Read($destinationBuffer, 0, $destinationBuffer.Length)
+                    if ($sourceRead -ne $destinationRead) { return $false }
+                    if ($sourceRead -eq 0) { return $true }
+                    for ($index = 0; $index -lt $sourceRead; $index++) {
+                        if ($sourceBuffer[$index] -ne $destinationBuffer[$index]) { return $false }
+                    }
+                }
+            } catch {
+                return $false
+            } finally {
+                if ($destinationStream) { $destinationStream.Dispose() }
+                if ($sourceStream) { $sourceStream.Dispose() }
+            }
+        }
+        function Copy-ReleaseFileRobust([string]$sourcePath, [string]$destinationPath, [int]$maxAttempts = 8) {
+            for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+                try {
+                    [System.IO.File]::Copy($sourcePath, $destinationPath, $true)
+                    return $true
+                } catch {
+                    $copyError = $_.Exception
+                    if (Test-ReleaseFileContentEqual $sourcePath $destinationPath) {
+                        Write-UpdateLog "Arquivo em uso, mas já atualizado: $destinationPath"
+                        return $false
+                    }
+                    if ($attempt -ge $maxAttempts) {
+                        throw "Não foi possível substituir '$destinationPath' após $maxAttempts tentativas: $($copyError.Message)"
+                    }
+
+                    $delayMs = [Math]::Min(1500, 150 * [Math]::Pow(2, $attempt - 1))
+                    Write-UpdateLog "Arquivo temporariamente indisponível; nova tentativa $($attempt + 1)/$maxAttempts em $delayMs ms: $destinationPath"
+                    Start-Sleep -Milliseconds $delayMs
+                }
+            }
+        }
         function Copy-ReleaseTree([string]$sourcePath, [string]$sourceRoot, [string]$destinationRoot, [string[]]$excludeDirs, [string[]]$excludeFiles) {
             $item = Get-Item -LiteralPath $sourcePath -Force
             $relativePath = Get-RelativePath $sourceRoot $item.FullName
@@ -4535,8 +5217,11 @@ $ctl.BtnPrimary.Add_Click({
             if (-not (Test-Path -LiteralPath $destinationParent)) {
                 [System.IO.Directory]::CreateDirectory($destinationParent) | Out-Null
             }
-            [System.IO.File]::Copy($item.FullName, $destinationPath, $true)
-            $script:CopiedReleaseFiles++
+            if (Copy-ReleaseFileRobust $item.FullName $destinationPath) {
+                $script:CopiedReleaseFiles++
+            } else {
+                $script:SkippedReleaseItems++
+            }
         }
         function Invoke-ReleaseDownload([string]$uri, [string]$destination) {
             if ($uri -notmatch '^https://api\.github\.com/repos/Etamus/NeveAI/zipball/') {
@@ -5096,9 +5781,15 @@ $ctl.BtnPrimary.Add_Click({
                 $script:Ctl.BtnPrimary.Visibility = 'Visible'
                 $script:Ctl.BtnCancel.Visibility = 'Collapsed'
                 $script:Ctl.BtnCancel.IsEnabled = $false
+                $failureText = if ([string]$script:Window.Resources['InstallerLanguage'] -eq 'en-US') {
+                    "The update failed.`r`n`r`nSee logs\update.log`r`n`r`n$errMsg"
+                } else {
+                    "A atualização falhou.`r`n`r`nVeja o log em logs\update.log`r`n`r`n$errMsg"
+                }
+                $failureTitle = if ([string]$script:Window.Resources['InstallerLanguage'] -eq 'en-US') { 'NeveAI - Updater' } else { 'NeveAI - Atualizador' }
                 [System.Windows.MessageBox]::Show(
-                    "A atualização falhou.`r`n`r`nVeja o log em logs\update.log`r`n`r`n$errMsg",
-                    'NeveAI - Atualizador',
+                    $failureText,
+                    $failureTitle,
                     [System.Windows.MessageBoxButton]::OK,
                     [System.Windows.MessageBoxImage]::Error) | Out-Null
             })
@@ -6131,9 +6822,9 @@ function Update-HubActionButtonStyles {
 		foreach ($button in $panel.Children) {
 			if (-not ($button -is [System.Windows.Controls.Button])) { continue }
 			$label = [string]$button.Content
-			$targetStyle = if ($label -in @('Instalar', 'Retomar', 'Atualizar', 'Publicar')) {
+			$targetStyle = if ($label -in @('Instalar', 'Retomar', 'Atualizar', 'Publicar', 'Install', 'Resume', 'Update', 'Publish')) {
 				$accentStyle
-			} elseif ($label -in @('Cancelar', 'Concluir', 'Fechar')) {
+			} elseif ($label -in @('Cancelar', 'Concluir', 'Fechar', 'Cancel', 'Finish', 'Close')) {
 				$completionStyle
 			} else {
 				$regularStyle
@@ -6144,18 +6835,20 @@ function Update-HubActionButtonStyles {
 }
 
 function Set-HubHeaderState([string]$mode) {
-	$ctl.LblPageContext.Text = switch ($mode) {
+	$context = switch ($mode) {
 		'install' { 'Instalação' }
 		'update' { 'Atualização' }
 		'build' { 'Publicação' }
 		default { 'Instalação' }
 	}
-	$ctl.LblPageSubtitle.Text = switch ($mode) {
+	$subtitle = switch ($mode) {
 		'install' { 'Detecte o hardware e instale tudo o que a NeveAI precisa.' }
 		'update' { 'Verifique e instale novas versões da NeveAI e do llama.cpp.' }
 		'build' { 'Compile e publique o projeto na pasta do backend.' }
 		default { 'Detecte o hardware e instale tudo o que a NeveAI precisa.' }
 	}
+	$ctl.LblPageContext.Text = Convert-InstallerText $context
+	$ctl.LblPageSubtitle.Text = Convert-InstallerText $subtitle
 	$ctl.NavOverview.Tag = if ($mode -eq 'install') { 'active' } else { $null }
 	$ctl.NavSettings.Tag = if ($mode -eq 'update') { 'active' } else { $null }
 	$ctl.NavDiagnostics.Tag = if ($mode -eq 'build') { 'active' } else { $null }
@@ -6233,9 +6926,15 @@ function Select-HubPage([string]$mode) {
 	try {
 		Initialize-HubLegacyPage $mode
 		Show-HubActionPanel $mode
+		Apply-InstallerLanguage
 	} catch {
+		$pageFailure = if ($script:InstallerLanguage -eq 'en-US') {
+			"Failed to open the '$mode' page.`r`n`r`n$($_.Exception.Message)"
+		} else {
+			"Falha ao abrir a pagina '$mode'.`r`n`r`n$($_.Exception.Message)"
+		}
 		[System.Windows.MessageBox]::Show(
-			"Falha ao abrir a pagina '$mode'.`r`n`r`n$($_.Exception.Message)",
+			$pageFailure,
 			'NeveAI - Hub',
 			[System.Windows.MessageBoxButton]::OK,
 			[System.Windows.MessageBoxImage]::Error
@@ -6260,6 +6959,7 @@ $script:HubBusyMonitorTimer.Add_Tick({
 	$blockedHint = if ($installed) { $null } else { 'Conclua a instalação antes de acessar esta aba.' }
 	$ctl.NavSettings.ToolTip = $blockedHint
 	$ctl.NavDiagnostics.ToolTip = $blockedHint
+	Apply-InstallerLanguage
 })
 $script:HubBusyMonitorTimer.Start()
 $window.Add_Closed({ try { $script:HubBusyMonitorTimer.Stop() } catch {} })

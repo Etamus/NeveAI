@@ -18,7 +18,7 @@ from neveai.storage.provider import Storage
 from neveai.models.chats import Chats
 from neveai.models.files import Files
 from neveai.routers.files import upload_file_handler
-from neveai.retrieval.web.utils import validate_url
+from neveai.utils.url import validate_url
 
 import mimetypes
 import base64

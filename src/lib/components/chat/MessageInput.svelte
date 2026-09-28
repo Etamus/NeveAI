@@ -161,6 +161,17 @@
 		{ id: 'pixelated', label: 'Pixelado', image: '/static/pixelado.webp' },
 		{ id: 'arcane', label: 'Arcano', image: '/static/arcano.webp' }
 	] as const;
+	let imageStyleThumbnailPreloads: HTMLImageElement[] = [];
+	const preloadImageStyleThumbnails = () => {
+		imageStyleThumbnailPreloads = imageStyleOptions.flatMap((style) => {
+			if (!style.image) return [];
+			const image = new globalThis.Image();
+			image.decoding = 'async';
+			image.fetchPriority = 'high';
+			image.src = style.image;
+			return [image];
+		});
+	};
 	$: selectedImageStyleLabel = $i18n.t(
 		imageStyleOptions.find((style) => style.id === stableDiffusionStyle)?.label ?? 'Sem estilo'
 	);
@@ -174,7 +185,7 @@
 	] as const;
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
-	export let videoGenerationResolution: '384p' | '480p' | '544p' = '384p';
+	export let videoGenerationResolution: '384p' | '480p' | '544p' | '576p' = '384p';
 	export let videoGenerationDuration: '5s' | '8s' = '5s';
 	export let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
 	const videoAspectRatioOptions = [
@@ -192,7 +203,7 @@
 
 	const restoreVideoPreferences = () => {
 		const savedResolution = localStorage.getItem('neveai.videoResolution');
-		videoGenerationResolution = ['384p', '480p', '544p'].includes(savedResolution ?? '')
+		videoGenerationResolution = ['384p', '480p', '544p', '576p'].includes(savedResolution ?? '')
 			? (savedResolution as typeof videoGenerationResolution)
 			: '384p';
 		videoGenerationDuration = localStorage.getItem('neveai.videoDuration') === '8s' ? '8s' : '5s';
@@ -669,54 +680,50 @@
 	}
 
 	const isQwenImage2Quality = (
-		quality: typeof stableDiffusionQuality = stableDiffusionQuality
+		quality: typeof stableDiffusionQuality
 	): quality is 'qwen_image_2_1' | 'qwen_image_2s' =>
 		quality === 'qwen_image_2_1' || quality === 'qwen_image_2s';
-	const qwenResolutionStorageKey = (quality: 'qwen_image_2_1' | 'qwen_image_2s') =>
-		`neveai.imageResolution.${quality}`;
 	const isImageResolution = (value: string | null): value is typeof stableDiffusionResolution =>
 		['1:1', '16:9', '9:16', '4:3', '3:4'].includes(value ?? '');
-
+	const imageResolutionStorageKey = (quality: typeof stableDiffusionQuality) => {
+		if (quality === 'neve_image_2') return 'neveai.imageResolution.neve_image_1_4';
+		if (isQwenImage2Quality(quality)) return 'neveai.imageResolution.neve_image_2';
+		return null;
+	};
+	const saveImageResolution = (quality: typeof stableDiffusionQuality) => {
+		const storageKey = imageResolutionStorageKey(quality);
+		if (storageKey) localStorage.setItem(storageKey, stableDiffusionResolution);
+	};
+	const restoreImageResolution = (quality: typeof stableDiffusionQuality) => {
+		const storageKey = imageResolutionStorageKey(quality);
+		if (!storageKey) return '1:1';
+		const savedResolution = localStorage.getItem(storageKey);
+		return isImageResolution(savedResolution) ? savedResolution : '1:1';
+	};
 	const selectImageModel = (quality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1') => {
+		saveImageResolution(stableDiffusionQuality);
 		if (quality === 'qwen_image_2_1') {
 			const savedMode = localStorage.getItem('neveai.image2Mode');
 			stableDiffusionQuality = savedMode === 'fast' ? 'qwen_image_2s' : 'qwen_image_2_1';
-			const savedResolution = localStorage.getItem(
-				qwenResolutionStorageKey(stableDiffusionQuality)
-			);
-			if (isImageResolution(savedResolution)) stableDiffusionResolution = savedResolution;
 		} else {
 			stableDiffusionQuality = quality;
 		}
+		stableDiffusionResolution = restoreImageResolution(stableDiffusionQuality);
 		localStorage.setItem('neveai.imageQuality', stableDiffusionQuality);
-		localStorage.setItem('neveai.imageResolution', stableDiffusionResolution);
 		showImageQualityDropdown = false;
+		showImagePerformanceDropdown = false;
 	};
 
 	const selectQwenImageMode = (mode: 'quality' | 'fast') => {
-		if (isQwenImage2Quality(stableDiffusionQuality)) {
-			localStorage.setItem(
-				qwenResolutionStorageKey(stableDiffusionQuality),
-				stableDiffusionResolution
-			);
-		}
 		stableDiffusionQuality = mode === 'fast' ? 'qwen_image_2s' : 'qwen_image_2_1';
-		const savedResolution = localStorage.getItem(
-			qwenResolutionStorageKey(stableDiffusionQuality)
-		);
-		stableDiffusionResolution = isImageResolution(savedResolution) ? savedResolution : '1:1';
 		localStorage.setItem('neveai.image2Mode', mode);
 		localStorage.setItem('neveai.imageQuality', stableDiffusionQuality);
-		localStorage.setItem('neveai.imageResolution', stableDiffusionResolution);
 		showImagePerformanceDropdown = false;
 	};
 
 	const selectImageResolution = (resolution: typeof stableDiffusionResolution) => {
 		stableDiffusionResolution = resolution;
-		localStorage.setItem('neveai.imageResolution', resolution);
-		if (isQwenImage2Quality(stableDiffusionQuality)) {
-			localStorage.setItem(qwenResolutionStorageKey(stableDiffusionQuality), resolution);
-		}
+		saveImageResolution(stableDiffusionQuality);
 		showImageResolutionDropdown = false;
 	};
 	const THINKING_MODE_STORAGE_KEY = 'neveai.globalThinkingEnabled';
@@ -1326,6 +1333,7 @@
 	};
 
 	onMount(() => {
+		preloadImageStyleThumbnails();
 		videoPreferencesMounted = true;
 		videoPreferencesChatId = $chatId;
 		restoreVideoPreferences();
@@ -2379,50 +2387,19 @@
 											</button>
 										<div class="image-quality-control relative shrink-0" id="image-quality-dropdown-container">
 											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label={$i18n.t('Image model')} aria-expanded={showImageQualityDropdown} on:click|preventDefault={() => { showImagePerformanceDropdown = false; showImageStyleDropdown = false; showImageResolutionDropdown = false; showImageQualityDropdown = !showImageQualityDropdown; }}>
-												<span>{isQwenImage2Quality() ? 'Neve Image 2' : stableDiffusionQuality === 'neve_image_2' ? 'Neve Image 1.4' : 'Neve Image 1'}</span>
+												<span>{isQwenImage2Quality(stableDiffusionQuality) ? 'Neve Image 2' : stableDiffusionQuality === 'neve_image_2' ? 'Neve Image 1.4' : 'Neve Image 1'}</span>
 												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageQualityDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
 											</button>
 											{#if showImageQualityDropdown}
 												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
 													{#each [{ id: 'neve_image', label: 'Neve Image 1' }, { id: 'neve_image_2', label: 'Neve Image 1.4' }, { id: 'qwen_image_2_1', label: 'Neve Image 2' }] as quality}
 													<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => selectImageModel(quality.id as 'neve_image' | 'neve_image_2' | 'qwen_image_2_1')}>
-															<span>{quality.label}</span>{#if quality.id === 'qwen_image_2_1' ? isQwenImage2Quality() : stableDiffusionQuality === quality.id}<CheckCircle strokeWidth="1.7" />{/if}
+															<span>{quality.label}</span>{#if quality.id === 'qwen_image_2_1' ? isQwenImage2Quality(stableDiffusionQuality) : stableDiffusionQuality === quality.id}<CheckCircle strokeWidth="1.7" />{/if}
 														</button>
 													{/each}
 												</div>
 											{/if}
 										</div>
-										{#if isQwenImage2Quality()}
-										<div class="image-performance-control relative shrink-0" id="image-performance-dropdown-container">
-											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label={$i18n.t('Modo de geração de imagem')} aria-expanded={showImagePerformanceDropdown} on:click|preventDefault={() => { showImageQualityDropdown = false; showImageResolutionDropdown = false; showImagePerformanceDropdown = !showImagePerformanceDropdown; }}>
-												<span>{stableDiffusionQuality === 'qwen_image_2s' ? $i18n.t('Rápido') : $i18n.t('Qualidade')}</span>
-												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImagePerformanceDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
-											</button>
-											{#if showImagePerformanceDropdown}
-												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-													{#each [{ id: 'quality', label: $i18n.t('Qualidade') }, { id: 'fast', label: $i18n.t('Rápido') }] as mode}
-														<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => selectQwenImageMode(mode.id as 'quality' | 'fast')}>
-															<span>{mode.label}</span>{#if (mode.id === 'fast') === (stableDiffusionQuality === 'qwen_image_2s')}<CheckCircle strokeWidth="1.7" />{/if}
-														</button>
-													{/each}
-												</div>
-											{/if}
-										</div>
-										{/if}
-										{#if stableDiffusionQuality === 'neve_image_2'}
-										<div class="image-style-control relative shrink-0" id="image-style-dropdown-container">
-											<button
-												type="button"
-												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-												aria-label={$i18n.t('Image style')}
-												aria-expanded={showImageStyleDropdown}
-												on:click|preventDefault={toggleImageStyleDropdown}
-											>
-												<span>{selectedImageStyleLabel}</span>
-												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageStyleDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
-											</button>
-										</div>
-										{/if}
 										{#if stableDiffusionQuality === 'neve_image_2' || stableDiffusionQuality === 'qwen_image_2_1' || stableDiffusionQuality === 'qwen_image_2s'}
 										<div class="image-resolution-control relative shrink-0" id="image-resolution-dropdown-container">
 											<button
@@ -2449,6 +2426,37 @@
 																<span class="leading-5">{option.id}</span>
 															</span>
 															<span class="flex size-4 items-center justify-center">{#if stableDiffusionResolution === option.id}<CheckCircle className="size-4" strokeWidth="1.7" />{/if}</span>
+														</button>
+													{/each}
+												</div>
+											{/if}
+										</div>
+										{/if}
+										{#if stableDiffusionQuality === 'neve_image_2'}
+										<div class="image-style-control relative shrink-0" id="image-style-dropdown-container">
+											<button
+												type="button"
+												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+												aria-label={$i18n.t('Image style')}
+												aria-expanded={showImageStyleDropdown}
+												on:click|preventDefault={toggleImageStyleDropdown}
+											>
+												<span>{selectedImageStyleLabel}</span>
+												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageStyleDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
+											</button>
+										</div>
+										{/if}
+										{#if isQwenImage2Quality(stableDiffusionQuality)}
+										<div class="image-performance-control relative shrink-0" id="image-performance-dropdown-container">
+											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label={$i18n.t('Modo de geração de imagem')} aria-expanded={showImagePerformanceDropdown} on:click|preventDefault={() => { showImageQualityDropdown = false; showImageResolutionDropdown = false; showImagePerformanceDropdown = !showImagePerformanceDropdown; }}>
+												<span>{stableDiffusionQuality === 'qwen_image_2s' ? $i18n.t('Rápido') : $i18n.t('Qualidade')}</span>
+												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImagePerformanceDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
+											</button>
+											{#if showImagePerformanceDropdown}
+												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
+													{#each [{ id: 'quality', label: $i18n.t('Qualidade') }, { id: 'fast', label: $i18n.t('Rápido') }] as mode}
+														<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => selectQwenImageMode(mode.id as 'quality' | 'fast')}>
+															<span>{mode.label}</span>{#if (mode.id === 'fast') === (stableDiffusionQuality === 'qwen_image_2s')}<CheckCircle strokeWidth="1.7" />{/if}
 														</button>
 													{/each}
 												</div>
@@ -2512,8 +2520,8 @@
 											</button>
 											{#if showVideoResolutionDropdown}
 												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-											{#each ['384p', '480p', '544p'] as resolution}
-												<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { videoGenerationResolution = resolution as '384p' | '480p' | '544p'; localStorage.setItem('neveai.videoResolution', videoGenerationResolution); showVideoResolutionDropdown = false; }}>
+											{#each ['384p', '480p', '544p', '576p'] as resolution}
+												<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { videoGenerationResolution = resolution as '384p' | '480p' | '544p' | '576p'; localStorage.setItem('neveai.videoResolution', videoGenerationResolution); showVideoResolutionDropdown = false; }}>
 															<span>{resolution}</span>{#if videoGenerationResolution === resolution}<CheckCircle strokeWidth="1.7" />{/if}
 														</button>
 													{/each}
@@ -2848,12 +2856,12 @@
 		}
 
 		.stable-image-actions .image-style-control {
-			grid-column: 3;
+			grid-column: 4;
 			grid-row: 1;
 		}
 
 		.stable-image-actions .image-resolution-control {
-			grid-column: 4;
+			grid-column: 3;
 			grid-row: 1;
 		}
 
@@ -2862,12 +2870,12 @@
 		}
 
 		.stable-image-actions-no-style .image-performance-control {
-			grid-column: 3;
+			grid-column: 4;
 			grid-row: 1;
 		}
 
 		.stable-image-actions-no-style .image-resolution-control {
-			grid-column: 4;
+			grid-column: 3;
 		}
 
 		.stable-image-actions .stable-image-toggle {
