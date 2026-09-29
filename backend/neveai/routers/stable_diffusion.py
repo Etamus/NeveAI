@@ -79,6 +79,7 @@ QWEN_IMAGE_21_FILE = "qwen-image-2.1-UC-Q6_K.gguf"
 QWEN_IMAGE_21_LLM_REPO = "mradermacher/Qwen3-VL-8B-Instruct-Heretic-GGUF"
 QWEN_IMAGE_21_LLM_FILE = "Qwen3-VL-8B-Instruct-heretic.Q4_K_M.gguf"
 QWEN_IMAGE_21_VISION_FILE = "Qwen3-VL-8B-Instruct-heretic.mmproj-Q8_0.gguf"
+QWEN_IMAGE_21_OFFICIAL_QUALITY = "qwen_image_2_1_official"
 QWEN_IMAGE_21_VAE_REPO = "Comfy-Org/Qwen-Image-2.1"
 QWEN_IMAGE_21_VAE_FILE = "vae/qwen_image_2.1_vae_bf16.safetensors"
 PROMPT_TRANSLATOR_REPO = "mradermacher/Huihui-Qwen3-4B-Instruct-2507-abliterated-GGUF"
@@ -106,6 +107,7 @@ QUALITY_IMAGE_RESOLUTIONS = {
     "3:4": (864, 1152),
 }
 QWEN_IMAGE_21_STEPS = 30
+QWEN_IMAGE_21_OFFICIAL_STEPS = 40
 QWEN_IMAGE_21_CFG_SCALE = 6.0
 QWEN_IMAGE_21_MAX_REFERENCES = 10
 QWEN_IMAGE_21_FULL_GPU_MIN_VRAM_MIB = 14 * 1024
@@ -245,7 +247,7 @@ def normalize_image_style(value: Optional[str]) -> str:
 
 def normalize_image_quality(value: Optional[str]) -> str:
     value = str(value or "neve_image").strip().lower()
-    return value if value in {"neve_image", "neve_image_2", "qwen_image_2_1", "qwen_image_2s"} else "neve_image"
+    return value if value in {"neve_image", "neve_image_2", "qwen_image_2_1", "qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY} else "neve_image"
 
 
 def normalize_qwen_image_resolution(value: Optional[str]) -> str:
@@ -1305,8 +1307,7 @@ class _ZImageTurboPipeline:
             self._quality = quality
             self._edit_mode = edit
             runtime_name = (
-                "Qwen Image 2.1"
-                if quality == "qwen_image_2_1"
+                "Qwen Image 2.1" if quality == "qwen_image_2_1"
                 else "Mage-Flow-Edit" if edit else "Z-Image-Turbo"
             )
             log.info("%s pronto via stable-diffusion.cpp", runtime_name)
@@ -1737,13 +1738,17 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
     model_id = normalize_sd_model_id(request.app.state.config.STABLE_DIFFUSION_MODEL)
     quality = normalize_image_quality(form_data.quality)
     quality_mode = quality == "neve_image_2"
-    qwen_image_mode = quality == "qwen_image_2_1"
+    qwen_image_mode = quality in {"qwen_image_2_1", QWEN_IMAGE_21_OFFICIAL_QUALITY}
     max_width = QUALITY_IMAGE_WIDTH if quality_mode else MAX_IMAGE_WIDTH
     max_height = QUALITY_IMAGE_HEIGHT if quality_mode else MAX_IMAGE_HEIGHT
     max_steps = QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS
     if qwen_image_mode or quality == "qwen_image_2s":
         width, height = qwen_image_dimensions(form_data.resolution)
-        steps = 6 if quality == "qwen_image_2s" else QWEN_IMAGE_21_STEPS
+        steps = (
+            6 if quality == "qwen_image_2s"
+            else QWEN_IMAGE_21_OFFICIAL_STEPS if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
+            else QWEN_IMAGE_21_STEPS
+        )
     else:
         width = _align_image_dim(form_data.width or (max_width if quality_mode else request.app.state.config.STABLE_DIFFUSION_WIDTH), max_width, max_width)
         height = _align_image_dim(form_data.height or (max_height if quality_mode else request.app.state.config.STABLE_DIFFUSION_HEIGHT), max_height, max_height)
@@ -1764,7 +1769,20 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
 
     try:
         hf_token = str(request.app.state.config.STABLE_DIFFUSION_HF_TOKEN) or None
-        if quality == "qwen_image_2s":
+        if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
+            from neveai.routers.image_quality_generation import neve_image_21_runtime
+
+            references = list(form_data.init_images or [])
+            if form_data.init_image and form_data.init_image not in references:
+                references.insert(0, form_data.init_image)
+            data_uri = await neve_image_21_runtime.run(
+                prompt=form_data.prompt,
+                resolution=form_data.resolution,
+                references=references,
+                user_id=getattr(user, "id", None),
+                progress=lambda _: asyncio.sleep(0),
+            )
+        elif quality == "qwen_image_2s":
             from neveai.routers.image_fast_generation import neve_image_2s_runtime
 
             references = list(form_data.init_images or [])

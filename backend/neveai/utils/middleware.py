@@ -2341,6 +2341,8 @@ async def chat_stable_diffusion_handler(
         quality_image_dimensions,
         qwen_image_dimensions,
         QWEN_IMAGE_21_CFG_SCALE,
+        QWEN_IMAGE_21_OFFICIAL_QUALITY,
+        QWEN_IMAGE_21_OFFICIAL_STEPS,
         QWEN_IMAGE_21_STEPS,
     )
 
@@ -2348,6 +2350,8 @@ async def chat_stable_diffusion_handler(
     resolution = normalize_qwen_image_resolution(
         image_features.get("stable_diffusion_resolution")
     )
+    if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY and init_image_references:
+        resolution = "auto"
     if quality == "neve_image":
         resolution = "1:1"
     style = (
@@ -2360,7 +2364,7 @@ async def chat_stable_diffusion_handler(
     progress_height = int(request.app.state.config.STABLE_DIFFUSION_HEIGHT)
     if quality == "neve_image_2":
         progress_width, progress_height = quality_image_dimensions(resolution)
-    elif quality in {"qwen_image_2_1", "qwen_image_2s"}:
+    elif quality in {"qwen_image_2_1", "qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY}:
         progress_width, progress_height = qwen_image_dimensions(resolution)
     last_progress = 0
 
@@ -2428,9 +2432,13 @@ async def chat_stable_diffusion_handler(
         if quality == "neve_image_2":
             width, height = quality_image_dimensions(resolution)
             steps = 8
-        elif quality in {"qwen_image_2_1", "qwen_image_2s"}:
+        elif quality in {"qwen_image_2_1", "qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY}:
             width, height = qwen_image_dimensions(resolution)
-            steps = 6 if quality == "qwen_image_2s" else QWEN_IMAGE_21_STEPS
+            steps = (
+                6 if quality == "qwen_image_2s"
+                else QWEN_IMAGE_21_OFFICIAL_STEPS if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
+                else QWEN_IMAGE_21_STEPS
+            )
             guidance_scale = 1.0 if quality == "qwen_image_2s" else QWEN_IMAGE_21_CFG_SCALE
 
         # Put LLM in standby
@@ -2442,7 +2450,18 @@ async def chat_stable_diffusion_handler(
 
         try:
             # Generate image directly and skip the LLM response path.
-            if quality == "qwen_image_2s":
+            if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
+                from neveai.routers.image_quality_generation import neve_image_21_runtime
+
+                data_uri = await neve_image_21_runtime.run(
+                    prompt=image_prompt,
+                    resolution=resolution,
+                    references=init_image_references,
+                    user_id=getattr(user, "id", None),
+                    progress=emit_image_progress,
+                    dimensions=emit_image_dimensions,
+                )
+            elif quality == "qwen_image_2s":
                 from neveai.routers.image_fast_generation import neve_image_2s_runtime
 
                 data_uri = await neve_image_2s_runtime.run(
@@ -2490,7 +2509,12 @@ async def chat_stable_diffusion_handler(
                 request,
                 file=upload,
                 metadata={
-                    "source": "qwen-image-2s" if quality == "qwen_image_2s" else "qwen-image-2.1" if quality == "qwen_image_2_1" else "z-image-turbo",
+                    "source": (
+                        "qwen-image-2s" if quality == "qwen_image_2s"
+                        else "qwen-image-2.1-official" if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
+                        else "qwen-image-2.1" if quality == "qwen_image_2_1"
+                        else "z-image-turbo"
+                    ),
                     "prompt": image_prompt,
                     "quality": quality,
                     "style": style,

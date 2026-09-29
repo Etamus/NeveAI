@@ -137,6 +137,7 @@
 	export let files = [];
 	export let sendDisabled = false;
 	$: canSubmitMessage = prompt.trim().length > 0 || files.some((file) => file?.pastedText === true);
+	$: hasImageAttachment = files.some((file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/'));
 
 	export let selectedToolIds = [];
 	export let selectedFilterIds = [];
@@ -147,7 +148,7 @@
 	export let codeExecutionEnabled = false;
 	export let fileGenerationEnabled = false;
 	export let stableDiffusionEnabled = false;
-	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2s' = 'neve_image';
+	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2s' | 'qwen_image_2_1_official' = 'neve_image';
 	export let stableDiffusionStyle: 'none' | 'minimalist' | 'polygonal' | 'fantasy' | 'comics' | 'arcane' | 'spontaneous' | 'realistic' | 'manga' | 'pixelated' = 'none';
 	const imageStyleOptions = [
 		{ id: 'none', label: 'Sem estilo', image: '' },
@@ -640,6 +641,7 @@
 	let showImageStyleDropdown = false;
 	let imageStyleDropdownBottom: number | null = null;
 	let showImageResolutionDropdown = false;
+	$: if (stableDiffusionQuality === 'qwen_image_2_1_official' && hasImageAttachment) showImageResolutionDropdown = false;
 	let showVideoResolutionDropdown = false;
 	let showVideoDurationDropdown = false;
 	let showVideoAspectRatioDropdown = false;
@@ -688,6 +690,7 @@
 	const imageResolutionStorageKey = (quality: typeof stableDiffusionQuality) => {
 		if (quality === 'neve_image_2') return 'neveai.imageResolution.neve_image_1_4';
 		if (isQwenImage2Quality(quality)) return 'neveai.imageResolution.neve_image_2';
+		if (quality === 'qwen_image_2_1_official') return 'neveai.imageResolution.neve_image_2_1';
 		return null;
 	};
 	const saveImageResolution = (quality: typeof stableDiffusionQuality) => {
@@ -700,7 +703,7 @@
 		const savedResolution = localStorage.getItem(storageKey);
 		return isImageResolution(savedResolution) ? savedResolution : '1:1';
 	};
-	const selectImageModel = (quality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1') => {
+	const selectImageModel = (quality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2_1_official') => {
 		saveImageResolution(stableDiffusionQuality);
 		if (quality === 'qwen_image_2_1') {
 			const savedMode = localStorage.getItem('neveai.image2Mode');
@@ -2135,7 +2138,7 @@
 							{/if}
 
 							{#if !isCompact}
-							<div class="message-input-actions flex justify-between mt-2 mb-2.5 mx-0.5 max-w-full {stableDiffusionEnabled && stableDiffusionQuality !== 'neve_image' ? 'stable-image-actions' : ''} {stableDiffusionEnabled && (stableDiffusionQuality === 'qwen_image_2_1' || stableDiffusionQuality === 'qwen_image_2s') ? 'stable-image-actions-no-style' : ''}" dir="ltr">
+							<div class="message-input-actions flex justify-between mt-2 mb-2.5 mx-0.5 max-w-full {stableDiffusionEnabled && stableDiffusionQuality !== 'neve_image' ? 'stable-image-actions' : ''} {stableDiffusionEnabled && (isQwenImage2Quality(stableDiffusionQuality) || stableDiffusionQuality === 'qwen_image_2_1_official') ? 'stable-image-actions-no-style' : ''}" dir="ltr">
 								<div class="message-input-actions-primary ml-1 self-end flex items-center flex-1 max-w-[80%] @container">
 									<div class="message-input-add-control shrink-0">
 									<InputMenu
@@ -2387,20 +2390,20 @@
 											</button>
 										<div class="image-quality-control relative shrink-0" id="image-quality-dropdown-container">
 											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label={$i18n.t('Image model')} aria-expanded={showImageQualityDropdown} on:click|preventDefault={() => { showImagePerformanceDropdown = false; showImageStyleDropdown = false; showImageResolutionDropdown = false; showImageQualityDropdown = !showImageQualityDropdown; }}>
-												<span>{isQwenImage2Quality(stableDiffusionQuality) ? 'Neve Image 2' : stableDiffusionQuality === 'neve_image_2' ? 'Neve Image 1.4' : 'Neve Image 1'}</span>
+												<span>{stableDiffusionQuality === 'qwen_image_2_1_official' ? 'Neve Image 2.1' : isQwenImage2Quality(stableDiffusionQuality) ? 'Neve Image 2' : stableDiffusionQuality === 'neve_image_2' ? 'Neve Image 1.4' : 'Neve Image 1'}</span>
 												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageQualityDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
 											</button>
 											{#if showImageQualityDropdown}
 												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-													{#each [{ id: 'neve_image', label: 'Neve Image 1' }, { id: 'neve_image_2', label: 'Neve Image 1.4' }, { id: 'qwen_image_2_1', label: 'Neve Image 2' }] as quality}
-													<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => selectImageModel(quality.id as 'neve_image' | 'neve_image_2' | 'qwen_image_2_1')}>
+													{#each [{ id: 'neve_image', label: 'Neve Image 1' }, { id: 'neve_image_2', label: 'Neve Image 1.4' }, { id: 'qwen_image_2_1', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.1' }] as quality}
+													<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => selectImageModel(quality.id as 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2_1_official')}>
 															<span>{quality.label}</span>{#if quality.id === 'qwen_image_2_1' ? isQwenImage2Quality(stableDiffusionQuality) : stableDiffusionQuality === quality.id}<CheckCircle strokeWidth="1.7" />{/if}
 														</button>
 													{/each}
 												</div>
 											{/if}
 										</div>
-										{#if stableDiffusionQuality === 'neve_image_2' || stableDiffusionQuality === 'qwen_image_2_1' || stableDiffusionQuality === 'qwen_image_2s'}
+										{#if (stableDiffusionQuality === 'neve_image_2' || isQwenImage2Quality(stableDiffusionQuality) || stableDiffusionQuality === 'qwen_image_2_1_official') && !(stableDiffusionQuality === 'qwen_image_2_1_official' && hasImageAttachment)}
 										<div class="image-resolution-control relative shrink-0" id="image-resolution-dropdown-container">
 											<button
 												type="button"

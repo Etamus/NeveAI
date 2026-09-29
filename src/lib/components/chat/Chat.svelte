@@ -183,7 +183,7 @@
 	let codeExecutionEnabled = false;
 	let fileGenerationEnabled = getFileGenerationPreference(false);
 	let stableDiffusionEnabled = false;
-	let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2s' = 'neve_image';
+	let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2s' | 'qwen_image_2_1_official' = 'neve_image';
 	let stableDiffusionStyle: 'none' | 'minimalist' | 'polygonal' | 'fantasy' | 'comics' | 'arcane' | 'spontaneous' | 'realistic' | 'manga' | 'pixelated' = 'none';
 	let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	let musicGenerationEnabled = false;
@@ -1891,7 +1891,7 @@
 
 	onMount(() => {
 		const savedImageQuality = localStorage.getItem('neveai.imageQuality');
-		stableDiffusionQuality = ['neve_image', 'neve_image_2', 'qwen_image_2_1', 'qwen_image_2s'].includes(savedImageQuality ?? '')
+		stableDiffusionQuality = ['neve_image', 'neve_image_2', 'qwen_image_2_1', 'qwen_image_2s', 'qwen_image_2_1_official'].includes(savedImageQuality ?? '')
 			? (savedImageQuality as typeof stableDiffusionQuality)
 			: 'neve_image';
 		if (!localStorage.getItem('neveai.image2Mode')) {
@@ -1911,7 +1911,8 @@
 		const legacyImageResolution = localStorage.getItem('neveai.imageResolution');
 		const imageResolutionKeys = [
 			'neveai.imageResolution.neve_image_1_4',
-			'neveai.imageResolution.neve_image_2'
+			'neveai.imageResolution.neve_image_2',
+			'neveai.imageResolution.neve_image_2_1'
 		];
 		const legacyQwenImageResolution =
 			localStorage.getItem(`neveai.imageResolution.${stableDiffusionQuality}`) ??
@@ -1941,7 +1942,9 @@
 				? imageResolutionKeys[0]
 				: stableDiffusionQuality === 'qwen_image_2_1' || stableDiffusionQuality === 'qwen_image_2s'
 					? imageResolutionKeys[1]
-					: null;
+					: stableDiffusionQuality === 'qwen_image_2_1_official'
+						? imageResolutionKeys[2]
+						: null;
 		const savedImageResolution = activeImageResolutionKey
 			? localStorage.getItem(activeImageResolutionKey)
 			: null;
@@ -4506,7 +4509,11 @@
 						: false,
 				stable_diffusion_quality: stableDiffusionQuality,
 				stable_diffusion_style: stableDiffusionStyle,
-				stable_diffusion_resolution: stableDiffusionResolution,
+				stable_diffusion_resolution:
+					stableDiffusionQuality === 'qwen_image_2_1_official' &&
+					files.some((file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/'))
+						? 'auto'
+						: stableDiffusionResolution,
 				music_generation:
 					$config?.features?.enable_music_generation &&
 					($user?.role === 'admin' || $user?.permissions?.features?.music_generation)
