@@ -1,18 +1,18 @@
 import unittest
 
 from neveai.routers.stable_diffusion import (
-    QWEN_IMAGE_21_CFG_SCALE,
-    QWEN_IMAGE_21_STEPS,
+    QWEN_IMAGE_FAST_AMD_CFG_SCALE,
+    QWEN_IMAGE_FAST_AMD_STEPS,
     _normalize_qwen_reference_tokens,
 )
 
 
 class QwenImageReferencePromptTests(unittest.TestCase):
     def test_uses_stable_diffusion_cpp_recommended_qwen_cfg(self):
-        self.assertEqual(QWEN_IMAGE_21_CFG_SCALE, 6.0)
+        self.assertEqual(QWEN_IMAGE_FAST_AMD_CFG_SCALE, 6.0)
 
     def test_quality_mode_uses_validated_step_count(self):
-        self.assertEqual(QWEN_IMAGE_21_STEPS, 30)
+        self.assertEqual(QWEN_IMAGE_FAST_AMD_STEPS, 30)
 
     def test_normalizes_portuguese_reference_groups_without_translating_prompt(self):
         prompt = "Faça os personagens das imagens 1 e 2 em uma mesa; use a imagem 3 como estilo."

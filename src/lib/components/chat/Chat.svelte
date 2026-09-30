@@ -101,7 +101,10 @@
 		type LocalModel
 	} from '$lib/apis/llamacpp';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
-	import { getLocalModelLoadPreferences, LOCAL_MODEL_CONTEXT_OPTIONS } from '$lib/utils/llamacppLoadPreferences';
+	import {
+		getLocalModelLoadPreferences,
+		LOCAL_MODEL_CONTEXT_OPTIONS
+	} from '$lib/utils/llamacppLoadPreferences';
 	import { getFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
 	import { getFunctions } from '$lib/apis/functions';
 	import { updateFolderById } from '$lib/apis/folders';
@@ -125,6 +128,7 @@
 	export let chatIdProp = '';
 
 	let loading = true;
+	let loadedChatViewportReady = !chatIdProp;
 
 	const eventTarget = new EventTarget();
 	let controlPane: Pane | undefined;
@@ -134,6 +138,7 @@
 
 	let autoScroll = true;
 	let anchoredGeneratingMessageId: string | null = null;
+	let visualMediaGenerationAnchorId: string | null = null;
 	let showScrollToBottomButton = false;
 	let scrollToBottomButtonSuppressUntil = 0;
 	let scrollToBottomButtonSuppressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -146,7 +151,7 @@
 	let activeGenerationSpacerHeightLimit: number | null = null;
 	let lastMessagesScrollTop = 0;
 	let generationSpacerUpwardScrollIntentUntil = 0;
-	let visualMediaAutoFollowMessageId: string | null = null;
+	let loadedChatBottomFollowToken = 0;
 	let textGenerationAnchorScrollTop: number | null = null;
 	let textGenerationAnchorUserMoved = false;
 	let messagesBottomWheelLockUntil = 0;
@@ -183,12 +188,26 @@
 	let codeExecutionEnabled = false;
 	let fileGenerationEnabled = getFileGenerationPreference(false);
 	let stableDiffusionEnabled = false;
-	let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2s' | 'qwen_image_2_1_official' = 'neve_image';
-	let stableDiffusionStyle: 'none' | 'minimalist' | 'polygonal' | 'fantasy' | 'comics' | 'arcane' | 'spontaneous' | 'realistic' | 'manga' | 'pixelated' = 'none';
+	let stableDiffusionQuality:
+		| 'neve_image'
+		| 'neve_image_2'
+		| 'qwen_image_2s'
+		| 'qwen_image_2_1_official' = 'neve_image';
+	let stableDiffusionStyle:
+		| 'none'
+		| 'minimalist'
+		| 'polygonal'
+		| 'fantasy'
+		| 'comics'
+		| 'arcane'
+		| 'spontaneous'
+		| 'realistic'
+		| 'manga'
+		| 'pixelated' = 'none';
 	let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
-	let videoGenerationResolution: '384p' | '480p' | '544p' | '576p' = '384p';
+	let videoGenerationResolution: '480p' | '672p' = '480p';
 	let videoGenerationDuration: '5s' | '8s' = '5s';
 	let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
 	let videoPreferencesReady = false;
@@ -197,7 +216,8 @@
 		localStorage.setItem('neveai.videoDuration', videoGenerationDuration);
 		localStorage.setItem('neveai.videoAspectRatio', videoGenerationAspectRatio);
 	}
-	let previousMediaGenerationEnabled = stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
+	let previousMediaGenerationEnabled =
+		stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
 	let previousVideoGenerationEnabled = videoGenerationEnabled;
 	let stableDiffusionStandbyModel: LocalModel | null = null;
 	let restoringStableDiffusionStandbyModel = false;
@@ -305,8 +325,7 @@
 		}
 	};
 
-	const CONTEXT_SIZE_ERROR_MESSAGE =
-		'O tamanho do contexto foi excedido.';
+	const CONTEXT_SIZE_ERROR_MESSAGE = 'O tamanho do contexto foi excedido.';
 
 	const stringifyError = (error: unknown) => {
 		if (typeof error === 'string') return error;
@@ -430,8 +449,8 @@
 		const currentMessage = history?.currentId ? history.messages[history.currentId] : null;
 		return Boolean(
 			taskIds ||
-			generating ||
-			(currentMessage?.role === 'assistant' && currentMessage?.done !== true)
+				generating ||
+				(currentMessage?.role === 'assistant' && currentMessage?.done !== true)
 		);
 	};
 
@@ -447,7 +466,13 @@
 
 	const restoreStableDiffusionStandbyModel = async () => {
 		if (restoringStableDiffusionStandbyModel || !stableDiffusionStandbyModel) return;
-		if (stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled || hasActiveChatResponse()) return;
+		if (
+			stableDiffusionEnabled ||
+			musicGenerationEnabled ||
+			videoGenerationEnabled ||
+			hasActiveChatResponse()
+		)
+			return;
 
 		const standbyModel = stableDiffusionStandbyModel;
 		restoringStableDiffusionStandbyModel = true;
@@ -467,7 +492,10 @@
 				try {
 					await unloadLocalModel(localStorage.token, currentlyLoaded.id);
 				} catch (unloadErr) {
-					console.warn('Could not explicitly unload previous model (may already be inactive):', unloadErr);
+					console.warn(
+						'Could not explicitly unload previous model (may already be inactive):',
+						unloadErr
+					);
 				}
 			}
 
@@ -482,9 +510,11 @@
 			);
 			const standbySpeculativePreference =
 				standbyModel.speculative_decoding ?? standbyLoadPreferences.speculative;
-			const standbySpeculativeDecoding = isLocalContextShiftEnabled(standbyContextShift) || isLocalTokenPredictionEnabled(standbyTokenPrediction)
-				? 'off'
-				: normalizeLocalSpeculativeDecoding(standbySpeculativePreference);
+			const standbySpeculativeDecoding =
+				isLocalContextShiftEnabled(standbyContextShift) ||
+				isLocalTokenPredictionEnabled(standbyTokenPrediction)
+					? 'off'
+					: normalizeLocalSpeculativeDecoding(standbySpeculativePreference);
 
 			await loadLocalModel(
 				localStorage.token,
@@ -536,7 +566,8 @@
 	};
 
 	$: {
-		const mediaGenerationEnabled = stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
+		const mediaGenerationEnabled =
+			stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
 		if (previousMediaGenerationEnabled && !mediaGenerationEnabled) {
 			void restoreStableDiffusionStandbyModel();
 		}
@@ -588,6 +619,8 @@
 
 	const navigateHandler = async () => {
 		loading = true;
+		loadedChatViewportReady = false;
+		loadedChatBottomFollowToken += 1;
 
 		// Save current queue to sessionStorage before navigating away
 		if (messageQueue.length > 0 && $chatId) {
@@ -615,9 +648,12 @@
 		);
 
 		if (chatIdProp && (await loadChat())) {
-			await tick();
+			const loadedChatId = chatIdProp;
 			loading = false;
-			window.setTimeout(() => scrollToBottom(), 0);
+			flushSync();
+			await restoreLoadedChatBottom(loadedChatId);
+			if (chatIdProp !== loadedChatId || $chatId !== loadedChatId) return;
+			loadedChatViewportReady = true;
 
 			await tick();
 
@@ -639,7 +675,9 @@
 							files = restoredQueue.flatMap((m) => m.files);
 							await tick();
 							const combinedPrompt = restoredQueue.map((m) => m.prompt).join('\n\n');
-							await submitPrompt(combinedPrompt, { features: restoredQueue.at(0)?.features ?? null });
+							await submitPrompt(combinedPrompt, {
+								features: restoredQueue.at(0)?.features ?? null
+							});
 						} else {
 							// Has pending tasks - show as queued (chatCompletedHandler will process)
 							messageQueue = restoredQueue;
@@ -764,9 +802,10 @@
 		].filter(Boolean) as ChatIntegrationId[];
 
 		if (enabledIntegrations.length > 0) {
-			const keep = preferred && enabledIntegrations.includes(preferred)
-				? preferred
-				: enabledIntegrations.at(-1);
+			const keep =
+				preferred && enabledIntegrations.includes(preferred)
+					? preferred
+					: enabledIntegrations.at(-1);
 
 			webSearchEnabled = keep === 'web_search';
 			deepSearchEnabled = keep === 'deep_search';
@@ -840,8 +879,8 @@
 			if (model?.info?.meta?.defaultFeatureIds) {
 				deepSearchEnabled = Boolean(
 					model.info.meta.defaultFeatureIds.includes('deep_search') &&
-					$config?.features?.enable_web_search &&
-					($user?.role === 'admin' || $user?.permissions?.features?.web_search)
+						$config?.features?.enable_web_search &&
+						($user?.role === 'admin' || $user?.permissions?.features?.web_search)
 				);
 
 				if (
@@ -861,46 +900,65 @@
 				}
 
 				if ($config?.features?.enable_code_execution) {
-					codeExecutionEnabled = model.info.meta.defaultFeatureIds?.includes('code_execution') ?? false;
+					codeExecutionEnabled =
+						model.info.meta.defaultFeatureIds?.includes('code_execution') ?? false;
 				}
 
 				if (
 					$config?.features?.enable_stable_diffusion &&
 					($user?.role === 'admin' || $user?.permissions?.features?.stable_diffusion)
 				) {
-					stableDiffusionEnabled = model.info.meta.defaultFeatureIds?.includes('stable_diffusion') ?? false;
+					stableDiffusionEnabled =
+						model.info.meta.defaultFeatureIds?.includes('stable_diffusion') ?? false;
 				}
 
 				if (
 					$config?.features?.enable_music_generation &&
 					($user?.role === 'admin' || $user?.permissions?.features?.music_generation)
 				) {
-					musicGenerationEnabled = model.info.meta.defaultFeatureIds?.includes('music_generation') ?? false;
+					musicGenerationEnabled =
+						model.info.meta.defaultFeatureIds?.includes('music_generation') ?? false;
 				}
 
 				if (
 					$config?.features?.enable_video_generation &&
 					($user?.role === 'admin' || $user?.permissions?.features?.video_generation)
 				) {
-					videoGenerationEnabled = model.info.meta.defaultFeatureIds?.includes('video_generation') ?? false;
+					videoGenerationEnabled =
+						model.info.meta.defaultFeatureIds?.includes('video_generation') ?? false;
 				}
 			}
 
 			normalizeExclusiveFeatureToggles();
 
-	        // Auto-populate Chat Controls params from model settings
+			// Auto-populate Chat Controls params from model settings
 			// model.info.params is stripped by the backend for security; fetch full model via dedicated API
 			if (Object.keys(params).length === 0) {
 				try {
 					const fullModel = await getModelById(localStorage.token, model.id);
 					const modelParams = fullModel?.params ?? {};
 					const samplingKeys = [
-						'system', 'temperature', 'top_p', 'top_k', 'min_p', 'max_tokens',
-						'repeat_penalty', 'frequency_penalty', 'presence_penalty',
-						'mirostat', 'mirostat_eta', 'mirostat_tau', 'seed', 'stop',
-						'xtc_threshold', 'xtc_probability', 'dry_multiplier',
-						'dry_allowed_length', 'dry_base',
-						'reasoning_tags', 'num_ctx'
+						'system',
+						'temperature',
+						'top_p',
+						'top_k',
+						'min_p',
+						'max_tokens',
+						'repeat_penalty',
+						'frequency_penalty',
+						'presence_penalty',
+						'mirostat',
+						'mirostat_eta',
+						'mirostat_tau',
+						'seed',
+						'stop',
+						'xtc_threshold',
+						'xtc_probability',
+						'dry_multiplier',
+						'dry_allowed_length',
+						'dry_base',
+						'reasoning_tags',
+						'num_ctx'
 					];
 					const populated: Record<string, any> = {};
 					for (const key of samplingKeys) {
@@ -987,8 +1045,7 @@
 							['stable_diffusion', 'video_generation'].includes(data?.action) &&
 							lastStatus?.action === data?.action &&
 							lastStatus?.done !== true &&
-							(data?.progress !== undefined ||
-								lastStatus?.description === data?.description)
+							(data?.progress !== undefined || lastStatus?.description === data?.description)
 						) {
 							message.statusHistory[message.statusHistory.length - 1] = data;
 						} else {
@@ -1014,7 +1071,10 @@
 					if (!_contentBuffers.has(event.message_id)) {
 						_contentBuffers.set(event.message_id, message.content ?? '');
 					}
-					_contentBuffers.set(event.message_id, _contentBuffers.get(event.message_id) + data.content);
+					_contentBuffers.set(
+						event.message_id,
+						_contentBuffers.get(event.message_id) + data.content
+					);
 					startContentFlush();
 					return; // handled by content buffer flush
 				} else if (type === 'chat:message' || type === 'replace') {
@@ -1321,15 +1381,17 @@
 				rect: formatRect(child.getBoundingClientRect()),
 				text: getTextSnippet(child)
 			}));
-			const messages = [...container.querySelectorAll('[id^="message-"]')].slice(-6).map((message) => {
-				const rect = message.getBoundingClientRect();
-				return {
-					label: getElementLabel(message),
-					rect: formatRect(rect),
-					distanceToContainerBottom: formatNumber(containerRect.bottom - rect.bottom),
-					text: getTextSnippet(message)
-				};
-			});
+			const messages = [...container.querySelectorAll('[id^="message-"]')]
+				.slice(-6)
+				.map((message) => {
+					const rect = message.getBoundingClientRect();
+					return {
+						label: getElementLabel(message),
+						rect: formatRect(rect),
+						distanceToContainerBottom: formatNumber(containerRect.bottom - rect.bottom),
+						text: getTextSnippet(message)
+					};
+				});
 			const bottomElement = document.elementFromPoint(
 				Math.min(window.innerWidth - 1, Math.max(0, containerRect.left + containerRect.width / 2)),
 				Math.min(window.innerHeight - 1, Math.max(0, containerRect.bottom - 4))
@@ -1345,8 +1407,7 @@
 		const getDebugSnapshot = () => {
 			const messagesElement = document.getElementById('messages-container');
 			const inputElement = document.getElementById('message-input-container');
-			const messagesHTMLElement =
-				messagesElement instanceof HTMLElement ? messagesElement : null;
+			const messagesHTMLElement = messagesElement instanceof HTMLElement ? messagesElement : null;
 			const currentMessageElement = history?.currentId
 				? document.getElementById(`message-${history.currentId}`)
 				: null;
@@ -1532,7 +1593,8 @@
 		const getElementLabel = (element: Element) => {
 			if (element.id === 'message-input-container') return '#message-input-container';
 			if (element.id === 'messages-container') return '#messages-container';
-			if (element.id?.startsWith('message-')) return `message:${element.id.replace('message-', '')}`;
+			if (element.id?.startsWith('message-'))
+				return `message:${element.id.replace('message-', '')}`;
 			if (element.matches('pre')) return 'codeblock:<pre>';
 			if (element.matches('pre code')) return 'codeblock:<code>';
 			if (element.classList.contains('markdown-prose')) return 'markdown-prose';
@@ -1587,13 +1649,10 @@
 				const nextScrollTop = formatNumber(scrollElement.scrollTop);
 				const delta = formatNumber(nextScrollTop - lastScrollTop);
 				if (Math.abs(delta) >= 1) {
-					pushLine(
-						`scrollTop ${lastScrollTop} -> ${nextScrollTop} (delta ${delta})`,
-						{
-							scroll: getScrollDebugMetrics(scrollElement),
-							bottomContent: getBottomContentDebugInfo(scrollElement)
-						}
-					);
+					pushLine(`scrollTop ${lastScrollTop} -> ${nextScrollTop} (delta ${delta})`, {
+						scroll: getScrollDebugMetrics(scrollElement),
+						bottomContent: getBottomContentDebugInfo(scrollElement)
+					});
 					lastScrollTop = nextScrollTop;
 				}
 			});
@@ -1671,13 +1730,13 @@
 				pushLine(
 					`resize ${previous.label}: ${previous.width}x${previous.height} -> ${width}x${height}`,
 					{
-					widthDelta,
-					heightDelta,
-					element: getElementDebugInfo(entry.target)
-				}
-			);
-		}
-	});
+						widthDelta,
+						heightDelta,
+						element: getElementDebugInfo(entry.target)
+					}
+				);
+			}
+		});
 
 		const mutationObserver = new MutationObserver((mutations) => {
 			const added: unknown[] = [];
@@ -1890,22 +1949,40 @@
 	};
 
 	onMount(() => {
-		const savedImageQuality = localStorage.getItem('neveai.imageQuality');
-		stableDiffusionQuality = ['neve_image', 'neve_image_2', 'qwen_image_2_1', 'qwen_image_2s', 'qwen_image_2_1_official'].includes(savedImageQuality ?? '')
+		const storedImageQuality = localStorage.getItem('neveai.imageQuality');
+		const savedImageQuality =
+			storedImageQuality === 'qwen_image_2_1' ? 'qwen_image_2s' : storedImageQuality;
+		stableDiffusionQuality = [
+			'neve_image',
+			'neve_image_2',
+			'qwen_image_2s',
+			'qwen_image_2_1_official'
+		].includes(savedImageQuality ?? '')
 			? (savedImageQuality as typeof stableDiffusionQuality)
 			: 'neve_image';
-		if (!localStorage.getItem('neveai.image2Mode')) {
-			if (stableDiffusionQuality === 'qwen_image_2s') {
-				localStorage.setItem('neveai.image2Mode', 'fast');
-			} else if (stableDiffusionQuality === 'qwen_image_2_1') {
-				localStorage.setItem('neveai.image2Mode', 'quality');
-			}
+		if (storedImageQuality === 'qwen_image_2_1') {
+			localStorage.setItem('neveai.imageQuality', 'qwen_image_2s');
 		}
+		localStorage.removeItem('neveai.image2Mode');
 		const previousImageStyle = localStorage.getItem('neveai.imageStyle');
-		const savedImageStyle = ({ analog: 'spontaneous', realistic_2: 'realistic', arcane_2: 'arcane' } as Record<string, string>)[previousImageStyle ?? ''] ?? previousImageStyle;
-		stableDiffusionStyle = ['realistic', 'spontaneous', 'fantasy', 'minimalist', 'polygonal', 'manga', 'comics', 'pixelated', 'arcane'].includes(
-			savedImageStyle ?? ''
-		)
+		const savedImageStyle =
+			(
+				{ analog: 'spontaneous', realistic_2: 'realistic', arcane_2: 'arcane' } as Record<
+					string,
+					string
+				>
+			)[previousImageStyle ?? ''] ?? previousImageStyle;
+		stableDiffusionStyle = [
+			'realistic',
+			'spontaneous',
+			'fantasy',
+			'minimalist',
+			'polygonal',
+			'manga',
+			'comics',
+			'pixelated',
+			'arcane'
+		].includes(savedImageStyle ?? '')
 			? (savedImageStyle as typeof stableDiffusionStyle)
 			: 'none';
 		const legacyImageResolution = localStorage.getItem('neveai.imageResolution');
@@ -1940,7 +2017,7 @@
 		const activeImageResolutionKey =
 			stableDiffusionQuality === 'neve_image_2'
 				? imageResolutionKeys[0]
-				: stableDiffusionQuality === 'qwen_image_2_1' || stableDiffusionQuality === 'qwen_image_2s'
+				: stableDiffusionQuality === 'qwen_image_2s'
 					? imageResolutionKeys[1]
 					: stableDiffusionQuality === 'qwen_image_2_1_official'
 						? imageResolutionKeys[2]
@@ -1948,13 +2025,15 @@
 		const savedImageResolution = activeImageResolutionKey
 			? localStorage.getItem(activeImageResolutionKey)
 			: null;
-		stableDiffusionResolution = ['1:1', '16:9', '9:16', '4:3', '3:4'].includes(savedImageResolution ?? '')
+		stableDiffusionResolution = ['1:1', '16:9', '9:16', '4:3', '3:4'].includes(
+			savedImageResolution ?? ''
+		)
 			? (savedImageResolution as typeof stableDiffusionResolution)
 			: '1:1';
 		const savedVideoResolution = localStorage.getItem('neveai.videoResolution');
-		videoGenerationResolution = ['384p', '480p', '544p', '576p'].includes(savedVideoResolution ?? '')
+		videoGenerationResolution = ['480p', '672p'].includes(savedVideoResolution ?? '')
 			? (savedVideoResolution as typeof videoGenerationResolution)
-			: '384p';
+			: '480p';
 		videoGenerationDuration = localStorage.getItem('neveai.videoDuration') === '8s' ? '8s' : '5s';
 		videoGenerationAspectRatio =
 			localStorage.getItem('neveai.videoAspectRatio') === '9:16' ? '9:16' : '16:9';
@@ -2034,6 +2113,7 @@
 		const init = async () => {
 			if (!chatIdProp) {
 				loading = false;
+				loadedChatViewportReady = true;
 				await tick();
 			}
 
@@ -2328,8 +2408,10 @@
 			contentsDebounceTimer = setTimeout(() => {
 				contentsDebounceTimer = null;
 				const messages = history ? createMessagesList(history, history.currentId) : [];
-				const lastAssistant = messages.filter(m => m?.role !== 'user').pop();
-				const fingerprint = lastAssistant ? `${lastAssistant.id}:${lastAssistant.content?.length ?? 0}` : '';
+				const lastAssistant = messages.filter((m) => m?.role !== 'user').pop();
+				const fingerprint = lastAssistant
+					? `${lastAssistant.id}:${lastAssistant.content?.length ?? 0}`
+					: '';
 				if (fingerprint !== lastContentsFingerprint) {
 					lastContentsFingerprint = fingerprint;
 					getContents();
@@ -2385,7 +2467,16 @@
                         </body>
                         </html>
                     `;
-					contents = [...contents, { type: 'iframe', content: renderedContent, rawHtml: htmlContent, rawCss: cssContent, rawJs: jsContent }];
+					contents = [
+						...contents,
+						{
+							type: 'iframe',
+							content: renderedContent,
+							rawHtml: htmlContent,
+							rawCss: cssContent,
+							rawJs: jsContent
+						}
+					];
 				} else {
 					// Check for SVG content
 					for (const block of codeBlocks) {
@@ -2519,6 +2610,7 @@
 
 		autoScroll = true;
 		anchoredGeneratingMessageId = null;
+		visualMediaGenerationAnchorId = null;
 		showScrollToBottomButton = false;
 		generationBottomSpacerHeight = 0;
 		generationSpacerScrollLimit = null;
@@ -2642,6 +2734,7 @@
 
 				autoScroll = true;
 				anchoredGeneratingMessageId = null;
+				visualMediaGenerationAnchorId = null;
 				showScrollToBottomButton = false;
 				generationBottomSpacerHeight = 0;
 				generationSpacerScrollLimit = null;
@@ -2689,6 +2782,117 @@
 				behavior
 			});
 		}
+	};
+
+	const waitForAnimationFrame = () =>
+		new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+	const waitForRenderedMedia = async (root: ParentNode, selector = 'img, video') => {
+		const pendingMedia = Array.from(root.querySelectorAll(selector)).map((element) => {
+			if (element instanceof HTMLImageElement) {
+				if (element.complete) return Promise.resolve();
+				return new Promise<void>((resolve) => {
+					element.addEventListener('load', () => resolve(), { once: true });
+					element.addEventListener('error', () => resolve(), { once: true });
+				});
+			}
+
+			if (
+				element instanceof HTMLVideoElement &&
+				element.readyState < HTMLMediaElement.HAVE_METADATA
+			) {
+				return new Promise<void>((resolve) => {
+					element.addEventListener('loadedmetadata', () => resolve(), { once: true });
+					element.addEventListener('error', () => resolve(), { once: true });
+				});
+			}
+
+			return Promise.resolve();
+		});
+
+		if (pendingMedia.length === 0) return;
+		await Promise.all(pendingMedia);
+	};
+
+	const restoreLoadedChatBottom = async (expectedChatId: string) => {
+		const token = ++loadedChatBottomFollowToken;
+		let userInterrupted = false;
+		const isCurrentLoad = () =>
+			token === loadedChatBottomFollowToken &&
+			$chatId === expectedChatId &&
+			!anchoredGeneratingMessageId &&
+			!userInterrupted;
+		const pinToBottom = () => {
+			if (!isCurrentLoad() || !messagesContainerElement) return false;
+			messagesContainerElement.scrollTop = messagesContainerElement.scrollHeight;
+			return true;
+		};
+
+		await tick();
+		if (!pinToBottom()) return false;
+		const loadedMessagesContainer = messagesContainerElement;
+
+		const interruptBottomFollow = () => {
+			userInterrupted = true;
+		};
+		loadedMessagesContainer.addEventListener('wheel', interruptBottomFollow, { passive: true });
+		loadedMessagesContainer.addEventListener('pointerdown', interruptBottomFollow, {
+			passive: true
+		});
+		const resizeObserver = new ResizeObserver(() => pinToBottom());
+		resizeObserver.observe(loadedMessagesContainer.firstElementChild ?? loadedMessagesContainer);
+
+		let timeoutId: ReturnType<typeof setTimeout> | null = null;
+		try {
+			await Promise.race([
+				waitForRenderedMedia(
+					loadedMessagesContainer,
+					'[data-generated-visual-media] img, [data-generated-visual-media] video'
+				),
+				new Promise<void>((resolve) => {
+					timeoutId = setTimeout(resolve, 5000);
+				})
+			]);
+			if (timeoutId) clearTimeout(timeoutId);
+			await waitForAnimationFrame();
+			if (!pinToBottom()) return false;
+			await waitForAnimationFrame();
+			if (!pinToBottom()) return false;
+			updateScrollStateFromContainer({ updateAutoScroll: true });
+			return true;
+		} finally {
+			if (timeoutId) clearTimeout(timeoutId);
+			resizeObserver.disconnect();
+			loadedMessagesContainer.removeEventListener('wheel', interruptBottomFollow);
+			loadedMessagesContainer.removeEventListener('pointerdown', interruptBottomFollow);
+		}
+	};
+
+	const isVisualMediaMessage = (message: any) =>
+		Boolean(
+			message?.statusHistory?.some((status: any) =>
+				['stable_diffusion', 'video_generation'].includes(status?.action)
+			)
+		);
+
+	const settleGeneratedVisualMedia = async (messageId: string) => {
+		await tick();
+		const messageElement = document.getElementById(`message-${messageId}`);
+		if (!messageElement?.querySelector('[data-generated-visual-media]')) return;
+
+		let timeoutId: ReturnType<typeof setTimeout> | null = null;
+		await Promise.race([
+			waitForRenderedMedia(
+				messageElement,
+				'[data-generated-visual-media] img, [data-generated-visual-media] video'
+			),
+			new Promise<void>((resolve) => {
+				timeoutId = setTimeout(resolve, 5000);
+			})
+		]);
+		if (timeoutId) clearTimeout(timeoutId);
+		await waitForAnimationFrame();
+		await waitForAnimationFrame();
 	};
 
 	const scrollToContentBottom = async (behavior = 'auto') => {
@@ -2831,7 +3035,11 @@
 	};
 
 	const scheduleGenerationSpacerFit = () => {
-		if (!anchoredGeneratingMessageId || !messagesContainerElement || generationBottomSpacerHeight <= 0) {
+		if (
+			!anchoredGeneratingMessageId ||
+			!messagesContainerElement ||
+			generationBottomSpacerHeight <= 0
+		) {
 			return;
 		}
 
@@ -2852,11 +3060,7 @@
 		}
 	};
 
-	const positionMessageAtTop = (
-		messageId: string,
-		behavior = 'auto',
-		topOffset?: number
-	) => {
+	const positionMessageAtTop = (messageId: string, behavior = 'auto', topOffset?: number) => {
 		const messageElement = document.getElementById(`message-${messageId}`);
 		if (!messageElement) return;
 
@@ -2868,7 +3072,8 @@
 		const messageRect = messageElement.getBoundingClientRect();
 		const scrollMarginTop =
 			topOffset ?? (parseFloat(getComputedStyle(messageElement).scrollMarginTop || '0') || 0);
-		const targetTop = messagesContainerElement.scrollTop + messageRect.top - containerRect.top - scrollMarginTop;
+		const targetTop =
+			messagesContainerElement.scrollTop + messageRect.top - containerRect.top - scrollMarginTop;
 		const nextTop = Math.max(0, targetTop);
 
 		if (Math.abs(messagesContainerElement.scrollTop - nextTop) > 1) {
@@ -2896,7 +3101,8 @@
 
 	const prepareGenerationSpacerForMessageTop = (
 		messageId: string,
-		topOffset = 0
+		topOffset = 0,
+		includeReadingPadding = true
 	) => {
 		if (!messagesContainerElement || !messageId) return;
 
@@ -2905,7 +3111,8 @@
 
 		const containerRect = messagesContainerElement.getBoundingClientRect();
 		const messageRect = messageElement.getBoundingClientRect();
-		const targetTop = messagesContainerElement.scrollTop + messageRect.top - containerRect.top - topOffset;
+		const targetTop =
+			messagesContainerElement.scrollTop + messageRect.top - containerRect.top - topOffset;
 		const maxScrollTop = Math.max(
 			0,
 			messagesContainerElement.scrollHeight -
@@ -2914,7 +3121,9 @@
 		);
 		const requiredSpacerHeight = Math.max(
 			0,
-			Math.ceil(targetTop - maxScrollTop + getGenerationBottomReadingPadding())
+			Math.ceil(
+				targetTop - maxScrollTop + (includeReadingPadding ? getGenerationBottomReadingPadding() : 0)
+			)
 		);
 
 		if (Math.abs(requiredSpacerHeight - generationBottomSpacerHeight) > 1) {
@@ -2934,6 +3143,7 @@
 		if (!trackedMessageId) return;
 
 		anchoredGeneratingMessageId = trackedMessageId;
+		visualMediaGenerationAnchorId = null;
 		generationSpacerScrollLimit = null;
 		generationSpacerScrollAllowance = null;
 		activeGenerationSpacerHeightLimit = null;
@@ -2979,15 +3189,23 @@
 		trackedMessageId = scrollTargetMessageId,
 		{
 			topOffset = 0,
-			stabilizeAcrossFrames = true
-		}: { topOffset?: number; stabilizeAcrossFrames?: boolean } = {}
+			stabilizeAcrossFrames = true,
+			includeReadingPadding = true
+		}: {
+			topOffset?: number;
+			stabilizeAcrossFrames?: boolean;
+			includeReadingPadding?: boolean;
+		} = {}
 	) => {
 		anchoredGeneratingMessageId = trackedMessageId;
+		if (visualMediaGenerationAnchorId !== trackedMessageId) {
+			visualMediaGenerationAnchorId = null;
+		}
 		generationSpacerScrollLimit = null;
 		generationSpacerScrollAllowance = null;
 		autoScroll = false;
 		flushSync();
-		prepareGenerationSpacerForMessageTop(scrollTargetMessageId, topOffset);
+		prepareGenerationSpacerForMessageTop(scrollTargetMessageId, topOffset, includeReadingPadding);
 		positionMessageAtTop(scrollTargetMessageId, 'auto', topOffset);
 		await fitGenerationSpacerToViewport(messagesContainerElement?.scrollTop ?? 0);
 		activeGenerationSpacerHeightLimit = generationBottomSpacerHeight;
@@ -3019,6 +3237,19 @@
 		scheduleScrollStateUpdate({ updateAutoScroll: false });
 	};
 
+	const anchorVisualMediaGeneration = async (
+		scrollTargetMessageId: string,
+		trackedMessageId: string
+	) => {
+		primeGeneratingMessageAnchor(trackedMessageId);
+		visualMediaGenerationAnchorId = trackedMessageId;
+		await anchorGeneratingMessageTop(scrollTargetMessageId, trackedMessageId, {
+			topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX,
+			stabilizeAcrossFrames: false,
+			includeReadingPadding: false
+		});
+	};
+
 	const getMaxScrollWithoutGenerationSpacer = () => {
 		if (!messagesContainerElement) return 0;
 		return Math.max(
@@ -3027,6 +3258,34 @@
 				generationBottomSpacerHeight -
 				messagesContainerElement.clientHeight
 		);
+	};
+
+	const hasActiveVisualMediaSpacer = () =>
+		Boolean(
+			messagesContainerElement &&
+				anchoredGeneratingMessageId &&
+				visualMediaGenerationAnchorId === anchoredGeneratingMessageId &&
+				generationBottomSpacerHeight > 0
+		);
+
+	const discardVisualMediaGenerationSpacer = (desiredScrollTop?: number) => {
+		if (
+			!messagesContainerElement ||
+			!textGenerationAnchorUserMoved ||
+			!hasActiveVisualMediaSpacer()
+		) {
+			return false;
+		}
+
+		const nextScrollTop = desiredScrollTop ?? messagesContainerElement.scrollTop;
+		generationBottomSpacerHeight = 0;
+		activeGenerationSpacerHeightLimit = 0;
+		generationSpacerScrollLimit = null;
+		generationSpacerScrollAllowance = null;
+		flushSync();
+		messagesContainerElement.scrollTop = Math.min(nextScrollTop, getMessagesMaxScrollTop());
+		scheduleScrollStateUpdate({ updateAutoScroll: false });
+		return true;
 	};
 
 	const setGenerationSpacerScrollLimit = (scrollTop: number) => {
@@ -3048,10 +3307,7 @@
 
 		const spacerAllowance =
 			generationSpacerScrollAllowance ??
-			Math.max(
-				0,
-				generationSpacerScrollLimit - getMaxScrollWithoutGenerationSpacer()
-			);
+			Math.max(0, generationSpacerScrollLimit - getMaxScrollWithoutGenerationSpacer());
 
 		return Math.min(
 			getMessagesMaxScrollTop(),
@@ -3061,9 +3317,6 @@
 
 	const releaseGeneratingMessageAnchor = (messageId?: string) => {
 		if (!messageId || anchoredGeneratingMessageId === messageId) {
-			if (!messageId || visualMediaAutoFollowMessageId === messageId) {
-				visualMediaAutoFollowMessageId = null;
-			}
 			if (
 				messagesContainerElement &&
 				generationBottomSpacerHeight > 0 &&
@@ -3072,6 +3325,9 @@
 				setGenerationSpacerScrollLimit(messagesContainerElement.scrollTop);
 			}
 			anchoredGeneratingMessageId = null;
+			if (!messageId || visualMediaGenerationAnchorId === messageId) {
+				visualMediaGenerationAnchorId = null;
+			}
 			textGenerationAnchorScrollTop = null;
 			textGenerationAnchorUserMoved = false;
 			activeGenerationSpacerHeightLimit = null;
@@ -3131,7 +3387,10 @@
 
 	const getMessagesMaxScrollTop = () => {
 		if (!messagesContainerElement) return 0;
-		return Math.max(0, messagesContainerElement.scrollHeight - messagesContainerElement.clientHeight);
+		return Math.max(
+			0,
+			messagesContainerElement.scrollHeight - messagesContainerElement.clientHeight
+		);
 	};
 
 	const consumeGenerationSpacerFromUpwardScroll = () => {
@@ -3140,14 +3399,6 @@
 		const currentScrollTop = messagesContainerElement.scrollTop;
 		const upwardDistance = lastMessagesScrollTop - currentScrollTop;
 		lastMessagesScrollTop = currentScrollTop;
-		if (
-			upwardDistance > 0 &&
-			performance.now() <= generationSpacerUpwardScrollIntentUntil &&
-			visualMediaAutoFollowMessageId
-		) {
-			visualMediaAutoFollowMessageId = null;
-		}
-
 		if (
 			generationBottomSpacerHeight <= 0 ||
 			upwardDistance <= 0 ||
@@ -3263,6 +3514,22 @@
 		if (event.deltaY <= 0) return;
 		generationSpacerUpwardScrollIntentUntil = 0;
 
+		if (hasActiveVisualMediaSpacer()) {
+			cancelMessagesBottomWheelLock();
+			const wheelDeltaPixels =
+				event.deltaMode === 1
+					? event.deltaY * 16
+					: event.deltaMode === 2
+						? event.deltaY * messagesContainerElement.clientHeight
+						: event.deltaY;
+
+			event.preventDefault();
+			discardVisualMediaGenerationSpacer(
+				messagesContainerElement.scrollTop + wheelDeltaPixels
+			);
+			return;
+		}
+
 		const idleGenerationScrollLimit =
 			!anchoredGeneratingMessageId &&
 			!generating &&
@@ -3321,11 +3588,6 @@
 				resizeFrame = null;
 				clampIdleGenerationSpacerScroll();
 				if (
-					visualMediaAutoFollowMessageId &&
-					visualMediaAutoFollowMessageId === anchoredGeneratingMessageId
-				) {
-					scrollToContentBottom('auto');
-				} else if (
 					anchoredGeneratingMessageId &&
 					!textGenerationAnchorUserMoved &&
 					textGenerationAnchorScrollTop !== null &&
@@ -3382,11 +3644,14 @@
 			autoScroll = true;
 		}
 
-		scrollToBottomButtonSuppressTimer = setTimeout(() => {
-			scrollToBottomButtonSuppressTimer = null;
-			scrollToBottomButtonSuppressUntil = 0;
-			updateScrollStateFromContainer({ updateAutoScroll: !anchoredGeneratingMessageId });
-		}, isAnchoredGeneration ? 120 : 350);
+		scrollToBottomButtonSuppressTimer = setTimeout(
+			() => {
+				scrollToBottomButtonSuppressTimer = null;
+				scrollToBottomButtonSuppressUntil = 0;
+				updateScrollStateFromContainer({ updateAutoScroll: !anchoredGeneratingMessageId });
+			},
+			isAnchoredGeneration ? 120 : 350
+		);
 	};
 	const chatCompletedHandler = async (_chatId, modelId, responseMessageId, messages) => {
 		const res = await chatCompleted(localStorage.token, {
@@ -3680,7 +3945,10 @@
 		if (choices) {
 			if (choices[0]?.message?.content) {
 				// Non-stream response — still buffer it
-				_contentBuffers.set(message.id, (_contentBuffers.get(message.id) ?? '') + choices[0].message.content);
+				_contentBuffers.set(
+					message.id,
+					(_contentBuffers.get(message.id) ?? '') + choices[0].message.content
+				);
 			} else {
 				// Stream response — accumulate in plain JS buffer (no proxy mutation)
 				let value = choices[0]?.delta?.content ?? '';
@@ -3774,10 +4042,14 @@
 			lastContentsFingerprint = '';
 
 			const wasAnchored = anchoredGeneratingMessageId === message.id;
+			const isVisualMediaCompletion = isVisualMediaMessage(message);
 			message.done = true;
 
 			// Immediately remove this chat from activeChatIds so spinner stops
-			activeChatIds.update((ids) => { ids.delete(chatId); return new Set(ids); });
+			activeChatIds.update((ids) => {
+				ids.delete(chatId);
+				return new Set(ids);
+			});
 
 			if ($settings.responseAutoCopy) {
 				copyToClipboard(message.content);
@@ -3817,7 +4089,7 @@
 			await tick();
 			if (wasAnchored) {
 				updateScrollStateFromContainer({ updateAutoScroll: false });
-			} else if (autoScroll) {
+			} else if (autoScroll && !isVisualMediaCompletion) {
 				scrollToBottom();
 			}
 
@@ -3830,7 +4102,8 @@
 			const artContents = get(artifactContents);
 			if (
 				$chatCodeExecutionEnabled &&
-				artContents && artContents.length > 0 &&
+				artContents &&
+				artContents.length > 0 &&
 				($settings?.detectArtifacts ?? true) &&
 				!$mobile
 			) {
@@ -3846,6 +4119,9 @@
 			);
 
 			if (wasAnchored) {
+				if (isVisualMediaCompletion) {
+					await settleGeneratedVisualMedia(message.id);
+				}
 				await clearGenerationSpacerIfSafe();
 				releaseGeneratingMessageAnchor(message.id);
 				updateScrollStateFromContainer({ updateAutoScroll: false });
@@ -3881,7 +4157,9 @@
 	};
 
 	const normalizeLocalTokenPrediction = (tokenPrediction?: string | null) => {
-		return tokenPrediction === 'on' || tokenPrediction === 'stable' || tokenPrediction === 'aggressive'
+		return tokenPrediction === 'on' ||
+			tokenPrediction === 'stable' ||
+			tokenPrediction === 'aggressive'
 			? 'on'
 			: 'off';
 	};
@@ -3943,9 +4221,10 @@
 		const tokenPrediction = isLocalContextShiftEnabled(contextShift)
 			? 'off'
 			: normalizeLocalTokenPrediction(loadPreferences.tokenPrediction);
-		const speculativeDecoding = isLocalContextShiftEnabled(contextShift) || isLocalTokenPredictionEnabled(tokenPrediction)
-			? 'off'
-			: normalizeLocalSpeculativeDecoding(loadPreferences.speculative);
+		const speculativeDecoding =
+			isLocalContextShiftEnabled(contextShift) || isLocalTokenPredictionEnabled(tokenPrediction)
+				? 'off'
+				: normalizeLocalSpeculativeDecoding(loadPreferences.speculative);
 
 		return {
 			modelFilename,
@@ -4005,9 +4284,11 @@
 				const loadedModels = await getLoadedLocalModels(localStorage.token);
 				const loadedModel = loadedModels.find((lm) => lm.id === modelId) ?? null;
 
-				const mediaGenerationRequested = stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
+				const mediaGenerationRequested =
+					stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
 				if (mediaGenerationRequested) {
-					stableDiffusionStandbyModel = loadedModel ?? loadedModels[0] ?? stableDiffusionStandbyModel;
+					stableDiffusionStandbyModel =
+						loadedModel ?? loadedModels[0] ?? stableDiffusionStandbyModel;
 				}
 
 				const loadPlan = await resolveLocalModelLoadPlan(model, modelId, loadedModel);
@@ -4030,7 +4311,10 @@
 						try {
 							await unloadLocalModel(localStorage.token, currentlyLoaded.id);
 						} catch (unloadErr) {
-							console.warn('Could not explicitly unload previous model (may already be inactive):', unloadErr);
+							console.warn(
+								'Could not explicitly unload previous model (may already be inactive):',
+								unloadErr
+							);
 						}
 					}
 
@@ -4081,7 +4365,10 @@
 
 	const submitPrompt = async (
 		userPrompt,
-		{ _raw = false, features = null }: { _raw?: boolean; features?: Record<string, any> | null } = {}
+		{
+			_raw = false,
+			features = null
+		}: { _raw?: boolean; features?: Record<string, any> | null } = {}
 	) => {
 		console.log('submitPrompt', userPrompt, $chatId);
 		normalizeExclusiveFeatureToggles();
@@ -4101,7 +4388,11 @@
 		}
 
 		if (!userPrompt.trim() && !files.some((file) => file?.pastedText === true)) {
-			toast.error(files.length > 0 ? 'Escreva uma mensagem para enviar o anexo.' : $i18n.t('Please enter a prompt'));
+			toast.error(
+				files.length > 0
+					? 'Escreva uma mensagem para enviar o anexo.'
+					: $i18n.t('Please enter a prompt')
+			);
 			return;
 		}
 		if (selectedModels.includes('')) {
@@ -4123,11 +4414,12 @@
 
 					const mediaGenerationRequested = Boolean(
 						requestFeatures.stable_diffusion ||
-						requestFeatures.music_generation ||
-						requestFeatures.video_generation
+							requestFeatures.music_generation ||
+							requestFeatures.video_generation
 					);
 					if (mediaGenerationRequested) {
-						stableDiffusionStandbyModel = loadedModel ?? loadedModels[0] ?? stableDiffusionStandbyModel;
+						stableDiffusionStandbyModel =
+							loadedModel ?? loadedModels[0] ?? stableDiffusionStandbyModel;
 					}
 
 					const loadPlan = await resolveLocalModelLoadPlan(model, modelId, loadedModel);
@@ -4147,7 +4439,10 @@
 								try {
 									await unloadLocalModel(localStorage.token, currentlyLoaded.id);
 								} catch (unloadErr) {
-									console.warn('Could not explicitly unload previous model (may already be inactive):', unloadErr);
+									console.warn(
+										'Could not explicitly unload previous model (may already be inactive):',
+										unloadErr
+									);
 								}
 							}
 
@@ -4380,21 +4675,18 @@
 		}
 
 		const initialResponseMessageId = responseMessageOrder[0] ?? null;
-		visualMediaAutoFollowMessageId =
-			initialResponseMessageId &&
-			(requestFeatures?.stable_diffusion || requestFeatures?.video_generation)
-				? initialResponseMessageId
-				: null;
-		if (initialResponseMessageId) {
-			primeGeneratingMessageAnchor(initialResponseMessageId);
-		}
 		history = history;
 
 		if (initialResponseMessageId) {
-			await anchorGeneratingMessageTop(parentId, initialResponseMessageId, {
-				topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX,
-				stabilizeAcrossFrames: false
-			});
+			if (requestFeatures?.stable_diffusion || requestFeatures?.video_generation) {
+				await anchorVisualMediaGeneration(parentId, initialResponseMessageId);
+			} else {
+				primeGeneratingMessageAnchor(initialResponseMessageId);
+				await anchorGeneratingMessageTop(parentId, initialResponseMessageId, {
+					topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX,
+					stabilizeAcrossFrames: false
+				});
+			}
 		}
 
 		// Create new chat if newChat is true and first user message
@@ -4491,10 +4783,7 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.web_search)
 						? effectiveDeepSearchEnabled
 						: false,
-				code_execution:
-					$config?.features?.enable_code_execution
-						? codeExecutionEnabled
-						: false,
+				code_execution: $config?.features?.enable_code_execution ? codeExecutionEnabled : false,
 				file_generation:
 					fileGenerationEnabled &&
 					!deepSearchEnabled &&
@@ -4511,7 +4800,9 @@
 				stable_diffusion_style: stableDiffusionStyle,
 				stable_diffusion_resolution:
 					stableDiffusionQuality === 'qwen_image_2_1_official' &&
-					files.some((file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/'))
+					files.some(
+						(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
+					)
 						? 'auto'
 						: stableDiffusionResolution,
 				music_generation:
@@ -4562,16 +4853,14 @@
 		const currentModels = atSelectedModel?.id ? [atSelectedModel.id] : selectedModels;
 		return (
 			currentModels.length > 0 &&
-			currentModels.every(
-				(modelId) => {
-					const model = $models.find((item) => item.id === modelId);
-					return (
-						model?.owned_by !== 'llamacpp' &&
-						model?.info?.meta?.capabilities?.toggle_reasoning === true &&
-						model?.info?.meta?.defaultFeatureIds?.includes('toggle_reasoning')
-					);
-				}
-			)
+			currentModels.every((modelId) => {
+				const model = $models.find((item) => item.id === modelId);
+				return (
+					model?.owned_by !== 'llamacpp' &&
+					model?.info?.meta?.capabilities?.toggle_reasoning === true &&
+					model?.info?.meta?.defaultFeatureIds?.includes('toggle_reasoning')
+				);
+			})
 		);
 	};
 
@@ -4660,7 +4949,9 @@
 			timeoutId = setTimeout(() => {
 				finish(
 					undefined,
-					new Error($i18n.t('Could not connect to the backend. Check that it is running and try again.'))
+					new Error(
+						$i18n.t('Could not connect to the backend. Check that it is running and try again.')
+					)
 				);
 			}, CHAT_SOCKET_READY_TIMEOUT_MS);
 
@@ -4678,6 +4969,10 @@
 	) => {
 		const responseMessage = _history.messages[responseMessageId];
 		const userMessage = _history.messages[responseMessage.parentId];
+		const effectiveRequestFeatures = requestFeatures ?? getFeatures();
+		const isVisualMediaRequest = Boolean(
+			effectiveRequestFeatures?.stable_diffusion || effectiveRequestFeatures?.video_generation
+		);
 
 		let socketId = '';
 		try {
@@ -4731,7 +5026,11 @@
 		);
 
 		if (anchoredGeneratingMessageId !== responseMessageId) {
-			await anchorGeneratingMessageTop(responseMessageId);
+			if (isVisualMediaRequest) {
+				await anchorVisualMediaGeneration(userMessage.id, responseMessageId);
+			} else {
+				await anchorGeneratingMessageTop(responseMessageId);
+			}
 		}
 		const wasAnchoredByThisSend = anchoredGeneratingMessageId === responseMessageId;
 		eventTarget.dispatchEvent(
@@ -4891,7 +5190,7 @@
 					// Direct terminal servers — always included when enabled (not routed through selectedToolIds)
 					...($terminalServers ?? []).filter((t) => !t.id)
 				],
-				features: requestFeatures ?? getFeatures(),
+				features: effectiveRequestFeatures,
 				variables: {
 					...getPromptVariables(
 						$user?.name,
@@ -5101,7 +5400,6 @@
 				scrollToBottom();
 			}
 		}
-
 	};
 
 	const submitMessage = async (parentId, prompt) => {
@@ -5158,10 +5456,10 @@
 				)
 					? 'video_generation'
 					: message?.statusHistory?.some((status: any) => status.action === 'music_generation')
-					? 'music_generation'
-					: message?.statusHistory?.some((status: any) => status.action === 'stable_diffusion')
-						? 'stable_diffusion'
-						: null;
+						? 'music_generation'
+						: message?.statusHistory?.some((status: any) => status.action === 'stable_diffusion')
+							? 'stable_diffusion'
+							: null;
 				const previousMediaState = {
 					stableDiffusionEnabled,
 					musicGenerationEnabled,
@@ -5227,10 +5525,14 @@
 					history = history;
 
 					await tick();
-					await anchorGeneratingMessageTop(userMessage.id, message.id, {
-						topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX,
-						stabilizeAcrossFrames: false
-					});
+					if (generatedAction === 'stable_diffusion' || generatedAction === 'video_generation') {
+						await anchorVisualMediaGeneration(userMessage.id, message.id);
+					} else {
+						await anchorGeneratingMessageTop(userMessage.id, message.id, {
+							topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX,
+							stabilizeAcrossFrames: false
+						});
+					}
 					await saveChatHandler($chatId, history);
 
 					const chatEventEmitter = await getChatEventEmitter(model.id, $chatId);
@@ -5402,7 +5704,8 @@
 
 	const getPastedTextTitle = (message) => {
 		const pastedFile = message?.files?.find((file) => file?.pastedText === true);
-		const content = pastedFile?.pastedTextTitle ?? pastedFile?.content ?? pastedFile?.file?.data?.content ?? '';
+		const content =
+			pastedFile?.pastedTextTitle ?? pastedFile?.content ?? pastedFile?.file?.data?.content ?? '';
 		return String(content).replace(/\s+/g, ' ').trim().slice(0, 100);
 	};
 
@@ -5410,7 +5713,10 @@
 		const firstUserMessage = createMessagesList(history, history.currentId).find(
 			(message) => message?.role === 'user'
 		);
-		const title = (getMessageTextForTitle(firstUserMessage?.content).trim() || getPastedTextTitle(firstUserMessage))
+		const title = (
+			getMessageTextForTitle(firstUserMessage?.content).trim() ||
+			getPastedTextTitle(firstUserMessage)
+		)
 			.replace(/<\$[^>]+>/g, '')
 			.replace(/\s+/g, ' ')
 			.trim();
@@ -5427,9 +5733,10 @@
 			const pastedOnlyTitle = getMessageTextForTitle(firstUserMessage?.content).trim()
 				? ''
 				: getPastedTextTitle(firstUserMessage);
-			const initialTitle = stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled
-				? getInitialImageChatTitle(history) || $i18n.t('New Chat')
-				: pastedOnlyTitle || $i18n.t('New Chat');
+			const initialTitle =
+				stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled
+					? getInitialImageChatTitle(history) || $i18n.t('New Chat')
+					: pastedOnlyTitle || $i18n.t('New Chat');
 
 			chat = await createNewChat(
 				localStorage.token,
@@ -5555,13 +5862,19 @@
 />
 
 {#if showContextModal}
-	<div class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40" transition:fade={{ duration: 80 }}>
+	<div
+		class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40"
+		transition:fade={{ duration: 80 }}
+	>
 		<div class="bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-xl mx-4 w-80 flex flex-col gap-3">
 			<p class="text-sm font-semibold text-gray-900 dark:text-white">{$i18n.t('Context size')}</p>
 			<div class="flex flex-col gap-1.5 max-h-80 overflow-y-auto scrollbar-none">
 				{#each LOCAL_MODEL_CONTEXT_OPTIONS as sz}
 					<button
-						class="flex items-center justify-between px-3 py-2 rounded-lg text-xs text-left transition {contextModalSize === sz ? 'bg-black text-white dark:bg-white dark:text-black' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
+						class="flex items-center justify-between px-3 py-2 rounded-lg text-xs text-left transition {contextModalSize ===
+						sz
+							? 'bg-black text-white dark:bg-white dark:text-black'
+							: 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
 						on:click={() => (contextModalSize = sz)}
 					>
 						<span>{sz.toLocaleString()} tokens</span>
@@ -5574,44 +5887,53 @@
 			<div class="flex justify-end gap-2 mt-1">
 				<button
 					class="px-4 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
-					on:click={cancelContextModal}
-				>{$i18n.t('Cancel')}</button>
+					on:click={cancelContextModal}>{$i18n.t('Cancel')}</button
+				>
 				<button
 					class="px-4 py-1.5 text-xs rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium"
-					on:click={confirmContextModal}
-				>{$i18n.t('Confirm')}</button>
+					on:click={confirmContextModal}>{$i18n.t('Confirm')}</button
+				>
 			</div>
 		</div>
 	</div>
 {/if}
 
 {#if showVisionModal}
-	<div class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40" transition:fade={{ duration: 80 }}>
+	<div
+		class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40"
+		transition:fade={{ duration: 80 }}
+	>
 		<div class="bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-xl mx-4 w-80 flex flex-col gap-3">
 			<p class="text-sm font-semibold text-gray-900 dark:text-white">{$i18n.t('Load vision?')}</p>
 			<p class="text-xs text-gray-500 dark:text-gray-400">
-				{$i18n.t('{{model}} will load with image analysis support.', { model: visionModalModelName })}
+				{$i18n.t('{{model}} will load with image analysis support.', {
+					model: visionModalModelName
+				})}
 			</p>
 			<div class="flex justify-end gap-2 mt-1">
 				<button
 					class="px-4 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
-					on:click={declineVisionModal}
-				>{$i18n.t('No')}</button>
+					on:click={declineVisionModal}>{$i18n.t('No')}</button
+				>
 				<button
 					class="px-4 py-1.5 text-xs rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium"
-					on:click={confirmVisionModal}
-				>{$i18n.t('Yes')}</button>
+					on:click={confirmVisionModal}>{$i18n.t('Yes')}</button
+				>
 			</div>
 		</div>
 	</div>
 {/if}
 
 <div
-	class="h-screen max-h-[100dvh] w-full max-w-full flex flex-col"
+	class="relative h-screen max-h-[100dvh] w-full max-w-full flex flex-col"
 	id="chat-container"
 >
 	{#if !loading}
-		<div in:fade={{ duration: 50 }} class="w-full h-full flex flex-col">
+		<div
+			in:fade={{ duration: 50 }}
+			class="w-full h-full flex flex-col"
+			class:invisible={!loadedChatViewportReady}
+		>
 			{#if $selectedFolder && $selectedFolder?.meta?.background_image_url}
 				<div
 					class="absolute top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
@@ -5634,7 +5956,11 @@
 			{/if}
 
 			<PaneGroup direction="horizontal" class="w-full h-full">
-				<Pane defaultSize={50} minSize={$showArtifacts ? 38 : 30} class="h-full flex relative max-w-full flex-col">
+				<Pane
+					defaultSize={50}
+					minSize={$showArtifacts ? 38 : 30}
+					class="h-full flex relative max-w-full flex-col"
+				>
 					<FilesOverlay show={dragged} />
 					<Navbar
 						bind:this={navbarElement}
@@ -5694,7 +6020,11 @@
 						}}
 					/>
 
-					<div id="chat-pane" class="flex flex-col flex-auto min-h-0 z-10 w-full @container overflow-auto" style="overflow-anchor: none;">
+					<div
+						id="chat-pane"
+						class="flex flex-col flex-auto min-h-0 z-10 w-full @container overflow-auto"
+						style="overflow-anchor: none;"
+					>
 						{#if ($settings?.landingPageMode === 'chat' && !$selectedFolder) || createMessagesList(history, history.currentId).length > 0}
 							<div
 								class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden"
@@ -5709,6 +6039,9 @@
 								on:scroll={(e) => {
 									consumeGenerationSpacerFromUpwardScroll();
 									if (clampMessagesBottomWheelJitter()) {
+										return;
+									}
+									if (discardVisualMediaGenerationSpacer()) {
 										return;
 									}
 									if (clampIdleGenerationSpacerScroll()) {
@@ -5890,7 +6223,9 @@
 				<ModelSettingsSheet
 					bind:params
 					bind:chatFiles
-					selectedModelName={$models.find((m) => m.id === selectedModelIds?.at(0))?.name ?? selectedModelIds?.at(0) ?? ''}
+					selectedModelName={$models.find((m) => m.id === selectedModelIds?.at(0))?.name ??
+						selectedModelIds?.at(0) ??
+						''}
 				/>
 
 				<ChatControls
@@ -5916,6 +6251,11 @@
 				/>
 			</PaneGroup>
 		</div>
+		{#if !loadedChatViewportReady}
+			<div class="absolute inset-0 z-20 flex items-center justify-center">
+				<Spinner className="size-5" />
+			</div>
+		{/if}
 	{:else if loading}
 		<div class=" flex items-center justify-center h-full w-full">
 			<div class="m-auto">

@@ -265,7 +265,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                         <StackPanel Margin="20,26,16,24"><TextBlock Text="NeveAI" FontSize="21" FontWeight="Bold"/></StackPanel>
                         <StackPanel Grid.Row="1">
                             <Button x:Name="NavOverview" Style="{StaticResource NavigationButton}" Tag="active">
-                                <StackPanel Orientation="Horizontal"><Viewbox Width="21" Height="21"><Path Width="24" Height="24" Fill="Transparent" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Data="M 12 3 L 12 15 M 7 10 L 12 15 L 17 10 M 5 15 L 5 19 A 2 2 0 0 0 7 21 L 17 21 A 2 2 0 0 0 19 19 L 19 15"/></Viewbox><TextBlock Margin="10,0,0,0" VerticalAlignment="Center" FontFamily="Segoe UI" FontSize="16" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Text="Instalar"/></StackPanel>
+								<StackPanel Orientation="Horizontal"><Viewbox Width="21" Height="21"><Path Width="24" Height="24" Fill="Transparent" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Data="M 12 3 L 12 15 M 7 10 L 12 15 L 17 10 M 5 15 L 5 19 A 2 2 0 0 0 7 21 L 17 21 A 2 2 0 0 0 19 19 L 19 15"/></Viewbox><TextBlock x:Name="LblNavInstall" Margin="10,0,0,0" VerticalAlignment="Center" FontFamily="Segoe UI" FontSize="16" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Text="Instalar"/></StackPanel>
                             </Button>
                             <Button x:Name="NavSettings" Style="{StaticResource NavigationButton}">
                                 <StackPanel Orientation="Horizontal"><Viewbox Width="21" Height="21"><Path Width="24" Height="24" Fill="Transparent" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" Data="M 14.7 6.3 A 1 1 0 0 0 14.7 7.7 L 16.3 9.3 A 1 1 0 0 0 17.7 9.3 L 21.47 5.53 A 6 6 0 0 1 13.53 13.47 L 6.62 20.38 A 2.12 2.12 0 0 1 3.62 17.38 L 10.53 10.47 A 6 6 0 0 1 18.47 2.53 Z"/></Viewbox><TextBlock Margin="10,0,0,0" VerticalAlignment="Center" FontFamily="Segoe UI" FontSize="16" Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Text="Atualizar"/></StackPanel>
@@ -276,7 +276,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                         </StackPanel>
                         <ComboBox x:Name="CmbLanguage" Grid.Row="2" Margin="10,0,10,14" Style="{StaticResource LanguageComboBox}" SelectedIndex="0" Tag="Idioma" ToolTip="Idioma">
                             <ComboBoxItem Content="Português (Brasil)" Tag="pt-BR"/>
-                            <ComboBoxItem Content="Inglês" Tag="en-US"/>
+                            <ComboBoxItem Content="English" Tag="en-US"/>
                         </ComboBox>
                     </Grid>
                 </Border>
@@ -436,7 +436,7 @@ if (Test-Path -LiteralPath $WINDOW_ICON_PATH) {
 
 # Atalhos para controles
 $ctl = @{}
-foreach ($name in 'TitleBar','BtnMinimize','BtnMaximize','BtnClose','SidebarColumn','SidebarPanel','NavOverview','NavSettings','NavDiagnostics','LblPageContext','LblPageSubtitle','HeaderActions','InstallActions',
+foreach ($name in 'TitleBar','BtnMinimize','BtnMaximize','BtnClose','SidebarColumn','SidebarPanel','NavOverview','NavSettings','NavDiagnostics','LblNavInstall','LblPageContext','LblPageSubtitle','HeaderActions','InstallActions',
                   'CmbLanguage',
                   'LblGpu','CmbBackend','CmbVram','ChkInstallPython','ChkDesktopShortcut',
                   'ConfigPanel','InstallPanel','DonePanel',
@@ -449,8 +449,8 @@ foreach ($name in 'TitleBar','BtnMinimize','BtnMaximize','BtnClose','SidebarColu
 
 $script:InstallerPtToEn = [ordered]@{
     'Idioma' = 'Language'
-    'Português (Brasil)' = 'Portuguese (Brazillian)'
-    'Inglês' = 'English'
+    'Português (Brasil)' = 'Português (Brasil)'
+    'English' = 'English'
     'Instalar' = 'Install'
     'Retomar' = 'Resume'
     'Atualizar' = 'Update'
@@ -465,9 +465,12 @@ $script:InstallerPtToEn = [ordered]@{
     'Minimizar' = 'Minimize'
     'Maximizar' = 'Maximize'
     'Instalação' = 'Installation'
+	'Reparação' = 'Repair'
+	'Reparar' = 'Repair'
     'Atualização' = 'Update'
     'Publicação' = 'Build'
     'Detecte o hardware e instale tudo o que a NeveAI precisa.' = 'Detect the hardware and install everything NeveAI needs.'
+	'Verifique e repare os componentes instalados da NeveAI.' = 'Check and repair the installed NeveAI components.'
     'Verifique e instale novas versões da NeveAI e do llama.cpp.' = 'Check for and install new versions of NeveAI and llama.cpp.'
     'Compile e publique o projeto na pasta do backend.' = 'Build and publish the project to the backend folder.'
     'Conclua a instalação antes de acessar esta aba.' = 'Complete the installation before opening this section.'
@@ -1106,7 +1109,7 @@ function Restore-InstallSelectionView {
     $ctl.BtnPrimary.Visibility = 'Visible'
     $ctl.BtnPrimary.IsEnabled = $true
     $currentState = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -EA SilentlyContinue)).Trim()
-    $ctl.BtnPrimary.Content = if ($currentState -in @('done', 'idle', 'pending')) { 'Instalar' } else { 'Retomar' }
+	$ctl.BtnPrimary.Content = if (Test-HubProjectInstalled) { 'Reparar' } elseif ($currentState -in @('done', 'idle', 'pending')) { 'Instalar' } else { 'Retomar' }
     $ctl.BtnPrimary.Tag = $null
     $ctl.Progress.Value = 0
     $ctl.LblProgressTxt.Text = '0%'
@@ -1520,14 +1523,19 @@ $ctl.BtnPrimary.Add_Click({
         $ctl.ConfigPanel.Visibility = 'Visible'
         $ctl.BtnCancel.Visibility = 'Collapsed'
         $currentState = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -EA SilentlyContinue)).Trim()
-        $ctl.BtnPrimary.Content = if ($currentState -in @('done', 'idle', 'pending')) { 'Instalar' } else { 'Retomar' }
+		$ctl.BtnPrimary.Content = if (Test-HubProjectInstalled) { 'Reparar' } elseif ($currentState -in @('done', 'idle', 'pending')) { 'Instalar' } else { 'Retomar' }
         $ctl.BtnPrimary.Tag = $null
         $ctl.Progress.Value = 0
         $window.Tag = 'idle'
         return
     }
-    $installPython311 = [bool]$ctl.ChkInstallPython.IsChecked
-    $createDesktopShortcut = [bool]$ctl.ChkDesktopShortcut.IsChecked
+	$isRepair = Test-HubProjectInstalled
+	$installPython311 = (-not $isRepair) -and [bool]$ctl.ChkInstallPython.IsChecked
+	$createDesktopShortcut = (-not $isRepair) -and [bool]$ctl.ChkDesktopShortcut.IsChecked
+	if ($isRepair -and (Test-Path -LiteralPath $VENV_PY)) {
+		$script:PYTHON_EXE = $VENV_PY
+		$PYTHON_EXE = $VENV_PY
+	}
     if ([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) {
         if ($installPython311) {
             $pythonLaunchRetry = Resolve-PythonLaunch
@@ -6822,7 +6830,7 @@ function Update-HubActionButtonStyles {
 		foreach ($button in $panel.Children) {
 			if (-not ($button -is [System.Windows.Controls.Button])) { continue }
 			$label = [string]$button.Content
-			$targetStyle = if ($label -in @('Instalar', 'Retomar', 'Atualizar', 'Publicar', 'Install', 'Resume', 'Update', 'Publish')) {
+			$targetStyle = if ($label -in @('Instalar', 'Reparar', 'Retomar', 'Atualizar', 'Publicar', 'Install', 'Repair', 'Resume', 'Update', 'Publish')) {
 				$accentStyle
 			} elseif ($label -in @('Cancelar', 'Concluir', 'Fechar', 'Cancel', 'Finish', 'Close')) {
 				$completionStyle
@@ -6835,14 +6843,15 @@ function Update-HubActionButtonStyles {
 }
 
 function Set-HubHeaderState([string]$mode) {
+	$isRepair = $mode -eq 'install' -and (Test-HubProjectInstalled)
 	$context = switch ($mode) {
-		'install' { 'Instalação' }
+		'install' { if ($isRepair) { 'Reparação' } else { 'Instalação' } }
 		'update' { 'Atualização' }
 		'build' { 'Publicação' }
 		default { 'Instalação' }
 	}
 	$subtitle = switch ($mode) {
-		'install' { 'Detecte o hardware e instale tudo o que a NeveAI precisa.' }
+		'install' { if ($isRepair) { 'Verifique e repare os componentes instalados da NeveAI.' } else { 'Detecte o hardware e instale tudo o que a NeveAI precisa.' } }
 		'update' { 'Verifique e instale novas versões da NeveAI e do llama.cpp.' }
 		'build' { 'Compile e publique o projeto na pasta do backend.' }
 		default { 'Detecte o hardware e instale tudo o que a NeveAI precisa.' }
@@ -6852,6 +6861,34 @@ function Set-HubHeaderState([string]$mode) {
 	$ctl.NavOverview.Tag = if ($mode -eq 'install') { 'active' } else { $null }
 	$ctl.NavSettings.Tag = if ($mode -eq 'update') { 'active' } else { $null }
 	$ctl.NavDiagnostics.Tag = if ($mode -eq 'build') { 'active' } else { $null }
+}
+
+function Update-HubInstallModeState {
+	$installed = Test-HubProjectInstalled
+	$firstInstallVisibility = if ($installed) { 'Collapsed' } else { 'Visible' }
+	$ctl.ChkInstallPython.Visibility = $firstInstallVisibility
+	$ctl.ChkDesktopShortcut.Visibility = $firstInstallVisibility
+	$ctl.LblNavInstall.Text = Convert-InstallerText $(if ($installed) { 'Reparar' } else { 'Instalar' })
+	if ($script:HubActiveMode -eq 'install') {
+		$ctl.LblPageContext.Text = Convert-InstallerText $(if ($installed) { 'Reparação' } else { 'Instalação' })
+		$ctl.LblPageSubtitle.Text = Convert-InstallerText $(
+			if ($installed) { 'Verifique e repare os componentes instalados da NeveAI.' }
+			else { 'Detecte o hardware e instale tudo o que a NeveAI precisa.' }
+		)
+	}
+
+	if (
+		$ctl.ConfigPanel.Visibility -eq 'Visible' -and
+		$ctl.BtnPrimary.Tag -ne 'done' -and
+		[string]$window.Tag -ne 'installing'
+	) {
+		$currentState = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -EA SilentlyContinue)).Trim()
+		$ctl.BtnPrimary.Content = Convert-InstallerText $(
+			if ($installed) { 'Reparar' }
+			elseif ($currentState -in @('done', 'idle', 'pending')) { 'Instalar' }
+			else { 'Retomar' }
+		)
+	}
 }
 
 function Get-HubLegacyPageControl([string]$mode, [string]$name) {
@@ -6952,6 +6989,7 @@ $script:HubBusyMonitorTimer.Add_Tick({
 	}
 	$busy = Test-HubActivePageBusy
 	$installed = Test-HubProjectInstalled
+	Update-HubInstallModeState
 	Update-HubActionButtonStyles
 	$ctl.NavOverview.IsEnabled = (-not $busy) -or $script:HubActiveMode -eq 'install'
 	$ctl.NavSettings.IsEnabled = $installed -and ((-not $busy) -or $script:HubActiveMode -eq 'update')
@@ -6968,6 +7006,7 @@ $ctl.NavOverview.Add_Click({ Select-HubPage 'install' })
 $ctl.NavSettings.Add_Click({ Select-HubPage 'update' })
 $ctl.NavDiagnostics.Add_Click({ Select-HubPage 'build' })
 Select-HubPage $(if ($StartPage -eq 'home') { 'install' } else { $StartPage })
+Update-HubInstallModeState
 
 # =============================================================================
 # Mostrar a janela

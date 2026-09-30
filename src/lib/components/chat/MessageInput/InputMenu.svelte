@@ -35,10 +35,12 @@
 
 	import { createPicker } from '$lib/utils/google-drive-picker';
 	import { setFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
+	import type { MediaAttachmentPolicy } from '$lib/utils/mediaAttachmentPolicy';
 
 	const i18n = getContext('i18n');
 
 	export let files = [];
+	export let mediaAttachmentPolicy: MediaAttachmentPolicy | null = null;
 
 	export let selectedModels: string[] = [];
 	export let fileUploadCapableModels: string[] = [];
@@ -237,7 +239,7 @@
 
 	let fileUploadEnabled = true;
 	$: fileUploadEnabled =
-		fileUploadCapableModels.length === selectedModels.length &&
+		(mediaAttachmentPolicy ? mediaAttachmentPolicy.maxCount > 0 : fileUploadCapableModels.length === selectedModels.length) &&
 		($user?.role === 'admin' || $user?.permissions?.chat?.file_upload);
 
 	$: if (!fileUploadEnabled && files.length > 0) {
@@ -253,6 +255,7 @@
 	};
 
 	const onSelect = (item) => {
+		if (mediaAttachmentPolicy) return;
 		if (files.find((f) => f.id === item.id)) {
 			return;
 		}
@@ -268,6 +271,12 @@
 	};
 </script>
 
+<svelte:window
+	on:resize={() => {
+		show = false;
+	}}
+/>
+
 <Dropdown
 	bind:show
 	on:change={(e) => {
@@ -282,8 +291,10 @@
 
 	<div slot="content">
 		<DropdownMenu.Content
-			class="w-full max-w-[255px] rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-md"
-			style="font-family: 'Segoe UI', sans-serif; max-height: none !important; overflow: visible !important;"
+			class="max-h-[calc(100dvh-16px)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-md"
+			style="font-family: 'Segoe UI', sans-serif; width: min(255px, calc(100vw - 16px)); max-width: 255px !important;"
+			strategy="fixed"
+			fitViewport={true}
 			sideOffset={4}
 			alignOffset={8}
 			side="bottom"
@@ -296,7 +307,7 @@
 						content={fileUploadCapableModels.length !== selectedModels.length
 							? $i18n.t('Model(s) do not support file upload')
 							: !fileUploadEnabled
-								? $i18n.t('You do not have permission to upload files.')
+								? $i18n.t('Este recurso não suporta anexos.')
 								: ''}
 						className="w-full"
 					>
@@ -316,12 +327,12 @@
 						</DropdownMenu.Item>
 					</Tooltip>
 
-				{#if $config?.features?.enable_notes ?? false}
+				{#if !mediaAttachmentPolicy && ($config?.features?.enable_notes ?? false)}
 						<Tooltip
 							content={fileUploadCapableModels.length !== selectedModels.length
 								? $i18n.t('Model(s) do not support file upload')
 								: !fileUploadEnabled
-									? $i18n.t('You do not have permission to upload files.')
+									? $i18n.t('Este recurso não suporta anexos.')
 									: ''}
 							className="w-full"
 						>

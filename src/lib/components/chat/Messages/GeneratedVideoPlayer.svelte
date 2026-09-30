@@ -7,6 +7,7 @@
 	export let src = '';
 	export let fileId: string | null = null;
 	export let name = 'video.mp4';
+	export let initialAspectRatio = 16 / 9;
 
 	const i18n = getContext('i18n');
 	let playerElement: HTMLDivElement;
@@ -17,9 +18,13 @@
 	let muted = false;
 	let showExpanded = false;
 	let expandedAutoplay = false;
-	let videoAspectRatio = 16 / 9;
+	let metadataLoaded = false;
+	let videoAspectRatio = Math.max(0.01, Number(initialAspectRatio) || 16 / 9);
 
 	$: resolvedSrc = src.startsWith('/') ? `${NEVEAI_BASE_URL}${src}` : src;
+	$: if (!metadataLoaded) {
+		videoAspectRatio = Math.max(0.01, Number(initialAspectRatio) || 16 / 9);
+	}
 	$: progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
 	$: videoDisplayWidth = Math.min(32, 32 * videoAspectRatio);
 
@@ -85,6 +90,7 @@
 
 <div
 	bind:this={playerElement}
+	data-generated-visual-media
 	class="video-player relative w-full self-start overflow-hidden rounded-lg bg-transparent text-gray-700 dark:text-gray-200"
 	class:portrait-video={videoAspectRatio < 1}
 	style={`aspect-ratio: ${videoAspectRatio}; width: min(100%, ${videoDisplayWidth}rem); max-height: 32rem;`}
@@ -98,6 +104,7 @@
 		src={resolvedSrc}
 		class="absolute inset-0 block size-full object-cover"
 		on:loadedmetadata={() => {
+			metadataLoaded = true;
 			duration = videoElement.duration || 0;
 			if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
 				videoAspectRatio = videoElement.videoWidth / videoElement.videoHeight;

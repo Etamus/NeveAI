@@ -75,11 +75,12 @@ QWEN3_LLM_FILE = "Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
 ZIMAGE_UNCENSORED_LLM_REPO = "BennyDaBall/Qwen3-4b-Z-Image-Turbo-AbliteratedV1"
 ZIMAGE_UNCENSORED_LLM_FILE = "Z-Image-AbliteratedV1.Q4_K_M.gguf"
 QWEN_IMAGE_21_REPO = "abenzerps/Qwen-Image-2.1-Uncensored-GGUF"
-QWEN_IMAGE_21_FILE = "qwen-image-2.1-UC-Q6_K.gguf"
+QWEN_IMAGE_21_FILE = "qwen-image-2.1-UC-Q4_K_M.gguf"
 QWEN_IMAGE_21_LLM_REPO = "mradermacher/Qwen3-VL-8B-Instruct-Heretic-GGUF"
 QWEN_IMAGE_21_LLM_FILE = "Qwen3-VL-8B-Instruct-heretic.Q4_K_M.gguf"
 QWEN_IMAGE_21_VISION_FILE = "Qwen3-VL-8B-Instruct-heretic.mmproj-Q8_0.gguf"
 QWEN_IMAGE_21_OFFICIAL_QUALITY = "qwen_image_2_1_official"
+QWEN_IMAGE_2_FAST_AMD_QUALITY = "_qwen_image_2_fast_amd"
 QWEN_IMAGE_21_VAE_REPO = "Comfy-Org/Qwen-Image-2.1"
 QWEN_IMAGE_21_VAE_FILE = "vae/qwen_image_2.1_vae_bf16.safetensors"
 PROMPT_TRANSLATOR_REPO = "mradermacher/Huihui-Qwen3-4B-Instruct-2507-abliterated-GGUF"
@@ -106,9 +107,9 @@ QUALITY_IMAGE_RESOLUTIONS = {
     "4:3": (1152, 864),
     "3:4": (864, 1152),
 }
-QWEN_IMAGE_21_STEPS = 30
+QWEN_IMAGE_FAST_AMD_STEPS = 30
 QWEN_IMAGE_21_OFFICIAL_STEPS = 40
-QWEN_IMAGE_21_CFG_SCALE = 6.0
+QWEN_IMAGE_FAST_AMD_CFG_SCALE = 6.0
 QWEN_IMAGE_21_MAX_REFERENCES = 10
 QWEN_IMAGE_21_FULL_GPU_MIN_VRAM_MIB = 14 * 1024
 QWEN_IMAGE_21_RESOLUTIONS = {
@@ -247,7 +248,9 @@ def normalize_image_style(value: Optional[str]) -> str:
 
 def normalize_image_quality(value: Optional[str]) -> str:
     value = str(value or "neve_image").strip().lower()
-    return value if value in {"neve_image", "neve_image_2", "qwen_image_2_1", "qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY} else "neve_image"
+    if value == "qwen_image_2_1":
+        return "qwen_image_2s"
+    return value if value in {"neve_image", "neve_image_2", "qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY, QWEN_IMAGE_2_FAST_AMD_QUALITY} else "neve_image"
 
 
 def normalize_qwen_image_resolution(value: Optional[str]) -> str:
@@ -1191,7 +1194,7 @@ class _ZImageTurboPipeline:
         async with self._load_lock:
             model_id = normalize_sd_model_id(model_id)
             quality = normalize_image_quality(quality)
-            edit = quality in {"neve_image_2", "qwen_image_2_1"} and edit
+            edit = quality in {"neve_image_2", QWEN_IMAGE_2_FAST_AMD_QUALITY} and edit
             if self._resources is not None and self._model_id == model_id and self._quality == quality and self._edit_mode == edit:
                 return
 
@@ -1201,11 +1204,11 @@ class _ZImageTurboPipeline:
                 from huggingface_hub import hf_hub_download
 
                 sd_cli = _ensure_sd_cli_binary(
-                    require_qwen_image_21=quality == "qwen_image_2_1"
+                    require_qwen_image_21=quality == QWEN_IMAGE_2_FAST_AMD_QUALITY
                 )
                 token = hf_token or None
 
-                if quality == "qwen_image_2_1":
+                if quality == QWEN_IMAGE_2_FAST_AMD_QUALITY:
                     def download_qwen(repo: str, filename: str, cache_dir: Path) -> Path:
                         return Path(
                             hf_hub_download(
@@ -1216,7 +1219,7 @@ class _ZImageTurboPipeline:
                             )
                         )
 
-                    log.info("Baixando/carregando Qwen Image 2.1 Q6_K...")
+                    log.info("Baixando/carregando Neve Image 2 Fast Q4_K_M para AMD Vulkan...")
                     return _ZImageResources(
                         sd_cli=sd_cli,
                         diffusion_model=download_qwen(
@@ -1307,7 +1310,7 @@ class _ZImageTurboPipeline:
             self._quality = quality
             self._edit_mode = edit
             runtime_name = (
-                "Qwen Image 2.1" if quality == "qwen_image_2_1"
+                "Neve Image 2 Fast (AMD)" if quality == QWEN_IMAGE_2_FAST_AMD_QUALITY
                 else "Mage-Flow-Edit" if edit else "Z-Image-Turbo"
             )
             log.info("%s pronto via stable-diffusion.cpp", runtime_name)
@@ -1337,7 +1340,7 @@ class _ZImageTurboPipeline:
                 kwargs.get("init_image_references") or kwargs.get("init_image_reference")
             )
             use_mageflow = quality == "neve_image_2" and has_reference and style == "none"
-            needs_vision = quality == "qwen_image_2_1" and has_reference
+            needs_vision = quality == QWEN_IMAGE_2_FAST_AMD_QUALITY and has_reference
             load_task = asyncio.create_task(
                 self.load(
                     model_id,
@@ -1394,7 +1397,7 @@ class _ZImageTurboPipeline:
 
         if progress_callback is not None:
             await progress_callback(22)
-        qwen_image_mode = self._quality == "qwen_image_2_1"
+        qwen_image_mode = self._quality == QWEN_IMAGE_2_FAST_AMD_QUALITY
         prompt = (
             _normalize_image_prompt_text(prompt)
             if qwen_image_mode
@@ -1454,8 +1457,8 @@ class _ZImageTurboPipeline:
         if progress_callback is not None:
             await progress_callback(33)
         if qwen_image_mode:
-            steps = QWEN_IMAGE_21_STEPS
-            cfg = QWEN_IMAGE_21_CFG_SCALE
+            steps = QWEN_IMAGE_FAST_AMD_STEPS
+            cfg = QWEN_IMAGE_FAST_AMD_CFG_SCALE
         else:
             steps = 4 if self._edit_mode else _clamp_int(steps, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS, 1, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS)
             cfg = _cfg_scale(guidance_scale)
@@ -1738,7 +1741,7 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
     model_id = normalize_sd_model_id(request.app.state.config.STABLE_DIFFUSION_MODEL)
     quality = normalize_image_quality(form_data.quality)
     quality_mode = quality == "neve_image_2"
-    qwen_image_mode = quality in {"qwen_image_2_1", QWEN_IMAGE_21_OFFICIAL_QUALITY}
+    qwen_image_mode = quality in {QWEN_IMAGE_2_FAST_AMD_QUALITY, QWEN_IMAGE_21_OFFICIAL_QUALITY}
     max_width = QUALITY_IMAGE_WIDTH if quality_mode else MAX_IMAGE_WIDTH
     max_height = QUALITY_IMAGE_HEIGHT if quality_mode else MAX_IMAGE_HEIGHT
     max_steps = QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS
@@ -1747,7 +1750,7 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
         steps = (
             6 if quality == "qwen_image_2s"
             else QWEN_IMAGE_21_OFFICIAL_STEPS if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
-            else QWEN_IMAGE_21_STEPS
+            else QWEN_IMAGE_FAST_AMD_STEPS
         )
     else:
         width = _align_image_dim(form_data.width or (max_width if quality_mode else request.app.state.config.STABLE_DIFFUSION_WIDTH), max_width, max_width)

@@ -42,7 +42,7 @@ instalar.bat → Instalar
 ```
 
 <h1 align="center">
-<img width="975" alt="11" src="https://github.com/user-attachments/assets/babf4791-8d03-4ebe-9156-72686cc4cf7c" />
+<img width="975" alt="1" src="https://github.com/user-attachments/assets/72a8c60b-867e-457c-967a-4678ee32c521" />
 </h1>
 
 O instalador realiza automaticamente as seguintes ações:
@@ -64,7 +64,7 @@ instalar.bat → Atualizar
 ```
 
 <h1 align="center">
-<img width="976" alt="22" src="https://github.com/user-attachments/assets/73b489e5-d528-4eb8-a343-774c34abd4d3" />
+<img width="976" alt="2" src="https://github.com/user-attachments/assets/c384ef8f-21db-42b4-b2a0-fa9f160c7150" />
 </h1>
 
 O atualizador realiza automaticamente as seguintes ações:
@@ -205,7 +205,7 @@ NeveAI/
 ### Outras Funcionalidades
 - **Busca na web** via SearXNG (sem chave de API)
 - **Execução de código Python** via Pyodide (WebAssembly, no browser)
-- **Geração e edição de imagens local** com Neve Image 1, Neve Image 1.4 (estilos e resoluções selecionáveis), Neve Image 2 nos modos Qualidade (até 10 imagens de referência) e Rápido (ComfyUI isolado, Turbo em 6 passos, até 3 referências) e Neve Image 2.1
+- **Geração e edição de imagens local** com Neve Image 1, Neve Image 1.5 (estilos e resoluções selecionáveis), Neve Image 2 Fast (ComfyUI isolado, Turbo em 6 passos, até 3 referências) e Neve Image 2.1
 - **Geração de músicas** via Neve-Step 1.5 Turbo local, com orientação de estilo, letras em português e player integrado
 - **Geração de vídeos local** com Neve Video, suporte a texto ou imagem de referência e seletores de resolução e duração
 - **Ferramentas para documentos** com geração assistida pela LLM e OfficeCLI para saídas DOCX, XLSX e PPTX, mantendo o pipeline interno como fallback
@@ -258,7 +258,7 @@ instalar.bat → Buildar
 ```
 
 <h1 align="center">
-<img width="976" alt="33" src="https://github.com/user-attachments/assets/0185af79-8e7f-4307-980a-d783eeb4b86a" />
+<img width="976" alt="3" src="https://github.com/user-attachments/assets/47c1a27a-cb39-451d-9cbb-ac1357cfc6d6" />
 </h1>
 
 ### Dev mode (hot reload)

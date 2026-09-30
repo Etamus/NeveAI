@@ -2249,5 +2249,11 @@
 	"What would you like to explore today?": "What would you like to do?",
 	"Cancelar": "Cancel",
 	"Cancelando...": "Canceling...",
-	"Modo de geração de imagem": "Image generation mode"
+	"Modo de geração de imagem": "Image generation mode",
+	"Este modelo não aceita anexos.": "This model does not accept attachments.",
+	"Este formato de anexo não é permitido neste modo.": "This attachment format is not allowed in this mode.",
+	"Este modo aceita até {{count}} imagens.": "This mode accepts up to {{count}} images.",
+	"Este modo aceita até 1 imagem.": "This mode accepts up to 1 image.",
+	"Este recurso não suporta anexos.": "This feature does not support attachments.",
+	"Anexos incompatíveis com o modo atual foram removidos.": "Attachments incompatible with the current mode were removed."
 }

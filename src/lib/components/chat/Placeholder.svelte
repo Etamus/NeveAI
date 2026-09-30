@@ -55,12 +55,12 @@
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
 	export let stableDiffusionEnabled = false;
-	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2s' | 'qwen_image_2_1_official' = 'neve_image';
+	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2s' | 'qwen_image_2_1_official' = 'neve_image';
 	export let stableDiffusionStyle: 'none' | 'minimalist' | 'polygonal' | 'fantasy' | 'comics' | 'arcane' | 'spontaneous' | 'realistic' | 'manga' | 'pixelated' = 'none';
 	export let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
-	export let videoGenerationResolution: '384p' | '480p' | '544p' | '576p' = '384p';
+	export let videoGenerationResolution: '480p' | '672p' = '480p';
 	export let videoGenerationDuration: '5s' | '8s' = '5s';
 	export let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
 	export let onNativeIntegrationChange: Function = () => {};

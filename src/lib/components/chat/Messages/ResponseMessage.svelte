@@ -44,7 +44,6 @@
 	import Image from '$lib/components/common/Image.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import RateComment from './RateComment.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 	import WebSearchResults from './ResponseMessage/WebSearchResults.svelte';
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
 
@@ -84,6 +83,9 @@
 			description: string;
 			progress?: number;
 			quality?: string;
+			resolution?: string;
+			width?: number;
+			height?: number;
 			error?: boolean;
 			urls?: string[];
 			query?: string;
@@ -225,6 +227,22 @@
 			!latestVisualGenerationStatus.error &&
 			!visualGenerationFileReady
 	);
+	const visualResolutionAspectRatios: Record<string, number> = {
+		'1:1': 1,
+		'16:9': 16 / 9,
+		'9:16': 9 / 16,
+		'4:3': 4 / 3,
+		'3:4': 3 / 4
+	};
+	$: generatedVisualAspectRatio = Math.max(
+		0.01,
+		Number(latestVisualGenerationStatus?.width) > 0 &&
+			Number(latestVisualGenerationStatus?.height) > 0
+			? Number(latestVisualGenerationStatus.width) /
+				Number(latestVisualGenerationStatus.height)
+			: visualResolutionAspectRatios[latestVisualGenerationStatus?.resolution ?? ''] ?? 16 / 9
+	);
+	$: generatedImageDisplayWidth = Math.min(26, 26 * generatedVisualAspectRatio);
 	$: isVisualGenerationInProgress = Boolean(
 		latestVisualGenerationStatus &&
 			latestVisualGenerationStatus.done !== true &&
@@ -706,17 +724,32 @@
 								dir={$settings?.chatDirection ?? 'auto'}
 							>
 								{#each message.files.filter((file) => file.type === 'image' || file.type === 'audio' || file.type === 'video' || (file?.content_type ?? '').startsWith('image/') || (file?.content_type ?? '').startsWith('audio/') || (file?.content_type ?? '').startsWith('video/')) as file}
-									<div class={file.type === 'video' || (file?.content_type ?? '').startsWith('video/') ? 'w-full' : ''}>
+									<div
+										class={file.type === 'video' ||
+										(file?.content_type ?? '').startsWith('video/') ||
+										((file.type === 'image' || (file?.content_type ?? '').startsWith('image/')) &&
+											message?.statusHistory?.some((status) => status.action === 'stable_diffusion'))
+											? 'w-full'
+											: ''}
+									>
 										{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
-											<Image
-												src={file.url}
-												alt={message.content}
-												imageClassName={message?.statusHistory?.some(
-													(status) => status.action === 'stable_diffusion'
-												)
-													? 'block max-h-[26rem] max-w-full sm:max-w-[26rem] rounded-lg'
-													: 'rounded-lg'}
-											/>
+											{#if message?.statusHistory?.some((status) => status.action === 'stable_diffusion')}
+												<div
+													data-generated-visual-media
+													class="relative w-full overflow-hidden rounded-lg"
+													style={`aspect-ratio: ${generatedVisualAspectRatio}; width: min(100%, ${generatedImageDisplayWidth}rem); max-height: 26rem;`}
+												>
+													<Image
+														src={file.url}
+														alt={message.content}
+														containerClassName="size-full"
+														className="block size-full outline-hidden focus:outline-hidden"
+														imageClassName="block size-full rounded-lg object-contain"
+													/>
+												</div>
+											{:else}
+												<Image src={file.url} alt={message.content} imageClassName="rounded-lg" />
+											{/if}
 										{:else if file.type === 'audio' || (file?.content_type ?? '').startsWith('audio/')}
 											{#if message?.statusHistory?.some((status) => status.action === 'music_generation')}
 												<GeneratedMusicPlayer
@@ -743,6 +776,7 @@
 												src={file.url}
 												fileId={file.id ?? null}
 												name={file.name ?? 'video.mp4'}
+												initialAspectRatio={generatedVisualAspectRatio}
 											/>
 										{/if}
 									</div>

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import random
 import shutil
@@ -60,6 +61,11 @@ DEFAULT_FRAMES = 124
 DEFAULT_STEPS = 8
 DEFAULT_FPS = 24.0
 VIDEO_DIMENSION_MULTIPLE = 32
+VIDEO_MAX_PIXELS = 768 * 1344
+VIDEO_RESOLUTION_DIMENSIONS = {
+    "480p": (864, 480),
+    "672p": (1184, 672),
+}
 GENERATION_TIMEOUT_SECONDS = 60 * 60
 VIDEO_GPU_POWER_RATIO = 0.83
 VIDEO_GPU_MAX_TEMPERATURE_C = 76.0
@@ -72,6 +78,33 @@ def _align_video_dimension(value: int) -> int:
     return (
         (value + VIDEO_DIMENSION_MULTIPLE // 2) // VIDEO_DIMENSION_MULTIPLE
     ) * VIDEO_DIMENSION_MULTIPLE
+
+
+def video_canvas_dimensions(
+    resolution: str, aspect_ratio: str, image_size: Optional[tuple[int, int]] = None
+) -> tuple[int, int]:
+    width, height = VIDEO_RESOLUTION_DIMENSIONS.get(resolution, VIDEO_RESOLUTION_DIMENSIONS["480p"])
+    if image_size is None:
+        return (height, width) if aspect_ratio == "9:16" else (width, height)
+
+    source_width, source_height = image_size
+    if source_width < 1 or source_height < 1:
+        raise ValueError("A imagem de referencia tem dimensoes invalidas.")
+    short_edge = int(resolution[:-1]) if resolution in VIDEO_RESOLUTION_DIMENSIONS else 480
+    scale = short_edge / min(source_width, source_height)
+    target_width, target_height = source_width * scale, source_height * scale
+    if target_width * target_height > VIDEO_MAX_PIXELS:
+        scale = math.sqrt(VIDEO_MAX_PIXELS / (target_width * target_height))
+        target_width *= scale
+        target_height *= scale
+    width = _align_video_dimension(round(target_width))
+    height = _align_video_dimension(round(target_height))
+    while width * height > VIDEO_MAX_PIXELS:
+        if width >= height:
+            width -= VIDEO_DIMENSION_MULTIPLE
+        else:
+            height -= VIDEO_DIMENSION_MULTIPLE
+    return width, height
 
 
 def _hidden_process_kwargs() -> dict:
@@ -598,6 +631,7 @@ for repo_id, filename, local_dir in items:
         prompt: str,
         seed: int,
         input_image: Optional[str],
+        last_image: Optional[str] = None,
         width: int = DEFAULT_WIDTH,
         height: int = DEFAULT_HEIGHT,
         frames: int = DEFAULT_FRAMES,
@@ -690,6 +724,12 @@ for repo_id, filename, local_dir in items:
                 "inputs": {"image": input_image},
             }
             workflow["4"]["inputs"]["first_frame"] = ["20", 0]
+        if last_image:
+            workflow["21"] = {
+                "class_type": "LoadImage",
+                "inputs": {"image": last_image},
+            }
+            workflow["4"]["inputs"]["last_frame"] = ["21", 0]
         return workflow
 
     async def _upload_image(self, client: httpx.AsyncClient, image: tuple[str, bytes, str]) -> str:
@@ -727,6 +767,7 @@ for repo_id, filename, local_dir in items:
         prompt: str,
         progress: ProgressCallback,
         image: Optional[tuple[str, bytes, str]] = None,
+        last_image: Optional[tuple[str, bytes, str]] = None,
         width: int = DEFAULT_WIDTH,
         height: int = DEFAULT_HEIGHT,
         frames: int = DEFAULT_FRAMES,
@@ -741,12 +782,17 @@ for repo_id, filename, local_dir in items:
             if image is not None:
                 await progress("Preparando a imagem de referencia...")
                 input_image = await self._upload_image(client, image)
+            last_input_image = None
+            if last_image is not None:
+                await progress("Preparando o ultimo frame...")
+                last_input_image = await self._upload_image(client, last_image)
 
             await progress("Gerando o conditioning...", 15)
             workflow = self._build_workflow(
                 prompt,
                 random.randint(0, 2**63 - 1),
                 input_image,
+                last_image=last_input_image,
                 width=width,
                 height=height,
                 frames=frames,

@@ -2313,6 +2313,34 @@ def _collect_stable_diffusion_init_image_reference(
     return references[0] if references else None
 
 
+def _validate_media_attachments(
+    messages: list[dict], parent_message: Optional[dict], mode: str,
+    max_images: int = 0, references: Optional[list[str]] = None,
+) -> None:
+    message = parent_message if isinstance(parent_message, dict) else get_last_user_message_item(messages or [])
+    files = (message.get("files") or []) if isinstance(message, dict) else []
+    if mode == "music":
+        for item in files:
+            if not isinstance(item, dict) or item.get("type") not in {"file", "text"}:
+                raise ValueError("Criar musica aceita apenas audio, PDF, TXT e DOCX.")
+            mime = str(item.get("content_type") or "").lower()
+            name = str(item.get("name") or "").lower()
+            if not (
+                mime.startswith("audio/")
+                or name.endswith((".mp3", ".wav", ".flac", ".m4a", ".ogg", ".opus", ".aac", ".wma"))
+                or mime in {"application/pdf", "text/plain", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+                or name.endswith((".pdf", ".txt", ".docx"))
+            ):
+                raise ValueError("Criar musica aceita apenas audio, PDF, TXT e DOCX.")
+        return
+
+    if any(not _is_chat_image_file(item) for item in files):
+        raise ValueError("Este modo aceita apenas imagens anexadas.")
+    count = max(len(files), len(references or []))
+    if count > max_images:
+        raise ValueError(f"Este modo aceita no maximo {max_images} imagem(ns) anexada(s).")
+
+
 async def chat_stable_diffusion_handler(
     request: Request, form_data: dict, extra_params: dict, user
 ):
@@ -2332,6 +2360,7 @@ async def chat_stable_diffusion_handler(
     init_image_references = _collect_stable_diffusion_image_references(
         messages,
         metadata.get("parent_message"),
+        limit=11,
     )
     image_features = extra_params.get("__features__") or {}
     from neveai.routers.stable_diffusion import (
@@ -2340,10 +2369,8 @@ async def chat_stable_diffusion_handler(
         normalize_qwen_image_resolution,
         quality_image_dimensions,
         qwen_image_dimensions,
-        QWEN_IMAGE_21_CFG_SCALE,
         QWEN_IMAGE_21_OFFICIAL_QUALITY,
         QWEN_IMAGE_21_OFFICIAL_STEPS,
-        QWEN_IMAGE_21_STEPS,
     )
 
     quality = normalize_image_quality(image_features.get("stable_diffusion_quality"))
@@ -2364,7 +2391,7 @@ async def chat_stable_diffusion_handler(
     progress_height = int(request.app.state.config.STABLE_DIFFUSION_HEIGHT)
     if quality == "neve_image_2":
         progress_width, progress_height = quality_image_dimensions(resolution)
-    elif quality in {"qwen_image_2_1", "qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY}:
+    elif quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY}:
         progress_width, progress_height = qwen_image_dimensions(resolution)
     last_progress = 0
 
@@ -2398,6 +2425,11 @@ async def chat_stable_diffusion_handler(
 
     media_slot_acquired = False
     try:
+        _validate_media_attachments(
+            messages, metadata.get("parent_message"), "image",
+            max_images=0 if quality == "neve_image" else 1 if quality == "neve_image_2" else 10,
+            references=init_image_references,
+        )
         async def emit_image_waiting() -> None:
             await __event_emitter__(
                 {
@@ -2432,14 +2464,13 @@ async def chat_stable_diffusion_handler(
         if quality == "neve_image_2":
             width, height = quality_image_dimensions(resolution)
             steps = 8
-        elif quality in {"qwen_image_2_1", "qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY}:
+        elif quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY}:
             width, height = qwen_image_dimensions(resolution)
             steps = (
                 6 if quality == "qwen_image_2s"
-                else QWEN_IMAGE_21_OFFICIAL_STEPS if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
-                else QWEN_IMAGE_21_STEPS
+                else QWEN_IMAGE_21_OFFICIAL_STEPS
             )
-            guidance_scale = 1.0 if quality == "qwen_image_2s" else QWEN_IMAGE_21_CFG_SCALE
+            guidance_scale = 1.0
 
         # Put LLM in standby
         llm_standby_info = None
@@ -2512,7 +2543,6 @@ async def chat_stable_diffusion_handler(
                     "source": (
                         "qwen-image-2s" if quality == "qwen_image_2s"
                         else "qwen-image-2.1-official" if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
-                        else "qwen-image-2.1" if quality == "qwen_image_2_1"
                         else "z-image-turbo"
                     ),
                     "prompt": image_prompt,
@@ -2655,6 +2685,9 @@ async def chat_music_generation_handler(
 
     media_slot_acquired = False
     try:
+        _validate_media_attachments(
+            form_data.get("messages", []), metadata.get("parent_message"), "music"
+        )
         if not request.app.state.config.ENABLE_MUSIC_GENERATION:
             raise RuntimeError("A geração de música está desativada.")
         if not has_permission(
@@ -2810,18 +2843,19 @@ async def chat_video_generation_handler(
         form_data.get("messages", []),
         metadata.get("parent_message"),
     )
-    image_reference = _collect_stable_diffusion_init_image_reference(
+    image_references = _collect_stable_diffusion_image_references(
         form_data.get("messages", []),
         metadata.get("parent_message"),
+        limit=3,
     )
     video_features = extra_params.get("__features__") or {}
     requested_resolution = str(
-        video_features.get("video_generation_resolution") or "384p"
+        video_features.get("video_generation_resolution") or "480p"
     )
     resolution = (
         requested_resolution
-        if requested_resolution in {"384p", "480p", "544p", "576p"}
-        else "384p"
+        if requested_resolution in {"480p", "672p"}
+        else "480p"
     )
     duration = "8s" if video_features.get("video_generation_duration") == "8s" else "5s"
     aspect_ratio = (
@@ -2829,15 +2863,9 @@ async def chat_video_generation_handler(
         if video_features.get("video_generation_aspect_ratio") == "9:16"
         else "16:9"
     )
-    landscape_dimensions = {
-        "384p": (672, 384),
-        "480p": (864, 480),
-        "544p": (960, 544),
-        "576p": (1024, 576),
-    }
-    width, height = landscape_dimensions[resolution]
-    if aspect_ratio == "9:16":
-        width, height = height, width
+    from neveai.routers.video_generation import video_canvas_dimensions
+
+    width, height = video_canvas_dimensions(resolution, aspect_ratio)
     frames = 196 if duration == "8s" else 124
     last_status = ""
     last_progress = -1
@@ -2887,6 +2915,10 @@ async def chat_video_generation_handler(
     cancelled = False
     media_slot_acquired = False
     try:
+        _validate_media_attachments(
+            form_data.get("messages", []), metadata.get("parent_message"),
+            "video", max_images=2, references=image_references,
+        )
         if not request.app.state.config.ENABLE_VIDEO_GENERATION:
             raise RuntimeError("A geracao de video esta desativada.")
         if not has_permission(
@@ -2911,19 +2943,23 @@ async def chat_video_generation_handler(
             # model available until every disk/network prerequisite is ready.
             await runtime.prepare(emit_progress)
 
-            input_image = None
-            if image_reference:
+            input_images = []
+            for index, image_reference in enumerate(image_references):
                 prepared = await asyncio.to_thread(
                     _prepare_init_image_sync,
                     image_reference,
                     getattr(user, "id", None),
                 )
                 try:
-                    input_image = (
-                        "neve-h3-reference.png",
+                    if index == 0:
+                        width, height = video_canvas_dimensions(
+                            resolution, aspect_ratio, (prepared.width, prepared.height)
+                        )
+                    input_images.append((
+                        f"neve-h3-reference-{index + 1}.png",
                         await asyncio.to_thread(prepared.path.read_bytes),
                         "image/png",
-                    )
+                    ))
                 finally:
                     try:
                         prepared.path.unlink(missing_ok=True)
@@ -2936,7 +2972,8 @@ async def chat_video_generation_handler(
                 generated = await runtime.generate(
                     prompt,
                     emit_progress,
-                    image=input_image,
+                    image=input_images[0] if input_images else None,
+                    last_image=input_images[1] if len(input_images) > 1 else None,
                     width=width,
                     height=height,
                     frames=frames,
@@ -2971,8 +3008,8 @@ async def chat_video_generation_handler(
                 "frames": frames,
                 "fps": 24,
                 "steps": 8,
-                "aspect_ratio": aspect_ratio,
-                "image_to_video": bool(image_reference),
+                "aspect_ratio": f"{width}:{height}" if image_references else aspect_ratio,
+                "image_to_video": bool(image_references),
             },
             process=False,
             user=user,
@@ -6645,7 +6682,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         # rebuilt the payload. Video owns the request and is mutually exclusive.
         features["video_generation"] = True
         features["video_generation_resolution"] = submitted_features.get(
-            "video_generation_resolution", "384p"
+            "video_generation_resolution", "480p"
         )
         features["video_generation_duration"] = submitted_features.get(
             "video_generation_duration", "5s"

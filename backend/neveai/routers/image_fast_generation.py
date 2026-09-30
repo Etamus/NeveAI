@@ -362,7 +362,8 @@ for repo, filename, subdir in items:
         if os.name == "nt":
             from neveai.routers.stable_diffusion import (
                 QWEN_IMAGE_21_REPO,
-                QWEN_IMAGE_21_STEPS,
+                QWEN_IMAGE_FAST_AMD_STEPS,
+                QWEN_IMAGE_2_FAST_AMD_QUALITY,
                 _preferred_sd_cpp_windows_backend,
                 _sd_pipeline,
             )
@@ -373,13 +374,13 @@ for repo, filename, subdir in items:
                 return await _sd_pipeline.run(
                     model_id=QWEN_IMAGE_21_REPO,
                     hf_token=None,
-                    quality="qwen_image_2_1",
+                    quality=QWEN_IMAGE_2_FAST_AMD_QUALITY,
                     style="none",
                     resolution=resolution,
                     prompt=prompt,
                     width=width,
                     height=height,
-                    steps=QWEN_IMAGE_21_STEPS,
+                    steps=QWEN_IMAGE_FAST_AMD_STEPS,
                     guidance_scale=1.0,
                     init_image_references=references,
                     user_id=user_id,

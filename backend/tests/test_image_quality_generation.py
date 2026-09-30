@@ -17,7 +17,6 @@ from neveai.routers.image_quality_generation import (
 )
 from neveai.routers.stable_diffusion import (
     QWEN_IMAGE_21_OFFICIAL_QUALITY,
-    QWEN_IMAGE_21_STEPS,
     normalize_image_quality,
 )
 
@@ -54,11 +53,11 @@ class NeveImage21ComfyTests(unittest.TestCase):
         self.assertEqual((graph["6"]["inputs"]["width"], graph["6"]["inputs"]["height"]), (1216, 704))
         self.assertNotIn("9", graph)
 
-    def test_pe_output_and_old_quality_are_independent(self):
+    def test_pe_output_and_fast_mode_migration_are_independent(self):
         content = '<think>plan</think> {"rewritten_prompt":"Edit <image1> using <image2>","ratio_follow":"<image1>"}'
         self.assertEqual(_extract_pe_prompt(content), "Edit <image1> using <image2>")
         self.assertEqual(normalize_image_quality(QWEN_IMAGE_21_OFFICIAL_QUALITY), QWEN_IMAGE_21_OFFICIAL_QUALITY)
-        self.assertEqual(QWEN_IMAGE_21_STEPS, 30)
+        self.assertEqual(normalize_image_quality("qwen_image_2_1"), "qwen_image_2s")
         self.assertEqual(STEPS, 40)
         self.assertEqual(ENCODER_FILE, "qwen3vl_8b_int8_convrot.safetensors")
         self.assertEqual(PE_REPO, "pottokao/Qwen-Image-2.1-PE-I2I-Heretic-GGUF")

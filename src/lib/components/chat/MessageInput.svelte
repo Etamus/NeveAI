@@ -15,6 +15,11 @@
 
 	import { createPicker, getAuthToken } from '$lib/utils/google-drive-picker';
 	import { pickAndDownloadFile } from '$lib/utils/onedrive-file-picker';
+	import {
+		filterMediaAttachments,
+		getMediaAttachmentPolicy,
+		isMediaAttachmentAllowed
+	} from '$lib/utils/mediaAttachmentPolicy';
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 
 	const dispatch = createEventDispatcher();
@@ -62,7 +67,12 @@
 	import { getTools } from '$lib/apis/tools';
 
 	import { fly } from 'svelte/transition';
-	import { NEVEAI_BASE_URL, NEVEAI_API_BASE_URL, PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
+	import { autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
+	import {
+		NEVEAI_BASE_URL,
+		NEVEAI_API_BASE_URL,
+		PASTED_TEXT_CHARACTER_LIMIT
+	} from '$lib/constants';
 
 	import { createNoteHandler } from '../notes/utils';
 	import { getSuggestionRenderer } from '../common/RichTextInput/suggestions';
@@ -137,7 +147,9 @@
 	export let files = [];
 	export let sendDisabled = false;
 	$: canSubmitMessage = prompt.trim().length > 0 || files.some((file) => file?.pastedText === true);
-	$: hasImageAttachment = files.some((file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/'));
+	$: hasImageAttachment = files.some(
+		(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
+	);
 
 	export let selectedToolIds = [];
 	export let selectedFilterIds = [];
@@ -148,8 +160,22 @@
 	export let codeExecutionEnabled = false;
 	export let fileGenerationEnabled = false;
 	export let stableDiffusionEnabled = false;
-	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2s' | 'qwen_image_2_1_official' = 'neve_image';
-	export let stableDiffusionStyle: 'none' | 'minimalist' | 'polygonal' | 'fantasy' | 'comics' | 'arcane' | 'spontaneous' | 'realistic' | 'manga' | 'pixelated' = 'none';
+	export let stableDiffusionQuality:
+		| 'neve_image'
+		| 'neve_image_2'
+		| 'qwen_image_2s'
+		| 'qwen_image_2_1_official' = 'neve_image';
+	export let stableDiffusionStyle:
+		| 'none'
+		| 'minimalist'
+		| 'polygonal'
+		| 'fantasy'
+		| 'comics'
+		| 'arcane'
+		| 'spontaneous'
+		| 'realistic'
+		| 'manga'
+		| 'pixelated' = 'none';
 	const imageStyleOptions = [
 		{ id: 'none', label: 'Sem estilo', image: '' },
 		{ id: 'realistic', label: 'Realista', image: '/static/realista.webp' },
@@ -162,16 +188,73 @@
 		{ id: 'pixelated', label: 'Pixelado', image: '/static/pixelado.webp' },
 		{ id: 'arcane', label: 'Arcano', image: '/static/arcano.webp' }
 	] as const;
+	const imageStyleThumbnailOptions = imageStyleOptions.filter((style) => style.image);
 	let imageStyleThumbnailPreloads: HTMLImageElement[] = [];
+	let imageStyleThumbnailPreloadPromise: Promise<void> | null = null;
+	const imageStyleThumbnailCount = imageStyleThumbnailOptions.length;
+	let renderedImageStyleThumbnailCount = 0;
+	let renderedImageStyleThumbnailsReady = false;
 	const preloadImageStyleThumbnails = () => {
+		if (imageStyleThumbnailPreloadPromise) return imageStyleThumbnailPreloadPromise;
+
 		imageStyleThumbnailPreloads = imageStyleOptions.flatMap((style) => {
 			if (!style.image) return [];
 			const image = new globalThis.Image();
 			image.decoding = 'async';
-			image.fetchPriority = 'high';
-			image.src = style.image;
+			image.fetchPriority = 'low';
 			return [image];
 		});
+
+		imageStyleThumbnailPreloadPromise = Promise.all(
+			imageStyleThumbnailPreloads.map(
+				(image, index) =>
+					new Promise<void>((resolve) => {
+						let settled = false;
+						const finish = async () => {
+							if (settled) return;
+							settled = true;
+							if (image.naturalWidth > 0) {
+								try {
+									await image.decode();
+								} catch {
+									// A successful load is enough when the browser does not expose decode().
+								}
+							}
+							resolve();
+						};
+
+						image.addEventListener('load', finish, { once: true });
+						image.addEventListener('error', finish, { once: true });
+						image.src = imageStyleThumbnailOptions[index].image;
+						if (image.complete) void finish();
+					})
+			)
+		).then(() => undefined);
+
+		return imageStyleThumbnailPreloadPromise;
+	};
+	const markRenderedImageStyleThumbnailReady = () => {
+		renderedImageStyleThumbnailCount += 1;
+		if (renderedImageStyleThumbnailCount >= imageStyleThumbnailCount) {
+			renderedImageStyleThumbnailsReady = true;
+		}
+	};
+	const trackRenderedImageStyleThumbnail = (node: HTMLImageElement) => {
+		let settled = false;
+		const finish = () => {
+			if (settled) return;
+			settled = true;
+			markRenderedImageStyleThumbnailReady();
+		};
+		node.addEventListener('load', finish, { once: true });
+		node.addEventListener('error', finish, { once: true });
+		if (node.complete) queueMicrotask(finish);
+		return {
+			destroy() {
+				node.removeEventListener('load', finish);
+				node.removeEventListener('error', finish);
+			}
+		};
 	};
 	$: selectedImageStyleLabel = $i18n.t(
 		imageStyleOptions.find((style) => style.id === stableDiffusionStyle)?.label ?? 'Sem estilo'
@@ -186,27 +269,44 @@
 	] as const;
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
-	export let videoGenerationResolution: '384p' | '480p' | '544p' | '576p' = '384p';
+	export let videoGenerationResolution: '480p' | '672p' = '480p';
 	export let videoGenerationDuration: '5s' | '8s' = '5s';
 	export let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
 	const videoAspectRatioOptions = [
 		{ id: '16:9', shape: 'h-3 w-5' },
 		{ id: '9:16', shape: 'h-5 w-[11px]' }
 	] as const;
+	const videoResolutionOptions = ['480p', '672p'] as const;
+	$: mediaAttachmentPolicy = getMediaAttachmentPolicy(
+		stableDiffusionEnabled,
+		stableDiffusionQuality,
+		videoGenerationEnabled,
+		musicGenerationEnabled
+	);
+	$: if (mediaAttachmentPolicy && files.length) {
+		const allowed = filterMediaAttachments(mediaAttachmentPolicy, files);
+		if (allowed.length !== files.length) {
+			files = allowed;
+			toast.warning($i18n.t('Anexos incompatíveis com o modo atual foram removidos.'));
+		}
+	}
 	export let onNativeIntegrationChange: Function = () => {};
 	export let thinkingEnabled = true;
 	export let thinkingExtendedEnabled = true;
 
 	let previousFileGenerationEnabled = fileGenerationEnabled;
 	let previousAttachmentFingerprint = '';
+	let pendingImageAttachments = 0;
 	let videoPreferencesMounted = false;
 	let videoPreferencesChatId: string | null = null;
 
 	const restoreVideoPreferences = () => {
 		const savedResolution = localStorage.getItem('neveai.videoResolution');
-		videoGenerationResolution = ['384p', '480p', '544p', '576p'].includes(savedResolution ?? '')
+		videoGenerationResolution = videoResolutionOptions.includes(
+			savedResolution as typeof videoGenerationResolution
+		)
 			? (savedResolution as typeof videoGenerationResolution)
-			: '384p';
+			: '480p';
 		videoGenerationDuration = localStorage.getItem('neveai.videoDuration') === '8s' ? '8s' : '5s';
 		videoGenerationAspectRatio =
 			localStorage.getItem('neveai.videoAspectRatio') === '9:16' ? '9:16' : '16:9';
@@ -231,8 +331,7 @@
 			if (fileGenerationEnabled) {
 				let contextChanged = false;
 				files.forEach((file) => {
-					const isImage =
-						file?.type === 'image' || (file?.content_type ?? '').startsWith('image/');
+					const isImage = file?.type === 'image' || (file?.content_type ?? '').startsWith('image/');
 					if (isImage || file?._contextManuallySet || file?._fileGenerationDefaultContext) {
 						return;
 					}
@@ -628,8 +727,7 @@
 
 	let command = '';
 	export let showCommands = false;
-	$: showCommands =
-		['#', '@', '$'].includes(command?.charAt(0)) || '\\#' === command?.slice(0, 2);
+	$: showCommands = ['#', '@', '$'].includes(command?.charAt(0)) || '\\#' === command?.slice(0, 2);
 	let suggestions = null;
 
 	let showTools = false;
@@ -637,59 +735,82 @@
 	let loaded = false;
 	let showThinkingDropdown = false;
 	let showImageQualityDropdown = false;
-	let showImagePerformanceDropdown = false;
 	let showImageStyleDropdown = false;
-	let imageStyleDropdownBottom: number | null = null;
+	let imageStyleDropdownRequest = 0;
 	let showImageResolutionDropdown = false;
-	$: if (stableDiffusionQuality === 'qwen_image_2_1_official' && hasImageAttachment) showImageResolutionDropdown = false;
+	let dropdownChatId = $chatId;
+	$: if (stableDiffusionQuality === 'qwen_image_2_1_official' && hasImageAttachment)
+		showImageResolutionDropdown = false;
 	let showVideoResolutionDropdown = false;
 	let showVideoDurationDropdown = false;
 	let showVideoAspectRatioDropdown = false;
+	const closeImageStyleDropdown = () => {
+		imageStyleDropdownRequest += 1;
+		showImageStyleDropdown = false;
+	};
+	const closeComposerDropdowns = () => {
+		showThinkingDropdown = false;
+		showImageQualityDropdown = false;
+		closeImageStyleDropdown();
+		showImageResolutionDropdown = false;
+		showVideoResolutionDropdown = false;
+		showVideoDurationDropdown = false;
+		showVideoAspectRatioDropdown = false;
+	};
 	$: if (!videoGenerationEnabled) {
 		showVideoResolutionDropdown = false;
 		showVideoDurationDropdown = false;
 		showVideoAspectRatioDropdown = false;
 	}
+	$: if (videoGenerationEnabled && hasImageAttachment) showVideoAspectRatioDropdown = false;
 	$: if (stableDiffusionEnabled || videoGenerationEnabled) {
 		showThinkingDropdown = false;
 	}
 
-	const toggleImageStyleDropdown = () => {
+	const toggleImageStyleDropdown = async () => {
 		showImageQualityDropdown = false;
-		showImagePerformanceDropdown = false;
 		showImageResolutionDropdown = false;
-		const opening = !showImageStyleDropdown;
-
-		if (opening && history?.currentId) {
-			const composer = document.getElementById('message-input-container');
-			const anchor = document.getElementById('image-style-dropdown-container');
-			if (composer && anchor) {
-				const composerRect = composer.getBoundingClientRect();
-				const anchorRect = anchor.getBoundingClientRect();
-				imageStyleDropdownBottom = Math.max(0, composerRect.bottom - anchorRect.top + 6);
-			}
-		} else {
-			imageStyleDropdownBottom = null;
+		if (showImageStyleDropdown) {
+			closeImageStyleDropdown();
+			return;
 		}
 
-		showImageStyleDropdown = opening;
+		const request = ++imageStyleDropdownRequest;
+		await preloadImageStyleThumbnails();
+		if (
+			request === imageStyleDropdownRequest &&
+			stableDiffusionEnabled &&
+			stableDiffusionQuality === 'neve_image_2'
+		) {
+			renderedImageStyleThumbnailCount = 0;
+			renderedImageStyleThumbnailsReady = false;
+			showImageStyleDropdown = true;
+		}
 	};
 	$: if (!stableDiffusionEnabled) {
 		showImageQualityDropdown = false;
-		showImagePerformanceDropdown = false;
-		showImageStyleDropdown = false;
+		closeImageStyleDropdown();
 		showImageResolutionDropdown = false;
 	}
+	$: if (stableDiffusionQuality !== 'neve_image_2') {
+		closeImageStyleDropdown();
+	}
+	$: if (dropdownChatId !== $chatId) {
+		dropdownChatId = $chatId;
+		showThinkingDropdown = false;
+		showImageQualityDropdown = false;
+		closeImageStyleDropdown();
+		showImageResolutionDropdown = false;
+		showVideoResolutionDropdown = false;
+		showVideoDurationDropdown = false;
+		showVideoAspectRatioDropdown = false;
+	}
 
-	const isQwenImage2Quality = (
-		quality: typeof stableDiffusionQuality
-	): quality is 'qwen_image_2_1' | 'qwen_image_2s' =>
-		quality === 'qwen_image_2_1' || quality === 'qwen_image_2s';
 	const isImageResolution = (value: string | null): value is typeof stableDiffusionResolution =>
 		['1:1', '16:9', '9:16', '4:3', '3:4'].includes(value ?? '');
 	const imageResolutionStorageKey = (quality: typeof stableDiffusionQuality) => {
 		if (quality === 'neve_image_2') return 'neveai.imageResolution.neve_image_1_4';
-		if (isQwenImage2Quality(quality)) return 'neveai.imageResolution.neve_image_2';
+		if (quality === 'qwen_image_2s') return 'neveai.imageResolution.neve_image_2';
 		if (quality === 'qwen_image_2_1_official') return 'neveai.imageResolution.neve_image_2_1';
 		return null;
 	};
@@ -703,25 +824,14 @@
 		const savedResolution = localStorage.getItem(storageKey);
 		return isImageResolution(savedResolution) ? savedResolution : '1:1';
 	};
-	const selectImageModel = (quality: 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2_1_official') => {
+	const selectImageModel = (
+		quality: 'neve_image' | 'neve_image_2' | 'qwen_image_2s' | 'qwen_image_2_1_official'
+	) => {
 		saveImageResolution(stableDiffusionQuality);
-		if (quality === 'qwen_image_2_1') {
-			const savedMode = localStorage.getItem('neveai.image2Mode');
-			stableDiffusionQuality = savedMode === 'fast' ? 'qwen_image_2s' : 'qwen_image_2_1';
-		} else {
-			stableDiffusionQuality = quality;
-		}
+		stableDiffusionQuality = quality;
 		stableDiffusionResolution = restoreImageResolution(stableDiffusionQuality);
 		localStorage.setItem('neveai.imageQuality', stableDiffusionQuality);
 		showImageQualityDropdown = false;
-		showImagePerformanceDropdown = false;
-	};
-
-	const selectQwenImageMode = (mode: 'quality' | 'fast') => {
-		stableDiffusionQuality = mode === 'fast' ? 'qwen_image_2s' : 'qwen_image_2_1';
-		localStorage.setItem('neveai.image2Mode', mode);
-		localStorage.setItem('neveai.imageQuality', stableDiffusionQuality);
-		showImagePerformanceDropdown = false;
 	};
 
 	const selectImageResolution = (resolution: typeof stableDiffusionResolution) => {
@@ -801,6 +911,158 @@
 	let chatInputContainerEl: HTMLElement | null = null;
 	$: activeChipTextClass = $showArtifacts ? 'hidden @sm:inline' : 'inline';
 
+	type ViewportDropdownOptions =
+		| boolean
+		| {
+				fullWidth?: boolean;
+				positionAnchorId?: string;
+				fitAvailableHeight?: boolean;
+		  };
+
+	function viewportDropdown(node: HTMLElement, options: ViewportDropdownOptions = false) {
+		const fullWidth = typeof options === 'boolean' ? options : (options.fullWidth ?? false);
+		const fitAvailableHeight =
+			typeof options === 'object' && (options.fitAvailableHeight ?? false);
+		const widthAnchor = fullWidth ? node.closest<HTMLElement>('#message-input-container') : null;
+		const positionAnchor =
+			typeof options === 'object' && options.positionAnchorId
+				? document.getElementById(options.positionAnchorId)
+				: fullWidth
+					? widthAnchor
+					: node.parentElement;
+		if (!positionAnchor || (fullWidth && !widthAnchor)) return;
+
+		const anchorId = positionAnchor.id || 'message-input-container';
+		node.dataset.composerDropdownAnchor = anchorId;
+		if (fitAvailableHeight) node.dataset.dropdownSide = history?.currentId ? 'top' : 'bottom';
+		if (node.id) {
+			document.querySelectorAll<HTMLElement>(`#${CSS.escape(node.id)}`).forEach((panel) => {
+				if (panel !== node && panel.parentElement === document.body) panel.remove();
+			});
+		}
+		if (fullWidth && widthAnchor)
+			node.style.width = `${widthAnchor.getBoundingClientRect().width}px`;
+		document.body.appendChild(node);
+		node.style.position = 'fixed';
+		node.style.top = '0';
+		node.style.left = '0';
+		node.style.bottom = 'auto';
+		node.style.margin = '0';
+		node.style.maxWidth = 'calc(100vw - 16px)';
+		node.style.maxHeight = 'calc(100dvh - 16px)';
+		node.style.overflowY = 'auto';
+		let active = true;
+
+		if (fitAvailableHeight && widthAnchor) {
+			let animationFrame: number | null = null;
+			const visualViewport = window.visualViewport;
+			node.style.overscrollBehavior = 'contain';
+
+			const setStyle = (property: keyof CSSStyleDeclaration, value: string) => {
+				if (node.style[property] !== value) node.style[property] = value;
+			};
+
+			const positionWithinViewport = () => {
+				animationFrame = null;
+				if (!active) return;
+
+				const viewportLeft = visualViewport?.offsetLeft ?? 0;
+				const viewportTop = visualViewport?.offsetTop ?? 0;
+				const viewportWidth = visualViewport?.width ?? window.innerWidth;
+				const viewportHeight = visualViewport?.height ?? window.innerHeight;
+				const viewportRight = viewportLeft + viewportWidth;
+				const viewportBottom = viewportTop + viewportHeight;
+				const viewportPadding = 8;
+				const dropdownGap = 6;
+				const widthRect = widthAnchor.getBoundingClientRect();
+				const anchorRect = positionAnchor.getBoundingClientRect();
+				const availableAbove = Math.max(
+					0,
+					Math.floor(anchorRect.top - dropdownGap - (viewportTop + viewportPadding))
+				);
+				const availableBelow = Math.max(
+					0,
+					Math.floor(viewportBottom - viewportPadding - dropdownGap - anchorRect.bottom)
+				);
+				const prefersAbove = Boolean(history?.currentId);
+				const preferredHeight = prefersAbove ? availableAbove : availableBelow;
+				const alternateHeight = prefersAbove ? availableBelow : availableAbove;
+				const opensAbove =
+					preferredHeight < 120 && alternateHeight > preferredHeight ? !prefersAbove : prefersAbove;
+				const availableHeight = opensAbove ? availableAbove : availableBelow;
+				const availableWidth = Math.max(0, viewportWidth - viewportPadding * 2);
+				const width = Math.min(widthRect.width, availableWidth);
+
+				setStyle('width', `${width}px`);
+				setStyle('maxHeight', `${availableHeight}px`);
+
+				// Measure only after applying the current viewport constraints.
+				const panelHeight = node.getBoundingClientRect().height;
+				const left = Math.min(
+					Math.max(widthRect.left, viewportLeft + viewportPadding),
+					Math.max(viewportLeft + viewportPadding, viewportRight - viewportPadding - width)
+				);
+				const top = opensAbove
+					? Math.max(viewportTop + viewportPadding, anchorRect.top - dropdownGap - panelHeight)
+					: Math.min(
+							anchorRect.bottom + dropdownGap,
+							viewportBottom - viewportPadding - panelHeight
+						);
+
+				setStyle('left', `${Math.round(left)}px`);
+				setStyle('top', `${Math.round(top)}px`);
+				node.dataset.dropdownSide = opensAbove ? 'top' : 'bottom';
+			};
+
+			const schedulePositionUpdate = () => {
+				if (!active || animationFrame !== null) return;
+				animationFrame = window.requestAnimationFrame(positionWithinViewport);
+			};
+
+			const cleanup = autoUpdate(positionAnchor, node, schedulePositionUpdate);
+			visualViewport?.addEventListener('resize', schedulePositionUpdate);
+			visualViewport?.addEventListener('scroll', schedulePositionUpdate);
+			schedulePositionUpdate();
+
+			return {
+				destroy() {
+					active = false;
+					cleanup();
+					visualViewport?.removeEventListener('resize', schedulePositionUpdate);
+					visualViewport?.removeEventListener('scroll', schedulePositionUpdate);
+					if (animationFrame !== null) window.cancelAnimationFrame(animationFrame);
+					node.remove();
+				}
+			};
+		}
+
+		let updateRevision = 0;
+		const update = async () => {
+			if (!active) return;
+			const revision = ++updateRevision;
+			if (fullWidth && widthAnchor)
+				node.style.width = `${widthAnchor.getBoundingClientRect().width}px`;
+			const alignEnd = anchorId === 'thinking-dropdown-container';
+			const middleware = [offset(6), flip(), shift({ padding: 8 })];
+			const { x, y } = await computePosition(positionAnchor, node, {
+				strategy: 'fixed',
+				placement: `${history?.currentId ? 'top' : 'bottom'}-${alignEnd ? 'end' : 'start'}`,
+				middleware
+			});
+			if (!active || revision !== updateRevision) return;
+			const left = fullWidth && widthAnchor ? widthAnchor.getBoundingClientRect().left : x;
+			Object.assign(node.style, { left: `${left}px`, top: `${y}px` });
+		};
+		const cleanup = autoUpdate(positionAnchor, node, update);
+		return {
+			destroy() {
+				active = false;
+				cleanup();
+				node.remove();
+			}
+		};
+	}
+
 	let user = null;
 	export let placeholder = '';
 
@@ -836,8 +1098,7 @@
 	$: showToolsButton = ($tools ?? []).length > 0 || ($toolServers ?? []).length > 0;
 
 	let showWebSearchButton = false;
-	$: showWebSearchButton =
-		$_user.role === 'admin' || $_user?.permissions?.features?.web_search;
+	$: showWebSearchButton = $_user.role === 'admin' || $_user?.permissions?.features?.web_search;
 
 	let showImageGenerationButton = false;
 	$: showImageGenerationButton =
@@ -848,7 +1109,7 @@
 
 	let showCodeExecutionButton = false;
 	$: showCodeExecutionButton =
-		($config?.features?.enable_code_execution !== false) &&
+		$config?.features?.enable_code_execution !== false &&
 		($_user.role === 'admin' || $_user?.permissions?.features?.code_execution !== false);
 
 	let showFileGenerationButton = true;
@@ -931,12 +1192,38 @@
 
 	const uploadFileHandler = async (file, process = true, itemData = {}) => {
 		if ($_user?.role !== 'admin' && !($_user?.permissions?.chat?.file_upload ?? true)) {
-			toast.error($i18n.t('You do not have permission to upload files.'));
+			toast.error($i18n.t('Este recurso não suporta anexos.'));
+			return null;
+		}
+		const policy = getMediaAttachmentPolicy(
+			stableDiffusionEnabled,
+			stableDiffusionQuality,
+			videoGenerationEnabled,
+			musicGenerationEnabled
+		);
+		if (policy?.maxCount === 0) {
+			toast.error($i18n.t('Este modelo não aceita anexos.'));
+			return null;
+		}
+		if (policy && !isMediaAttachmentAllowed(policy, file)) {
+			toast.error($i18n.t('Este formato de anexo não é permitido neste modo.'));
+			return null;
+		}
+		if (policy && files.length + pendingImageAttachments >= policy.maxCount) {
+			toast.error(
+				policy.maxCount === 1 && stableDiffusionQuality === 'neve_image_2'
+					? $i18n.t('Este modo aceita até 1 imagem.')
+					: $i18n.t('Este modo aceita até {{count}} imagens.', { count: policy.maxCount })
+			);
 			return null;
 		}
 
 		const isImageFile = file?.type?.startsWith('image/') ?? false;
-		if ((!isImageFile || (!stableDiffusionEnabled && !videoGenerationEnabled)) && fileUploadCapableModels.length !== selectedModels.length) {
+		if (
+			!policy &&
+			(!isImageFile || (!stableDiffusionEnabled && !videoGenerationEnabled)) &&
+			fileUploadCapableModels.length !== selectedModels.length
+		) {
 			toast.error($i18n.t('Model(s) do not support file upload'));
 			return null;
 		}
@@ -1053,8 +1340,49 @@
 			);
 			return;
 		}
+		const policy = getMediaAttachmentPolicy(
+			stableDiffusionEnabled,
+			stableDiffusionQuality,
+			videoGenerationEnabled,
+			musicGenerationEnabled
+		);
+		const acceptedFiles = [];
+		let remainingSlots = policy
+			? policy.maxCount - files.length - pendingImageAttachments
+			: Infinity;
+		for (const file of inputFiles) {
+			if (policy?.maxCount === 0) {
+				toast.error($i18n.t('Este modelo não aceita anexos.'));
+				break;
+			}
+			if (policy && !isMediaAttachmentAllowed(policy, file)) {
+				toast.error($i18n.t('Este formato de anexo não é permitido neste modo.'));
+				continue;
+			}
+			if (remainingSlots <= 0) {
+				toast.error(
+					policy.maxCount === 1 && stableDiffusionQuality === 'neve_image_2'
+						? $i18n.t('Este modo aceita até 1 imagem.')
+						: $i18n.t('Este modo aceita até {{count}} imagens.', { count: policy.maxCount })
+				);
+				break;
+			}
+			if (
+				policy &&
+				($config?.file?.max_size ?? null) !== null &&
+				file.size > $config.file.max_size * 1024 * 1024
+			) {
+				toast.error(
+					$i18n.t('File size should not exceed {{maxSize}} MB.', { maxSize: $config.file.max_size })
+				);
+				continue;
+			}
+			acceptedFiles.push(file);
+			if (policy) remainingSlots--;
+			if (policy && file.type.startsWith('image/')) pendingImageAttachments++;
+		}
 
-		inputFiles.forEach(async (file) => {
+		const processInputFile = async (file) => {
 			console.log('Processing file:', {
 				name: file.name,
 				type: file.type,
@@ -1079,7 +1407,17 @@
 			}
 
 			if (file['type'].startsWith('image/')) {
-				if (visionCapableModels.length === 0 && !stableDiffusionEnabled && !videoGenerationEnabled) {
+				let reserved = Boolean(policy);
+				const releaseReservation = () => {
+					if (reserved) pendingImageAttachments = Math.max(0, pendingImageAttachments - 1);
+					reserved = false;
+				};
+				if (
+					visionCapableModels.length === 0 &&
+					!stableDiffusionEnabled &&
+					!videoGenerationEnabled
+				) {
+					releaseReservation();
 					toast.error($i18n.t('Selected model(s) do not support image inputs'));
 					return;
 				}
@@ -1120,35 +1458,52 @@
 					return imageUrl;
 				};
 
-				let reader = new FileReader();
-
-				reader.onload = async (event) => {
-					let imageUrl = event.target.result;
-
-					// Compress the image if settings or config require it
+				try {
+					const readableFile = file.type === 'image/heic' ? await convertHeicToJpeg(file) : file;
+					let imageUrl = await new Promise<string>((resolve, reject) => {
+						const reader = new FileReader();
+						reader.onload = (event) => resolve(String(event.target?.result ?? ''));
+						reader.onerror = () => reject(reader.error);
+						reader.readAsDataURL(readableFile);
+					});
 					imageUrl = await compressImageHandler(imageUrl, $settings, $config);
-
 					if ($temporaryChatEnabled) {
-						files = [
-							...files,
-							{
-								type: 'image',
-								url: imageUrl
-							}
-						];
+						releaseReservation();
+						const activePolicy = getMediaAttachmentPolicy(
+							stableDiffusionEnabled,
+							stableDiffusionQuality,
+							videoGenerationEnabled,
+							musicGenerationEnabled
+						);
+						if (
+							activePolicy &&
+							(!isMediaAttachmentAllowed(activePolicy, file) ||
+								files.length + pendingImageAttachments >= activePolicy.maxCount)
+						)
+							return;
+						files = [...files, { type: 'image', url: imageUrl }];
 					} else {
 						const blob = await (await fetch(imageUrl)).blob();
 						const compressedFile = new File([blob], file.name, { type: file.type });
-
-						uploadFileHandler(compressedFile, false);
+						releaseReservation();
+						await uploadFileHandler(compressedFile, false);
 					}
-				};
-
-				reader.readAsDataURL(file['type'] === 'image/heic' ? await convertHeicToJpeg(file) : file);
+				} catch (error) {
+					toast.error(String(error));
+				} finally {
+					releaseReservation();
+				}
 			} else {
-				uploadFileHandler(file);
+				await uploadFileHandler(file);
 			}
-		});
+		};
+		if (policy?.kind === 'image') {
+			for (const file of acceptedFiles) await processInputFile(file);
+		} else {
+			acceptedFiles.forEach((file) => {
+				void processInputFile(file);
+			});
+		}
 	};
 
 	const handleChatInputPaste = async (eventDetail: CustomEvent<{ event: ClipboardEvent }>) => {
@@ -1156,21 +1511,23 @@
 		const clipboardData = event.clipboardData;
 		const pastedText = clipboardData?.getData('text/plain') ?? '';
 
-		if (!shiftKey && !stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled && pastedText.length > PASTED_TEXT_CHARACTER_LIMIT) {
+		if (
+			!shiftKey &&
+			!stableDiffusionEnabled &&
+			!musicGenerationEnabled &&
+			!videoGenerationEnabled &&
+			pastedText.length > PASTED_TEXT_CHARACTER_LIMIT
+		) {
 			event.preventDefault();
 			const pastedTextLineCount = pastedText.split(/\r\n|\r|\n/).length;
-			const file = new File(
-				[new Blob([pastedText], { type: 'text/plain' })],
-				'Texto colado.txt',
-				{ type: 'text/plain' }
-			);
+			const file = new File([new Blob([pastedText], { type: 'text/plain' })], 'Texto colado.txt', {
+				type: 'text/plain'
+			});
 			await uploadFileHandler(file, true, {
 				name: 'Texto colado',
 				pastedText: true,
 				pastedTextTitle: pastedText.replace(/\s+/g, ' ').trim().slice(0, 100),
-				...(pastedTextLineCount <= PASTED_TEXT_FULL_CONTEXT_LINE_LIMIT
-					? { context: 'full' }
-					: {})
+				...(pastedTextLineCount <= PASTED_TEXT_FULL_CONTEXT_LINE_LIMIT ? { context: 'full' } : {})
 			});
 			return;
 		}
@@ -1487,38 +1844,71 @@
 	});
 </script>
 
-<svelte:window on:click={(e) => {
-	if (showImageQualityDropdown && !(e.target as HTMLElement).closest('#image-quality-dropdown-container')) {
-		showImageQualityDropdown = false;
-	}
-	if (showImagePerformanceDropdown && !(e.target as HTMLElement).closest('#image-performance-dropdown-container')) {
-		showImagePerformanceDropdown = false;
-	}
-	if (
-		showImageStyleDropdown &&
-		!(e.target as HTMLElement).closest('#image-style-dropdown-container, #image-style-dropdown-panel')
-	) {
-		showImageStyleDropdown = false;
-	}
-	if (showImageResolutionDropdown && !(e.target as HTMLElement).closest('#image-resolution-dropdown-container')) {
-		showImageResolutionDropdown = false;
-	}
-	if (showVideoResolutionDropdown && !(e.target as HTMLElement).closest('#video-resolution-dropdown-container')) {
-		showVideoResolutionDropdown = false;
-	}
-	if (showVideoDurationDropdown && !(e.target as HTMLElement).closest('#video-duration-dropdown-container')) {
-		showVideoDurationDropdown = false;
-	}
-	if (showVideoAspectRatioDropdown && !(e.target as HTMLElement).closest('#video-aspect-ratio-dropdown-container')) {
-		showVideoAspectRatioDropdown = false;
-	}
-	if (showThinkingDropdown) {
-		const container = document.getElementById('thinking-dropdown-container');
-		if (container && !container.contains(e.target)) {
-			showThinkingDropdown = false;
+<svelte:window
+	on:resize={closeComposerDropdowns}
+	on:click={(e) => {
+		if (
+			showImageQualityDropdown &&
+			!(e.target as HTMLElement).closest(
+				'#image-quality-dropdown-container, [data-composer-dropdown-anchor="image-quality-dropdown-container"]'
+			)
+		) {
+			showImageQualityDropdown = false;
 		}
-	}
-}} />
+		if (
+			showImageStyleDropdown &&
+			!(e.target as HTMLElement).closest(
+				'#image-style-dropdown-container, #image-style-dropdown-panel'
+			)
+		) {
+			showImageStyleDropdown = false;
+		}
+		if (
+			showImageResolutionDropdown &&
+			!(e.target as HTMLElement).closest(
+				'#image-resolution-dropdown-container, [data-composer-dropdown-anchor="image-resolution-dropdown-container"]'
+			)
+		) {
+			showImageResolutionDropdown = false;
+		}
+		if (
+			showVideoResolutionDropdown &&
+			!(e.target as HTMLElement).closest(
+				'#video-resolution-dropdown-container, [data-composer-dropdown-anchor="video-resolution-dropdown-container"]'
+			)
+		) {
+			showVideoResolutionDropdown = false;
+		}
+		if (
+			showVideoDurationDropdown &&
+			!(e.target as HTMLElement).closest(
+				'#video-duration-dropdown-container, [data-composer-dropdown-anchor="video-duration-dropdown-container"]'
+			)
+		) {
+			showVideoDurationDropdown = false;
+		}
+		if (
+			showVideoAspectRatioDropdown &&
+			!(e.target as HTMLElement).closest(
+				'#video-aspect-ratio-dropdown-container, [data-composer-dropdown-anchor="video-aspect-ratio-dropdown-container"]'
+			)
+		) {
+			showVideoAspectRatioDropdown = false;
+		}
+		if (showThinkingDropdown) {
+			const container = document.getElementById('thinking-dropdown-container');
+			if (
+				container &&
+				!container.contains(e.target) &&
+				!(e.target as HTMLElement).closest(
+					'[data-composer-dropdown-anchor="thinking-dropdown-container"]'
+				)
+			) {
+				showThinkingDropdown = false;
+			}
+		}
+	}}
+/>
 
 <ToolServersModal bind:show={showTools} {selectedToolIds} />
 
@@ -1536,8 +1926,7 @@
 	on:save={async () => {
 		await tick();
 	}}
-	on:close={() => {
-	}}
+	on:close={() => {}}
 />
 
 <InputModal
@@ -1608,6 +1997,7 @@
 						bind:this={filesInputElement}
 						bind:files={inputFiles}
 						type="file"
+						accept={mediaAttachmentPolicy?.accept ?? undefined}
 						hidden
 						multiple
 						on:change={async () => {
@@ -1657,232 +2047,241 @@
 
 						<div
 							id="message-input-container"
-							class="flex-1 flex {isCompact ? 'flex-row items-center rounded-full' : 'flex-col rounded-3xl'} relative z-40 w-full shadow-lg border {chatDragged
+							class="flex-1 flex {isCompact
+								? 'flex-row items-center rounded-full'
+								: 'flex-col rounded-3xl'} relative z-40 w-full shadow-lg border {chatDragged
 								? 'border-blue-400 dark:border-blue-500 ring-2 ring-blue-300/50 dark:ring-blue-500/30'
 								: $temporaryChatEnabled
-								? 'border-dashed border-gray-100 dark:border-gray-800 hover:border-gray-200 focus-within:border-gray-200 hover:dark:border-gray-700 focus-within:dark:border-gray-700'
-								: ' border-gray-100/30 dark:border-gray-850/30 hover:border-gray-200 focus-within:border-gray-100 hover:dark:border-gray-800 focus-within:dark:border-gray-800'}  transition {isCompact ? 'px-1 py-2' : 'px-1'} bg-white/5 dark:bg-gray-850 dark:text-gray-100"
+									? 'border-dashed border-gray-100 dark:border-gray-800 hover:border-gray-200 focus-within:border-gray-200 hover:dark:border-gray-700 focus-within:dark:border-gray-700'
+									: ' border-gray-100/30 dark:border-gray-850/30 hover:border-gray-200 focus-within:border-gray-100 hover:dark:border-gray-800 focus-within:dark:border-gray-800'}  transition {isCompact
+								? 'px-1 py-2'
+								: 'px-1'} bg-white/5 dark:bg-gray-850 dark:text-gray-100"
 							dir={$settings?.chatDirection ?? 'auto'}
 						>
 							{#if !isCompact}
 								{#if atSelectedModel !== undefined}
-								<div class="px-3 pt-3 text-left w-full flex flex-col z-10">
-									<div class="flex items-center justify-between w-full">
-										<div class="pl-[1px] flex items-center gap-2 text-sm dark:text-gray-500">
-											<img
-												alt="model profile"
-												class="size-3.5 max-w-[28px] object-cover rounded-full"
-												src={`${NEVEAI_API_BASE_URL}/models/model/profile/image?id=${$models.find((model) => model.id === atSelectedModel.id).id}&lang=${$i18n.language}`}
-											/>
-											<div class="translate-y-[0.5px]">
-												<span class="">{atSelectedModel.name}</span>
+									<div class="px-3 pt-3 text-left w-full flex flex-col z-10">
+										<div class="flex items-center justify-between w-full">
+											<div class="pl-[1px] flex items-center gap-2 text-sm dark:text-gray-500">
+												<img
+													alt="model profile"
+													class="size-3.5 max-w-[28px] object-cover rounded-full"
+													src={`${NEVEAI_API_BASE_URL}/models/model/profile/image?id=${$models.find((model) => model.id === atSelectedModel.id).id}&lang=${$i18n.language}`}
+												/>
+												<div class="translate-y-[0.5px]">
+													<span class="">{atSelectedModel.name}</span>
+												</div>
+											</div>
+											<div>
+												<button
+													class="flex items-center dark:text-gray-500"
+													on:click={() => {
+														atSelectedModel = undefined;
+													}}
+												>
+													<XMark />
+												</button>
 											</div>
 										</div>
-										<div>
-											<button
-												class="flex items-center dark:text-gray-500"
-												on:click={() => {
-													atSelectedModel = undefined;
-												}}
-											>
-												<XMark />
-											</button>
-										</div>
 									</div>
-								</div>
-							{/if}
+								{/if}
 
-							{#if files.length > 0}
-				<div
-					class="scrollbar-hidden attachment-strip mx-2 mt-2.5 mb-1 h-[52px] min-h-[52px] max-h-[52px] pb-1 flex min-w-0 max-w-full items-start flex-nowrap gap-2 overflow-x-auto overflow-y-hidden"
-					dir={$settings?.chatDirection ?? 'auto'}
-					on:wheel|nonpassive={handleAttachmentsWheel}
-								>
-									{#each files as file, fileIdx}
-										{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
-											{@const fileUrl =
-												file.url.startsWith('data') || file.url.startsWith('http')
-													? file.url
-													: `${NEVEAI_API_BASE_URL}/files/${file.url}${file?.content_type ? '/content' : ''}`}
-											<div class="relative group shrink-0">
-												<div class="relative flex items-center">
-													<Image
-														src={fileUrl}
-														alt=""
-														imageClassName="size-8 rounded-lg object-cover"
-													/>
-												{#if !stableDiffusionEnabled && !videoGenerationEnabled && (atSelectedModel ? visionCapableModels.length === 0 : selectedModels.length !== visionCapableModels.length)}
-														<Tooltip
-															className=" absolute top-1 left-1"
-															content={$i18n.t('{{ models }}', {
-																models: [...(atSelectedModel ? [atSelectedModel] : selectedModels)]
-																	.filter((id) => !visionCapableModels.includes(id))
-																	.join(', ')
-															})}
+								{#if files.length > 0}
+									<div
+										class="scrollbar-hidden attachment-strip mx-2 mt-2.5 mb-1 h-[52px] min-h-[52px] max-h-[52px] pb-1 flex min-w-0 max-w-full items-start flex-nowrap gap-2 overflow-x-auto overflow-y-hidden"
+										dir={$settings?.chatDirection ?? 'auto'}
+										on:wheel|nonpassive={handleAttachmentsWheel}
+									>
+										{#each files as file, fileIdx}
+											{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
+												{@const fileUrl =
+													file.url.startsWith('data') || file.url.startsWith('http')
+														? file.url
+														: `${NEVEAI_API_BASE_URL}/files/${file.url}${file?.content_type ? '/content' : ''}`}
+												<div class="relative group shrink-0">
+													<div class="relative flex items-center">
+														<Image
+															src={fileUrl}
+															alt=""
+															imageClassName="size-8 rounded-lg object-cover"
+														/>
+														{#if !stableDiffusionEnabled && !videoGenerationEnabled && (atSelectedModel ? visionCapableModels.length === 0 : selectedModels.length !== visionCapableModels.length)}
+															<Tooltip
+																className=" absolute top-1 left-1"
+																content={$i18n.t('{{ models }}', {
+																	models: [
+																		...(atSelectedModel ? [atSelectedModel] : selectedModels)
+																	]
+																		.filter((id) => !visionCapableModels.includes(id))
+																		.join(', ')
+																})}
+															>
+																<svg
+																	xmlns="http://www.w3.org/2000/svg"
+																	viewBox="0 0 24 24"
+																	fill="currentColor"
+																	aria-hidden="true"
+																	class="size-4 fill-yellow-300"
+																>
+																	<path
+																		fill-rule="evenodd"
+																		d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003ZM12 8.25a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75Zm0 8.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"
+																		clip-rule="evenodd"
+																	/>
+																</svg>
+															</Tooltip>
+														{/if}
+													</div>
+													<div class="absolute top-0 right-0 z-10">
+														<button
+															class="flex size-4 items-center justify-center bg-white text-black border border-white rounded-full {($settings?.highContrastMode ??
+															false)
+																? ''
+																: 'outline-hidden focus:outline-hidden group-hover:visible invisible transition'}"
+															type="button"
+															aria-label={$i18n.t('Remove file')}
+															on:click={() => {
+																files.splice(fileIdx, 1);
+																files = files;
+															}}
 														>
 															<svg
 																xmlns="http://www.w3.org/2000/svg"
-																viewBox="0 0 24 24"
+																viewBox="0 0 20 20"
 																fill="currentColor"
 																aria-hidden="true"
-																class="size-4 fill-yellow-300"
+																class="size-4"
 															>
 																<path
-																	fill-rule="evenodd"
-																	d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003ZM12 8.25a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75Zm0 8.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"
-																	clip-rule="evenodd"
+																	d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
 																/>
 															</svg>
-														</Tooltip>
-													{/if}
+														</button>
+													</div>
 												</div>
-												<div class="absolute top-0 right-0 z-10">
-													<button
-														class="flex size-4 items-center justify-center bg-white text-black border border-white rounded-full {($settings?.highContrastMode ??
-														false)
-															? ''
-															: 'outline-hidden focus:outline-hidden group-hover:visible invisible transition'}"
-														type="button"
-														aria-label={$i18n.t('Remove file')}
-														on:click={() => {
-															files.splice(fileIdx, 1);
-															files = files;
-														}}
-													>
-														<svg
-															xmlns="http://www.w3.org/2000/svg"
-															viewBox="0 0 20 20"
-															fill="currentColor"
-															aria-hidden="true"
-															class="size-4"
-														>
-															<path
-																d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
-															/>
-														</svg>
-													</button>
-												</div>
-											</div>
-										{:else}
-											<FileItem
-												className="w-36 shrink-0"
-												inputChip={true}
-												item={file}
-												name={file.name}
-												type={file.type}
-												size={file?.size}
-												loading={file.status === 'uploading'}
-												dismissible={true}
-												edit={true}
-												small={true}
-												modal={['file', 'collection'].includes(file?.type)}
-												on:dismiss={async () => {
-													// Remove from UI state
-													files.splice(fileIdx, 1);
-													files = files;
-												}}
-												on:click={() => {
-													console.log(file);
-												}}
-											/>
-										{/if}
-									{/each}
-								</div>
+											{:else}
+												<FileItem
+													className="w-36 shrink-0"
+													inputChip={true}
+													item={file}
+													name={file.name}
+													type={file.type}
+													size={file?.size}
+													loading={file.status === 'uploading'}
+													dismissible={true}
+													edit={true}
+													small={true}
+													modal={['file', 'collection'].includes(file?.type)}
+													on:dismiss={async () => {
+														// Remove from UI state
+														files.splice(fileIdx, 1);
+														files = files;
+													}}
+													on:click={() => {
+														console.log(file);
+													}}
+												/>
+											{/if}
+										{/each}
+									</div>
+								{/if}
 							{/if}
-						{/if}
 
-						{#if isCompact}
-							<InputMenu
-								bind:files
-								selectedModels={atSelectedModel ? [atSelectedModel.id] : selectedModels}
-								{fileUploadCapableModels}
-								{inputFilesHandler}
-								uploadFilesHandler={() => {
-									filesInputElement.click();
-								}}
-								uploadGoogleDriveHandler={async () => {
-									try {
-										const fileData = await createPicker();
-										if (fileData) {
-											const file = new File([fileData.blob], fileData.name, {
-												type: fileData.blob.type
-											});
-											await uploadFileHandler(file);
-										} else {
-											console.log('No file was selected from Google Drive');
+							{#if isCompact}
+								<InputMenu
+									bind:files
+									{mediaAttachmentPolicy}
+									selectedModels={atSelectedModel ? [atSelectedModel.id] : selectedModels}
+									{fileUploadCapableModels}
+									{inputFilesHandler}
+									uploadFilesHandler={() => {
+										filesInputElement.click();
+									}}
+									uploadGoogleDriveHandler={async () => {
+										try {
+											const fileData = await createPicker();
+											if (fileData) {
+												const file = new File([fileData.blob], fileData.name, {
+													type: fileData.blob.type
+												});
+												await uploadFileHandler(file);
+											} else {
+												console.log('No file was selected from Google Drive');
+											}
+										} catch (error) {
+											console.error('Google Drive Error:', error);
+											toast.error(
+												$i18n.t('Error accessing Google Drive: {{error}}', {
+													error: error.message
+												})
+											);
 										}
-									} catch (error) {
-										console.error('Google Drive Error:', error);
-										toast.error(
-											$i18n.t('Error accessing Google Drive: {{error}}', {
-												error: error.message
-											})
-										);
-									}
-								}}
-								uploadOneDriveHandler={async (authorityType) => {
-									try {
-										const fileData = await pickAndDownloadFile(authorityType);
-										if (fileData) {
-											const file = new File([fileData.blob], fileData.name, {
-												type: fileData.blob.type || 'application/octet-stream'
-											});
-											await uploadFileHandler(file);
-										} else {
-											console.log('No file was selected from OneDrive');
+									}}
+									uploadOneDriveHandler={async (authorityType) => {
+										try {
+											const fileData = await pickAndDownloadFile(authorityType);
+											if (fileData) {
+												const file = new File([fileData.blob], fileData.name, {
+													type: fileData.blob.type || 'application/octet-stream'
+												});
+												await uploadFileHandler(file);
+											} else {
+												console.log('No file was selected from OneDrive');
+											}
+										} catch (error) {
+											console.error('OneDrive Error:', error);
 										}
-									} catch (error) {
-										console.error('OneDrive Error:', error);
-									}
-								}}
-								{onUpload}
-								onClose={async () => {
-									await tick();
-									const chatInput = document.getElementById('chat-input');
-									chatInput?.focus();
-								}}
-								{toggleFilters}
-								{showWebSearchButton}
-								{showImageGenerationButton}
-								{showCodeExecutionButton}
-								{showFileGenerationButton}
-								{showStableDiffusionButton}
-								{showMusicGenerationButton}
-								{showVideoGenerationButton}
-								bind:selectedToolIds
-								bind:selectedFilterIds
-								bind:webSearchEnabled
-								bind:deepSearchEnabled
-								bind:imageGenerationEnabled
-								bind:codeExecutionEnabled
-								bind:fileGenerationEnabled
-								bind:stableDiffusionEnabled
-								bind:musicGenerationEnabled
-								bind:videoGenerationEnabled
-								{onNativeIntegrationChange}
-								onShowValves={(e) => {
-									const { type, id } = e;
-									selectedValvesType = type;
-									selectedValvesItemId = id;
-									showValvesModal = true;
-								}}
-							>
-								<div
-									class="bg-transparent hover:bg-gray-100 text-gray-700 dark:text-white dark:hover:bg-gray-800 rounded-full size-8 flex justify-center items-center outline-hidden focus:outline-hidden"
+									}}
+									{onUpload}
+									onClose={async () => {
+										await tick();
+										const chatInput = document.getElementById('chat-input');
+										chatInput?.focus();
+									}}
+									{toggleFilters}
+									{showWebSearchButton}
+									{showImageGenerationButton}
+									{showCodeExecutionButton}
+									{showFileGenerationButton}
+									{showStableDiffusionButton}
+									{showMusicGenerationButton}
+									{showVideoGenerationButton}
+									bind:selectedToolIds
+									bind:selectedFilterIds
+									bind:webSearchEnabled
+									bind:deepSearchEnabled
+									bind:imageGenerationEnabled
+									bind:codeExecutionEnabled
+									bind:fileGenerationEnabled
+									bind:stableDiffusionEnabled
+									bind:musicGenerationEnabled
+									bind:videoGenerationEnabled
+									{onNativeIntegrationChange}
+									onShowValves={(e) => {
+										const { type, id } = e;
+										selectedValvesType = type;
+										selectedValvesItemId = id;
+										showValvesModal = true;
+									}}
 								>
-									<PlusAlt className="size-5.5" />
-								</div>
-							</InputMenu>
-						{/if}
+									<div
+										class="bg-transparent hover:bg-gray-100 text-gray-700 dark:text-white dark:hover:bg-gray-800 rounded-full size-8 flex justify-center items-center outline-hidden focus:outline-hidden"
+									>
+										<PlusAlt className="size-5.5" />
+									</div>
+								</InputMenu>
+							{/if}
 
-							<div class="{isCompact ? 'flex-1 min-w-0 px-1 flex items-center' : 'px-2.5'}">
+							<div class={isCompact ? 'flex-1 min-w-0 px-1 flex items-center' : 'px-2.5'}>
 								<div
 									bind:this={chatInputContainerEl}
 									class="chat-input-scroll rtl:text-right ltr:text-left bg-transparent dark:text-gray-100 outline-hidden w-full px-1 resize-none h-fit max-h-47 overflow-auto {files.length ===
 									0
 										? atSelectedModel !== undefined
 											? 'pt-1.5'
-											: isCompact ? '' : 'pt-2.5'
+											: isCompact
+												? ''
+												: 'pt-2.5'
 										: ''} {isCompact ? '' : 'pb-1'}"
 									id="chat-input-container"
 								>
@@ -1899,16 +2298,21 @@
 														command = getCommand();
 
 														const nodes = content.json?.content;
-														const isEmpty = !nodes || nodes.length === 0 ||
-															(nodes.length === 1 && (!nodes[0].content || nodes[0].content.length === 0));
+														const isEmpty =
+															!nodes ||
+															nodes.length === 0 ||
+															(nodes.length === 1 &&
+																(!nodes[0].content || nodes[0].content.length === 0));
 
 														if (isEmpty) {
 															isInputMultiline = false;
 															return;
 														}
 
-														const hasStructural = nodes.length > 1 ||
-															(Array.isArray(nodes[0].content) && nodes[0].content.some((n) => n.type === 'hardBreak'));
+														const hasStructural =
+															nodes.length > 1 ||
+															(Array.isArray(nodes[0].content) &&
+																nodes[0].content.some((n) => n.type === 'hardBreak'));
 
 														if (hasStructural) {
 															isInputMultiline = true;
@@ -1943,7 +2347,10 @@
 															navigator.msMaxTouchPoints > 0
 														)}
 													placeholder={placeholder ? placeholder : $i18n.t('Send a Message')}
-													largeTextAsFile={!shiftKey && !stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled}
+													largeTextAsFile={!shiftKey &&
+														!stableDiffusionEnabled &&
+														!musicGenerationEnabled &&
+														!videoGenerationEnabled}
 													autocomplete={$config?.features?.enable_autocomplete_generation &&
 														($settings?.promptAutocomplete ?? false)}
 													generateAutoCompletion={async (text) => {
@@ -2023,11 +2430,11 @@
 																		? (e.key === 'Enter' || e.keyCode === 13) && isCtrlPressed
 																		: (e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey;
 
-														if (enterPressed) {
-															e.preventDefault();
-															if (!sendDisabled && canSubmitMessage) {
-																dispatch('submit', prompt);
-															}
+																if (enterPressed) {
+																	e.preventDefault();
+																	if (!sendDisabled && canSubmitMessage) {
+																		dispatch('submit', prompt);
+																	}
 																}
 															}
 														}
@@ -2043,7 +2450,7 @@
 															stableDiffusionEnabled = false;
 															musicGenerationEnabled = false;
 															videoGenerationEnabled = false;
-															}
+														}
 													}}
 													on:paste={handleChatInputPaste}
 												/>
@@ -2056,26 +2463,45 @@
 							{#if isCompact}
 								<div class="self-center flex items-center gap-3 shrink-0 pr-1">
 									{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
-										<div class="relative flex items-center self-center" id="thinking-dropdown-container">
+										<div
+											class="relative flex items-center self-center"
+											id="thinking-dropdown-container"
+										>
 											<button
 												type="button"
 												class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition cursor-pointer bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
 												style="font-size: 0.79rem; font-family: 'Segoe UI', sans-serif; font-weight: 400; letter-spacing: 0.01em;"
 												aria-label={`${$i18n.t(thinkingEnabled ? 'Raciocínio' : 'Rápido')}${thinkingExtendedEnabled ? ` ${$i18n.t('Aprimorado')}` : ''}`}
-												on:click|preventDefault={() => { showThinkingDropdown = !showThinkingDropdown; }}
+												on:click|preventDefault={() => {
+													showThinkingDropdown = !showThinkingDropdown;
+												}}
 											>
 												<span>{thinkingEnabled ? $i18n.t('Raciocínio') : $i18n.t('Rápido')}</span>
 												{#if thinkingExtendedEnabled}
-													<span class="text-gray-500 dark:text-gray-500">{$i18n.t('Aprimorado')}</span>
+													<span class="text-gray-500 dark:text-gray-500"
+														>{$i18n.t('Aprimorado')}</span
+													>
 												{/if}
-												<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform {showThinkingDropdown ? '' : 'rotate-180'}">
-													<path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
+												<svg
+													xmlns="http://www.w3.org/2000/svg"
+													viewBox="0 0 20 20"
+													fill="currentColor"
+													class="size-3.5 transition-transform {showThinkingDropdown
+														? ''
+														: 'rotate-180'}"
+												>
+													<path
+														fill-rule="evenodd"
+														d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
+														clip-rule="evenodd"
+													/>
 												</svg>
 											</button>
 
 											{#if showThinkingDropdown}
 												<div
-											class="absolute top-full mt-1.5 right-0 z-50 w-[15.5rem] rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
+													use:viewportDropdown
+													class="fixed z-50 w-[15.5rem] rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
 													style="font-family: 'Segoe UI', sans-serif;"
 													transition:fly={{ y: -5, duration: 150 }}
 													on:click|stopPropagation
@@ -2085,10 +2511,26 @@
 														class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
 														on:click={() => setThinkingMode(false)}
 													>
-													<div class="flex-1 text-left"><div>{$i18n.t('Rápido')}</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">{$i18n.t('Para respostas imediatas')}</div></div>
+														<div class="flex-1 text-left">
+															<div>{$i18n.t('Rápido')}</div>
+															<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">
+																{$i18n.t('Para respostas imediatas')}
+															</div>
+														</div>
 														{#if !thinkingEnabled}
-															<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
-																<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+															<svg
+																xmlns="http://www.w3.org/2000/svg"
+																fill="none"
+																viewBox="0 0 24 24"
+																stroke-width="1.7"
+																stroke="currentColor"
+																class="size-4"
+															>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+																/>
 															</svg>
 														{/if}
 													</button>
@@ -2097,18 +2539,38 @@
 														class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
 														on:click={() => setThinkingMode(true)}
 													>
-													<div class="flex-1 text-left"><div>{$i18n.t('Raciocínio')}</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">{$i18n.t('Para tarefas complexas')}</div></div>
+														<div class="flex-1 text-left">
+															<div>{$i18n.t('Raciocínio')}</div>
+															<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">
+																{$i18n.t('Para tarefas complexas')}
+															</div>
+														</div>
 														{#if thinkingEnabled}
-															<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
-																<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+															<svg
+																xmlns="http://www.w3.org/2000/svg"
+																fill="none"
+																viewBox="0 0 24 24"
+																stroke-width="1.7"
+																stroke="currentColor"
+																class="size-4"
+															>
+																<path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+																/>
 															</svg>
 														{/if}
 													</button>
 													<div class="my-1 border-t border-gray-100 dark:border-gray-800"></div>
-													<div class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200">
+													<div
+														class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200"
+													>
 														<div class="flex-1 text-left">
-																	<div>{$i18n.t('Aprimorado')}</div>
-																	<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">{$i18n.t('Aumenta esforço do pensamento')}</div>
+															<div>{$i18n.t('Aprimorado')}</div>
+															<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">
+																{$i18n.t('Aumenta esforço do pensamento')}
+															</div>
 														</div>
 														<Switch
 															bind:state={thinkingExtendedEnabled}
@@ -2129,8 +2591,17 @@
 											type="submit"
 											disabled={sendDisabled || !canSubmitMessage}
 										>
-											<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="size-5 translate-x-[0.5px]">
-												<path fill-rule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clip-rule="evenodd" />
+											<svg
+												xmlns="http://www.w3.org/2000/svg"
+												viewBox="0 0 16 16"
+												fill="currentColor"
+												class="size-5 translate-x-[0.5px]"
+											>
+												<path
+													fill-rule="evenodd"
+													d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z"
+													clip-rule="evenodd"
+												/>
 											</svg>
 										</button>
 									</Tooltip>
@@ -2138,663 +2609,1091 @@
 							{/if}
 
 							{#if !isCompact}
-							<div class="message-input-actions flex justify-between mt-2 mb-2.5 mx-0.5 max-w-full {stableDiffusionEnabled && stableDiffusionQuality !== 'neve_image' ? 'stable-image-actions' : ''} {stableDiffusionEnabled && (isQwenImage2Quality(stableDiffusionQuality) || stableDiffusionQuality === 'qwen_image_2_1_official') ? 'stable-image-actions-no-style' : ''}" dir="ltr">
-								<div class="message-input-actions-primary ml-1 self-end flex items-center flex-1 max-w-[80%] @container">
-									<div class="message-input-add-control shrink-0">
-									<InputMenu
-										bind:files
-										selectedModels={atSelectedModel ? [atSelectedModel.id] : selectedModels}
-										{fileUploadCapableModels}
-										{inputFilesHandler}
-										uploadFilesHandler={() => {
-											filesInputElement.click();
-										}}
-										uploadGoogleDriveHandler={async () => {
-											try {
-												const fileData = await createPicker();
-												if (fileData) {
-													const file = new File([fileData.blob], fileData.name, {
-														type: fileData.blob.type
-													});
-													await uploadFileHandler(file);
-												} else {
-													console.log('No file was selected from Google Drive');
-												}
-											} catch (error) {
-												console.error('Google Drive Error:', error);
-												toast.error(
-													$i18n.t('Error accessing Google Drive: {{error}}', {
-														error: error.message
-													})
-												);
-											}
-										}}
-										uploadOneDriveHandler={async (authorityType) => {
-											try {
-												const fileData = await pickAndDownloadFile(authorityType);
-												if (fileData) {
-													const file = new File([fileData.blob], fileData.name, {
-														type: fileData.blob.type || 'application/octet-stream'
-													});
-													await uploadFileHandler(file);
-												} else {
-													console.log('No file was selected from OneDrive');
-												}
-											} catch (error) {
-												console.error('OneDrive Error:', error);
-											}
-										}}
-										{onUpload}
-										onClose={async () => {
-											await tick();
-										const chatInput = document.getElementById('chat-input');
-										chatInput?.focus();
-									}}
-									{toggleFilters}
-									{showWebSearchButton}
-									{showImageGenerationButton}
-									{showCodeExecutionButton}
-									{showFileGenerationButton}
-									{showStableDiffusionButton}
-									{showMusicGenerationButton}
-									{showVideoGenerationButton}
-									bind:selectedToolIds
-									bind:selectedFilterIds
-									bind:webSearchEnabled
-									bind:deepSearchEnabled
-									bind:imageGenerationEnabled
-									bind:codeExecutionEnabled
-									bind:fileGenerationEnabled
-									bind:stableDiffusionEnabled
-									bind:musicGenerationEnabled
-									bind:videoGenerationEnabled
-									{onNativeIntegrationChange}
-									onShowValves={(e) => {
-										const { type, id } = e;
-										selectedValvesType = type;
-										selectedValvesItemId = id;
-										showValvesModal = true;
-									}}
+								<div
+									class="message-input-actions flex justify-between mt-2 mb-2.5 mx-0.5 max-w-full {stableDiffusionEnabled &&
+									(stableDiffusionQuality === 'neve_image_2' ||
+										stableDiffusionQuality === 'qwen_image_2s')
+										? 'stable-image-actions'
+										: ''} {stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s'
+										? 'stable-image-actions-no-style'
+										: ''}"
+									dir="ltr"
 								>
 									<div
-										id="input-menu-button"
-										class="bg-transparent hover:bg-gray-100 text-gray-700 dark:text-white dark:hover:bg-gray-800 rounded-full size-8 flex justify-center items-center outline-hidden focus:outline-hidden"
+										class="message-input-actions-primary ml-1 self-end flex items-center flex-1 min-w-0 max-w-[80%] @container"
 									>
-										<PlusAlt className="size-5.5" />
-									</div>
-									</InputMenu>
-									</div>
-									{#if selectedModelIds.length === 1 && $models.find((m) => m.id === selectedModelIds[0])?.has_user_valves}
-										<div class="ml-1 flex gap-1.5">
-											<Tooltip content={$i18n.t('Valves')} placement="top">
-												<button
-													type="button"
-													id="model-valves-button"
-													class="bg-transparent hover:bg-gray-100 text-gray-700 dark:text-white dark:hover:bg-gray-800 rounded-full size-8 flex justify-center items-center outline-hidden focus:outline-hidden"
-													on:click={() => {
-														selectedValvesType = 'function';
-														selectedValvesItemId = selectedModelIds[0]?.split('.')[0];
-														showValvesModal = true;
-													}}
-												>
-													<Knobs className="size-4" strokeWidth="1.5" />
-												</button>
-											</Tooltip>
-										</div>
-									{/if}
-
-									<div class="message-input-active-controls ml-2.5 flex gap-1.5">
-										{#if (selectedToolIds ?? []).length > 0}
-											<Tooltip
-												content={$i18n.t('{{COUNT}} Available Tools', {
-													COUNT: (selectedToolIds ?? []).length
-												})}
+										<div class="message-input-add-control shrink-0">
+											<InputMenu
+												bind:files
+												{mediaAttachmentPolicy}
+												selectedModels={atSelectedModel ? [atSelectedModel.id] : selectedModels}
+												{fileUploadCapableModels}
+												{inputFilesHandler}
+												uploadFilesHandler={() => {
+													filesInputElement.click();
+												}}
+												uploadGoogleDriveHandler={async () => {
+													try {
+														const fileData = await createPicker();
+														if (fileData) {
+															const file = new File([fileData.blob], fileData.name, {
+																type: fileData.blob.type
+															});
+															await uploadFileHandler(file);
+														} else {
+															console.log('No file was selected from Google Drive');
+														}
+													} catch (error) {
+														console.error('Google Drive Error:', error);
+														toast.error(
+															$i18n.t('Error accessing Google Drive: {{error}}', {
+																error: error.message
+															})
+														);
+													}
+												}}
+												uploadOneDriveHandler={async (authorityType) => {
+													try {
+														const fileData = await pickAndDownloadFile(authorityType);
+														if (fileData) {
+															const file = new File([fileData.blob], fileData.name, {
+																type: fileData.blob.type || 'application/octet-stream'
+															});
+															await uploadFileHandler(file);
+														} else {
+															console.log('No file was selected from OneDrive');
+														}
+													} catch (error) {
+														console.error('OneDrive Error:', error);
+													}
+												}}
+												{onUpload}
+												onClose={async () => {
+													await tick();
+													const chatInput = document.getElementById('chat-input');
+													chatInput?.focus();
+												}}
+												{toggleFilters}
+												{showWebSearchButton}
+												{showImageGenerationButton}
+												{showCodeExecutionButton}
+												{showFileGenerationButton}
+												{showStableDiffusionButton}
+												{showMusicGenerationButton}
+												{showVideoGenerationButton}
+												bind:selectedToolIds
+												bind:selectedFilterIds
+												bind:webSearchEnabled
+												bind:deepSearchEnabled
+												bind:imageGenerationEnabled
+												bind:codeExecutionEnabled
+												bind:fileGenerationEnabled
+												bind:stableDiffusionEnabled
+												bind:musicGenerationEnabled
+												bind:videoGenerationEnabled
+												{onNativeIntegrationChange}
+												onShowValves={(e) => {
+													const { type, id } = e;
+													selectedValvesType = type;
+													selectedValvesItemId = id;
+													showValvesModal = true;
+												}}
 											>
-												<button
-													class="translate-y-[0.5px] px-1 flex gap-1 items-center text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg self-center transition"
-													aria-label="Available Tools"
-													type="button"
-													on:click={() => {
-														showTools = !showTools;
-													}}
+												<div
+													id="input-menu-button"
+													class="bg-transparent hover:bg-gray-100 text-gray-700 dark:text-white dark:hover:bg-gray-800 rounded-full size-8 flex justify-center items-center outline-hidden focus:outline-hidden"
 												>
-													<Wrench className="size-4" strokeWidth="1.75" />
-
-													<span class="text-sm">
-														{(selectedToolIds ?? []).length}
-													</span>
-												</button>
-											</Tooltip>
+													<PlusAlt className="size-5.5" />
+												</div>
+											</InputMenu>
+										</div>
+										{#if selectedModelIds.length === 1 && $models.find((m) => m.id === selectedModelIds[0])?.has_user_valves}
+											<div class="ml-1 flex gap-1.5">
+												<Tooltip content={$i18n.t('Valves')} placement="top">
+													<button
+														type="button"
+														id="model-valves-button"
+														class="bg-transparent hover:bg-gray-100 text-gray-700 dark:text-white dark:hover:bg-gray-800 rounded-full size-8 flex justify-center items-center outline-hidden focus:outline-hidden"
+														on:click={() => {
+															selectedValvesType = 'function';
+															selectedValvesItemId = selectedModelIds[0]?.split('.')[0];
+															showValvesModal = true;
+														}}
+													>
+														<Knobs className="size-4" strokeWidth="1.5" />
+													</button>
+												</Tooltip>
+											</div>
 										{/if}
 
-										{#each selectedFilterIds as filterId}
-											{@const filter = toggleFilters.find((f) => f.id === filterId)}
-											{#if filter}
-												<Tooltip content={filter?.name} placement="top">
+										<div class="message-input-active-controls ml-2.5 flex min-w-0 gap-1.5">
+											{#if (selectedToolIds ?? []).length > 0}
+												<Tooltip
+													content={$i18n.t('{{COUNT}} Available Tools', {
+														COUNT: (selectedToolIds ?? []).length
+													})}
+												>
 													<button
-														on:click|preventDefault={() => {
-															selectedFilterIds = selectedFilterIds.filter((id) => id !== filterId);
-														}}
+														class="translate-y-[0.5px] px-1 flex gap-1 items-center text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg self-center transition"
+														aria-label="Available Tools"
 														type="button"
-														class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {selectedFilterIds.includes(filterId) ? 'text-sky-500 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-600/10' : 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'} capitalize"
+														on:click={() => {
+															showTools = !showTools;
+														}}
 													>
-														<div class="relative size-4 shrink-0 flex items-center justify-center">
-															<span class="group-hover:hidden flex items-center justify-center">
-																{#if filter?.icon}
-																	<div class="size-4 items-center flex justify-center">
-																		<img src={filter.icon} class="size-3.5 {filter.icon.includes('data:image/svg') ? 'dark:invert-[80%]' : ''}" style="fill: currentColor;" alt={filter.name} />
-																	</div>
-																{:else}
-																	<Sparkles className="size-4" strokeWidth="1.75" />
-																{/if}
-															</span>
-															<span class="hidden group-hover:flex items-center justify-center">
-																<XMark className="size-4" strokeWidth="1.75" />
-															</span>
-														</div>
-														<span class="text-[0.8125rem] font-medium truncate {activeChipTextClass}">{filter?.name}</span>
+														<Wrench className="size-4" strokeWidth="1.75" />
+
+														<span class="chip-label text-sm">
+															{(selectedToolIds ?? []).length}
+														</span>
 													</button>
 												</Tooltip>
 											{/if}
-										{/each}
 
-										{#if webSearchEnabled}
-											<button
-												on:click|preventDefault={() => (webSearchEnabled = !webSearchEnabled)}
-												type="button"
-												class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-sky-500 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-600/10"
-											>
-												<div class="relative size-4 shrink-0 flex items-center justify-center">
-													<span class="group-hover:hidden flex items-center justify-center">
-														<GlobeAlt className="size-4" strokeWidth="1.75" />
-													</span>
-													<span class="hidden group-hover:flex items-center justify-center">
-														<XMark className="size-4" strokeWidth="1.75" />
-													</span>
-												</div>
-																<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Busca')}</span>
-											</button>
-										{/if}
-
-										{#if deepSearchEnabled}
-											<button
-												on:click|preventDefault={() => (deepSearchEnabled = !deepSearchEnabled)}
-												type="button"
-												class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-sky-600 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-600/10"
-											>
-												<div class="relative size-4 shrink-0 flex items-center justify-center">
-													<span class="group-hover:hidden flex items-center justify-center">
-														<Atom02 className="size-4" />
-													</span>
-													<span class="hidden group-hover:flex items-center justify-center">
-														<XMark className="size-4" strokeWidth="1.75" />
-													</span>
-												</div>
-												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Deep Search')}</span>
-											</button>
-										{/if}
-
-										{#if imageGenerationEnabled}
-											<button
-												on:click|preventDefault={() => (imageGenerationEnabled = !imageGenerationEnabled)}
-												type="button"
-												class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-sky-500 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-700/10"
-											>
-												<div class="relative size-4 shrink-0 flex items-center justify-center">
-													<span class="group-hover:hidden flex items-center justify-center">
-														<Photo className="size-4" strokeWidth="1.75" />
-													</span>
-													<span class="hidden group-hover:flex items-center justify-center">
-														<XMark className="size-4" strokeWidth="1.75" />
-													</span>
-												</div>
-												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Image')}</span>
-											</button>
-										{/if}
-
-										{#if codeExecutionEnabled}
-											<button
-												aria-label={codeExecutionEnabled ? $i18n.t('Disable Code Execution') : $i18n.t('Enable Code Execution')}
-												aria-pressed={codeExecutionEnabled}
-												on:click|preventDefault={() => (codeExecutionEnabled = !codeExecutionEnabled)}
-												type="button"
-												class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] transition-colors duration-300 max-w-full overflow-hidden text-emerald-500 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-700/10 {($settings?.highContrastMode ?? false) ? 'm-1' : 'focus:outline-hidden rounded-full'}"
-											>
-												<div class="relative size-4 shrink-0 flex items-center justify-center">
-													<span class="group-hover:hidden flex items-center justify-center">
-														<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" class="size-4"><path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/></svg>
-													</span>
-													<span class="hidden group-hover:flex items-center justify-center">
-														<XMark className="size-4" strokeWidth="1.75" />
-													</span>
-												</div>
-												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Artifacts')}</span>
-											</button>
-										{/if}
-
-										{#if stableDiffusionEnabled}
-											<button
-												on:click|preventDefault={() => (stableDiffusionEnabled = !stableDiffusionEnabled)}
-												type="button"
-												class="stable-image-toggle group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-pink-500 dark:text-pink-300 hover:bg-pink-100 dark:hover:bg-pink-700/10"
-											>
-												<div class="relative size-4 shrink-0 flex items-center justify-center">
-													<span class="group-hover:hidden flex items-center justify-center">
-														<ImageIcon className="size-4" strokeWidth="1.75" />
-													</span>
-													<span class="hidden group-hover:flex items-center justify-center">
-														<XMark className="size-4" strokeWidth="1.75" />
-													</span>
-												</div>
-												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Image')}</span>
-											</button>
-										<div class="image-quality-control relative shrink-0" id="image-quality-dropdown-container">
-											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label={$i18n.t('Image model')} aria-expanded={showImageQualityDropdown} on:click|preventDefault={() => { showImagePerformanceDropdown = false; showImageStyleDropdown = false; showImageResolutionDropdown = false; showImageQualityDropdown = !showImageQualityDropdown; }}>
-												<span>{stableDiffusionQuality === 'qwen_image_2_1_official' ? 'Neve Image 2.1' : isQwenImage2Quality(stableDiffusionQuality) ? 'Neve Image 2' : stableDiffusionQuality === 'neve_image_2' ? 'Neve Image 1.4' : 'Neve Image 1'}</span>
-												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageQualityDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
-											</button>
-											{#if showImageQualityDropdown}
-												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-													{#each [{ id: 'neve_image', label: 'Neve Image 1' }, { id: 'neve_image_2', label: 'Neve Image 1.4' }, { id: 'qwen_image_2_1', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.1' }] as quality}
-													<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => selectImageModel(quality.id as 'neve_image' | 'neve_image_2' | 'qwen_image_2_1' | 'qwen_image_2_1_official')}>
-															<span>{quality.label}</span>{#if quality.id === 'qwen_image_2_1' ? isQwenImage2Quality(stableDiffusionQuality) : stableDiffusionQuality === quality.id}<CheckCircle strokeWidth="1.7" />{/if}
+											{#each selectedFilterIds as filterId}
+												{@const filter = toggleFilters.find((f) => f.id === filterId)}
+												{#if filter}
+													<Tooltip content={filter?.name} placement="top">
+														<button
+															on:click|preventDefault={() => {
+																selectedFilterIds = selectedFilterIds.filter(
+																	(id) => id !== filterId
+																);
+															}}
+															type="button"
+															class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {selectedFilterIds.includes(
+																filterId
+															)
+																? 'text-sky-500 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-600/10'
+																: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'} capitalize"
+														>
+															<div
+																class="relative size-4 shrink-0 flex items-center justify-center"
+															>
+																<span class="group-hover:hidden flex items-center justify-center">
+																	{#if filter?.icon}
+																		<div class="size-4 items-center flex justify-center">
+																			<img
+																				src={filter.icon}
+																				class="size-3.5 {filter.icon.includes('data:image/svg')
+																					? 'dark:invert-[80%]'
+																					: ''}"
+																				style="fill: currentColor;"
+																				alt={filter.name}
+																			/>
+																		</div>
+																	{:else}
+																		<Sparkles className="size-4" strokeWidth="1.75" />
+																	{/if}
+																</span>
+																<span class="hidden group-hover:flex items-center justify-center">
+																	<XMark className="size-4" strokeWidth="1.75" />
+																</span>
+															</div>
+															<span
+																class="chip-label text-[0.8125rem] font-medium truncate {activeChipTextClass}"
+																>{filter?.name}</span
+															>
 														</button>
-													{/each}
-												</div>
-											{/if}
-										</div>
-										{#if (stableDiffusionQuality === 'neve_image_2' || isQwenImage2Quality(stableDiffusionQuality) || stableDiffusionQuality === 'qwen_image_2_1_official') && !(stableDiffusionQuality === 'qwen_image_2_1_official' && hasImageAttachment)}
-										<div class="image-resolution-control relative shrink-0" id="image-resolution-dropdown-container">
-											<button
-												type="button"
-												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-												aria-label={$i18n.t('Image aspect ratio')}
-												aria-expanded={showImageResolutionDropdown}
-												on:click|preventDefault={() => {
-													showImageQualityDropdown = false;
-													showImagePerformanceDropdown = false;
-													showImageStyleDropdown = false;
-													showImageResolutionDropdown = !showImageResolutionDropdown;
-												}}
-											>
-												<span>{stableDiffusionResolution}</span>
-												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageResolutionDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
-											</button>
-											{#if showImageResolutionDropdown}
-												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-													{#each imageResolutionOptions as option}
-														<button type="button" class="grid w-full grid-cols-[1fr_16px] items-center gap-2 px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => selectImageResolution(option.id)}>
-															<span class="grid grid-cols-[24px_1fr] items-center gap-2">
-																<span class="flex h-5 w-6 items-center justify-center"><span class="block border border-current rounded-[1px] {option.shape}"></span></span>
-																<span class="leading-5">{option.id}</span>
-															</span>
-															<span class="flex size-4 items-center justify-center">{#if stableDiffusionResolution === option.id}<CheckCircle className="size-4" strokeWidth="1.7" />{/if}</span>
-														</button>
-													{/each}
-												</div>
-											{/if}
-										</div>
-										{/if}
-										{#if stableDiffusionQuality === 'neve_image_2'}
-										<div class="image-style-control relative shrink-0" id="image-style-dropdown-container">
-											<button
-												type="button"
-												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-												aria-label={$i18n.t('Image style')}
-												aria-expanded={showImageStyleDropdown}
-												on:click|preventDefault={toggleImageStyleDropdown}
-											>
-												<span>{selectedImageStyleLabel}</span>
-												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImageStyleDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
-											</button>
-										</div>
-										{/if}
-										{#if isQwenImage2Quality(stableDiffusionQuality)}
-										<div class="image-performance-control relative shrink-0" id="image-performance-dropdown-container">
-											<button type="button" class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full" aria-label={$i18n.t('Modo de geração de imagem')} aria-expanded={showImagePerformanceDropdown} on:click|preventDefault={() => { showImageQualityDropdown = false; showImageResolutionDropdown = false; showImagePerformanceDropdown = !showImagePerformanceDropdown; }}>
-												<span>{stableDiffusionQuality === 'qwen_image_2s' ? $i18n.t('Rápido') : $i18n.t('Qualidade')}</span>
-												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showImagePerformanceDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
-											</button>
-											{#if showImagePerformanceDropdown}
-												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-													{#each [{ id: 'quality', label: $i18n.t('Qualidade') }, { id: 'fast', label: $i18n.t('Rápido') }] as mode}
-														<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => selectQwenImageMode(mode.id as 'quality' | 'fast')}>
-															<span>{mode.label}</span>{#if (mode.id === 'fast') === (stableDiffusionQuality === 'qwen_image_2s')}<CheckCircle strokeWidth="1.7" />{/if}
-														</button>
-													{/each}
-												</div>
-											{/if}
-										</div>
-										{/if}
-										{/if}
-
-										{#if musicGenerationEnabled}
-											<button
-												on:click|preventDefault={() => (musicGenerationEnabled = !musicGenerationEnabled)}
-												type="button"
-												class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-violet-500 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-700/10"
-											>
-												<div class="relative size-4 shrink-0 flex items-center justify-center">
-													<span class="group-hover:hidden flex items-center justify-center">
-														<MusicNote className="size-4" strokeWidth="1.75" />
-													</span>
-													<span class="hidden group-hover:flex items-center justify-center">
-														<XMark className="size-4" strokeWidth="1.75" />
-													</span>
-												</div>
-												<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Music')}</span>
-											</button>
-										{/if}
-
-										{#if videoGenerationEnabled}
-											<button
-												on:click|preventDefault={() => {
-													videoGenerationEnabled = false;
-													onNativeIntegrationChange(null);
-												}}
-												type="button"
-											class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-yellow-500 dark:text-yellow-300 hover:bg-yellow-50 dark:hover:bg-yellow-900/10"
-											>
-												<div class="relative size-4 shrink-0 flex items-center justify-center">
-													<span class="group-hover:hidden flex items-center justify-center">
-														<Video className="size-4" strokeWidth="1.75" />
-													</span>
-													<span class="hidden group-hover:flex items-center justify-center">
-														<XMark className="size-4" strokeWidth="1.75" />
-													</span>
-												</div>
-											<span class="text-[0.8125rem] font-medium {activeChipTextClass}">{$i18n.t('Video')}</span>
-										</button>
-
-										<div class="relative shrink-0" id="video-resolution-dropdown-container">
-											<button
-												type="button"
-												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-												aria-label={$i18n.t('Video resolution')}
-												aria-expanded={showVideoResolutionDropdown}
-												on:click|preventDefault={() => {
-											showVideoDurationDropdown = false;
-											showVideoAspectRatioDropdown = false;
-													showVideoResolutionDropdown = !showVideoResolutionDropdown;
-												}}
-											>
-												<span>{videoGenerationResolution}</span>
-												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showVideoResolutionDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
-											</button>
-											{#if showVideoResolutionDropdown}
-												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-											{#each ['384p', '480p', '544p', '576p'] as resolution}
-												<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { videoGenerationResolution = resolution as '384p' | '480p' | '544p' | '576p'; localStorage.setItem('neveai.videoResolution', videoGenerationResolution); showVideoResolutionDropdown = false; }}>
-															<span>{resolution}</span>{#if videoGenerationResolution === resolution}<CheckCircle strokeWidth="1.7" />{/if}
-														</button>
-													{/each}
-												</div>
-											{/if}
-										</div>
-
-										<div class="relative shrink-0" id="video-duration-dropdown-container">
-											<button
-												type="button"
-												class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-												aria-label={$i18n.t('Video duration')}
-												aria-expanded={showVideoDurationDropdown}
-											on:click|preventDefault={() => {
-												showVideoResolutionDropdown = false;
-												showVideoAspectRatioDropdown = false;
-												showVideoDurationDropdown = !showVideoDurationDropdown;
-												}}
-											>
-												<span>{videoGenerationDuration}</span>
-												<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showVideoDurationDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
-											</button>
-											{#if showVideoDurationDropdown}
-												<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-28 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-													{#each ['5s', '8s'] as durationOption}
-														<button type="button" class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { videoGenerationDuration = durationOption as '5s' | '8s'; localStorage.setItem('neveai.videoDuration', videoGenerationDuration); showVideoDurationDropdown = false; }}>
-															<span>{durationOption}</span>{#if videoGenerationDuration === durationOption}<CheckCircle strokeWidth="1.7" />{/if}
-														</button>
+													</Tooltip>
+												{/if}
 											{/each}
-										</div>
-									{/if}
-								</div>
 
-								<div class="relative shrink-0" id="video-aspect-ratio-dropdown-container">
-										<button
-											type="button"
-											class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-															aria-label={$i18n.t('Video aspect ratio')}
-											aria-expanded={showVideoAspectRatioDropdown}
-											on:click|preventDefault={() => {
-												showVideoResolutionDropdown = false;
-												showVideoDurationDropdown = false;
-												showVideoAspectRatioDropdown = !showVideoAspectRatioDropdown;
-											}}
-										>
-											<span>{videoGenerationAspectRatio}</span>
-											<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showVideoAspectRatioDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
-										</button>
-									{#if showVideoAspectRatioDropdown}
-										<div class="absolute {history?.currentId ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} left-0 z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm" transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
-											{#each videoAspectRatioOptions as option}
-												<button type="button" class="grid w-full grid-cols-[1fr_16px] items-center gap-2 px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { videoGenerationAspectRatio = option.id; localStorage.setItem('neveai.videoAspectRatio', videoGenerationAspectRatio); showVideoAspectRatioDropdown = false; }}>
-													<span class="grid grid-cols-[24px_1fr] items-center gap-2">
-														<span class="flex h-5 w-6 items-center justify-center"><span class="block border border-current rounded-[1px] {option.shape}"></span></span>
-														<span class="leading-5">{option.id}</span>
-													</span>
-													<span class="flex size-4 items-center justify-center">{#if videoGenerationAspectRatio === option.id}<CheckCircle className="size-4" strokeWidth="1.7" />{/if}</span>
-												</button>
-												{/each}
-											</div>
-									{/if}
-								</div>
-								{/if}
-
-									</div>
-								</div>
-								<div class="message-input-actions-secondary self-end flex space-x-1 mr-1 shrink-0 gap-[0.5px]">
-									{#if generating || (history?.currentId && history?.messages[history.currentId]?.done !== true) || uploadPending}
-										<Tooltip content={$i18n.t('Stop')}>
-											<button
-												class="grid size-8 shrink-0 place-items-center rounded-full bg-white p-0 text-gray-800 transition hover:bg-gray-100 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-800"
-												type="button"
-												on:click={() => {
-													stopResponse();
-												}}
-											>
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													viewBox="0 0 24 24"
-													fill="currentColor"
-													class="block size-5 -translate-x-[0.5px] translate-y-[0.5px]"
-												>
-													<circle cx="12" cy="12" r="9.75" />
-													<rect x="8.25" y="8.25" width="7.5" height="7.5" rx="1.15" class="text-white dark:text-gray-700" fill="currentColor" />
-												</svg>
-											</button>
-										</Tooltip>
-									{:else}
-										{#if (selectedToolIds ?? []).length > 0 || ($terminalServers ?? []).some((s) => s.url)}
-											<TerminalMenu bind:show={showTools} />
-										{/if}
-
-										{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
-											<div class="relative flex items-center self-center mr-2" id="thinking-dropdown-container">
+											{#if webSearchEnabled}
 												<button
+													on:click|preventDefault={() => (webSearchEnabled = !webSearchEnabled)}
 													type="button"
-													class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition cursor-pointer bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-													style="font-size: 0.79rem; font-family: 'Segoe UI', sans-serif; font-weight: 400; letter-spacing: 0.01em;"
-													aria-label={`${$i18n.t(thinkingEnabled ? 'Raciocínio' : 'Rápido')}${thinkingExtendedEnabled ? ` ${$i18n.t('Aprimorado')}` : ''}`}
-													on:click|preventDefault={() => { showThinkingDropdown = !showThinkingDropdown; }}
+													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-sky-500 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-600/10"
 												>
-													<span>{thinkingEnabled ? $i18n.t('Raciocínio') : $i18n.t('Rápido')}</span>
-													{#if thinkingExtendedEnabled}
-														<span class="text-gray-500 dark:text-gray-500">{$i18n.t('Aprimorado')}</span>
-													{/if}
-													<svg
-														xmlns="http://www.w3.org/2000/svg"
-														viewBox="0 0 20 20"
-														fill="currentColor"
-														class="size-3.5 transition-transform {history?.currentId
-															? showThinkingDropdown
-																? 'rotate-180'
-																: ''
-															: showThinkingDropdown
+													<div class="relative size-4 shrink-0 flex items-center justify-center">
+														<span class="group-hover:hidden flex items-center justify-center">
+															<GlobeAlt className="size-4" strokeWidth="1.75" />
+														</span>
+														<span class="hidden group-hover:flex items-center justify-center">
+															<XMark className="size-4" strokeWidth="1.75" />
+														</span>
+													</div>
+													<span
+														class="chip-label text-[0.8125rem] font-medium {activeChipTextClass}"
+														>{$i18n.t('Busca')}</span
+													>
+												</button>
+											{/if}
+
+											{#if deepSearchEnabled}
+												<button
+													on:click|preventDefault={() => (deepSearchEnabled = !deepSearchEnabled)}
+													type="button"
+													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-sky-600 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-600/10"
+												>
+													<div class="relative size-4 shrink-0 flex items-center justify-center">
+														<span class="group-hover:hidden flex items-center justify-center">
+															<Atom02 className="size-4" />
+														</span>
+														<span class="hidden group-hover:flex items-center justify-center">
+															<XMark className="size-4" strokeWidth="1.75" />
+														</span>
+													</div>
+													<span
+														class="chip-label text-[0.8125rem] font-medium {activeChipTextClass}"
+														>{$i18n.t('Deep Search')}</span
+													>
+												</button>
+											{/if}
+
+											{#if imageGenerationEnabled}
+												<button
+													on:click|preventDefault={() =>
+														(imageGenerationEnabled = !imageGenerationEnabled)}
+													type="button"
+													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-sky-500 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-700/10"
+												>
+													<div class="relative size-4 shrink-0 flex items-center justify-center">
+														<span class="group-hover:hidden flex items-center justify-center">
+															<Photo className="size-4" strokeWidth="1.75" />
+														</span>
+														<span class="hidden group-hover:flex items-center justify-center">
+															<XMark className="size-4" strokeWidth="1.75" />
+														</span>
+													</div>
+													<span
+														class="chip-label text-[0.8125rem] font-medium {activeChipTextClass}"
+														>{$i18n.t('Image')}</span
+													>
+												</button>
+											{/if}
+
+											{#if codeExecutionEnabled}
+												<button
+													aria-label={codeExecutionEnabled
+														? $i18n.t('Disable Code Execution')
+														: $i18n.t('Enable Code Execution')}
+													aria-pressed={codeExecutionEnabled}
+													on:click|preventDefault={() =>
+														(codeExecutionEnabled = !codeExecutionEnabled)}
+													type="button"
+													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] transition-colors duration-300 max-w-full overflow-hidden text-emerald-500 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-700/10 {($settings?.highContrastMode ??
+													false)
+														? 'm-1'
+														: 'focus:outline-hidden rounded-full'}"
+												>
+													<div class="relative size-4 shrink-0 flex items-center justify-center">
+														<span class="group-hover:hidden flex items-center justify-center">
+															<svg
+																aria-hidden="true"
+																xmlns="http://www.w3.org/2000/svg"
+																fill="none"
+																viewBox="0 0 24 24"
+																stroke="currentColor"
+																stroke-width="1.5"
+																class="size-4"
+																><path
+																	stroke-linecap="round"
+																	stroke-linejoin="round"
+																	d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"
+																/></svg
+															>
+														</span>
+														<span class="hidden group-hover:flex items-center justify-center">
+															<XMark className="size-4" strokeWidth="1.75" />
+														</span>
+													</div>
+													<span
+														class="chip-label text-[0.8125rem] font-medium {activeChipTextClass}"
+														>{$i18n.t('Artifacts')}</span
+													>
+												</button>
+											{/if}
+
+											{#if stableDiffusionEnabled}
+												<button
+													on:click|preventDefault={() =>
+														(stableDiffusionEnabled = !stableDiffusionEnabled)}
+													type="button"
+													class="stable-image-toggle group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-pink-500 dark:text-pink-300 hover:bg-pink-100 dark:hover:bg-pink-700/10"
+												>
+													<div class="relative size-4 shrink-0 flex items-center justify-center">
+														<span class="group-hover:hidden flex items-center justify-center">
+															<ImageIcon className="size-4" strokeWidth="1.75" />
+														</span>
+														<span class="hidden group-hover:flex items-center justify-center">
+															<XMark className="size-4" strokeWidth="1.75" />
+														</span>
+													</div>
+													<span
+														class="chip-label text-[0.8125rem] font-medium {activeChipTextClass}"
+														>{$i18n.t('Image')}</span
+													>
+												</button>
+												<div
+													class="image-quality-control relative shrink-0"
+													id="image-quality-dropdown-container"
+												>
+													<button
+														type="button"
+														class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+														aria-label={$i18n.t('Image model')}
+														aria-expanded={showImageQualityDropdown}
+														on:click|preventDefault={() => {
+															showImageStyleDropdown = false;
+															showImageResolutionDropdown = false;
+															showImageQualityDropdown = !showImageQualityDropdown;
+														}}
+													>
+														<span
+															>{stableDiffusionQuality === 'qwen_image_2_1_official'
+																? 'Neve Image 2.1'
+															: stableDiffusionQuality === 'qwen_image_2s'
+																? 'Neve Image 2 Fast'
+																	: stableDiffusionQuality === 'neve_image_2'
+																	? 'Neve Image 1.5'
+																		: 'Neve Image 1'}</span
+														>
+														<svg
+															viewBox="0 0 20 20"
+															fill="currentColor"
+															class="size-3.5 transition-transform duration-150 {showImageQualityDropdown
 																? ''
 																: 'rotate-180'}"
-													>
-														<path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
-													</svg>
-												</button>
-
-												{#if showThinkingDropdown}
-													<div
-														class="absolute {history?.currentId
-															? 'bottom-full mb-1.5'
-													: 'top-full mt-1.5'} right-0 z-50 w-[15.5rem] rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
-														style="font-family: 'Segoe UI', sans-serif;"
-														transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
-														on:click|stopPropagation
-													>
-														<button
-															type="button"
-															class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
-															on:click={() => setThinkingMode(false)}
+															aria-hidden="true"
+															><path
+																fill-rule="evenodd"
+																d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
+																clip-rule="evenodd"
+															/></svg
 														>
-																	<div class="flex-1 text-left"><div>{$i18n.t('Rápido')}</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">{$i18n.t('Para respostas imediatas')}</div></div>
-															{#if !thinkingEnabled}
-																<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
-																	<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-																</svg>
-															{/if}
-														</button>
-														<button
-															type="button"
-															class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
-															on:click={() => setThinkingMode(true)}
+													</button>
+													{#if showImageQualityDropdown}
+														<div
+															use:viewportDropdown
+															class="fixed z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
+															transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
 														>
-																	<div class="flex-1 text-left"><div>{$i18n.t('Raciocínio')}</div><div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">{$i18n.t('Para tarefas complexas')}</div></div>
-															{#if thinkingEnabled}
-																<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.7" stroke="currentColor" class="size-4">
-																	<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-																</svg>
-															{/if}
-														</button>
-														<div class="my-1 border-t border-gray-100 dark:border-gray-800"></div>
-														<div class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200">
-															<div class="flex-1 text-left">
-																		<div>{$i18n.t('Aprimorado')}</div>
-																		<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">{$i18n.t('Aumenta esforço do pensamento')}</div>
-															</div>
-															<Switch
-																bind:state={thinkingExtendedEnabled}
-																on:change={(e) => setThinkingExtendedMode(e.detail)}
-															/>
+													{#each [{ id: 'neve_image', label: 'Neve Image 1' }, { id: 'neve_image_2', label: 'Neve Image 1.5' }, { id: 'qwen_image_2s', label: 'Neve Image 2 Fast' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.1' }] as quality}
+																<button
+																	type="button"
+																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+																	on:click={() =>
+																		selectImageModel(
+																			quality.id as
+																				| 'neve_image'
+																				| 'neve_image_2'
+																						| 'qwen_image_2s'
+																				| 'qwen_image_2_1_official'
+																		)}
+																>
+																	<span>{quality.label}</span
+															>{#if stableDiffusionQuality === quality.id}<CheckCircle
+																			strokeWidth="1.7"
+																		/>{/if}
+																</button>
+															{/each}
 														</div>
+													{/if}
+												</div>
+										{#if (stableDiffusionQuality === 'neve_image_2' || stableDiffusionQuality === 'qwen_image_2s' || stableDiffusionQuality === 'qwen_image_2_1_official') && !(stableDiffusionQuality === 'qwen_image_2_1_official' && hasImageAttachment)}
+													<div
+														class="image-resolution-control relative shrink-0"
+														id="image-resolution-dropdown-container"
+													>
+														<button
+															type="button"
+															class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+															aria-label={$i18n.t('Image aspect ratio')}
+															aria-expanded={showImageResolutionDropdown}
+															on:click|preventDefault={() => {
+																showImageQualityDropdown = false;
+																showImageStyleDropdown = false;
+																showImageResolutionDropdown = !showImageResolutionDropdown;
+															}}
+														>
+															<span>{stableDiffusionResolution}</span>
+															<svg
+																viewBox="0 0 20 20"
+																fill="currentColor"
+																class="size-3.5 transition-transform duration-150 {showImageResolutionDropdown
+																	? ''
+																	: 'rotate-180'}"
+																aria-hidden="true"
+																><path
+																	fill-rule="evenodd"
+																	d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
+																	clip-rule="evenodd"
+																/></svg
+															>
+														</button>
+														{#if showImageResolutionDropdown}
+															<div
+																use:viewportDropdown
+																class="fixed z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
+																transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
+															>
+																{#each imageResolutionOptions as option}
+																	<button
+																		type="button"
+																		class="grid w-full grid-cols-[1fr_16px] items-center gap-2 px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+																		on:click={() => selectImageResolution(option.id)}
+																	>
+																		<span class="grid grid-cols-[24px_1fr] items-center gap-2">
+																			<span class="flex h-5 w-6 items-center justify-center"
+																				><span
+																					class="block border border-current rounded-[1px] {option.shape}"
+																				></span></span
+																			>
+																			<span class="leading-5">{option.id}</span>
+																		</span>
+																		<span class="flex size-4 items-center justify-center"
+																			>{#if stableDiffusionResolution === option.id}<CheckCircle
+																					className="size-4"
+																					strokeWidth="1.7"
+																				/>{/if}</span
+																		>
+																	</button>
+																{/each}
+															</div>
+														{/if}
 													</div>
 												{/if}
-											</div>
-										{/if}
+												{#if stableDiffusionQuality === 'neve_image_2'}
+													<div
+														class="image-style-control relative shrink-0"
+														id="image-style-dropdown-container"
+													>
+														<button
+															type="button"
+															class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+															aria-label={$i18n.t('Image style')}
+															aria-expanded={showImageStyleDropdown}
+															on:click|preventDefault={toggleImageStyleDropdown}
+														>
+															<span>{selectedImageStyleLabel}</span>
+															<svg
+																viewBox="0 0 20 20"
+																fill="currentColor"
+																class="size-3.5 transition-transform duration-150 {showImageStyleDropdown
+																	? ''
+																	: 'rotate-180'}"
+																aria-hidden="true"
+																><path
+																	fill-rule="evenodd"
+																	d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
+																	clip-rule="evenodd"
+																/></svg
+															>
+														</button>
+													</div>
+												{/if}
+											{/if}
 
-										{#if lastUsage && !stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled}
-											{@const totalTokens = lastUsage.total_tokens ?? ((lastUsage.prompt_tokens ?? lastUsage.input_tokens ?? 0) + (lastUsage.completion_tokens ?? lastUsage.output_tokens ?? 0))}
-											{@const contextModel = (() => { const mid = atSelectedModel?.id ?? selectedModels?.[0]; return $models.find((m) => m.id === mid); })()}
-											{@const contextWindow = contextModel?.llamacpp?.n_ctx || contextModel?.info?.params?.num_ctx || contextModel?.info?.meta?.context_length || 128000}
-											{@const usageRatio = Math.min(totalTokens / contextWindow, 1)}
-											{@const ringRadius = 9}
-											{@const circumference = 2 * Math.PI * ringRadius}
-											{@const strokeOffset = circumference * (1 - usageRatio)}
-											{@const ringColor = usageRatio > 0.9 ? '#ef4444' : usageRatio > 0.7 ? '#f59e0b' : '#6b7280'}
-											{@const tokensPerSecond = getTokensPerSecond(lastUsage)}
-											<!-- svelte-ignore a11y-no-static-element-interactions -->
-											<div
-												class="relative flex items-center mr-3"
-												on:mouseenter={() => (showTokenPopup = true)}
-												on:mouseleave={() => (showTokenPopup = false)}
-											>
-												<div class="flex items-center gap-1 px-1 cursor-default select-none">
-													<svg width="24" height="24" viewBox="0 0 22 22" class="shrink-0">
-														<circle cx="11" cy="11" r={ringRadius} fill="none" stroke="currentColor" stroke-width="2" class="text-gray-200 dark:text-gray-700" />
-														<circle cx="11" cy="11" r={ringRadius} fill="none" stroke={ringColor} stroke-width="2" stroke-linecap="round" stroke-dasharray={circumference} stroke-dashoffset={strokeOffset} transform="rotate(-90 11 11)" class="transition-all duration-500" />
-													</svg>
-													<span class="text-[14px] font-medium tabular-nums" style="color: {ringColor}">{(usageRatio * 100).toFixed(1)}%</span>
+											{#if musicGenerationEnabled}
+												<button
+													on:click|preventDefault={() =>
+														(musicGenerationEnabled = !musicGenerationEnabled)}
+													type="button"
+													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-violet-500 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-700/10"
+												>
+													<div class="relative size-4 shrink-0 flex items-center justify-center">
+														<span class="group-hover:hidden flex items-center justify-center">
+															<MusicNote className="size-4" strokeWidth="1.75" />
+														</span>
+														<span class="hidden group-hover:flex items-center justify-center">
+															<XMark className="size-4" strokeWidth="1.75" />
+														</span>
+													</div>
+													<span
+														class="chip-label text-[0.8125rem] font-medium {activeChipTextClass}"
+														>{$i18n.t('Music')}</span
+													>
+												</button>
+											{/if}
+
+											{#if videoGenerationEnabled}
+												<button
+													on:click|preventDefault={() => {
+														videoGenerationEnabled = false;
+														onNativeIntegrationChange(null);
+													}}
+													type="button"
+													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-yellow-500 dark:text-yellow-300 hover:bg-yellow-50 dark:hover:bg-yellow-900/10"
+												>
+													<div class="relative size-4 shrink-0 flex items-center justify-center">
+														<span class="group-hover:hidden flex items-center justify-center">
+															<Video className="size-4" strokeWidth="1.75" />
+														</span>
+														<span class="hidden group-hover:flex items-center justify-center">
+															<XMark className="size-4" strokeWidth="1.75" />
+														</span>
+													</div>
+													<span
+														class="chip-label text-[0.8125rem] font-medium {activeChipTextClass}"
+														>{$i18n.t('Video')}</span
+													>
+												</button>
+
+												<div class="relative shrink-0" id="video-resolution-dropdown-container">
+													<button
+														type="button"
+														class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+														aria-label={$i18n.t('Video resolution')}
+														aria-expanded={showVideoResolutionDropdown}
+														on:click|preventDefault={() => {
+															showVideoDurationDropdown = false;
+															showVideoAspectRatioDropdown = false;
+															showVideoResolutionDropdown = !showVideoResolutionDropdown;
+														}}
+													>
+														<span>{videoGenerationResolution}</span>
+														<svg
+															viewBox="0 0 20 20"
+															fill="currentColor"
+															class="size-3.5 transition-transform duration-150 {showVideoResolutionDropdown
+																? ''
+																: 'rotate-180'}"
+															aria-hidden="true"
+															><path
+																fill-rule="evenodd"
+																d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
+																clip-rule="evenodd"
+															/></svg
+														>
+													</button>
+													{#if showVideoResolutionDropdown}
+														<div
+															use:viewportDropdown
+															class="fixed z-50 w-32 max-h-[min(50vh,340px)] overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
+															transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
+														>
+															{#each videoResolutionOptions as resolution}
+																<button
+																	type="button"
+																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+																	on:click={() => {
+																		videoGenerationResolution = resolution;
+																		localStorage.setItem(
+																			'neveai.videoResolution',
+																			videoGenerationResolution
+																		);
+																		showVideoResolutionDropdown = false;
+																	}}
+																>
+																	<span>{resolution}</span
+																	>{#if videoGenerationResolution === resolution}<CheckCircle
+																			strokeWidth="1.7"
+																		/>{/if}
+																</button>
+															{/each}
+														</div>
+													{/if}
 												</div>
 
-												{#if showTokenPopup}
-													<div
-														class="absolute bottom-full mb-2.5 z-[60] w-56 rounded-xl border border-gray-200/70 dark:border-gray-700/60 bg-white dark:bg-gray-850 shadow-xl p-3.5 {$mobile ? 'right-0' : $showArtifacts ? 'right-0' : 'right-1/2 translate-x-1/2'}"
-														style="font-family: 'Segoe UI', sans-serif;"
-														transition:fly={{ y: 4, duration: 150 }}
+												<div class="relative shrink-0" id="video-duration-dropdown-container">
+													<button
+														type="button"
+														class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+														aria-label={$i18n.t('Video duration')}
+														aria-expanded={showVideoDurationDropdown}
+														on:click|preventDefault={() => {
+															showVideoResolutionDropdown = false;
+															showVideoAspectRatioDropdown = false;
+															showVideoDurationDropdown = !showVideoDurationDropdown;
+														}}
 													>
-														<div class="flex items-center gap-1.5 mb-2.5">
-															<svg width="16" height="16" viewBox="0 0 22 22" class="shrink-0">
-																<circle cx="11" cy="11" r="9" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-300 dark:text-gray-600" />
-																<circle cx="11" cy="11" r="9" fill="none" stroke={ringColor} stroke-width="2" stroke-linecap="round" stroke-dasharray={circumference} stroke-dashoffset={strokeOffset} transform="rotate(-90 11 11)" />
-															</svg>
-															<span class="text-[14px] font-semibold text-gray-700 dark:text-gray-200">Uso de Tokens</span>
+														<span>{videoGenerationDuration}</span>
+														<svg
+															viewBox="0 0 20 20"
+															fill="currentColor"
+															class="size-3.5 transition-transform duration-150 {showVideoDurationDropdown
+																? ''
+																: 'rotate-180'}"
+															aria-hidden="true"
+															><path
+																fill-rule="evenodd"
+																d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
+																clip-rule="evenodd"
+															/></svg
+														>
+													</button>
+													{#if showVideoDurationDropdown}
+														<div
+															use:viewportDropdown
+															class="fixed z-50 w-28 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
+															transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
+														>
+															{#each ['5s', '8s'] as durationOption}
+																<button
+																	type="button"
+																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+																	on:click={() => {
+																		videoGenerationDuration = durationOption as '5s' | '8s';
+																		localStorage.setItem(
+																			'neveai.videoDuration',
+																			videoGenerationDuration
+																		);
+																		showVideoDurationDropdown = false;
+																	}}
+																>
+																	<span>{durationOption}</span
+																	>{#if videoGenerationDuration === durationOption}<CheckCircle
+																			strokeWidth="1.7"
+																		/>{/if}
+																</button>
+															{/each}
 														</div>
-														<div class="w-full h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 mb-3 overflow-hidden">
-															<div class="h-full rounded-full transition-all duration-500" style="width: {Math.max(usageRatio * 100, 1)}%; background-color: {ringColor}" />
-														</div>
-														<div class="space-y-1.5">
-															<div class="flex justify-between items-center">
-																<span class="text-[14px] text-gray-500 dark:text-gray-400">Tokens/s</span>
-																<span class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200">{formatTokensPerSecond(tokensPerSecond)}</span>
+													{/if}
+												</div>
+
+												{#if !hasImageAttachment}
+													<div class="relative shrink-0" id="video-aspect-ratio-dropdown-container">
+														<button
+															type="button"
+															class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+															aria-label={$i18n.t('Video aspect ratio')}
+															aria-expanded={showVideoAspectRatioDropdown}
+															on:click|preventDefault={() => {
+																showVideoResolutionDropdown = false;
+																showVideoDurationDropdown = false;
+																showVideoAspectRatioDropdown = !showVideoAspectRatioDropdown;
+															}}
+														>
+															<span>{videoGenerationAspectRatio}</span>
+															<svg
+																viewBox="0 0 20 20"
+																fill="currentColor"
+																class="size-3.5 transition-transform duration-150 {showVideoAspectRatioDropdown
+																	? ''
+																	: 'rotate-180'}"
+																aria-hidden="true"
+																><path
+																	fill-rule="evenodd"
+																	d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
+																	clip-rule="evenodd"
+																/></svg
+															>
+														</button>
+														{#if showVideoAspectRatioDropdown}
+															<div
+																use:viewportDropdown
+																class="fixed z-50 w-32 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
+																transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
+															>
+																{#each videoAspectRatioOptions as option}
+																	<button
+																		type="button"
+																		class="grid w-full grid-cols-[1fr_16px] items-center gap-2 px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
+																		on:click={() => {
+																			videoGenerationAspectRatio = option.id;
+																			localStorage.setItem(
+																				'neveai.videoAspectRatio',
+																				videoGenerationAspectRatio
+																			);
+																			showVideoAspectRatioDropdown = false;
+																		}}
+																	>
+																		<span class="grid grid-cols-[24px_1fr] items-center gap-2">
+																			<span class="flex h-5 w-6 items-center justify-center"
+																				><span
+																					class="block border border-current rounded-[1px] {option.shape}"
+																				></span></span
+																			>
+																			<span class="leading-5">{option.id}</span>
+																		</span>
+																		<span class="flex size-4 items-center justify-center"
+																			>{#if videoGenerationAspectRatio === option.id}<CheckCircle
+																					className="size-4"
+																					strokeWidth="1.7"
+																				/>{/if}</span
+																		>
+																	</button>
+																{/each}
 															</div>
-															<div class="flex justify-between items-center">
-																<span class="text-[14px] text-gray-500 dark:text-gray-400">Total</span>
-																<span class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200">{formatTokens(totalTokens)}</span>
-															</div>
-															<div class="flex justify-between items-center">
-																<span class="text-[14px] text-gray-500 dark:text-gray-400">Contexto</span>
-																<span class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200">{formatTokens(contextWindow)}</span>
-															</div>
-															<div class="flex justify-between items-center pt-1.5 mt-1 border-t border-gray-100 dark:border-gray-700/50">
-																		<span class="text-[14px] text-gray-500 dark:text-gray-400">{$i18n.t('Utilização')}</span>
-																<span class="text-[14px] font-semibold tabular-nums" style="color: {ringColor}">{(usageRatio * 100).toFixed(1)}%</span>
-															</div>
-														</div>
+														{/if}
 													</div>
 												{/if}
-											</div>
-										{/if}
-
-										<div class=" flex items-center">
-											<Tooltip content={uploadPending ? $i18n.t('Waiting for upload...') : $i18n.t('Send message')}>
-											<button
-												id="send-message-button"
-												class="grid size-8 shrink-0 place-items-center p-0 {!sendDisabled && (canSubmitMessage || uploadPending)
-													? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 '
-													: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full self-center"
-												type="submit"
-												disabled={sendDisabled || !canSubmitMessage || uploadPending}
+											{/if}
+										</div>
+									</div>
+									<div
+										class="message-input-actions-secondary self-end flex space-x-1 mr-1 shrink-0 gap-[0.5px]"
+									>
+										{#if generating || (history?.currentId && history?.messages[history.currentId]?.done !== true) || uploadPending}
+											<Tooltip content={$i18n.t('Stop')}>
+												<button
+													class="grid size-8 shrink-0 place-items-center rounded-full bg-white p-0 text-gray-800 transition hover:bg-gray-100 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-800"
+													type="button"
+													on:click={() => {
+														stopResponse();
+													}}
 												>
-													{#if uploadPending}
-														<Spinner className="size-5" />
-													{:else}
-														<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" class="block size-5 -translate-x-[0.5px]">
-															<path fill-rule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clip-rule="evenodd" />
-														</svg>
-													{/if}
+													<svg
+														xmlns="http://www.w3.org/2000/svg"
+														viewBox="0 0 24 24"
+														fill="currentColor"
+														class="block size-5 -translate-x-[0.5px] translate-y-[0.5px]"
+													>
+														<circle cx="12" cy="12" r="9.75" />
+														<rect
+															x="8.25"
+															y="8.25"
+															width="7.5"
+															height="7.5"
+															rx="1.15"
+															class="text-white dark:text-gray-700"
+															fill="currentColor"
+														/>
+													</svg>
 												</button>
 											</Tooltip>
-										</div>
-									{/if}
+										{:else}
+											{#if (selectedToolIds ?? []).length > 0 || ($terminalServers ?? []).some((s) => s.url)}
+												<TerminalMenu bind:show={showTools} />
+											{/if}
+
+											{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
+												<div
+													class="relative flex items-center self-center mr-2"
+													id="thinking-dropdown-container"
+												>
+													<button
+														type="button"
+														class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition cursor-pointer bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+														style="font-size: 0.79rem; font-family: 'Segoe UI', sans-serif; font-weight: 400; letter-spacing: 0.01em;"
+														aria-label={`${$i18n.t(thinkingEnabled ? 'Raciocínio' : 'Rápido')}${thinkingExtendedEnabled ? ` ${$i18n.t('Aprimorado')}` : ''}`}
+														on:click|preventDefault={() => {
+															showThinkingDropdown = !showThinkingDropdown;
+														}}
+													>
+														<span
+															>{thinkingEnabled ? $i18n.t('Raciocínio') : $i18n.t('Rápido')}</span
+														>
+														{#if thinkingExtendedEnabled}
+															<span class="text-gray-500 dark:text-gray-500"
+																>{$i18n.t('Aprimorado')}</span
+															>
+														{/if}
+														<svg
+															xmlns="http://www.w3.org/2000/svg"
+															viewBox="0 0 20 20"
+															fill="currentColor"
+															class="size-3.5 transition-transform {history?.currentId
+																? showThinkingDropdown
+																	? 'rotate-180'
+																	: ''
+																: showThinkingDropdown
+																	? ''
+																	: 'rotate-180'}"
+														>
+															<path
+																fill-rule="evenodd"
+																d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
+																clip-rule="evenodd"
+															/>
+														</svg>
+													</button>
+
+													{#if showThinkingDropdown}
+														<div
+															use:viewportDropdown
+															class="fixed z-50 w-[15.5rem] rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
+															style="font-family: 'Segoe UI', sans-serif;"
+															transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
+															on:click|stopPropagation
+														>
+															<button
+																type="button"
+																class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
+																on:click={() => setThinkingMode(false)}
+															>
+																<div class="flex-1 text-left">
+																	<div>{$i18n.t('Rápido')}</div>
+																	<div
+																		class="text-[13px] text-gray-400 dark:text-gray-500 font-normal"
+																	>
+																		{$i18n.t('Para respostas imediatas')}
+																	</div>
+																</div>
+																{#if !thinkingEnabled}
+																	<svg
+																		xmlns="http://www.w3.org/2000/svg"
+																		fill="none"
+																		viewBox="0 0 24 24"
+																		stroke-width="1.7"
+																		stroke="currentColor"
+																		class="size-4"
+																	>
+																		<path
+																			stroke-linecap="round"
+																			stroke-linejoin="round"
+																			d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+																		/>
+																	</svg>
+																{/if}
+															</button>
+															<button
+																type="button"
+																class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
+																on:click={() => setThinkingMode(true)}
+															>
+																<div class="flex-1 text-left">
+																	<div>{$i18n.t('Raciocínio')}</div>
+																	<div
+																		class="text-[13px] text-gray-400 dark:text-gray-500 font-normal"
+																	>
+																		{$i18n.t('Para tarefas complexas')}
+																	</div>
+																</div>
+																{#if thinkingEnabled}
+																	<svg
+																		xmlns="http://www.w3.org/2000/svg"
+																		fill="none"
+																		viewBox="0 0 24 24"
+																		stroke-width="1.7"
+																		stroke="currentColor"
+																		class="size-4"
+																	>
+																		<path
+																			stroke-linecap="round"
+																			stroke-linejoin="round"
+																			d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+																		/>
+																	</svg>
+																{/if}
+															</button>
+															<div class="my-1 border-t border-gray-100 dark:border-gray-800"></div>
+															<div
+																class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200"
+															>
+																<div class="flex-1 text-left">
+																	<div>{$i18n.t('Aprimorado')}</div>
+																	<div
+																		class="text-[13px] text-gray-400 dark:text-gray-500 font-normal"
+																	>
+																		{$i18n.t('Aumenta esforço do pensamento')}
+																	</div>
+																</div>
+																<Switch
+																	bind:state={thinkingExtendedEnabled}
+																	on:change={(e) => setThinkingExtendedMode(e.detail)}
+																/>
+															</div>
+														</div>
+													{/if}
+												</div>
+											{/if}
+
+											{#if lastUsage && !stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled}
+												{@const totalTokens =
+													lastUsage.total_tokens ??
+													(lastUsage.prompt_tokens ?? lastUsage.input_tokens ?? 0) +
+														(lastUsage.completion_tokens ?? lastUsage.output_tokens ?? 0)}
+												{@const contextModel = (() => {
+													const mid = atSelectedModel?.id ?? selectedModels?.[0];
+													return $models.find((m) => m.id === mid);
+												})()}
+												{@const contextWindow =
+													contextModel?.llamacpp?.n_ctx ||
+													contextModel?.info?.params?.num_ctx ||
+													contextModel?.info?.meta?.context_length ||
+													128000}
+												{@const usageRatio = Math.min(totalTokens / contextWindow, 1)}
+												{@const ringRadius = 9}
+												{@const circumference = 2 * Math.PI * ringRadius}
+												{@const strokeOffset = circumference * (1 - usageRatio)}
+												{@const ringColor =
+													usageRatio > 0.9 ? '#ef4444' : usageRatio > 0.7 ? '#f59e0b' : '#6b7280'}
+												{@const tokensPerSecond = getTokensPerSecond(lastUsage)}
+												<!-- svelte-ignore a11y-no-static-element-interactions -->
+												<div
+													class="relative flex items-center mr-3"
+													on:mouseenter={() => (showTokenPopup = true)}
+													on:mouseleave={() => (showTokenPopup = false)}
+												>
+													<div class="flex items-center gap-1 px-1 cursor-default select-none">
+														<svg width="24" height="24" viewBox="0 0 22 22" class="shrink-0">
+															<circle
+																cx="11"
+																cy="11"
+																r={ringRadius}
+																fill="none"
+																stroke="currentColor"
+																stroke-width="2"
+																class="text-gray-200 dark:text-gray-700"
+															/>
+															<circle
+																cx="11"
+																cy="11"
+																r={ringRadius}
+																fill="none"
+																stroke={ringColor}
+																stroke-width="2"
+																stroke-linecap="round"
+																stroke-dasharray={circumference}
+																stroke-dashoffset={strokeOffset}
+																transform="rotate(-90 11 11)"
+																class="transition-all duration-500"
+															/>
+														</svg>
+														<span
+															class="text-[14px] font-medium tabular-nums"
+															style="color: {ringColor}">{(usageRatio * 100).toFixed(1)}%</span
+														>
+													</div>
+
+													{#if showTokenPopup}
+														<div
+															class="absolute bottom-full mb-2.5 z-[60] w-56 rounded-xl border border-gray-200/70 dark:border-gray-700/60 bg-white dark:bg-gray-850 shadow-xl p-3.5 {$mobile
+																? 'right-0'
+																: $showArtifacts
+																	? 'right-0'
+																	: 'right-1/2 translate-x-1/2'}"
+															style="font-family: 'Segoe UI', sans-serif;"
+															transition:fly={{ y: 4, duration: 150 }}
+														>
+															<div class="flex items-center gap-1.5 mb-2.5">
+																<svg width="16" height="16" viewBox="0 0 22 22" class="shrink-0">
+																	<circle
+																		cx="11"
+																		cy="11"
+																		r="9"
+																		fill="none"
+																		stroke="currentColor"
+																		stroke-width="2"
+																		class="text-gray-300 dark:text-gray-600"
+																	/>
+																	<circle
+																		cx="11"
+																		cy="11"
+																		r="9"
+																		fill="none"
+																		stroke={ringColor}
+																		stroke-width="2"
+																		stroke-linecap="round"
+																		stroke-dasharray={circumference}
+																		stroke-dashoffset={strokeOffset}
+																		transform="rotate(-90 11 11)"
+																	/>
+																</svg>
+																<span
+																	class="text-[14px] font-semibold text-gray-700 dark:text-gray-200"
+																	>Uso de tokens</span
+																>
+															</div>
+															<div
+																class="w-full h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 mb-3 overflow-hidden"
+															>
+																<div
+																	class="h-full rounded-full transition-all duration-500"
+																	style="width: {Math.max(
+																		usageRatio * 100,
+																		1
+																	)}%; background-color: {ringColor}"
+																/>
+															</div>
+															<div class="space-y-1.5">
+																<div class="flex justify-between items-center">
+																	<span class="text-[14px] text-gray-500 dark:text-gray-400"
+																		>Tokens/s</span
+																	>
+																	<span
+																		class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
+																		>{formatTokensPerSecond(tokensPerSecond)}</span
+																	>
+																</div>
+																<div class="flex justify-between items-center">
+																	<span class="text-[14px] text-gray-500 dark:text-gray-400"
+																		>Total</span
+																	>
+																	<span
+																		class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
+																		>{formatTokens(totalTokens)}</span
+																	>
+																</div>
+																<div class="flex justify-between items-center">
+																	<span class="text-[14px] text-gray-500 dark:text-gray-400"
+																		>Contexto</span
+																	>
+																	<span
+																		class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
+																		>{formatTokens(contextWindow)}</span
+																	>
+																</div>
+																<div
+																	class="flex justify-between items-center pt-1.5 mt-1 border-t border-gray-100 dark:border-gray-700/50"
+																>
+																	<span class="text-[14px] text-gray-500 dark:text-gray-400"
+																		>{$i18n.t('Utilização')}</span
+																	>
+																	<span
+																		class="text-[14px] font-semibold tabular-nums"
+																		style="color: {ringColor}"
+																		>{(usageRatio * 100).toFixed(1)}%</span
+																	>
+																</div>
+															</div>
+														</div>
+													{/if}
+												</div>
+											{/if}
+
+											<div class=" flex items-center">
+												<Tooltip
+													content={uploadPending
+														? $i18n.t('Waiting for upload...')
+														: $i18n.t('Send message')}
+												>
+													<button
+														id="send-message-button"
+														class="grid size-8 shrink-0 place-items-center p-0 {!sendDisabled &&
+														(canSubmitMessage || uploadPending)
+															? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 '
+															: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full self-center"
+														type="submit"
+														disabled={sendDisabled || !canSubmitMessage || uploadPending}
+													>
+														{#if uploadPending}
+															<Spinner className="size-5" />
+														{:else}
+															<svg
+																xmlns="http://www.w3.org/2000/svg"
+																viewBox="0 0 16 16"
+																fill="currentColor"
+																class="block size-5 -translate-x-[0.5px]"
+															>
+																<path
+																	fill-rule="evenodd"
+																	d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z"
+																	clip-rule="evenodd"
+																/>
+															</svg>
+														{/if}
+													</button>
+												</Tooltip>
+											</div>
+										{/if}
+									</div>
 								</div>
-							</div>
 							{/if}
 
 							{#if showImageStyleDropdown && stableDiffusionEnabled && stableDiffusionQuality === 'neve_image_2'}
 								<div
 									id="image-style-dropdown-panel"
-									class="absolute {history?.currentId ? '' : 'top-full -mt-1'} inset-x-0 z-50 w-full rounded-lg border border-gray-200 bg-white p-1.5 text-sm shadow-md dark:border-gray-800 dark:bg-gray-850"
-									style:bottom={history?.currentId && imageStyleDropdownBottom !== null ? `${imageStyleDropdownBottom}px` : undefined}
-									transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
+									use:viewportDropdown={{
+										fullWidth: true,
+										positionAnchorId: 'image-style-dropdown-container',
+										fitAvailableHeight: true
+									}}
+				class="fixed z-50 rounded-lg border border-gray-200 bg-white p-1.5 text-sm shadow-md dark:border-gray-800 dark:bg-gray-850"
+				class:image-style-dropdown-ready={renderedImageStyleThumbnailsReady}
+				class:invisible={!renderedImageStyleThumbnailsReady}
 								>
 									<div class="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
 										{#each imageStyleOptions as style}
 											<button
 												type="button"
-												class="group relative aspect-[4/5] w-full overflow-hidden rounded-md border-0 p-0 text-left outline-hidden transition-[filter,background-color] focus-visible:ring-2 focus-visible:ring-gray-400 {style.image ? 'bg-gray-200 hover:brightness-110 dark:bg-gray-800' : stableDiffusionStyle === style.id ? 'bg-gray-200 dark:bg-gray-700' : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700'}"
+												class="group relative aspect-[4/5] w-full overflow-hidden rounded-md border-0 p-0 text-left outline-hidden transition-[filter,background-color] focus-visible:ring-2 focus-visible:ring-gray-400 {style.image
+													? 'bg-gray-200 hover:brightness-110 dark:bg-gray-800'
+													: stableDiffusionStyle === style.id
+														? 'bg-gray-200 dark:bg-gray-700'
+														: 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700'}"
 												aria-pressed={stableDiffusionStyle === style.id}
 												on:click={() => {
 													stableDiffusionStyle = style.id;
@@ -2803,18 +3702,38 @@
 												}}
 											>
 												{#if style.image}
-											<img src={style.image} alt={$i18n.t('Style example: {{style}}', { style: $i18n.t(style.label) })} width="640" height="360" class="absolute inset-0 block size-full object-cover" />
-													<span class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/80 via-black/35 to-transparent px-2 pb-2 pt-8 text-xs font-medium leading-5 text-white">
-												<span class="block truncate">{$i18n.t(style.label)}</span>
+													<img
+														src={style.image}
+														alt={$i18n.t('Style example: {{style}}', {
+															style: $i18n.t(style.label)
+														})}
+														width="640"
+														height="360"
+														class="absolute inset-0 block size-full object-cover"
+														use:trackRenderedImageStyleThumbnail
+													/>
+													<span
+														class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/80 via-black/35 to-transparent px-2 pb-2 pt-8 text-xs font-medium leading-5 text-white"
+													>
+														<span class="block truncate">{$i18n.t(style.label)}</span>
 													</span>
 												{:else}
-											<span class="absolute inset-x-0 bottom-0 px-2 pb-2 text-xs font-medium leading-5 text-gray-700 dark:text-gray-200">{$i18n.t(style.label)}</span>
+													<span
+														class="absolute inset-x-0 bottom-0 px-2 pb-2 text-xs font-medium leading-5 text-gray-700 dark:text-gray-200"
+														>{$i18n.t(style.label)}</span
+													>
 												{/if}
 												{#if stableDiffusionStyle === style.id}
 													{#if style.image}
-														<CheckCircle className="absolute right-2 top-2 size-4 text-white drop-shadow-md" strokeWidth="2" />
+														<CheckCircle
+															className="absolute right-2 top-2 size-4 text-white drop-shadow-md"
+															strokeWidth="2"
+														/>
 													{:else}
-														<CheckCircle className="absolute right-2 top-2 size-4 text-gray-700 dark:text-gray-100" strokeWidth="2" />
+														<CheckCircle
+															className="absolute right-2 top-2 size-4 text-gray-700 dark:text-gray-100"
+															strokeWidth="2"
+														/>
 													{/if}
 												{/if}
 											</button>
@@ -2831,7 +3750,43 @@
 {/if}
 
 <style>
+	.image-style-dropdown-ready {
+		animation: reveal-image-style-dropdown-down 120ms ease-out;
+	}
+
+	.image-style-dropdown-ready[data-dropdown-side='top'] {
+		animation-name: reveal-image-style-dropdown-up;
+	}
+
+	@keyframes reveal-image-style-dropdown-down {
+		from {
+			clip-path: inset(0 0 100% 0);
+		}
+		to {
+			clip-path: inset(0);
+		}
+	}
+
+	@keyframes reveal-image-style-dropdown-up {
+		from {
+			clip-path: inset(100% 0 0 0);
+		}
+		to {
+			clip-path: inset(0);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.image-style-dropdown-ready {
+			animation: none;
+		}
+	}
+
 	@media (max-width: 640px) {
+		.message-input-active-controls .chip-label {
+			display: none !important;
+		}
+
 		.message-input-actions.stable-image-actions {
 			align-items: end;
 		}
@@ -2870,11 +3825,6 @@
 
 		.stable-image-actions-no-style .message-input-actions-primary {
 			grid-template-columns: 2rem max-content max-content max-content;
-		}
-
-		.stable-image-actions-no-style .image-performance-control {
-			grid-column: 4;
-			grid-row: 1;
 		}
 
 		.stable-image-actions-no-style .image-resolution-control {
