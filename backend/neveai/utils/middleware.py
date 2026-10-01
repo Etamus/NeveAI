@@ -80,6 +80,7 @@ from neveai.models.users import UserModel
 from neveai.models.functions import Functions
 from neveai.models.models import Models
 from neveai.models.files import Files
+from neveai.storage.provider import Storage
 
 from neveai.retrieval.utils import get_sources_from_items
 
@@ -1950,6 +1951,9 @@ _EXPLICIT_MUSIC_LYRICS_PATTERN = re.compile(
     r"(?is)\b(?:"
     r"com\s+(?:esse|este|esta|essa|o\s+seguinte|a\s+seguinte)\s+(?:texto|letra)"
     r"|(?:use|utilize|cante)\s+(?:exatamente\s+)?(?:esse|este|esta|essa|o\s+seguinte|a\s+seguinte)\s+(?:texto|letra)"
+    r"|(?:troque|substitua|mude|altere)\s+(?:(?:toda|inteira)\s+)?(?:a\s+)?(?:letra|texto)"
+    r"(?:\s+(?:toda|inteira))?(?:\s+da\s+m[uú]sica)?"
+    r"(?:\s+(?:por|para)\s+(?:essa|esta|esse|este|a\s+seguinte|o\s+seguinte))?"
     r"|(?:texto|letra)(?:\s+(?:abaixo|a\s+seguir))?"
     r")\s*:\s*"
 )
@@ -2025,6 +2029,81 @@ def _collect_music_attachment_sources(form_data: dict, user: UserModel) -> list[
     return sources
 
 
+def _is_music_audio_attachment(item: Any) -> bool:
+    if not isinstance(item, dict):
+        return False
+    mime = str(item.get("content_type") or "").lower()
+    name = str(item.get("name") or "").lower()
+    return mime.startswith("audio/") or name.endswith(
+        (".mp3", ".wav", ".flac", ".m4a", ".ogg", ".opus", ".aac", ".wma")
+    )
+
+
+def _get_current_music_files(form_data: dict, extra_params: dict) -> list[dict]:
+    """Return only attachments submitted with the active music request."""
+    current_files = extra_params.get("__music_current_turn_files__")
+    if current_files is None:
+        metadata = extra_params.get("__metadata__", {})
+        message = metadata.get("parent_message")
+        if not isinstance(message, dict):
+            message = get_last_user_message_item(form_data.get("messages", []) or [])
+        current_files = message.get("files", []) if isinstance(message, dict) else []
+
+    canonical_by_id = {
+        str(item.get("id")): item
+        for item in (form_data.get("files") or [])
+        if isinstance(item, dict) and item.get("id")
+    }
+    scoped_files = []
+    seen = set()
+    for item in current_files or []:
+        if not isinstance(item, dict):
+            continue
+        identity = str(item.get("id") or item.get("url") or item.get("name") or "")
+        if not identity or identity in seen:
+            continue
+        seen.add(identity)
+        scoped_files.append(canonical_by_id.get(identity, item))
+    return scoped_files
+
+
+def _collect_music_audio_attachments(form_data: dict, user: UserModel) -> list[dict]:
+    attachments = []
+    seen_file_ids: set[str] = set()
+    seen_paths: set[str] = set()
+    for item in form_data.get("files") or []:
+        if not _is_music_audio_attachment(item):
+            continue
+        file_id = str(item.get("id") or "").strip()
+        if file_id and file_id in seen_file_ids:
+            continue
+        file_object = Files.get_file_by_id_and_user_id(file_id, user.id) if file_id else None
+        if file_object is None:
+            raise ValueError("Não foi possível acessar o áudio anexado.")
+        path = Path(Storage.get_file(file_object.path))
+        if not path.is_file():
+            raise ValueError("O arquivo de áudio anexado não foi encontrado.")
+        normalized_path = os.path.normcase(str(path.resolve()))
+        if normalized_path in seen_paths:
+            if file_id:
+                seen_file_ids.add(file_id)
+            continue
+
+        if file_id:
+            seen_file_ids.add(file_id)
+        seen_paths.add(normalized_path)
+        attachments.append(
+            {
+                "path": str(path),
+                "name": str(item.get("name") or path.name),
+                "content_type": str(item.get("content_type") or ""),
+            }
+        )
+    if len(attachments) > 2:
+        raise ValueError("Criar música aceita no máximo dois áudios anexados.")
+    return attachments
+
+
 def _build_music_source_context(sources: list[dict]) -> str:
     remaining = MUSIC_PLANNER_SOURCE_MAX_CHARS
     sections = []
@@ -2069,12 +2148,61 @@ def _fallback_music_caption(style_request: str) -> str:
     )[:2000]
 
 
+def _ensure_requested_music_phrases(prompt: str, lyrics: str) -> str:
+    requested = []
+    patterns = (
+        r"(?i)\b(?:nome|palavra|frase)\s+(?:de\s+)?[\"']([^\"'\r\n]{1,80})[\"']",
+        r"(?i)\b(?:inclua|adicione|coloque|insira)\b[^\"'\r\n]{0,80}"
+        r"[\"']([^\"'\r\n]{1,80})[\"']",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, prompt):
+            phrase = match.group(1).strip()
+            if phrase and phrase.casefold() not in {
+                item.casefold() for item in requested
+            }:
+                requested.append(phrase)
+
+    updated = str(lyrics or "").strip()
+    normalized_lyrics = (
+        unicodedata.normalize("NFKD", updated)
+        .encode("ascii", "ignore")
+        .decode()
+        .casefold()
+    )
+    missing = [
+        phrase
+        for phrase in requested
+        if unicodedata.normalize("NFKD", phrase)
+        .encode("ascii", "ignore")
+        .decode()
+        .casefold()
+        not in normalized_lyrics
+    ]
+    if missing:
+        addition = "\n".join(missing)
+        parts = re.split(r"(\s+)", updated)
+        word_positions = [
+            index for index, part in enumerate(parts) if part and not part.isspace()
+        ]
+        if word_positions:
+            insertion_index = word_positions[
+                min(len(word_positions) - 1, round(len(word_positions) * 0.6))
+            ]
+            parts.insert(insertion_index, f" {addition} ")
+            updated = "".join(parts).strip()
+        else:
+            updated = addition
+    return updated
+
+
 async def _prepare_music_generation_plan(
     request: Request,
     form_data: dict,
     user,
     prompt: str,
     attachment_sources: Optional[list[dict]] = None,
+    audio_plan: Optional[dict] = None,
 ) -> dict:
     style_request, explicit_lyrics = _split_music_request(prompt)
     attachment_sources = attachment_sources or []
@@ -2110,6 +2238,12 @@ async def _prepare_music_generation_plan(
         )
     ) and explicit_lyrics is None
 
+    source_audio_edit = bool(
+        audio_plan
+        and audio_plan.get("task_type") in {"cover", "repaint"}
+        and source_context
+    )
+
     if explicit_lyrics is not None:
         instruction = (
             "Converta o pedido musical abaixo em uma descrição técnica curta e detalhada, "
@@ -2119,6 +2253,18 @@ async def _prepare_music_generation_plan(
             "instrumental=false."
         )
         max_tokens = 320
+    elif source_audio_edit:
+        instruction = (
+            "Edite uma musica existente seguindo estritamente o pedido. O conteudo anexado "
+            "e a transcricao automatica da letra atual e pode conter pequenos erros. Responda "
+            "somente em JSON valido com caption, lyrics e instrumental=false. lyrics deve conter "
+            "a letra completa, aplicando somente a alteracao solicitada e preservando todo o "
+            "restante na mesma ordem. caption deve estar em ingles. Se o usuario nao pediu uma "
+            "mudanca de estilo, nao invente genero, epoca, instrumentos, ritmo ou tipo de voz: "
+            "descreva explicitamente que a melodia, o ritmo, o arranjo, a instrumentacao, a voz, "
+            "a interpretacao e a producao originais devem ser preservados."
+        )
+        max_tokens = 1800
     else:
         instruction = (
             "Prepare uma entrada fiel para um modelo text-to-music. Responda somente em JSON "
@@ -2233,6 +2379,11 @@ async def _prepare_music_generation_plan(
                 log.warning("Music handler: lyrics generation failed: %s", exc)
 
     caption = caption[:2000] if caption else _fallback_music_caption(style_request)
+    if source_audio_edit and audio_plan and audio_plan.get("preserve_source"):
+        caption = (
+            "Preserve the source audio's original melody, rhythm, arrangement, instrumentation, "
+            "vocal identity, performance, genre and production. Change only the requested lyrics."
+        )
     if explicit_lyrics is not None:
         return {
             "caption": caption,
@@ -2247,7 +2398,11 @@ async def _prepare_music_generation_plan(
         )
     return {
         "caption": caption,
-        "lyrics": _trim_music_lyrics(generated_lyrics),
+        "lyrics": _trim_music_lyrics(
+            _ensure_requested_music_phrases(prompt, generated_lyrics)
+            if source_audio_edit
+            else generated_lyrics
+        ),
         "instrumental": False,
     }
 
@@ -2321,7 +2476,11 @@ def _validate_media_attachments(
     files = (message.get("files") or []) if isinstance(message, dict) else []
     if mode == "music":
         for item in files:
-            if not isinstance(item, dict) or item.get("type") not in {"file", "text"}:
+            if not isinstance(item, dict) or item.get("type") not in {
+                "file",
+                "text",
+                "audio",
+            }:
                 raise ValueError("Criar musica aceita apenas audio, PDF, TXT e DOCX.")
             mime = str(item.get("content_type") or "").lower()
             name = str(item.get("name") or "").lower()
@@ -2685,8 +2844,9 @@ async def chat_music_generation_handler(
 
     media_slot_acquired = False
     try:
+        music_files = _get_current_music_files(form_data, extra_params)
         _validate_media_attachments(
-            form_data.get("messages", []), metadata.get("parent_message"), "music"
+            [{"role": "user", "files": music_files}], None, "music"
         )
         if not request.app.state.config.ENABLE_MUSIC_GENERATION:
             raise RuntimeError("A geração de música está desativada.")
@@ -2703,16 +2863,20 @@ async def chat_music_generation_handler(
         media_slot_acquired = True
 
         from neveai.routers.llamacpp import model_manager
-        from neveai.routers.music_generation import ace_step_runtime
+        from neveai.routers.music_generation import ace_step_runtime, infer_music_audio_plan
 
         await emit_progress("Interpretando o pedido...")
-        attachment_sources = _collect_music_attachment_sources(form_data, user)
+        music_form_data = {**form_data, "files": music_files}
+        audio_attachments = _collect_music_audio_attachments(music_form_data, user)
+        audio_plan = infer_music_audio_plan(prompt, len(audio_attachments))
+        attachment_sources = _collect_music_attachment_sources(music_form_data, user)
         music_plan = await _prepare_music_generation_plan(
             request,
             form_data,
             user,
             prompt,
             attachment_sources=attachment_sources,
+            audio_plan=audio_plan,
         )
 
         llm_standby_info = None
@@ -2723,7 +2887,11 @@ async def chat_music_generation_handler(
 
         try:
             generated = await ace_step_runtime.generate(
-                prompt, emit_progress, music_plan=music_plan
+                prompt,
+                emit_progress,
+                music_plan=music_plan,
+                audio_plan=audio_plan,
+                audio_attachments=audio_attachments,
             )
             audio_data = generated["audio"]
             content_type = generated.get("content_type") or "audio/mpeg"
@@ -2749,6 +2917,7 @@ async def chat_music_generation_handler(
                     "prompt": generated.get("prompt") or prompt,
                     "lyrics": generated.get("lyrics") or "",
                     "music": generated.get("metadata") or {},
+                    "music_task": generated.get("task_type") or "text2music",
                 },
                 process=False,
                 user=user,
@@ -6547,6 +6716,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         "__model__": model,
         "__chat_id__": metadata.get("chat_id"),
         "__message_id__": metadata.get("message_id"),
+        "__music_current_turn_files__": current_turn_files,
     }
     # Initialize events to store additional event to be sent to the client
     # Initialize contexts and citation

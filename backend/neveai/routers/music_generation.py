@@ -8,8 +8,10 @@ The runtime and model cache are prepared lazily on the first generation.
 from __future__ import annotations
 
 import asyncio
+from contextlib import ExitStack
 import json
 import logging
+import mimetypes
 import os
 import re
 import shutil
@@ -52,11 +54,172 @@ ACE_STEP_TORCH_CACHE = MUSIC_ROOT / "torchinductor"
 ProgressCallback = Callable[[str], Awaitable[None]]
 
 
-def _build_music_generation_request(prompt: str, music_plan: dict) -> dict:
+def _normalize_search_text(value: str) -> str:
+    import unicodedata
+
+    return (
+        unicodedata.normalize("NFKD", value)
+        .encode("ascii", "ignore")
+        .decode()
+        .lower()
+    )
+
+
+def _parse_repaint_range(prompt: str) -> tuple[Optional[float], Optional[float]]:
+    def seconds(value: str) -> float:
+        parts = [float(part.replace(",", ".")) for part in value.split(":")]
+        total = 0.0
+        for part in parts:
+            total = total * 60 + part
+        return total
+
+    clock_values = re.findall(r"(?<!\d)(\d{1,2}(?::\d{1,2}){1,2})(?!\d)", prompt)
+    if len(clock_values) >= 2:
+        return seconds(clock_values[0]), seconds(clock_values[1])
+
+    normalized = _normalize_search_text(prompt)
+    match = re.search(
+        r"(?:de|entre|from|between)\s+(\d+(?:[.,]\d+)?)\s*(?:s|segundos?|seconds?)?\s+"
+        r"(?:a|ate|e|to|and)\s+(\d+(?:[.,]\d+)?)\s*(?:s|segundos?|seconds?)?",
+        normalized,
+    )
+    if match:
+        return float(match.group(1).replace(",", ".")), float(
+            match.group(2).replace(",", ".")
+        )
+    return None, None
+
+
+def infer_music_audio_plan(prompt: str, audio_count: int) -> dict:
+    """Map natural-language audio requests to ACE-Step's native task types."""
+    if audio_count <= 0:
+        return {"task_type": "text2music"}
+
+    normalized = _normalize_search_text(prompt)
+    repaint_start, repaint_end = _parse_repaint_range(prompt)
+    explicit_repaint_terms = (
+        "repaint",
+        "retake",
+    )
+    reference_terms = (
+        "reference audio",
+        "audio de referencia",
+        "como referencia",
+        "usar de referencia",
+        "use de referencia",
+        "minha voz",
+        "essa voz",
+        "esta voz",
+        "mesma voz",
+        "voz do audio",
+        "voz deste audio",
+        "voz desse audio",
+        "meu timbre",
+        "esse timbre",
+        "este timbre",
+        "clonar a voz",
+        "clone a voz",
+        "cantada com essa voz",
+        "cantada com esta voz",
+    )
+
+    if any(term in normalized for term in explicit_repaint_terms) or (
+        repaint_start is not None and repaint_end is not None
+    ):
+        plan = {
+            "task_type": "repaint",
+            "chunk_mask_mode": (
+                "explicit"
+                if repaint_start is not None and repaint_end is not None
+                else "auto"
+            ),
+            "repaint_mode": "balanced",
+            "repaint_strength": 0.5,
+        }
+        if (
+            repaint_start is not None
+            and repaint_end is not None
+            and repaint_end > repaint_start
+        ):
+            plan["repainting_start"] = repaint_start
+            plan["repainting_end"] = repaint_end
+        return plan
+
+    if any(term in normalized for term in reference_terms):
+        return {"task_type": "text2music", "uses_reference_audio": True}
+
+    replace_entire_lyrics = any(
+        term in normalized
+        for term in (
+            "troque a letra inteira",
+            "trocar a letra inteira",
+            "substitua a letra inteira",
+            "substituir a letra inteira",
+            "mude a letra inteira",
+            "mudar a letra inteira",
+            "replace the entire lyrics",
+            "replace all lyrics",
+        )
+    )
+    preserve_source = any(
+        term in normalized
+        for term in (
+            "mantenha",
+            "matenha",
+            "manter",
+            "preserve",
+            "preservar",
+            "sem mudar",
+            "nao mude",
+            "mesma musica",
+            "mesma melodia",
+            "apenas a letra",
+            "somente a letra",
+            "so a letra",
+        )
+    )
+    style_change = any(
+        term in normalized
+        for term in (
+            "transforme em",
+            "mude o estilo",
+            "troque o estilo",
+            "remix",
+            "remixe",
+        )
+    )
+    if replace_entire_lyrics:
+        # Keep every diffusion step structurally conditioned. A moderate source
+        # latent blend preserves the voice and arrangement without letting the
+        # original vocal overpower the replacement lyrics.
+        cover_strength, noise_strength = 1.0, 0.4
+    elif preserve_source:
+        cover_strength, noise_strength = 1.0, 0.75
+    elif style_change:
+        cover_strength, noise_strength = 0.75, 0.25
+    else:
+        cover_strength, noise_strength = 0.9, 0.5
+    return {
+        "task_type": "cover",
+        "audio_cover_strength": cover_strength,
+        "cover_noise_strength": noise_strength,
+        "preserve_source": preserve_source or replace_entire_lyrics,
+        "replace_entire_lyrics": replace_entire_lyrics,
+    }
+
+
+def _build_music_generation_request(
+    prompt: str,
+    music_plan: dict,
+    audio_plan: Optional[dict] = None,
+    lm_model: Optional[str] = None,
+) -> dict:
+    audio_plan = audio_plan or {"task_type": "text2music"}
+    task_type = str(audio_plan.get("task_type") or "text2music")
     instrumental = bool(music_plan.get("instrumental"))
     lyrics = "" if instrumental else str(music_plan.get("lyrics") or "").strip()
     request_data = {
-        "thinking": False,
+        "thinking": bool(lm_model) and task_type == "text2music",
         "model": ACE_STEP_MODEL,
         "vocal_language": "pt",
         "use_cot_caption": False,
@@ -67,8 +230,29 @@ def _build_music_generation_request(prompt: str, music_plan: dict) -> dict:
         "sample_mode": False,
         "prompt": str(music_plan.get("caption") or prompt).strip(),
         "lyrics": "[Instrumental]" if instrumental else lyrics,
+        "task_type": task_type,
     }
-    if lyrics:
+    if lm_model and task_type == "text2music":
+        request_data.update({"lm_model_path": lm_model, "lm_backend": "pt"})
+    for key in (
+        "audio_cover_strength",
+        "cover_noise_strength",
+        "repainting_start",
+        "repainting_end",
+        "chunk_mask_mode",
+        "repaint_mode",
+        "repaint_strength",
+    ):
+        if key in audio_plan:
+            request_data[key] = audio_plan[key]
+    if task_type == "repaint":
+        request_data.update(
+            {
+                "repaint_latent_crossfade_frames": 10,
+                "repaint_wav_crossfade_sec": 0.15,
+            }
+        )
+    if lyrics and task_type == "text2music":
         lyric_lines = [
             line.strip()
             for line in lyrics.splitlines()
@@ -150,6 +334,8 @@ class AceStepRuntime:
         self._log_tail: deque[str] = deque(maxlen=120)
         self._port: Optional[int] = None
         self._cancel_requested = False
+        self._detected_lm_model: Optional[str] = None
+        self._lm_detection_complete = False
 
     @property
     def is_running(self) -> bool:
@@ -265,23 +451,67 @@ class AceStepRuntime:
             model_dir
         )
 
-    async def _ensure_generation_models(self, progress: ProgressCallback) -> None:
-        required_dirs = (
+    async def _detect_recommended_lm_model(self) -> Optional[str]:
+        if self._lm_detection_complete:
+            return self._detected_lm_model
+        script = (
+            "from acestep.gpu_config import get_global_gpu_config, get_recommended_lm_model; "
+            "m=get_recommended_lm_model(get_global_gpu_config()); "
+            "print('NEVE_LM_MODEL=' + (m or ''))"
+        )
+        process = await asyncio.create_subprocess_exec(
+            str(_runtime_python()),
+            "-c",
+            script,
+            cwd=str(ACE_STEP_SOURCE_DIR),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            **_hidden_process_kwargs(),
+        )
+        output, _ = await process.communicate()
+        match = re.search(
+            r"^NEVE_LM_MODEL=(.*)$",
+            output.decode("utf-8", errors="replace"),
+            re.MULTILINE,
+        )
+        if process.returncode == 0 and match:
+            model = match.group(1).strip()
+            self._detected_lm_model = model or None
+        else:
+            log.warning(
+                "ACE-Step LM hardware detection failed; continuing without the music LM"
+            )
+        self._lm_detection_complete = True
+        return self._detected_lm_model
+
+    async def _ensure_generation_models(
+        self, progress: ProgressCallback, lm_model: Optional[str] = None
+    ) -> None:
+        required_dirs = [
             ACE_STEP_SOURCE_DIR / "checkpoints" / ACE_STEP_MODEL,
             ACE_STEP_SOURCE_DIR / "checkpoints" / "Qwen3-Embedding-0.6B",
             ACE_STEP_SOURCE_DIR / "checkpoints" / "vae",
-        )
+        ]
+        if lm_model:
+            required_dirs.append(ACE_STEP_SOURCE_DIR / "checkpoints" / lm_model)
         if all(self._generation_component_ready(path) for path in required_dirs):
             return
 
         await progress("Baixando o modelo...")
         checkpoints_dir = ACE_STEP_SOURCE_DIR / "checkpoints"
+        patterns = [
+            "config.json",
+            f"{ACE_STEP_MODEL}/*",
+            "Qwen3-Embedding-0.6B/*",
+            "vae/*",
+        ]
+        if lm_model:
+            patterns.append(f"{lm_model}/*")
         download_script = (
             "from huggingface_hub import snapshot_download; "
             f"snapshot_download(repo_id={ACE_STEP_MAIN_REPO!r}, "
             f"local_dir={str(checkpoints_dir)!r}, "
-            "allow_patterns=['config.json', 'acestep-v15-turbo/*', "
-            "'Qwen3-Embedding-0.6B/*', 'vae/*'])"
+            f"allow_patterns={patterns!r})"
         )
         initial_size = await asyncio.to_thread(self._directory_size, checkpoints_dir)
         download_task = asyncio.create_task(
@@ -358,7 +588,9 @@ class AceStepRuntime:
                 reported_download = True
                 await progress("Baixando o modelo...")
 
-    async def _start_server(self, progress: ProgressCallback) -> str:
+    async def _start_server(
+        self, progress: ProgressCallback, lm_model: Optional[str] = None
+    ) -> str:
         await self._stop_server()
         self._cancel_requested = False
         self._log_tail.clear()
@@ -382,7 +614,10 @@ class AceStepRuntime:
                 "ACESTEP_QUEUE_WORKERS": "1",
                 "ACESTEP_QUEUE_MAXSIZE": "1",
                 "ACESTEP_CONFIG_PATH": ACE_STEP_MODEL,
-                "ACESTEP_INIT_LLM": "false",
+                "ACESTEP_INIT_LLM": "true" if lm_model else "false",
+                "ACESTEP_LM_MODEL_PATH": lm_model or "",
+                "ACESTEP_LM_BACKEND": "pt",
+                "ACESTEP_LM_OFFLOAD_TO_CPU": "true",
                 "ACESTEP_DOWNLOAD_SOURCE": "huggingface",
                 "ACESTEP_NO_INIT": "true",
                 "ACESTEP_CHECK_UPDATE": "false",
@@ -466,6 +701,8 @@ class AceStepRuntime:
         prompt: str,
         progress: ProgressCallback,
         music_plan: dict,
+        audio_plan: Optional[dict] = None,
+        audio_attachments: Optional[list[dict]] = None,
     ) -> dict:
         prompt = prompt.strip()
         if not prompt:
@@ -473,19 +710,77 @@ class AceStepRuntime:
 
         async with self._generation_lock:
             await self.ensure_installed(progress)
-            await self._ensure_generation_models(progress)
+            audio_plan = audio_plan or {"task_type": "text2music"}
+            audio_attachments = audio_attachments or []
+            task_type = str(audio_plan.get("task_type") or "text2music")
+            use_music_lm = task_type == "text2music"
+            lm_model = (
+                await self._detect_recommended_lm_model() if use_music_lm else None
+            )
+            await self._ensure_generation_models(progress, lm_model=lm_model)
             try:
-                base_url = await self._start_server(progress)
+                base_url = await self._start_server(progress, lm_model=lm_model)
                 await progress("Carregando o modelo...")
                 timeout = httpx.Timeout(connect=15, read=120, write=30, pool=15)
                 async with httpx.AsyncClient(timeout=timeout) as client:
-                    release_response = await client.post(
-                        f"{base_url}/release_task",
-                        json=_build_music_generation_request(prompt, music_plan),
-                        # The first request loads the diffusion model before returning
-                        # its task id, which can take a while on slower hardware.
-                        timeout=httpx.Timeout(connect=15, read=None, write=30, pool=15),
+                    request_data = _build_music_generation_request(
+                        prompt, music_plan, audio_plan=audio_plan, lm_model=lm_model
                     )
+                    request_timeout = httpx.Timeout(
+                        connect=15, read=None, write=120, pool=15
+                    )
+                    if audio_attachments:
+                        with ExitStack() as stack:
+                            upload_files = {}
+                            source = audio_attachments[0]
+                            if task_type in {"cover", "repaint"}:
+                                upload_files["src_audio"] = (
+                                    source["name"],
+                                    stack.enter_context(Path(source["path"]).open("rb")),
+                                    source.get("content_type")
+                                    or mimetypes.guess_type(source["name"])[0]
+                                    or "application/octet-stream",
+                                )
+                                if len(audio_attachments) > 1:
+                                    reference = audio_attachments[1]
+                                    upload_files["reference_audio"] = (
+                                        reference["name"],
+                                        stack.enter_context(
+                                            Path(reference["path"]).open("rb")
+                                        ),
+                                        reference.get("content_type")
+                                        or mimetypes.guess_type(reference["name"])[0]
+                                        or "application/octet-stream",
+                                    )
+                            elif audio_plan.get("uses_reference_audio"):
+                                upload_files["reference_audio"] = (
+                                    source["name"],
+                                    stack.enter_context(Path(source["path"]).open("rb")),
+                                    source.get("content_type")
+                                    or mimetypes.guess_type(source["name"])[0]
+                                    or "application/octet-stream",
+                                )
+                            form_data = {
+                                key: (
+                                    str(value).lower()
+                                    if isinstance(value, bool)
+                                    else str(value)
+                                )
+                                for key, value in request_data.items()
+                                if value is not None
+                            }
+                            release_response = await client.post(
+                                f"{base_url}/release_task",
+                                data=form_data,
+                                files=upload_files or None,
+                                timeout=request_timeout,
+                            )
+                    else:
+                        release_response = await client.post(
+                            f"{base_url}/release_task",
+                            json=request_data,
+                            timeout=request_timeout,
+                        )
                     release_response.raise_for_status()
                     release_data = self._unwrap(release_response.json())
                     if not isinstance(release_data, dict) or not release_data.get("task_id"):
@@ -604,10 +899,17 @@ class AceStepRuntime:
                         audio_response.raise_for_status()
                         return {
                             "audio": audio_response.content,
-                            "content_type": audio_response.headers.get("content-type", "audio/mpeg").split(";", 1)[0],
+                            "content_type": audio_response.headers.get(
+                                "content-type", "audio/mpeg"
+                            ).split(";", 1)[0],
                             "prompt": str(generated.get("prompt") or prompt),
                             "lyrics": str(generated.get("lyrics") or ""),
-                            "metadata": generated.get("metas") if isinstance(generated.get("metas"), dict) else {},
+                            "metadata": (
+                                generated.get("metas")
+                                if isinstance(generated.get("metas"), dict)
+                                else {}
+                            ),
+                            "task_type": task_type,
                         }
 
                 raise RuntimeError("A geração de música excedeu o tempo limite.")

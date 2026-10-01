@@ -3250,6 +3250,17 @@
 		});
 	};
 
+	const anchorMusicGeneration = async (
+		scrollTargetMessageId: string,
+		trackedMessageId: string
+	) => {
+		primeGeneratingMessageAnchor(trackedMessageId);
+		await anchorGeneratingMessageTop(scrollTargetMessageId, trackedMessageId, {
+			topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX,
+			stabilizeAcrossFrames: true
+		});
+	};
+
 	const getMaxScrollWithoutGenerationSpacer = () => {
 		if (!messagesContainerElement) return 0;
 		return Math.max(
@@ -4680,6 +4691,8 @@
 		if (initialResponseMessageId) {
 			if (requestFeatures?.stable_diffusion || requestFeatures?.video_generation) {
 				await anchorVisualMediaGeneration(parentId, initialResponseMessageId);
+			} else if (requestFeatures?.music_generation) {
+				await anchorMusicGeneration(parentId, initialResponseMessageId);
 			} else {
 				primeGeneratingMessageAnchor(initialResponseMessageId);
 				await anchorGeneratingMessageTop(parentId, initialResponseMessageId, {
@@ -5025,7 +5038,9 @@
 				array.findIndex((i) => JSON.stringify(i) === JSON.stringify(item)) === index
 		);
 
-		if (anchoredGeneratingMessageId !== responseMessageId) {
+		if (effectiveRequestFeatures?.music_generation) {
+			await anchorMusicGeneration(userMessage.id, responseMessageId);
+		} else if (anchoredGeneratingMessageId !== responseMessageId) {
 			if (isVisualMediaRequest) {
 				await anchorVisualMediaGeneration(userMessage.id, responseMessageId);
 			} else {
@@ -5527,6 +5542,8 @@
 					await tick();
 					if (generatedAction === 'stable_diffusion' || generatedAction === 'video_generation') {
 						await anchorVisualMediaGeneration(userMessage.id, message.id);
+					} else if (generatedAction === 'music_generation') {
+						await anchorMusicGeneration(userMessage.id, message.id);
 					} else {
 						await anchorGeneratingMessageTop(userMessage.id, message.id, {
 							topOffset: USER_MESSAGE_ANCHOR_TOP_OFFSET_PX,

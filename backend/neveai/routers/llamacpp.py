@@ -2598,13 +2598,13 @@ async def _stream_download_file(
         if expected_size > 0 and dest_path.stat().st_size != expected_size:
             dest_path.unlink(missing_ok=True)
             raise RuntimeError(
-                f"Tamanho invÃƒÂ¡lido para {repo_path}: "
+                f"Tamanho inválido para {repo_path}: "
                 f"{dest_path.stat().st_size if dest_path.exists() else 0} de {expected_size} bytes"
             )
         actual_sha256 = _sha256_file(dest_path) if expected_sha256 else None
         if expected_sha256 and actual_sha256 != expected_sha256:
             dest_path.unlink(missing_ok=True)
-            raise RuntimeError(f"Checksum invÃƒÂ¡lido para {repo_path}")
+            raise RuntimeError(f"Checksum inválido para {repo_path}")
         task = _get_task(task_id)
         downloaded_paths = list(task.get("downloaded_paths", []) or [])
         if str(dest_path) not in downloaded_paths:
@@ -2634,7 +2634,7 @@ async def _stream_download_file(
                 actual_sha256 = _sha256_file(tmp_path) if expected_sha256 else None
                 if expected_sha256 and actual_sha256 != expected_sha256:
                     tmp_path.unlink()
-                    raise RuntimeError(f"Checksum invÃ¡lido para {repo_path}")
+                    raise RuntimeError(f"Checksum inválido para {repo_path}")
                 tmp_path.replace(dest_path)
                 task = _get_task(task_id)
                 downloaded_paths = list(task.get("downloaded_paths", []) or [])
@@ -2709,13 +2709,13 @@ async def _stream_download_file(
     _raise_if_download_cancelled(task_id)
     if expected_size > 0 and tmp_path.stat().st_size != expected_size:
         raise RuntimeError(
-            f"Tamanho invÃ¡lido para {repo_path}: {tmp_path.stat().st_size} de {expected_size} bytes"
+            f"Tamanho inválido para {repo_path}: {tmp_path.stat().st_size} de {expected_size} bytes"
         )
 
     actual_sha256 = _sha256_file(tmp_path) if expected_sha256 else None
     if expected_sha256 and actual_sha256 != expected_sha256:
         tmp_path.unlink(missing_ok=True)
-        raise RuntimeError(f"Checksum invÃ¡lido para {repo_path}")
+        raise RuntimeError(f"Checksum inválido para {repo_path}")
 
     tmp_path.replace(dest_path)
     task = _get_task(task_id)

@@ -88,7 +88,7 @@
 </script>
 
 {#if item}
-	<FileItemModal bind:show={showModal} bind:item {edit} animated={false} />
+	<FileItemModal bind:show={showModal} bind:item {edit} {chatAttachment} animated={false} />
 {/if}
 
 {#if item?.generated}

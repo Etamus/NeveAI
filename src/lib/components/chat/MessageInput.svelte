@@ -188,6 +188,7 @@
 		{ id: 'pixelated', label: 'Pixelado', image: '/static/pixelado.webp' },
 		{ id: 'arcane', label: 'Arcano', image: '/static/arcano.webp' }
 	] as const;
+	const noImageStyleOption = imageStyleOptions[0];
 	const imageStyleThumbnailOptions = imageStyleOptions.filter((style) => style.image);
 	let imageStyleThumbnailPreloads: HTMLImageElement[] = [];
 	let imageStyleThumbnailPreloadPromise: Promise<void> | null = null;
@@ -253,6 +254,124 @@
 			destroy() {
 				node.removeEventListener('load', finish);
 				node.removeEventListener('error', finish);
+			}
+		};
+	};
+	const styleOptionsHorizontalScroller = (node: HTMLElement) => {
+		let destroyed = false;
+		let cleanup = () => {};
+
+		queueMicrotask(() => {
+			if (destroyed) return;
+			const viewport = node.querySelector<HTMLElement>('[data-style-options-viewport]');
+			const track = node.querySelector<HTMLElement>('[data-style-options-track]');
+			const thumb = node.querySelector<HTMLElement>('[data-style-options-thumb]');
+			if (!viewport || !track || !thumb) return;
+
+			let dragOffset = 0;
+			let dragging = false;
+
+			const updateThumb = () => {
+				const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+				const trackWidth = track.clientWidth;
+				const thumbWidth = Math.max(
+					24,
+					trackWidth * Math.min(1, viewport.clientWidth / Math.max(1, viewport.scrollWidth))
+				);
+				const maxThumbLeft = Math.max(0, trackWidth - thumbWidth);
+				const thumbLeft = maxScrollLeft
+					? (viewport.scrollLeft / maxScrollLeft) * maxThumbLeft
+					: 0;
+				thumb.style.width = `${thumbWidth}px`;
+				thumb.style.transform = `translateX(${thumbLeft}px)`;
+				track.setAttribute('aria-valuemax', `${Math.round(maxScrollLeft)}`);
+				track.setAttribute('aria-valuenow', `${Math.round(viewport.scrollLeft)}`);
+			};
+
+			const scrollFromPointer = (clientX: number) => {
+				const trackRect = track.getBoundingClientRect();
+				const thumbWidth = thumb.getBoundingClientRect().width;
+				const maxThumbLeft = Math.max(0, trackRect.width - thumbWidth);
+				const thumbLeft = Math.min(
+					maxThumbLeft,
+					Math.max(0, clientX - trackRect.left - dragOffset)
+				);
+				const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+				viewport.scrollLeft = maxThumbLeft ? (thumbLeft / maxThumbLeft) * maxScrollLeft : 0;
+			};
+
+			const onWheel = (event: WheelEvent) => {
+				const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
+				if (maxScrollLeft === 0) return;
+
+				const delta =
+					Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+				if (delta === 0) return;
+
+				event.preventDefault();
+				event.stopPropagation();
+
+				const nextScrollLeft = Math.min(
+					maxScrollLeft,
+					Math.max(0, viewport.scrollLeft + delta)
+				);
+				if (Math.abs(nextScrollLeft - viewport.scrollLeft) < 0.5) return;
+				viewport.scrollLeft = nextScrollLeft;
+			};
+
+			const onPointerDown = (event: PointerEvent) => {
+				const thumbRect = thumb.getBoundingClientRect();
+				dragOffset = event.target === thumb ? event.clientX - thumbRect.left : thumbRect.width / 2;
+				dragging = true;
+				track.setPointerCapture(event.pointerId);
+				scrollFromPointer(event.clientX);
+			};
+			const onPointerMove = (event: PointerEvent) => {
+				if (dragging) scrollFromPointer(event.clientX);
+			};
+			const onPointerUp = (event: PointerEvent) => {
+				dragging = false;
+				if (track.hasPointerCapture(event.pointerId)) track.releasePointerCapture(event.pointerId);
+			};
+			const onKeyDown = (event: KeyboardEvent) => {
+				const step = Math.max(48, viewport.clientWidth / 4);
+				if (event.key === 'ArrowLeft') viewport.scrollBy({ left: -step, behavior: 'smooth' });
+				else if (event.key === 'ArrowRight') viewport.scrollBy({ left: step, behavior: 'smooth' });
+				else if (event.key === 'Home') viewport.scrollTo({ left: 0, behavior: 'smooth' });
+				else if (event.key === 'End')
+					viewport.scrollTo({ left: viewport.scrollWidth, behavior: 'smooth' });
+				else return;
+				event.preventDefault();
+			};
+
+			const resizeObserver = new ResizeObserver(updateThumb);
+			resizeObserver.observe(viewport);
+			resizeObserver.observe(track);
+			viewport.addEventListener('scroll', updateThumb, { passive: true });
+			viewport.addEventListener('wheel', onWheel, { passive: false });
+			track.addEventListener('pointerdown', onPointerDown);
+			track.addEventListener('pointermove', onPointerMove);
+			track.addEventListener('pointerup', onPointerUp);
+			track.addEventListener('pointercancel', onPointerUp);
+			track.addEventListener('keydown', onKeyDown);
+			updateThumb();
+
+			cleanup = () => {
+				resizeObserver.disconnect();
+				viewport.removeEventListener('scroll', updateThumb);
+				viewport.removeEventListener('wheel', onWheel);
+				track.removeEventListener('pointerdown', onPointerDown);
+				track.removeEventListener('pointermove', onPointerMove);
+				track.removeEventListener('pointerup', onPointerUp);
+				track.removeEventListener('pointercancel', onPointerUp);
+				track.removeEventListener('keydown', onKeyDown);
+			};
+		});
+
+		return {
+			destroy() {
+				destroyed = true;
+				cleanup();
 			}
 		};
 	};
@@ -934,7 +1053,11 @@
 
 		const anchorId = positionAnchor.id || 'message-input-container';
 		node.dataset.composerDropdownAnchor = anchorId;
-		if (fitAvailableHeight) node.dataset.dropdownSide = history?.currentId ? 'top' : 'bottom';
+		if (fitAvailableHeight) {
+			const opensAbove = Boolean(history?.currentId);
+			node.dataset.dropdownSide = opensAbove ? 'top' : 'bottom';
+			node.style.setProperty('--image-style-dropdown-enter-y', opensAbove ? '6px' : '-6px');
+		}
 		if (node.id) {
 			document.querySelectorAll<HTMLElement>(`#${CSS.escape(node.id)}`).forEach((panel) => {
 				if (panel !== node && panel.parentElement === document.body) panel.remove();
@@ -956,6 +1079,7 @@
 		if (fitAvailableHeight && widthAnchor) {
 			let animationFrame: number | null = null;
 			const visualViewport = window.visualViewport;
+			node.style.overflowX = 'hidden';
 			node.style.overscrollBehavior = 'contain';
 
 			const setStyle = (property: keyof CSSStyleDeclaration, value: string) => {
@@ -1012,6 +1136,7 @@
 				setStyle('left', `${Math.round(left)}px`);
 				setStyle('top', `${Math.round(top)}px`);
 				node.dataset.dropdownSide = opensAbove ? 'top' : 'bottom';
+				node.style.setProperty('--image-style-dropdown-enter-y', opensAbove ? '6px' : '-6px');
 			};
 
 			const schedulePositionUpdate = () => {
@@ -3678,30 +3803,59 @@
 									id="image-style-dropdown-panel"
 									use:viewportDropdown={{
 										fullWidth: true,
-										positionAnchorId: 'image-style-dropdown-container',
+										positionAnchorId: 'message-input-container',
 										fitAvailableHeight: true
 									}}
-				class="fixed z-50 rounded-lg border border-gray-200 bg-white p-1.5 text-sm shadow-md dark:border-gray-800 dark:bg-gray-850"
-				class:image-style-dropdown-ready={renderedImageStyleThumbnailsReady}
-				class:invisible={!renderedImageStyleThumbnailsReady}
+									class="fixed z-50 text-sm"
+									class:image-style-dropdown-ready={renderedImageStyleThumbnailsReady}
+									class:invisible={!renderedImageStyleThumbnailsReady}
 								>
-									<div class="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
-										{#each imageStyleOptions as style}
+									<div class="flex w-full items-start gap-1.5">
+										<button
+											type="button"
+											class="group relative aspect-[4/5] w-[calc((100%_-_1.5rem)/5)] shrink-0 overflow-hidden rounded-md border-0 p-0 text-left outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-gray-400 {stableDiffusionStyle ===
+											noImageStyleOption.id
+												? 'bg-gray-200 dark:bg-gray-700'
+												: 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700'}"
+											aria-pressed={stableDiffusionStyle === noImageStyleOption.id}
+											on:click={() => {
+												stableDiffusionStyle = noImageStyleOption.id;
+												localStorage.setItem('neveai.imageStyle', stableDiffusionStyle);
+												closeImageStyleDropdown();
+											}}
+										>
+											<span
+												class="absolute inset-x-0 bottom-0 block truncate px-1 pb-2 text-[10px] font-medium leading-5 text-gray-700 sm:px-2 sm:text-xs dark:text-gray-200"
+												>{$i18n.t(noImageStyleOption.label)}</span
+											>
+											{#if stableDiffusionStyle === noImageStyleOption.id}
+												<CheckCircle
+													className="absolute right-2 top-2 size-4 text-gray-700 dark:text-gray-100"
+													strokeWidth="2"
+												/>
+											{/if}
+										</button>
+
+										<div class="min-w-0 flex-1" use:styleOptionsHorizontalScroller>
+											<div
+												id="image-style-options-viewport"
+												data-style-options-viewport
+								class="style-options-scrollbar scrollbar-none overflow-x-auto overflow-y-hidden overscroll-x-none"
+											>
+											<div
+												class="grid grid-flow-col auto-cols-[calc((100%_-_1.125rem)/4)] gap-1.5"
+											>
+												{#each imageStyleOptions.slice(1) as style}
 											<button
 												type="button"
-												class="group relative aspect-[4/5] w-full overflow-hidden rounded-md border-0 p-0 text-left outline-hidden transition-[filter,background-color] focus-visible:ring-2 focus-visible:ring-gray-400 {style.image
-													? 'bg-gray-200 hover:brightness-110 dark:bg-gray-800'
-													: stableDiffusionStyle === style.id
-														? 'bg-gray-200 dark:bg-gray-700'
-														: 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700'}"
+												class="group relative aspect-[4/5] w-full overflow-hidden rounded-md border-0 bg-gray-200 p-0 text-left outline-hidden transition-[filter] hover:brightness-110 focus-visible:ring-2 focus-visible:ring-gray-400 dark:bg-gray-800"
 												aria-pressed={stableDiffusionStyle === style.id}
 												on:click={() => {
 													stableDiffusionStyle = style.id;
 													localStorage.setItem('neveai.imageStyle', stableDiffusionStyle);
-													showImageStyleDropdown = false;
+													closeImageStyleDropdown();
 												}}
 											>
-												{#if style.image}
 													<img
 														src={style.image}
 														alt={$i18n.t('Style example: {{style}}', {
@@ -3713,31 +3867,36 @@
 														use:trackRenderedImageStyleThumbnail
 													/>
 													<span
-														class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/80 via-black/35 to-transparent px-2 pb-2 pt-8 text-xs font-medium leading-5 text-white"
+								class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/80 via-black/35 to-transparent px-1 pb-2 pt-8 text-[10px] font-medium leading-5 text-white sm:px-2 sm:text-xs"
 													>
 														<span class="block truncate">{$i18n.t(style.label)}</span>
 													</span>
-												{:else}
-													<span
-														class="absolute inset-x-0 bottom-0 px-2 pb-2 text-xs font-medium leading-5 text-gray-700 dark:text-gray-200"
-														>{$i18n.t(style.label)}</span
-													>
-												{/if}
 												{#if stableDiffusionStyle === style.id}
-													{#if style.image}
-														<CheckCircle
-															className="absolute right-2 top-2 size-4 text-white drop-shadow-md"
-															strokeWidth="2"
-														/>
-													{:else}
-														<CheckCircle
-															className="absolute right-2 top-2 size-4 text-gray-700 dark:text-gray-100"
-															strokeWidth="2"
-														/>
-													{/if}
+													<CheckCircle
+														className="absolute right-2 top-2 size-4 text-white drop-shadow-md"
+														strokeWidth="2"
+													/>
 												{/if}
 											</button>
-										{/each}
+												{/each}
+											</div>
+											</div>
+											<div
+												data-style-options-track
+												class="mt-1 flex h-2 cursor-pointer items-center rounded-full outline-hidden focus-visible:ring-2 focus-visible:ring-gray-400"
+												role="scrollbar"
+												aria-label={$i18n.t('Estilos de imagem')}
+												aria-controls="image-style-options-viewport"
+												aria-orientation="horizontal"
+												aria-valuemin="0"
+												tabindex="0"
+											>
+												<div
+													data-style-options-thumb
+													class="h-1 rounded-full bg-gray-300 dark:bg-gray-600"
+												></div>
+											</div>
+										</div>
 									</div>
 								</div>
 							{/if}
@@ -3751,34 +3910,17 @@
 
 <style>
 	.image-style-dropdown-ready {
-		animation: reveal-image-style-dropdown-down 120ms ease-out;
+		animation: enter-image-style-dropdown 180ms cubic-bezier(0.33, 1, 0.68, 1);
 	}
 
-	.image-style-dropdown-ready[data-dropdown-side='top'] {
-		animation-name: reveal-image-style-dropdown-up;
-	}
-
-	@keyframes reveal-image-style-dropdown-down {
+	@keyframes enter-image-style-dropdown {
 		from {
-			clip-path: inset(0 0 100% 0);
+			opacity: 0;
+			transform: translateY(var(--image-style-dropdown-enter-y, -6px));
 		}
 		to {
-			clip-path: inset(0);
-		}
-	}
-
-	@keyframes reveal-image-style-dropdown-up {
-		from {
-			clip-path: inset(100% 0 0 0);
-		}
-		to {
-			clip-path: inset(0);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.image-style-dropdown-ready {
-			animation: none;
+			opacity: 1;
+			transform: translateY(0);
 		}
 	}
 

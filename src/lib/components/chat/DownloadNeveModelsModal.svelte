@@ -853,7 +853,7 @@
 							<button
 								type="button"
 								class="px-1 text-sm leading-none text-gray-400 transition hover:text-gray-900 dark:text-gray-500 dark:hover:text-gray-100"
-								aria-label="Limpar seleÃ§Ã£o"
+								aria-label="Limpar seleção"
 								on:click={() => {}}
 							>
 								-

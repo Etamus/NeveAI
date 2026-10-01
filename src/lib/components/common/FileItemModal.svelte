@@ -33,6 +33,7 @@
 	export let show = false;
 	export let edit = false;
 	export let animated = true;
+	export let chatAttachment = false;
 
 	let enableFullContent = false;
 	let loading = false;
@@ -398,7 +399,7 @@ $: if (show) {
 							{#if !(isImage || isAudio || isVideo)}•{/if}
 						{/if}
 
-						{#if item?.file?.data?.content}
+						{#if item?.file?.data?.content && !isAudio}
 							<div class="capitalize shrink-0">
 								{#if isExcel && rowCount > 0 && selectedTab === 'preview'}
 									{$i18n.t('{{COUNT}} Rows', {
@@ -521,14 +522,24 @@ $: if (show) {
 							</div>
 						</div>
 					{:else if isAudio}
-						<div class="flex h-full w-full items-center justify-center px-1">
+						<div
+							class="flex h-full min-h-0 w-full flex-col gap-4 px-1 {chatAttachment &&
+							item?.file?.data?.content
+								? ''
+								: 'justify-center'}"
+						>
 							<audio
 								src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
-								class="w-full border-0 rounded-lg"
+								class="w-full shrink-0 border-0 rounded-lg"
 								controls
 								playsinline
 								preload="metadata"
 							/>
+							{#if chatAttachment && item?.file?.data?.content}
+								<div class="min-h-0 w-full flex-1 overflow-y-auto text-sm leading-relaxed">
+									<Markdown content={item.file.data.content} id="audio-transcription-preview" />
+								</div>
+							{/if}
 						</div>
 					{:else if isVideo}
 						<div class="flex h-full w-full items-center justify-center overflow-hidden">

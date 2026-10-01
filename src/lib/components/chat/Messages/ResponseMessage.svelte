@@ -938,6 +938,7 @@
 								{#each message.files.filter((file) => file?.generated) as file}
 									<FileItem
 										item={file}
+										chatAttachment={true}
 										url={file.url ?? file.id}
 										name={file.name ?? file?.meta?.name ?? 'Arquivo'}
 										type={file.type ?? 'file'}

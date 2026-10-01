@@ -2584,7 +2584,7 @@ async def shutdown_app(background_tasks: BackgroundTasks, user=Depends(get_admin
 
     def _do_shutdown():
         import time
-        time.sleep(0.5)  # dÃ¡ tempo para a resposta HTTP ser enviada
+        time.sleep(0.5)  # dá tempo para a resposta HTTP ser enviada
         # Encerra processos llama-server
         for proc in psutil.process_iter(["pid", "name"]):
             try:
@@ -2592,7 +2592,7 @@ async def shutdown_app(background_tasks: BackgroundTasks, user=Depends(get_admin
                     proc.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-        # Encerra a janela do navegador (browser-app) lanÃ§ada pelo neve_window
+        # Encerra a janela do navegador (browser-app) lançada pelo neve_window
         for proc in psutil.process_iter(["pid", "name"]):
             try:
                 cmdline = proc.cmdline()
@@ -2605,7 +2605,7 @@ async def shutdown_app(background_tasks: BackgroundTasks, user=Depends(get_admin
                     proc.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied, Exception):
                 pass
-        # Encerra o prÃ³prio processo uvicorn
+        # Encerra o próprio processo uvicorn
         os.kill(os.getpid(), signal.SIGTERM)
 
     background_tasks.add_task(_do_shutdown)
