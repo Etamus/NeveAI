@@ -28,7 +28,7 @@
 	export let value = '';
 
 	export let onSave = () => {};
-	export let onChange = () => {};
+	export let onChange: (value: string) => void = () => {};
 
 	let _value = '';
 
@@ -274,7 +274,7 @@ print("${endTag}")
 							});
 						} else {
 							codeEditor.dispatch({
-								effects: editorTheme.reconfigure()
+								effects: editorTheme.reconfigure([])
 							});
 						}
 					}

@@ -83,13 +83,6 @@ export const initI18n = (defaultLocale?: string | undefined) => {
 
 const i18n = createI18nStore(i18next);
 const isLoadingStore = createIsLoadingStore(i18next);
-
-export const getLanguages = async () => {
-	return [
-		{ code: 'pt-BR', title: 'Português (Brasil)' },
-		{ code: 'en-US', title: 'English' }
-	];
-};
 export const changeLanguage = (lang: string) => {
 	if (!isSupportedLocale(lang)) return;
 	localStorage.setItem('neveai.language', lang);
@@ -99,4 +92,4 @@ export const changeLanguage = (lang: string) => {
 };
 
 export default i18n;
-export const isLoading = isLoadingStore;
+const isLoading = isLoadingStore;

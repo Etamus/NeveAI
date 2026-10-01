@@ -1845,7 +1845,6 @@ NEVE_DEFAULT_CAPABILITIES = {
     "vision": True,
     "file_upload": True,
     "web_search": True,
-    "image_generation": True,
     "code_interpreter": True,
     "citations": True,
     "status_updates": True,

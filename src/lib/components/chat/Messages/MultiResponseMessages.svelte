@@ -391,7 +391,7 @@
 			{#if !Object.keys(groupedMessageIds).find((modelIdx) => {
 				const { messageIds } = groupedMessageIds[modelIdx];
 				const _messageId = messageIds[groupedMessageIdsIdx[modelIdx]];
-				return !history.messages[_messageId]?.done ?? false;
+				return !(history.messages[_messageId]?.done ?? false);
 			})}
 				<div class="flex justify-end">
 					<div class="w-full">

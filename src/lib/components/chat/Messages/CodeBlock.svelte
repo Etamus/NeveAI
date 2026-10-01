@@ -29,9 +29,9 @@
 	export let id = '';
 	export let edit = true;
 
-	export let onSave = (e) => {};
-	export let onUpdate = (e) => {};
-	export let onPreview = (e) => {};
+	export let onSave: (value: any) => void = () => {};
+	export let onUpdate: (value: any) => void = () => {};
+	export let onPreview: (value: any) => void = () => {};
 
 	export let save = false;
 	export let run = true;
@@ -39,10 +39,10 @@
 	export let collapsed = false;
 	export let hideToolbar = false;
 
-	export let token;
+	export let token: any = null;
 	export let lang = '';
 	export let code = '';
-	export let attributes = {};
+	export let attributes: Record<string, any> = {};
 
 	export let className = '';
 	export let editorClassName = '';

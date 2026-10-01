@@ -1,8 +1,3 @@
-from neveai.routers.images import (
-    get_image_data,
-    upload_image,
-)
-
 from fastapi import (
     APIRouter,
     Depends,
@@ -26,6 +21,51 @@ import io
 import re
 
 import requests
+
+
+def get_image_data(data: str, headers=None):
+    try:
+        if data.startswith(("http://", "https://")):
+            response = requests.get(data, headers=headers)
+            response.raise_for_status()
+            content_type = response.headers.get("content-type", "")
+            if not content_type.startswith("image/"):
+                return None, None
+            return response.content, content_type
+        if "," in data:
+            header, encoded = data.split(",", 1)
+            content_type = header.split(";", 1)[0].removeprefix("data:")
+        else:
+            encoded = data
+            content_type = "image/png"
+        return base64.b64decode(encoded), content_type
+    except Exception:
+        return None, None
+
+
+def upload_image(request, image_data, content_type, metadata, user, db=None):
+    extension = mimetypes.guess_extension(content_type) or ".png"
+    file = UploadFile(
+        file=io.BytesIO(image_data),
+        filename=f"generated-image{extension}",
+        headers={"content-type": content_type},
+    )
+    file_item = upload_file_handler(
+        request, file=file, metadata=metadata, process=False, user=user
+    )
+    if file_item and file_item.id:
+        chat_id = metadata.get("chat_id")
+        message_id = metadata.get("message_id")
+        if chat_id and message_id:
+            Chats.insert_chat_files(
+                chat_id=chat_id,
+                message_id=message_id,
+                file_ids=[file_item.id],
+                user_id=user.id,
+                db=db,
+            )
+    url = request.app.url_path_for("get_file_content_by_id", id=file_item.id)
+    return file_item, url
 
 BASE64_IMAGE_URL_PREFIX = re.compile(r"data:image/\w+;base64,", re.IGNORECASE)
 MARKDOWN_IMAGE_URL_PATTERN = re.compile(r"!\[(.*?)\]\((.+?)\)", re.IGNORECASE)

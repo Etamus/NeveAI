@@ -25,7 +25,6 @@
 		models,
 		knowledge,
 		tools,
-		functions,
 		tags,
 		banners,
 		showSettings,
@@ -46,7 +45,6 @@
 	import NeveUpdateToast from '$lib/components/chat/NeveUpdateToast.svelte';
 	import DownloadProgressToast from '$lib/components/chat/DownloadNeveModelsProgressToast.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
-	import AccountPending from '$lib/components/layout/Overlay/AccountPending.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { Shortcut, shortcuts } from '$lib/shortcuts';
 
@@ -320,11 +318,11 @@
 				} else if (isShortcutMatch(event, shortcuts[Shortcut.COPY_LAST_CODE_BLOCK])) {
 					console.log('Shortcut triggered: COPY_LAST_CODE_BLOCK');
 					event.preventDefault();
-					[...document.getElementsByClassName('copy-code-button')]?.at(-1)?.click();
+					([...document.getElementsByClassName('copy-code-button')]?.at(-1) as HTMLElement)?.click();
 				} else if (isShortcutMatch(event, shortcuts[Shortcut.COPY_LAST_RESPONSE])) {
 					console.log('Shortcut triggered: COPY_LAST_RESPONSE');
 					event.preventDefault();
-					[...document.getElementsByClassName('copy-response-button')]?.at(-1)?.click();
+					([...document.getElementsByClassName('copy-response-button')]?.at(-1) as HTMLElement)?.click();
 				} else if (isShortcutMatch(event, shortcuts[Shortcut.TOGGLE_SIDEBAR])) {
 					console.log('Shortcut triggered: TOGGLE_SIDEBAR');
 					event.preventDefault();
@@ -367,7 +365,7 @@
 				) {
 					console.log('Shortcut triggered: REGENERATE_RESPONSE');
 					event.preventDefault();
-					[...document.getElementsByClassName('regenerate-response-button')]?.at(-1)?.click();
+					([...document.getElementsByClassName('regenerate-response-button')]?.at(-1) as HTMLElement)?.click();
 				}
 			});
 		};
@@ -471,10 +469,7 @@
 		<div
 			class=" text-gray-700 dark:text-gray-100 bg-white dark:bg-gray-950 h-screen max-h-[100dvh] overflow-auto flex flex-row"
 		>
-			{#if !['user', 'admin'].includes($user?.role)}
-				<AccountPending />
-			{:else}
-				{#if localDBChats.length > 0}
+			{#if localDBChats.length > 0}
 					<div class="fixed w-full h-full flex z-50">
 						<div
 							class="absolute w-full h-full backdrop-blur-md bg-white/20 dark:bg-gray-900/50 flex justify-center"
@@ -527,11 +522,11 @@
 							</div>
 						</div>
 					</div>
-				{/if}
+			{/if}
 
-				<Sidebar />
+			<Sidebar />
 
-				{#if loaded}
+			{#if loaded}
 					<div
 						class="h-full overflow-hidden transition-[margin-left,width] duration-300"
 						style={$showSidebar && !$mobile ? 'margin-left: var(--sidebar-width, 260px); width: calc(100% - var(--sidebar-width, 260px))' : 'width: 100%'}
@@ -545,7 +540,6 @@
 					>
 						<Spinner className="size-5" />
 					</div>
-				{/if}
 			{/if}
 		</div>
 	</div>

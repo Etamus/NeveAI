@@ -3,26 +3,18 @@
 	import { hideAll as tippyHideAll } from 'tippy.js';
 
 	import { onMount, onDestroy, getContext, tick } from 'svelte';
-	import { models, tools, functions, user } from '$lib/stores';
+	import { models, tools, user } from '$lib/stores';
 	import { NEVEAI_BASE_URL, DEFAULT_CAPABILITIES } from '$lib/constants';
 
 	import { getTools } from '$lib/apis/tools';
-	import { getFunctions } from '$lib/apis/functions';
 
 	import AdvancedParams from '$lib/components/chat/Settings/Advanced/AdvancedParams.svelte';
 	import Tags from '$lib/components/common/Tags.svelte';
-	import Knowledge from '$lib/components/workspace/Models/Knowledge.svelte';
-	import ToolsSelector from '$lib/components/workspace/Models/ToolsSelector.svelte';
-	import SkillsSelector from '$lib/components/workspace/Models/SkillsSelector.svelte';
-	import FiltersSelector from '$lib/components/workspace/Models/FiltersSelector.svelte';
-	import ActionsSelector from '$lib/components/workspace/Models/ActionsSelector.svelte';
 	import Textarea from '$lib/components/common/Textarea.svelte';
 	import AccessControl from '../common/AccessControl.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
-	import DefaultFiltersSelector from './DefaultFiltersSelector.svelte';
 	import DefaultFeatures from './DefaultFeatures.svelte';
-	import PromptSuggestions from './PromptSuggestions.svelte';
 	import AccessControlModal from '../common/AccessControlModal.svelte';
 	import LockClosed from '$lib/components/icons/LockClosed.svelte';
 	import { updateModelAccessGrants } from '$lib/apis/models';
@@ -32,7 +24,7 @@
 	export let onSubmit: Function;
 	export let onBack: null | Function = null;
 
-	export let model = null;
+	export let model: any = null;
 	export let edit = false;
 
 	export let preset = true;
@@ -40,8 +32,8 @@
 	let loading = false;
 	let success = false;
 
-	let filesInputElement;
-	let inputFiles;
+	let filesInputElement: HTMLInputElement;
+	let inputFiles: FileList | null;
 
 	let showAdvanced = false;
 	let showAccessControlModal = false;
@@ -77,7 +69,7 @@
 		}
 	});
 
-	$: system, params, capabilities, defaultFeatureIds, filterIds, defaultFilterIds, actionIds, toolIds, skillIds, builtinTools, name, knowledge, tts, accessGrants, baseModelId, description, debouncedSave();
+	$: system, params, capabilities, defaultFeatureIds, toolIds, skillIds, builtinTools, name, knowledge, tts, accessGrants, baseModelId, description, debouncedSave();
 
 	// ///////////
 	// model
@@ -140,7 +132,7 @@
 	let showSystemPromptField = false;
 	$: if (system !== '') showSystemPromptField = true;
 	const DEFAULT_MODEL_PROFILE_IMAGE_URL = `${NEVEAI_BASE_URL}/static/favicon.png`;
-	let info = {
+	let info: any = {
 		id: '',
 		base_model_id: null,
 		name: '',
@@ -155,7 +147,7 @@
 		}
 	};
 
-	let params = {
+	let params: any = {
 		system: ''
 	};
 
@@ -170,19 +162,15 @@
 			info.meta.profile_image_url !== DEFAULT_MODEL_PROFILE_IMAGE_URL
 	);
 
-	let knowledge = [];
-	let toolIds = [];
-	let skillIds = [];
-
-	let filterIds = [];
-	let defaultFilterIds = [];
+	let knowledge: any[] = [];
+	let toolIds: string[] = [];
+	let skillIds: string[] = [];
 
 	let capabilities = { ...DEFAULT_CAPABILITIES };
-	let defaultFeatureIds = [];
-	let builtinTools = {};
+	let defaultFeatureIds: string[] = [];
+	let builtinTools: Record<string, any> = {};
 
-	let actionIds = [];
-	let accessGrants = [];
+	let accessGrants: any[] = [];
 	let tts = { voice: '' };
 
 	const submitHandler = async () => {
@@ -250,29 +238,6 @@
 			}
 		}
 
-		if (filterIds.length > 0) {
-			info.meta.filterIds = filterIds;
-		} else {
-			if (info.meta.filterIds) {
-				delete info.meta.filterIds;
-			}
-		}
-
-		if (defaultFilterIds.length > 0) {
-			info.meta.defaultFilterIds = defaultFilterIds;
-		} else {
-			if (info.meta.defaultFilterIds) {
-				delete info.meta.defaultFilterIds;
-			}
-		}
-
-		if (actionIds.length > 0) {
-			info.meta.actionIds = actionIds;
-		} else {
-			if (info.meta.actionIds) {
-				delete info.meta.actionIds;
-			}
-		}
 
 		if (defaultFeatureIds.length > 0) {
 			info.meta.defaultFeatureIds = defaultFeatureIds;
@@ -327,21 +292,15 @@
 	};
 
 	const refreshModelEditorResources = async () => {
-		const [toolsResult, functionsResult] = await Promise.allSettled([
-			getTools(localStorage.token),
-			getFunctions(localStorage.token)
-		]);
+		const [toolsResult] = await Promise.allSettled([getTools(localStorage.token)]);
 
 		if (toolsResult.status === 'fulfilled') {
 			await tools.set(toolsResult.value);
 		}
-		if (functionsResult.status === 'fulfilled') {
-			await functions.set(functionsResult.value);
-		}
 	};
 
 	onMount(async () => {
-		const resourcesReady = Array.isArray($tools) && Array.isArray($functions);
+		const resourcesReady = Array.isArray($tools);
 		const resourcesPromise = refreshModelEditorResources();
 		if (!resourcesReady) {
 			await resourcesPromise;
@@ -407,10 +366,6 @@
 
 			toolIds = model?.meta?.toolIds ?? [];
 			skillIds = model?.meta?.skillIds ?? [];
-			filterIds = model?.meta?.filterIds ?? [];
-			defaultFilterIds = model?.meta?.defaultFilterIds ?? [];
-			actionIds = model?.meta?.actionIds ?? [];
-
 			capabilities = { ...capabilities, ...(model?.meta?.capabilities ?? {}) };
 			capabilities.toggle_reasoning = true;
 			defaultFeatureIds = (model?.meta?.defaultFeatureIds ?? []).filter(

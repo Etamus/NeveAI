@@ -13,8 +13,6 @@
 
 	import { onMount, tick, getContext, createEventDispatcher } from 'svelte';
 
-	import { createPicker, getAuthToken } from '$lib/utils/google-drive-picker';
-	import { pickAndDownloadFile } from '$lib/utils/onedrive-file-picker';
 	import {
 		filterMediaAttachments,
 		getMediaAttachmentPolicy,
@@ -74,7 +72,6 @@
 		PASTED_TEXT_CHARACTER_LIMIT
 	} from '$lib/constants';
 
-	import { createNoteHandler } from '../notes/utils';
 	import { getSuggestionRenderer } from '../common/RichTextInput/suggestions';
 
 	import InputMenu from './MessageInput/InputMenu.svelte';
@@ -97,7 +94,6 @@
 	import MusicNote from '../icons/MusicNote.svelte';
 	import Video from '../icons/Video.svelte';
 	import Wrench from '../icons/Wrench.svelte';
-	import Sparkles from '../icons/Sparkles.svelte';
 
 	import InputVariablesModal from './MessageInput/InputVariablesModal.svelte';
 	import Voice from '../icons/Voice.svelte';
@@ -135,26 +131,24 @@
 	export let uploadPending = false;
 
 	export let atSelectedModel: Model | undefined = undefined;
-	export let selectedModels: [''];
+	export let selectedModels: string[] = [];
 
-	let selectedModelIds = [];
+	let selectedModelIds: string[] = [];
 	$: selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
 
-	export let history;
+	export let history: any;
 	export let taskIds = null;
 
 	export let prompt = '';
-	export let files = [];
+	export let files: any[] = [];
 	export let sendDisabled = false;
 	$: canSubmitMessage = prompt.trim().length > 0 || files.some((file) => file?.pastedText === true);
 	$: hasImageAttachment = files.some(
 		(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
 	);
 
-	export let selectedToolIds = [];
-	export let selectedFilterIds = [];
+	export let selectedToolIds: string[] = [];
 
-	export let imageGenerationEnabled = false;
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
 	export let codeExecutionEnabled = false;
@@ -497,7 +491,6 @@
 	let inputVariableValues = {};
 
 	let showValvesModal = false;
-	let selectedValvesType = 'tool'; // 'tool' or 'function'
 	let selectedValvesItemId = null;
 
 	$: onChange({
@@ -512,8 +505,6 @@
 				};
 			}),
 		selectedToolIds,
-		selectedFilterIds,
-		imageGenerationEnabled,
 		webSearchEnabled,
 		deepSearchEnabled,
 		codeExecutionEnabled,
@@ -537,13 +528,11 @@
 		files.length === 0 &&
 		!webSearchEnabled &&
 		!deepSearchEnabled &&
-		!imageGenerationEnabled &&
 		!codeExecutionEnabled &&
 		!stableDiffusionEnabled &&
 		!musicGenerationEnabled &&
 		!videoGenerationEnabled &&
 		(selectedToolIds ?? []).length === 0 &&
-		(selectedFilterIds ?? []).length === 0 &&
 		!isInputMultiline;
 
 	let showTokenPopup = false;
@@ -1016,7 +1005,7 @@
 	let chatInputContainerElement;
 	let chatInputElement;
 
-	let filesInputElement;
+	let filesInputElement: HTMLInputElement;
 	let commandsElement;
 
 	let inputFiles;
@@ -1082,8 +1071,10 @@
 			node.style.overflowX = 'hidden';
 			node.style.overscrollBehavior = 'contain';
 
-			const setStyle = (property: keyof CSSStyleDeclaration, value: string) => {
-				if (node.style[property] !== value) node.style[property] = value;
+			const setStyle = (property: string, value: string) => {
+				if (node.style.getPropertyValue(property) !== value) {
+					node.style.setProperty(property, value);
+				}
 			};
 
 			const positionWithinViewport = () => {
@@ -1206,31 +1197,11 @@
 		(model) => $models.find((m) => m.id === model)?.info?.meta?.capabilities?.web_search ?? true
 	);
 
-	let imageGenerationCapableModels = [];
-	$: imageGenerationCapableModels = (
-		atSelectedModel?.id ? [atSelectedModel.id] : selectedModels
-	).filter(
-		(model) =>
-			$models.find((m) => m.id === model)?.info?.meta?.capabilities?.image_generation ?? true
-	);
-
-	let toggleFilters = [];
-	$: toggleFilters = (atSelectedModel?.id ? [atSelectedModel.id] : selectedModels)
-		.map((id) => ($models.find((model) => model.id === id) || {})?.filters ?? [])
-		.reduce((acc, filters) => acc.filter((f1) => filters.some((f2) => f2.id === f1.id)));
-
 	let showToolsButton = false;
 	$: showToolsButton = ($tools ?? []).length > 0 || ($toolServers ?? []).length > 0;
 
 	let showWebSearchButton = false;
 	$: showWebSearchButton = $_user.role === 'admin' || $_user?.permissions?.features?.web_search;
-
-	let showImageGenerationButton = false;
-	$: showImageGenerationButton =
-		(atSelectedModel?.id ? [atSelectedModel.id] : selectedModels).length ===
-			imageGenerationCapableModels.length &&
-		$config?.features?.enable_image_generation &&
-		($_user.role === 'admin' || $_user?.permissions?.features?.image_generation);
 
 	let showCodeExecutionButton = false;
 	$: showCodeExecutionButton =
@@ -1281,7 +1252,7 @@
 		try {
 			// Request screen media
 			const mediaStream = await navigator.mediaDevices.getDisplayMedia({
-				video: { cursor: 'never' },
+				video: true,
 				audio: false
 			});
 			// Once the user selects a screen, temporarily create a video element
@@ -1354,7 +1325,7 @@
 		}
 
 		const tempItemId = uuidv4();
-		const fileItem = {
+		const fileItem: any = {
 			type: 'file',
 			file: '',
 			id: null,
@@ -1547,7 +1518,11 @@
 					return;
 				}
 
-				const compressImageHandler = async (imageUrl, settings = {}, config = {}) => {
+				const compressImageHandler = async (
+					imageUrl: string,
+					settings: any = {},
+					config: any = {}
+				) => {
 					// Quick shortcut so we don't do unnecessary work.
 					const settingsCompression = settings?.imageCompression ?? false;
 					const configWidth = config?.file?.image_compression?.width ?? null;
@@ -1591,7 +1566,7 @@
 						reader.onerror = () => reject(reader.error);
 						reader.readAsDataURL(readableFile);
 					});
-					imageUrl = await compressImageHandler(imageUrl, $settings, $config);
+					imageUrl = String(await compressImageHandler(imageUrl, $settings, $config));
 					if ($temporaryChatEnabled) {
 						releaseReservation();
 						const activePolicy = getMediaAttachmentPolicy(
@@ -1678,25 +1653,6 @@
 		container.scrollLeft = Math.min(maxScrollLeft, Math.max(0, container.scrollLeft + delta));
 		event.preventDefault();
 		event.stopPropagation();
-	};
-
-	const createNote = async () => {
-		if (inputContent?.md.trim() === '' && inputContent?.html.trim() === '') {
-			toast.error($i18n.t('Cannot create an empty note.'));
-			return;
-		}
-
-		const res = await createNoteHandler(
-			dayjs().format('YYYY-MM-DD'),
-			inputContent?.md,
-			inputContent?.html
-		);
-
-		if (res) {
-			// Clear the input content saved in session storage.
-			sessionStorage.removeItem('chat-input');
-			goto(`/notes/${res.id}`);
-		}
 	};
 
 	const onDragOver = (e: DragEvent) => {
@@ -2024,7 +1980,7 @@
 			const container = document.getElementById('thinking-dropdown-container');
 			if (
 				container &&
-				!container.contains(e.target) &&
+				!container.contains(e.target as Node) &&
 				!(e.target as HTMLElement).closest(
 					'[data-composer-dropdown-anchor="thinking-dropdown-container"]'
 				)
@@ -2046,7 +2002,6 @@
 <ValvesModal
 	bind:show={showValvesModal}
 	userValves={true}
-	type={selectedValvesType}
 	id={selectedValvesItemId ?? null}
 	on:save={async () => {
 		await tick();
@@ -2322,60 +2277,21 @@
 									uploadFilesHandler={() => {
 										filesInputElement.click();
 									}}
-									uploadGoogleDriveHandler={async () => {
-										try {
-											const fileData = await createPicker();
-											if (fileData) {
-												const file = new File([fileData.blob], fileData.name, {
-													type: fileData.blob.type
-												});
-												await uploadFileHandler(file);
-											} else {
-												console.log('No file was selected from Google Drive');
-											}
-										} catch (error) {
-											console.error('Google Drive Error:', error);
-											toast.error(
-												$i18n.t('Error accessing Google Drive: {{error}}', {
-													error: error.message
-												})
-											);
-										}
-									}}
-									uploadOneDriveHandler={async (authorityType) => {
-										try {
-											const fileData = await pickAndDownloadFile(authorityType);
-											if (fileData) {
-												const file = new File([fileData.blob], fileData.name, {
-													type: fileData.blob.type || 'application/octet-stream'
-												});
-												await uploadFileHandler(file);
-											} else {
-												console.log('No file was selected from OneDrive');
-											}
-										} catch (error) {
-											console.error('OneDrive Error:', error);
-										}
-									}}
 									{onUpload}
 									onClose={async () => {
 										await tick();
 										const chatInput = document.getElementById('chat-input');
 										chatInput?.focus();
 									}}
-									{toggleFilters}
 									{showWebSearchButton}
-									{showImageGenerationButton}
 									{showCodeExecutionButton}
 									{showFileGenerationButton}
 									{showStableDiffusionButton}
 									{showMusicGenerationButton}
 									{showVideoGenerationButton}
 									bind:selectedToolIds
-									bind:selectedFilterIds
 									bind:webSearchEnabled
 									bind:deepSearchEnabled
-									bind:imageGenerationEnabled
 									bind:codeExecutionEnabled
 									bind:fileGenerationEnabled
 									bind:stableDiffusionEnabled
@@ -2384,7 +2300,6 @@
 									{onNativeIntegrationChange}
 									onShowValves={(e) => {
 										const { type, id } = e;
-										selectedValvesType = type;
 										selectedValvesItemId = id;
 										showValvesModal = true;
 									}}
@@ -2469,7 +2384,7 @@
 														!(
 															'ontouchstart' in window ||
 															navigator.maxTouchPoints > 0 ||
-															navigator.msMaxTouchPoints > 0
+									(navigator as any).msMaxTouchPoints > 0
 														)}
 													placeholder={placeholder ? placeholder : $i18n.t('Send a Message')}
 													largeTextAsFile={!shiftKey &&
@@ -2506,18 +2421,18 @@
 														isComposing = false;
 													}}
 													on:keydown={async (e) => {
-														e = e.detail.event;
+												const keyboardEvent = e.detail.event as KeyboardEvent;
 
-														const isCtrlPressed = e.ctrlKey || e.metaKey; // metaKey is for Cmd key on Mac
+												const isCtrlPressed = keyboardEvent.ctrlKey || keyboardEvent.metaKey;
 														const suggestionsContainerElement =
 															document.getElementById('suggestions-container');
 
-														if (e.key === 'Escape') {
+												if (keyboardEvent.key === 'Escape') {
 															stopResponse();
 														}
 
-														if (prompt === '' && e.key == 'ArrowUp') {
-															e.preventDefault();
+												if (prompt === '' && keyboardEvent.key == 'ArrowUp') {
+													keyboardEvent.preventDefault();
 
 															const userMessageElement = [
 																...document.getElementsByClassName('user-message')
@@ -2529,7 +2444,7 @@
 																	...document.getElementsByClassName('edit-user-message-button')
 																]?.at(-1);
 
-																editButton?.click();
+																		(editButton as HTMLElement | undefined)?.click();
 															}
 														}
 
@@ -2539,10 +2454,10 @@
 																!(
 																	'ontouchstart' in window ||
 																	navigator.maxTouchPoints > 0 ||
-																	navigator.msMaxTouchPoints > 0
+																	(navigator as any).msMaxTouchPoints > 0
 																)
 															) {
-																if (inOrNearComposition(e)) {
+														if (inOrNearComposition(keyboardEvent)) {
 																	return;
 																}
 
@@ -2552,11 +2467,11 @@
 																// either when Enter is pressed or when Ctrl+Enter is pressed.
 																const enterPressed =
 																	($settings?.ctrlEnterToSend ?? false)
-																		? (e.key === 'Enter' || e.keyCode === 13) && isCtrlPressed
-																		: (e.key === 'Enter' || e.keyCode === 13) && !e.shiftKey;
+																		? (keyboardEvent.key === 'Enter' || keyboardEvent.keyCode === 13) && isCtrlPressed
+																		: (keyboardEvent.key === 'Enter' || keyboardEvent.keyCode === 13) && !keyboardEvent.shiftKey;
 
 																if (enterPressed) {
-																	e.preventDefault();
+														keyboardEvent.preventDefault();
 																	if (!sendDisabled && canSubmitMessage) {
 																		dispatch('submit', prompt);
 																	}
@@ -2564,14 +2479,12 @@
 															}
 														}
 
-														if (e.key === 'Escape') {
+												if (keyboardEvent.key === 'Escape') {
 															console.log('Escape');
 															atSelectedModel = undefined;
 															selectedToolIds = [];
-															selectedFilterIds = [];
 
 															webSearchEnabled = false;
-															imageGenerationEnabled = false;
 															stableDiffusionEnabled = false;
 															musicGenerationEnabled = false;
 															videoGenerationEnabled = false;
@@ -2757,60 +2670,21 @@
 												uploadFilesHandler={() => {
 													filesInputElement.click();
 												}}
-												uploadGoogleDriveHandler={async () => {
-													try {
-														const fileData = await createPicker();
-														if (fileData) {
-															const file = new File([fileData.blob], fileData.name, {
-																type: fileData.blob.type
-															});
-															await uploadFileHandler(file);
-														} else {
-															console.log('No file was selected from Google Drive');
-														}
-													} catch (error) {
-														console.error('Google Drive Error:', error);
-														toast.error(
-															$i18n.t('Error accessing Google Drive: {{error}}', {
-																error: error.message
-															})
-														);
-													}
-												}}
-												uploadOneDriveHandler={async (authorityType) => {
-													try {
-														const fileData = await pickAndDownloadFile(authorityType);
-														if (fileData) {
-															const file = new File([fileData.blob], fileData.name, {
-																type: fileData.blob.type || 'application/octet-stream'
-															});
-															await uploadFileHandler(file);
-														} else {
-															console.log('No file was selected from OneDrive');
-														}
-													} catch (error) {
-														console.error('OneDrive Error:', error);
-													}
-												}}
 												{onUpload}
 												onClose={async () => {
 													await tick();
 													const chatInput = document.getElementById('chat-input');
 													chatInput?.focus();
 												}}
-												{toggleFilters}
 												{showWebSearchButton}
-												{showImageGenerationButton}
 												{showCodeExecutionButton}
 												{showFileGenerationButton}
 												{showStableDiffusionButton}
 												{showMusicGenerationButton}
 												{showVideoGenerationButton}
 												bind:selectedToolIds
-												bind:selectedFilterIds
 												bind:webSearchEnabled
 												bind:deepSearchEnabled
-												bind:imageGenerationEnabled
 												bind:codeExecutionEnabled
 												bind:fileGenerationEnabled
 												bind:stableDiffusionEnabled
@@ -2819,7 +2693,6 @@
 												{onNativeIntegrationChange}
 												onShowValves={(e) => {
 													const { type, id } = e;
-													selectedValvesType = type;
 													selectedValvesItemId = id;
 													showValvesModal = true;
 												}}
@@ -2832,24 +2705,6 @@
 												</div>
 											</InputMenu>
 										</div>
-										{#if selectedModelIds.length === 1 && $models.find((m) => m.id === selectedModelIds[0])?.has_user_valves}
-											<div class="ml-1 flex gap-1.5">
-												<Tooltip content={$i18n.t('Valves')} placement="top">
-													<button
-														type="button"
-														id="model-valves-button"
-														class="bg-transparent hover:bg-gray-100 text-gray-700 dark:text-white dark:hover:bg-gray-800 rounded-full size-8 flex justify-center items-center outline-hidden focus:outline-hidden"
-														on:click={() => {
-															selectedValvesType = 'function';
-															selectedValvesItemId = selectedModelIds[0]?.split('.')[0];
-															showValvesModal = true;
-														}}
-													>
-														<Knobs className="size-4" strokeWidth="1.5" />
-													</button>
-												</Tooltip>
-											</div>
-										{/if}
 
 										<div class="message-input-active-controls ml-2.5 flex min-w-0 gap-1.5">
 											{#if (selectedToolIds ?? []).length > 0}
@@ -2874,55 +2729,6 @@
 													</button>
 												</Tooltip>
 											{/if}
-
-											{#each selectedFilterIds as filterId}
-												{@const filter = toggleFilters.find((f) => f.id === filterId)}
-												{#if filter}
-													<Tooltip content={filter?.name} placement="top">
-														<button
-															on:click|preventDefault={() => {
-																selectedFilterIds = selectedFilterIds.filter(
-																	(id) => id !== filterId
-																);
-															}}
-															type="button"
-															class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden {selectedFilterIds.includes(
-																filterId
-															)
-																? 'text-sky-500 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-600/10'
-																: 'bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'} capitalize"
-														>
-															<div
-																class="relative size-4 shrink-0 flex items-center justify-center"
-															>
-																<span class="group-hover:hidden flex items-center justify-center">
-																	{#if filter?.icon}
-																		<div class="size-4 items-center flex justify-center">
-																			<img
-																				src={filter.icon}
-																				class="size-3.5 {filter.icon.includes('data:image/svg')
-																					? 'dark:invert-[80%]'
-																					: ''}"
-																				style="fill: currentColor;"
-																				alt={filter.name}
-																			/>
-																		</div>
-																	{:else}
-																		<Sparkles className="size-4" strokeWidth="1.75" />
-																	{/if}
-																</span>
-																<span class="hidden group-hover:flex items-center justify-center">
-																	<XMark className="size-4" strokeWidth="1.75" />
-																</span>
-															</div>
-															<span
-																class="chip-label text-[0.8125rem] font-medium truncate {activeChipTextClass}"
-																>{filter?.name}</span
-															>
-														</button>
-													</Tooltip>
-												{/if}
-											{/each}
 
 											{#if webSearchEnabled}
 												<button
@@ -2962,28 +2768,6 @@
 													<span
 														class="chip-label text-[0.8125rem] font-medium {activeChipTextClass}"
 														>{$i18n.t('Deep Search')}</span
-													>
-												</button>
-											{/if}
-
-											{#if imageGenerationEnabled}
-												<button
-													on:click|preventDefault={() =>
-														(imageGenerationEnabled = !imageGenerationEnabled)}
-													type="button"
-													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-sky-500 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-700/10"
-												>
-													<div class="relative size-4 shrink-0 flex items-center justify-center">
-														<span class="group-hover:hidden flex items-center justify-center">
-															<Photo className="size-4" strokeWidth="1.75" />
-														</span>
-														<span class="hidden group-hover:flex items-center justify-center">
-															<XMark className="size-4" strokeWidth="1.75" />
-														</span>
-													</div>
-													<span
-														class="chip-label text-[0.8125rem] font-medium {activeChipTextClass}"
-														>{$i18n.t('Image')}</span
 													>
 												</button>
 											{/if}

@@ -119,7 +119,7 @@
 							alt=""
 							class="size-3 shrink-0 rounded-sm"
 							on:error={(e) => {
-								e.currentTarget.style.display = 'none';
+								(e.currentTarget as HTMLImageElement).style.display = 'none';
 							}}
 						/>
 						<span class="max-w-[150px] truncate">{item.title}</span>

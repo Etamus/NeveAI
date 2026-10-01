@@ -24,7 +24,7 @@ export interface ImageOptions {
 	HTMLAttributes: Record<string, any>;
 }
 
-export interface SetImageOptions {
+interface SetImageOptions {
 	src: string;
 	alt?: string;
 	title?: string;
@@ -51,7 +51,7 @@ declare module '@tiptap/core' {
 /**
  * Matches an image to a ![image](src "title") on input.
  */
-export const inputRegex = /(?:^|\s)(!\[(.+|:?)]\((\S+)(?:(?:\s+)["'](\S+)["'])?\))$/;
+const inputRegex = /(?:^|\s)(!\[(.+|:?)]\((\S+)(?:(?:\s+)["'](\S+)["'])?\))$/;
 
 /**
  * This extension allows you to insert images.
@@ -132,7 +132,7 @@ export const Image = Node.create<ImageOptions>({
 
 			img.classList.add('rounded-md', 'max-h-72', 'w-fit', 'object-contain');
 
-			const editorFiles = editor.storage?.files || [];
+			const editorFiles = (editor.storage as any)?.files || [];
 
 			if (editorFiles && node.attrs.src.startsWith('data://')) {
 				const file = editorFiles.find((f) => f.id === fileId);
@@ -149,7 +149,7 @@ export const Image = Node.create<ImageOptions>({
 			img.setAttribute('title', node.attrs.title || '');
 
 			img.addEventListener('data', (e) => {
-				const files = e?.files || [];
+				const files = (e as CustomEvent).detail?.files || [];
 				if (files && node.attrs.src.startsWith('data://')) {
 					const file = editorFiles.find((f) => f.id === fileId);
 					if (file) {

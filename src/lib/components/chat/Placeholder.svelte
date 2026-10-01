@@ -19,6 +19,7 @@
 		chats,
 		currentChatPage
 	} from '$lib/stores';
+	import type { Model } from '$lib/stores';
 	import { sanitizeResponseContent, extractCurlyBraceWords } from '$lib/utils';
 	import { getUserFirstName } from '$lib/utils/user';
 	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
@@ -36,20 +37,18 @@
 	export let autoScroll = false;
 
 	export let atSelectedModel: Model | undefined;
-	export let selectedModels: [''];
+	export let selectedModels: string[] = [];
 
-	export let history;
+	export let history: any;
 
 	export let prompt = '';
-	export let files = [];
+	export let files: any[] = [];
 	export let messageInput = null;
 
-	export let selectedToolIds = [];
-	export let selectedFilterIds = [];
+	export let selectedToolIds: string[] = [];
 
 	export let showCommands = false;
 
-	export let imageGenerationEnabled = false;
 	export let codeExecutionEnabled = false;
 	export let fileGenerationEnabled = false;
 	export let webSearchEnabled = false;
@@ -71,7 +70,6 @@
 	export let onSelect = (e) => {};
 	export let onChange = (e) => {};
 
-	export let toolServers = [];
 	export let sendDisabled = false;
 
 	export let dragged = false;
@@ -138,8 +136,6 @@
 					bind:prompt
 					bind:autoScroll
 					bind:selectedToolIds
-					bind:selectedFilterIds
-					bind:imageGenerationEnabled
 					bind:codeExecutionEnabled
 					bind:fileGenerationEnabled
 					bind:webSearchEnabled
@@ -159,7 +155,6 @@
 					bind:atSelectedModel
 					bind:showCommands
 					bind:dragged
-					{toolServers}
 					{stopResponse}
 					{createMessagePair}
 					{sendDisabled}

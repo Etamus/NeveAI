@@ -7,7 +7,7 @@
 	import { indentUnit } from '@codemirror/language';
 	import { languages } from '@codemirror/language-data';
 	import { oneDark } from '@codemirror/theme-one-dark';
-	import { onMount, onDestroy, createEventDispatcher } from 'svelte';
+	import { onMount, createEventDispatcher } from 'svelte';
 
 	const dispatch = createEventDispatcher();
 
@@ -24,8 +24,9 @@
 		return await language?.load();
 	};
 
-	onMount(async () => {
+	onMount(() => {
 		const isDark = document.documentElement.classList.contains('dark');
+		let disposed = false;
 
 		const extensions = [
 			Prec.highest(
@@ -74,10 +75,12 @@
 			parent: container
 		});
 
-		const language = await getLang();
-		if (language && editor) {
-			editor.dispatch({ effects: editorLanguage.reconfigure(language) });
-		}
+		void (async () => {
+			const language = await getLang();
+			if (!disposed && language && editor) {
+				editor.dispatch({ effects: editorLanguage.reconfigure(language) });
+			}
+		})();
 
 		// Watch dark mode
 		const observer = new MutationObserver(() => {
@@ -89,15 +92,11 @@
 		editor.focus();
 
 		return () => {
+			disposed = true;
 			observer.disconnect();
 			editor?.destroy();
 			editor = null;
 		};
-	});
-
-	onDestroy(() => {
-		editor?.destroy();
-		editor = null;
 	});
 </script>
 

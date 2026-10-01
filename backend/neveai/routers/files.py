@@ -28,7 +28,6 @@ from neveai.internal.db import get_session, SessionLocal
 from neveai.constants import ERROR_MESSAGES
 from neveai.retrieval.vector.factory import VECTOR_DB_CLIENT
 
-from neveai.models.channels import Channels
 from neveai.models.users import Users
 from neveai.models.files import (
     FileForm,
@@ -148,9 +147,7 @@ def process_uploaded_file(
                         user=user,
                         db=db_session,
                     )
-                elif (not content_type.startswith(("image/", "video/"))) or (
-                    request.app.state.config.CONTENT_EXTRACTION_ENGINE == "external"
-                ):
+                elif not content_type.startswith(("image/", "video/")):
                     process_file(
                         request,
                         ProcessFileForm(file_id=file_item.id),
@@ -295,15 +292,6 @@ def upload_file_handler(
             ),
             db=db,
         )
-
-        if "channel_id" in file_metadata:
-            channel = Channels.get_channel_by_id_and_user_id(
-                file_metadata["channel_id"], user.id, db=db
-            )
-            if channel:
-                Channels.add_file_to_channel_by_id(
-                    channel.id, file_item.id, user.id, db=db
-                )
 
         if process:
             if background_tasks and process_in_background:

@@ -18,7 +18,6 @@
 		scrollPaginationEnabled,
 		currentChatPage,
 		temporaryChatEnabled,
-		channels,
 		socket,
 		config,
 		isApp,
@@ -53,16 +52,12 @@
 	import Folder from '../common/Folder.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
 	import Folders from './Sidebar/Folders.svelte';
-	import { getChannels, createNewChannel } from '$lib/apis/channels';
-	import ChannelModal from './Sidebar/ChannelModal.svelte';
-	import ChannelItem from './Sidebar/ChannelItem.svelte';
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Search from '../icons/Search.svelte';
 	import SearchModal from './SearchModal.svelte';
 	import FolderModal from './Sidebar/Folders/FolderModal.svelte';
 	import Sidebar from '../icons/Sidebar.svelte';
 	import PinnedModelList from './Sidebar/PinnedModelList.svelte';
-	import Note from '../icons/Note.svelte';
 	import HotkeyHint from '../common/HotkeyHint.svelte';
 
 	const BREAKPOINT = 768;
@@ -76,7 +71,6 @@
 	const USER_NAME_MAX_LENGTH = 21;
 	const getLimitedUserName = (name?: string | null) =>
 		getUserDisplayName(name).slice(0, USER_NAME_MAX_LENGTH);
-	let showCreateChannel = false;
 
 	// Pagination variables
 	let chatListLoading = false;
@@ -87,11 +81,10 @@
 	let pinnedModels = [];
 
 	let showPinnedModels = false;
-	let showChannels = false;
 	let showFolders = false;
 	let showChats = true;
 
-	let folders = {};
+	let folders: Record<string, any> = {};
 	let folderRegistry = {};
 
 	let newFolderId = null;
@@ -209,22 +202,6 @@
 		}
 	};
 
-	const initChannels = async () => {
-		// default (none), group, dm type
-		const res = await getChannels(localStorage.token).catch((error) => {
-			return null;
-		});
-
-		if (res) {
-			await channels.set(
-				res.sort(
-					(a, b) =>
-						['', null, 'group', 'dm'].indexOf(a.type) - ['', null, 'group', 'dm'].indexOf(b.type)
-				)
-			);
-		}
-	};
-
 	const initChatList = async () => {
 		// Reset pagination variables
 		currentChatPage.set(1);
@@ -310,7 +287,7 @@
 		for (const file of files) {
 			const reader = new FileReader();
 			reader.onload = async (e) => {
-				const content = e.target.result;
+				const content = String(e.target?.result ?? '');
 
 				try {
 					const chatItems = JSON.parse(content);
@@ -512,14 +489,6 @@
 
 				if (value) {
 					try {
-						// Only fetch channels if the feature is enabled and user has permission
-						if (
-							$config?.features?.enable_channels &&
-							($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true))
-						) {
-							await initChannels();
-						}
-
 						// Only fetch chat list if not already loaded to avoid flickering
 						if (!$chats || $chats.length === 0) {
 							await initChatList();
@@ -541,7 +510,7 @@
 				}
 			}),
 			settings.subscribe((value) => {
-				if (pinnedModels != value?.pinnedModels ?? []) {
+				if (pinnedModels !== (value?.pinnedModels ?? [])) {
 					pinnedModels = value?.pinnedModels ?? [];
 					showPinnedModels = pinnedModels.length > 0;
 				}
@@ -644,46 +613,6 @@
 
 	const isWindows = /Windows/i.test(navigator.userAgent);
 </script>
-
-<ChannelModal
-	bind:show={showCreateChannel}
-	onSubmit={async (payload: any) => {
-		let { type, name, is_private, access_grants, group_ids, user_ids } = payload ?? {};
-		name = name?.trim();
-
-		if (type === 'dm') {
-			if (!user_ids || user_ids.length === 0) {
-				toast.error($i18n.t('Please select at least one user for Direct Message channel.'));
-				return;
-			}
-		} else {
-			if (!name) {
-				toast.error($i18n.t('Channel name cannot be empty.'));
-				return;
-			}
-		}
-
-		const res = await createNewChannel(localStorage.token, {
-			type: type,
-			name: name,
-			is_private: is_private,
-			access_grants: access_grants,
-			group_ids: group_ids,
-			user_ids: user_ids
-		}).catch((error) => {
-			toast.error(`${error}`);
-			return null;
-		});
-
-		if (res) {
-			$socket.emit('join-channels', { auth: { token: $user?.token } });
-			await initChannels();
-			showCreateChannel = false;
-			showChannels = true;
-			goto(`/channels/${res.id}`);
-		}
-	}}
-/>
 
 <FolderModal
 	bind:show={showCreateFolderModal}
@@ -806,29 +735,6 @@
 					</Tooltip>
 				</div>
 
-				{#if ($config?.features?.enable_notes ?? false) && ($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true))}
-					<div class="">
-						<Tooltip content={$i18n.t('Notes')} placement="right">
-							<a
-								class=" cursor-pointer flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition group"
-								href="/notes"
-								on:click={async (e) => {
-									e.stopImmediatePropagation();
-									e.preventDefault();
-
-									goto('/notes');
-									itemClickHandler();
-								}}
-								draggable="false"
-								aria-label={$i18n.t('Notes')}
-							>
-								<div class=" self-center flex items-center justify-center size-9">
-									<Note className="size-4.5" />
-								</div>
-							</a>
-						</Tooltip>
-					</div>
-				{/if}
 			</div>
 		</button>
 
@@ -838,7 +744,6 @@
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
 							role={$user?.role}
-							profile={$config?.features?.enable_user_status === true}
 							showActiveUsers={false}
 							on:show={(e) => {
 							}}
@@ -857,17 +762,6 @@
 										on:error={(e) => { (e.currentTarget as HTMLImageElement).src = generateInitialsImage($user?.name ?? '?'); }}
 									/>
 
-									{#if $config?.features?.enable_user_status === true}
-										<div class="absolute -bottom-0.5 -right-0.5">
-											<span class="relative flex size-2.5">
-												<span
-													class="relative inline-flex size-2.5 rounded-full {true
-														? 'bg-green-500'
-														: 'bg-gray-300 dark:bg-gray-700'} border-2 border-white dark:border-gray-900"
-												></span>
-											</span>
-										</div>
-									{/if}
 								</div>
 							</div>
 						</UserMenu>
@@ -961,10 +855,11 @@
 					? 'sidebar-scroll-fade-top'
 					: ''} relative flex flex-col flex-1 overflow-y-auto scrollbar-hidden pb-3"
 				on:scroll={(e) => {
-					if (e.target.scrollTop === 0) {
+					const target = e.currentTarget as HTMLElement;
+					if (target.scrollTop === 0) {
 						scrollTop = 0;
 					} else {
-						scrollTop = e.target.scrollTop;
+						scrollTop = target.scrollTop;
 					}
 				}}
 			>
@@ -990,26 +885,6 @@
 						</button>
 					</div>
 
-					{#if ($config?.features?.enable_notes ?? false) && ($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true))}
-						<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
-							<a
-								id="sidebar-notes-button"
-								class="grow flex items-center space-x-3 rounded-2xl px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition"
-								href="/notes"
-								on:click={itemClickHandler}
-								draggable="false"
-								aria-label={$i18n.t('Notes')}
-							>
-								<div class="self-center">
-									<Note className="size-4.5" strokeWidth="2" />
-								</div>
-
-								<div class="flex self-center translate-y-[0.5px]">
-									<div class=" self-center text-sm">{$i18n.t('Notes')}</div>
-								</div>
-							</a>
-						</div>
-					{/if}
 				</div>
 
 				<div class="mt-2"></div>
@@ -1027,40 +902,6 @@
 					</Folder>
 				{/if}
 
-				{#if $config?.features?.enable_channels && ($user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true))}
-					<Folder
-						id="sidebar-channels"
-						bind:open={showChannels}
-						className="px-2 mt-0.5"
-						name={$i18n.t('Channels')}
-						chevron={false}
-						dragAndDrop={false}
-						onAdd={$user?.role === 'admin' || ($user?.permissions?.features?.channels ?? true)
-							? async () => {
-									await tick();
-
-									setTimeout(() => {
-										showCreateChannel = true;
-									}, 0);
-								}
-							: null}
-						onAddLabel={$i18n.t('Create Channel')}
-					>
-						{#each $channels as channel, channelIdx (`${channel?.id}`)}
-							<ChannelItem
-								{channel}
-								onUpdate={async () => {
-									await initChannels();
-								}}
-							/>
-
-							{#if channelIdx < $channels.length - 1 && channel.type !== $channels[channelIdx + 1]?.type}<hr
-									class=" border-gray-100/40 dark:border-gray-800/10 my-1.5 w-full"
-								/>
-							{/if}
-						{/each}
-					</Folder>
-				{/if}
 
 				{#if $config?.features?.enable_folders && ($user?.role === 'admin' || ($user?.permissions?.features?.folders ?? true))}
 					<Folder
@@ -1329,7 +1170,6 @@
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
 							role={$user?.role}
-							profile={$config?.features?.enable_user_status === true}
 							showActiveUsers={false}
 							className="max-w-[11rem]"
 							align="start"
@@ -1350,17 +1190,6 @@
 										on:error={(e) => { (e.currentTarget as HTMLImageElement).src = generateInitialsImage($user?.name ?? '?'); }}
 									/>
 
-									{#if $config?.features?.enable_user_status === true}
-										<div class="absolute -bottom-0.5 -right-0.5">
-											<span class="relative flex size-2.5">
-												<span
-													class="relative inline-flex size-2.5 rounded-full {true
-														? 'bg-green-500'
-														: 'bg-gray-300 dark:bg-gray-700'} border-2 border-white dark:border-gray-900"
-												></span>
-											</span>
-										</div>
-									{/if}
 								</div>
 								<div class=" self-center font-medium truncate max-w-[9rem]">
 									{getLimitedUserName($user?.name)}

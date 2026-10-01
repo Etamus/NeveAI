@@ -61,7 +61,7 @@
 				isFirstMessage={idx === 0}
 				siblings={history.messages[messageId].parentId !== null
 					? (history.messages[history.messages[messageId].parentId]?.childrenIds ?? [])
-					: (Object.values(history.messages)
+					: ((Object.values(history.messages) as any[])
 							.filter((message) => message.parentId === null)
 							.map((message) => message.id) ?? [])}
 				{gotoMessage}

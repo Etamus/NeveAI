@@ -52,7 +52,7 @@
 		filter: 'table',
 		replacement: function (content, node) {
 			// Extract rows
-			const rows = Array.from(node.querySelectorAll('tr'));
+			const rows = Array.from((node as HTMLElement).querySelectorAll('tr'));
 			if (rows.length === 0) return content;
 
 			let markdown = '\n';
@@ -119,7 +119,7 @@
 	const i18n = getContext('i18n');
 	const eventDispatch = createEventDispatcher();
 
-	import { Fragment, DOMParser, Slice } from 'prosemirror-model';
+	import { Fragment, DOMParser, DOMSerializer, Slice } from 'prosemirror-model';
 	import { EditorState, Plugin, PluginKey, TextSelection, Selection } from 'prosemirror-state';
 	import { Decoration, DecorationSet } from 'prosemirror-view';
 	import {
@@ -293,17 +293,29 @@
 	export let shiftEnter = false;
 	export let largeTextAsFile = false;
 	export let insertPromptAsRichText = false;
-	export let floatingMenuPlacement = 'bottom-start';
+	export let floatingMenuPlacement:
+		| 'top'
+		| 'right'
+		| 'bottom'
+		| 'left'
+		| 'top-start'
+		| 'top-end'
+		| 'right-start'
+		| 'right-end'
+		| 'bottom-start'
+		| 'bottom-end'
+		| 'left-start'
+		| 'left-end' = 'bottom-start';
 
 	let content = null;
 	let htmlValue = '';
-	let jsonValue = '';
+	let jsonValue: any = '';
 	let mdValue = '';
 
 	let provider: SocketIOCollaborationProvider | null = null;
 
-	let floatingMenuElement: Element | null = null;
-	let bubbleMenuElement: Element | null = null;
+	let floatingMenuElement: HTMLElement | null = null;
+	let bubbleMenuElement: HTMLElement | null = null;
 	let element: Element | null = null;
 
 	const options = {
@@ -438,9 +450,7 @@
 					text !== '' ? state.schema.text(text) : []
 				);
 
-				tr = tr.setSelection(
-					state.selection.constructor.near(tr.doc.resolve(start + text.length + 1))
-				);
+				tr = tr.setSelection(TextSelection.near(tr.doc.resolve(start + text.length + 1)));
 			}
 		}
 
@@ -470,7 +480,7 @@
 			// Create a document fragment containing all parsed paragraphs
 			const fragment = Fragment.fromArray(nodes);
 			// Replace current selection with these paragraphs
-			tr.replaceSelectionWith(fragment, false /* don't select new */);
+			tr.replaceSelection(new Slice(fragment, 0, 0));
 			view.dispatch(tr);
 		} else if (text === '') {
 			// Empty: replace with empty paragraph using tr
@@ -530,7 +540,7 @@
 				const text = node.text;
 				const replacedText = text.replace(/{{\s*([^|}]+)(?:\|[^}]*)?\s*}}/g, (match, varName) => {
 					const trimmedVarName = varName.trim();
-					return variables.hasOwnProperty(trimmedVarName)
+					return Object.prototype.hasOwnProperty.call(variables, trimmedVarName)
 						? String(variables[trimmedVarName])
 						: match;
 				});
@@ -737,7 +747,7 @@
 			element: element,
 			extensions: [
 				StarterKit.configure({
-					link: link,
+					link: link ? {} : false,
 					code: false, // Disabled in favor of FixedCode (see workaround above)
 					dropcursor: false,
 					// When rich text is off, disable Strike from StarterKit so we can
@@ -809,12 +819,10 @@
 					? [
 							BubbleMenu.configure({
 								element: bubbleMenuElement,
-								tippyOptions: {
-									duration: 100,
-									arrow: false,
+								options: {
 									placement: 'top',
-									theme: 'transparent',
-									offset: [0, 2]
+									arrow: false,
+									offset: 2
 								},
 								shouldShow: ({ editor, view, state, oldState, from, to }) => {
 									// safety check
@@ -827,12 +835,10 @@
 							}),
 							FloatingMenu.configure({
 								element: floatingMenuElement,
-								tippyOptions: {
-									duration: 100,
-									arrow: false,
+								options: {
 									placement: floatingMenuPlacement,
-									theme: 'transparent',
-									offset: [-12, 4]
+									arrow: false,
+									offset: 4
 								},
 								shouldShow: ({ editor, view, state, oldState }) => {
 									// safety check
@@ -991,7 +997,7 @@
 						});
 
 						const fragment = Fragment.fromArray(nodes);
-						dispatch(state.tr.replaceSelectionWith(fragment, false).scrollIntoView());
+						dispatch(state.tr.replaceSelection(new Slice(fragment, 0, 0)).scrollIntoView());
 
 						return true; // handled
 					}
@@ -1046,7 +1052,7 @@
 						if (!state.selection.empty) {
 							dispatch(
 								state.tr.setSelection(
-									state.selection.constructor.near(state.doc.resolve(state.selection.anchor))
+									TextSelection.near(state.doc.resolve(state.selection.anchor))
 								)
 							);
 						}
@@ -1241,7 +1247,11 @@
 							}
 						);
 						const slice = state.doc.cut(from, to);
-						const html = editor.schema ? editor.getHTML(slice) : editor.getHTML(); // depending on your editor API
+						const wrapper = document.createElement('div');
+						wrapper.appendChild(
+							DOMSerializer.fromSchema(state.schema).serializeFragment(slice.content)
+						);
+						const html = wrapper.innerHTML;
 
 						event.clipboardData.setData('text/plain', plain);
 						event.clipboardData.setData('text/html', html);
@@ -1253,7 +1263,7 @@
 			},
 			onBeforeCreate: ({ editor }) => {
 				if (files) {
-					editor.storage.files = files;
+					(editor.storage as any).files = files;
 				}
 			},
 			onSelectionUpdate: onSelectionUpdate,

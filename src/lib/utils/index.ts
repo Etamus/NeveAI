@@ -21,26 +21,13 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { marked } from 'marked';
 import markedExtension from '$lib/utils/marked/extension';
 import markedKatexExtension from '$lib/utils/marked/katex-extension';
-// highlight.js (~80KB) is loaded lazily inside copyToClipboard() to avoid bloating the boot bundle
-
-//////////////////////////
-// Helper functions
-//////////////////////////
-
-export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-export const formatNumber = (num: number): string => {
-	return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(
-		num
-	);
-};
 
 function escapeRegExp(string: string): string {
 	return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // Replace tokens outside code blocks only
-export const replaceOutsideCode = (content: string, replacer: (str: string) => string) => {
+const replaceOutsideCode = (content: string, replacer: (str: string) => string) => {
 	return content
 		.split(/(```[\s\S]*?```|`[\s\S]*?`)/)
 		.map((segment) => {
@@ -221,20 +208,7 @@ export const convertMessagesToHistory = (messages) => {
 	return history;
 };
 
-export const getGravatarURL = (email) => {
-	// Trim leading and trailing whitespace from
-	// an email address and force all characters
-	// to lower case
-	const address = String(email).trim().toLowerCase();
-
-	// Create a SHA256 hash of the final string
-	const hash = sha256(address);
-
-	// Grab the actual image URL
-	return `https://www.gravatar.com/avatar/${hash}`;
-};
-
-export const canvasPixelTest = () => {
+const canvasPixelTest = () => {
 	// Test a 1x1 pixel to potentially identify browser/plugin fingerprint blocking or spoofing
 	// Inspiration: https://github.com/kkapsner/CanvasBlocker/blob/master/test/detectionTest.js
 	const canvas = document.createElement('canvas');
@@ -607,71 +581,6 @@ export const removeLastWordFromString = (inputString, wordString) => {
 	return resultString;
 };
 
-export const removeFirstHashWord = (inputString) => {
-	// Split the string into an array of words
-	const words = inputString.split(' ');
-
-	// Find the index of the first word that starts with #
-	const index = words.findIndex((word) => word.startsWith('#'));
-
-	// Remove the first word with #
-	if (index !== -1) {
-		words.splice(index, 1);
-	}
-
-	// Join the remaining words back into a string
-	const resultString = words.join(' ');
-
-	return resultString;
-};
-
-export const transformFileName = (fileName) => {
-	// Convert to lowercase
-	const lowerCaseFileName = fileName.toLowerCase();
-
-	// Remove special characters using regular expression
-	const sanitizedFileName = lowerCaseFileName.replace(/[^\w\s]/g, '');
-
-	// Replace spaces with dashes
-	const finalFileName = sanitizedFileName.replace(/\s+/g, '-');
-
-	return finalFileName;
-};
-
-export const calculateSHA256 = async (file) => {
-	// Create a FileReader to read the file asynchronously
-	const reader = new FileReader();
-
-	// Define a promise to handle the file reading
-	const readFile = new Promise((resolve, reject) => {
-		reader.onload = () => resolve(reader.result);
-		reader.onerror = reject;
-	});
-
-	// Read the file as an ArrayBuffer
-	reader.readAsArrayBuffer(file);
-
-	try {
-		// Wait for the FileReader to finish reading the file
-		const buffer = await readFile;
-
-		// Convert the ArrayBuffer to a Uint8Array
-		const uint8Array = new Uint8Array(buffer);
-
-		// Calculate the SHA-256 hash using Web Crypto API
-		const hashBuffer = await crypto.subtle.digest('SHA-256', uint8Array);
-
-		// Convert the hash to a hexadecimal string
-		const hashArray = Array.from(new Uint8Array(hashBuffer));
-		const hashHex = hashArray.map((byte) => byte.toString(16).padStart(2, '0')).join('');
-
-		return `${hashHex}`;
-	} catch (error) {
-		console.error('Error calculating SHA-256 hash:', error);
-		throw error;
-	}
-};
-
 export const getImportOrigin = (_chats) => {
 	// Check what external service chat imports are from
 	if ('mapping' in _chats[0]) {
@@ -682,7 +591,7 @@ export const getImportOrigin = (_chats) => {
 
 export const getUserPosition = async (raw = false) => {
 	// Get the user's location using the Geolocation API
-	const position = await new Promise((resolve, reject) => {
+	const position = await new Promise<GeolocationPosition>((resolve, reject) => {
 		navigator.geolocation.getCurrentPosition(resolve, reject);
 	}).catch((error) => {
 		console.error('Error getting user location:', error);
@@ -836,7 +745,7 @@ export const isYoutubeUrl = (url: string) => {
 	);
 };
 
-export const removeEmojis = (str: string) => {
+const removeEmojis = (str: string) => {
 	// Regular expression to match emojis
 	const emojiRegex = /[\uD800-\uDBFF][\uDC00-\uDFFF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDE4F]/g;
 
@@ -844,7 +753,7 @@ export const removeEmojis = (str: string) => {
 	return str.replace(emojiRegex, '');
 };
 
-export const removeFormattings = (str: string) => {
+const removeFormattings = (str: string) => {
 	return (
 		str
 			// Block elements (remove completely)
@@ -873,41 +782,8 @@ export const removeFormattings = (str: string) => {
 	); // Multiple newlines
 };
 
-export const cleanText = (content: string) => {
+const cleanText = (content: string) => {
 	return removeFormattings(removeEmojis(content.trim()));
-};
-
-export const removeReasoningArtifacts = (content: string) => {
-	if (!content) return content;
-
-	const reasoningTags = 'think|thinking|thought|reason|reasoning|analysis';
-	const channelStart = /<\|?\s*channel\s*\|?>\s*(?:analysis|thought|thinking|reasoning|reason)\s*(?:<\|?\s*(?:message|content|channel)\s*\|?>)?/i;
-	const channelFinal = /<\|?\s*channel\s*\|?>\s*(?:final|answer|response)\s*(?:<\|?\s*(?:message|content|channel)\s*\|?>)?/i;
-
-	let cleaned = content;
-	let channelMatch = channelStart.exec(cleaned);
-	while (channelMatch) {
-		const suffix = cleaned.slice(channelMatch.index + channelMatch[0].length);
-		const finalMatch = channelFinal.exec(suffix);
-		cleaned = finalMatch
-			? cleaned.slice(0, channelMatch.index) + suffix.slice(finalMatch.index + finalMatch[0].length)
-			: cleaned.slice(0, channelMatch.index) + suffix;
-		channelMatch = channelStart.exec(cleaned);
-	}
-
-	let previous: string | null = null;
-	while (previous !== cleaned) {
-		previous = cleaned;
-		cleaned = cleaned.replace(
-			new RegExp(`<\\s*(${reasoningTags})\\b[^>]*>?[\\s\\S]*?<\\s*\\/\\s*\\1\\s*>`, 'gi'),
-			''
-		);
-	}
-
-	return cleaned
-		.replace(new RegExp(`<\\s*(?:${reasoningTags})\\b[^>]*>?[\\s\\S]*$`, 'gi'), '')
-		.replace(new RegExp(`<\\s*\\/\\s*(?:${reasoningTags})\\s*>`, 'gi'), '')
-		.replace(/<\|?\s*start\s*\|?>\s*(?:assistant|model)\b\s*|<\|?\s*(?:start|end|message|content)\s*\|?>|<\|?\s*channel\s*\|?>\s*(?:final|answer|response)?/gi, '');
 };
 
 export const removeReasoningControlTokens = (content: string) => {
@@ -957,7 +833,7 @@ export const processDetails = (content) => {
 	if (matches) {
 		for (const match of matches) {
 			const attributesRegex = /(\w+)="([^"]*)"/g;
-			const attributes = {};
+			const attributes: Record<string, string> = {};
 			let attributeMatch;
 			while ((attributeMatch = attributesRegex.exec(match)) !== null) {
 				attributes[attributeMatch[1]] = attributeMatch[2];
@@ -975,7 +851,7 @@ export const processDetails = (content) => {
 // This regular expression matches code blocks marked by triple backticks
 const codeBlockRegex = /```[\s\S]*?```/g;
 
-export const extractSentences = (text: string) => {
+const extractSentences = (text: string) => {
 	const codeBlocks: string[] = [];
 	let index = 0;
 
@@ -998,7 +874,7 @@ export const extractSentences = (text: string) => {
 	return sentences.map(cleanText).filter(Boolean);
 };
 
-export const extractParagraphsForAudio = (text: string) => {
+const extractParagraphsForAudio = (text: string) => {
 	const codeBlocks: string[] = [];
 	let index = 0;
 
@@ -1021,7 +897,7 @@ export const extractParagraphsForAudio = (text: string) => {
 	return paragraphs.map(cleanText).filter(Boolean);
 };
 
-export const extractSentencesForAudio = (text: string) => {
+const extractSentencesForAudio = (text: string) => {
 	return extractSentences(text).reduce((mergedTexts, currentText) => {
 		const lastIndex = mergedTexts.length - 1;
 		if (lastIndex >= 0) {
@@ -1087,43 +963,6 @@ export const getPromptVariables = (user_name, user_location, user_email = '') =>
 		'{{CURRENT_TIMEZONE}}': getUserTimezone(),
 		'{{USER_LANGUAGE}}': localStorage.getItem('locale') || 'en-US'
 	};
-};
-
-/**
- * This function is used to replace placeholders in a template string with the provided prompt.
- * The placeholders can be in the following formats:
- * - `{{prompt}}`: This will be replaced with the entire prompt.
- * - `{{prompt:start:<length>}}`: This will be replaced with the first <length> characters of the prompt.
- * - `{{prompt:end:<length>}}`: This will be replaced with the last <length> characters of the prompt.
- * - `{{prompt:middletruncate:<length>}}`: This will be replaced with the prompt truncated to <length> characters, with '...' in the middle.
- *
- * @param {string} template - The template string containing placeholders.
- * @param {string} prompt - The string to replace the placeholders with.
- * @returns {string} The template string with the placeholders replaced by the prompt.
- */
-export const titleGenerationTemplate = (template: string, prompt: string): string => {
-	template = template.replace(
-		/{{prompt}}|{{prompt:start:(\d+)}}|{{prompt:end:(\d+)}}|{{prompt:middletruncate:(\d+)}}/g,
-		(match, startLength, endLength, middleLength) => {
-			if (match === '{{prompt}}') {
-				return prompt;
-			} else if (match.startsWith('{{prompt:start:')) {
-				return prompt.substring(0, startLength);
-			} else if (match.startsWith('{{prompt:end:')) {
-				return prompt.slice(-endLength);
-			} else if (match.startsWith('{{prompt:middletruncate:')) {
-				if (prompt.length <= middleLength) {
-					return prompt;
-				}
-				const start = prompt.slice(0, Math.ceil(middleLength / 2));
-				const end = prompt.slice(-Math.floor(middleLength / 2));
-				return `${start}...${end}`;
-			}
-			return '';
-		}
-	);
-
-	return template;
 };
 
 export const approximateToHumanReadable = (nanoseconds: number) => {
@@ -1195,60 +1034,6 @@ export const getTimeRange = (timestamp) => {
 	}
 };
 
-/**
- * Extract frontmatter as a dictionary from the specified content string.
- * @param content {string} - The content string with potential frontmatter.
- * @returns {Object} - The extracted frontmatter as a dictionary.
- */
-export const extractFrontmatter = (content) => {
-	const frontmatter = {};
-	let frontmatterStarted = false;
-	let frontmatterEnded = false;
-	const frontmatterPattern = /^\s*([a-z_]+):\s*(.*)\s*$/i;
-
-	// Split content into lines
-	const lines = content.split('\n');
-
-	// Check if the content starts with triple quotes
-	if (lines[0].trim() !== '"""') {
-		return {};
-	}
-
-	frontmatterStarted = true;
-
-	for (let i = 1; i < lines.length; i++) {
-		const line = lines[i];
-
-		if (line.includes('"""')) {
-			if (frontmatterStarted) {
-				frontmatterEnded = true;
-				break;
-			}
-		}
-
-		if (frontmatterStarted && !frontmatterEnded) {
-			const match = frontmatterPattern.exec(line);
-			if (match) {
-				const [, key, value] = match;
-				frontmatter[key.trim()] = value.trim();
-			}
-		}
-	}
-
-	return frontmatter;
-};
-
-// Function to determine the best matching language
-export const bestMatchingLanguage = (supportedLanguages, preferredLanguages, defaultLocale) => {
-	const languages = supportedLanguages.map((lang) => lang.code);
-
-	const match = preferredLanguages
-		.map((prefLang) => languages.find((lang) => lang.startsWith(prefLang)))
-		.find(Boolean);
-
-	return match || defaultLocale;
-};
-
 // Get the date in the format YYYY-MM-DD
 export const getFormattedDate = () => {
 	const date = new Date();
@@ -1317,7 +1102,11 @@ export const getLineCount = (text) => {
 };
 
 // Helper function to recursively resolve OpenAPI schema into JSON schema format
-function resolveSchema(schemaRef, components, resolvedSchemas = new Set()) {
+function resolveSchema(
+	schemaRef: any,
+	components: any,
+	resolvedSchemas: Set<string> = new Set()
+): Record<string, any> {
 	if (!schemaRef) return {};
 
 	if (schemaRef['$ref']) {
@@ -1334,7 +1123,7 @@ function resolveSchema(schemaRef, components, resolvedSchemas = new Set()) {
 	}
 
 	if (schemaRef.type) {
-		const schemaObj = { type: schemaRef.type };
+		const schemaObj: Record<string, any> = { type: schemaRef.type };
 
 		if (schemaRef.description) {
 			schemaObj.description = schemaRef.description;
@@ -1365,18 +1154,18 @@ function resolveSchema(schemaRef, components, resolvedSchemas = new Set()) {
 }
 
 // Main conversion function
-export const convertOpenApiToToolPayload = (openApiSpec) => {
-	const toolPayload = [];
+export const convertOpenApiToToolPayload = (openApiSpec: any) => {
+	const toolPayload: any[] = [];
 
 	// Guard against invalid or non-OpenAPI specs (e.g., MCP-style configs)
 	if (!openApiSpec || !openApiSpec.paths) {
 		return toolPayload;
 	}
 
-	for (const [path, methods] of Object.entries(openApiSpec.paths)) {
-		for (const [method, operation] of Object.entries(methods)) {
+	for (const [path, methods] of Object.entries(openApiSpec.paths) as [string, any][]) {
+		for (const [method, operation] of Object.entries(methods) as [string, any][]) {
 			if (operation?.operationId) {
-				const tool = {
+				const tool: any = {
 					name: operation.operationId,
 					description: operation.description || operation.summary || 'No description available.',
 					parameters: {
@@ -1439,22 +1228,6 @@ export const convertOpenApiToToolPayload = (openApiSpec) => {
 	return toolPayload;
 };
 
-export const slugify = (str: string): string => {
-	return (
-		str
-			// 1. Normalize: separate accented letters into base + combining marks
-			.normalize('NFD')
-			// 2. Remove all combining marks (the accents)
-			.replace(/[\u0300-\u036f]/g, '')
-			// 3. Replace any sequence of whitespace with a single hyphen
-			.replace(/\s+/g, '-')
-			// 4. Remove all characters except alphanumeric characters, hyphens, and underscores
-			.replace(/[^a-zA-Z0-9-_]/g, '')
-			// 5. Convert to lowercase
-			.toLowerCase()
-	);
-};
-
 export const extractInputVariables = (text: string): Record<string, any> => {
 	const regex = /{{\s*([^|}\s]+)\s*\|\s*([^}]+)\s*}}/g;
 	const regularRegex = /{{\s*([^|}\s]+)\s*}}/g;
@@ -1470,14 +1243,14 @@ export const extractInputVariables = (text: string): Record<string, any> => {
 	while ((match = regularRegex.exec(text)) !== null) {
 		const varName = match[1].trim();
 		// Only add if not already processed as custom variable
-		if (!variables.hasOwnProperty(varName)) {
+		if (!Object.prototype.hasOwnProperty.call(variables, varName)) {
 			variables[varName] = { type: 'text' }; // Default type for regular variables
 		}
 	}
 	return variables;
 };
 
-export const splitProperties = (str: string, delimiter: string): string[] => {
+const splitProperties = (str: string, delimiter: string): string[] => {
 	const result: string[] = [];
 	let current = '';
 	let depth = 0;
@@ -1529,7 +1302,7 @@ export const splitProperties = (str: string, delimiter: string): string[] => {
 	return result;
 };
 
-export const parseVariableDefinition = (definition: string): Record<string, any> => {
+const parseVariableDefinition = (definition: string): Record<string, any> => {
 	// Use splitProperties for the main colon delimiter to handle quoted strings
 	const parts = splitProperties(definition, ':');
 	const [firstPart, ...propertyParts] = parts;
@@ -1570,7 +1343,7 @@ export const parseVariableDefinition = (definition: string): Record<string, any>
 
 	return { type, ...properties };
 };
-export const parseJsonValue = (value: string): any => {
+const parseJsonValue = (value: string): any => {
 	// Remove surrounding quotes if present (for string values)
 	if (value.startsWith('"') && value.endsWith('"')) {
 		return value.slice(1, -1);
@@ -1803,14 +1576,16 @@ export const renderVegaVisualization = async (spec: string, i18n?: any) => {
 	return svg;
 };
 
-export const getCodeBlockContents = (content: string): object => {
+export const getCodeBlockContents = (
+	content: string
+): { codeBlocks: { lang: string; code: string }[]; html: string; css: string; js: string } => {
 	// Strip thinking/reasoning and other detail blocks before extracting code
 	// to prevent code inside <details type="reasoning"> from being treated as artifacts
 	content = removeAllDetails(content);
 
 	const codeBlockContents = content.match(/```[\s\S]*?```/g);
 
-	let codeBlocks = [];
+	let codeBlocks: { lang: string; code: string }[] = [];
 
 	let htmlContent = '';
 	let cssContent = '';
@@ -1869,27 +1644,6 @@ export const getCodeBlockContents = (content: string): object => {
 		css: cssContent.trim(),
 		js: jsContent.trim()
 	};
-};
-export const parseFrontmatter = (content) => {
-	const match = content.match(/^---\s*\n([\s\S]*?)\n---/);
-	if (match) {
-		const frontmatter = {};
-		match[1].split('\n').forEach((line) => {
-			const [key, ...value] = line.split(':');
-			if (key && value) {
-				frontmatter[key.trim()] = value
-					.join(':')
-					.trim()
-					.replace(/^["']|["']$/g, '');
-			}
-		});
-		return frontmatter;
-	}
-	return {};
-};
-
-export const formatSkillName = (name) => {
-	return name.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
 /**

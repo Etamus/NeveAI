@@ -4,7 +4,6 @@ from typing import Optional, Any
 from neveai.models.users import UserModel
 from neveai.models.files import Files
 from neveai.models.knowledge import Knowledges
-from neveai.models.channels import Channels
 from neveai.models.chats import Chats
 from neveai.models.groups import Groups
 from neveai.models.models import Models
@@ -23,7 +22,6 @@ def has_access_to_file(
     Check if a user has the specified access to a file through any of:
     - Knowledge bases (ownership or access grants)
     - Shared workspace models that attach the file directly
-    - Channels the user is a member of
     - Shared chats
 
     NOTE: This does NOT check direct file ownership — callers should check
@@ -62,11 +60,6 @@ def has_access_to_file(
         for knowledge_base in knowledge_bases:
             if knowledge_base.id == knowledge_base_id:
                 return True
-
-    # Check if the file is associated with any channels the user has access to
-    channels = Channels.get_channels_by_file_id_and_user_id(file_id, user.id, db=db)
-    if access_type == "read" and channels:
-        return True
 
     # Check if the file is associated with any chats the user has access to
     # TODO: Granular access control for chats

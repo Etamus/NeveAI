@@ -17,7 +17,7 @@
 
 	import ChevronUp from '../icons/ChevronUp.svelte';
 	import ChevronDown from '../icons/ChevronDown.svelte';
-	import Lightbulb from '../icons/Lightbulb.svelte';
+	import Lightbulb from '../icons/LightBulb.svelte';
 	import Terminal from '../icons/Terminal.svelte';
 	import Spinner from './Spinner.svelte';
 

@@ -7,12 +7,9 @@ import sys
 import time
 from typing import Dict, Set
 from redis import asyncio as aioredis
-import pycrdt as Y
 
-from neveai.models.users import Users, UserNameResponse
-from neveai.models.channels import Channels
+from neveai.models.users import Users
 from neveai.models.chats import Chats
-from neveai.models.notes import Notes, NoteUpdateForm
 from neveai.utils.redis import (
     get_sentinels_from_env,
     get_sentinel_url_from_env,
@@ -40,11 +37,8 @@ from neveai.env import (
     WEBSOCKET_EVENT_CALLER_TIMEOUT,
 )
 from neveai.utils.auth import decode_token
-from neveai.socket.utils import RedisDict, RedisLock, YdocManager
-from neveai.tasks import create_task, stop_item_tasks
+from neveai.socket.utils import RedisDict, RedisLock
 from neveai.utils.redis import get_redis_connection
-from neveai.utils.access_control import has_permission
-from neveai.models.access_grants import AccessGrants
 
 
 from neveai.env import (
@@ -168,12 +162,6 @@ else:
 
     aquire_func = release_func = renew_func = lambda: True
     session_aquire_func = session_release_func = session_renew_func = lambda: True
-
-
-YDOC_MANAGER = YdocManager(
-    redis=REDIS,
-    redis_key_prefix=f"{REDIS_KEY_PREFIX}:ydoc:documents",
-)
 
 
 async def periodic_session_pool_cleanup():
@@ -397,13 +385,6 @@ async def user_join(sid, data):
 
     await sio.enter_room(sid, f"user:{user.id}")
 
-    # Join all the channels only if user has channels permission
-    if user.role == "admin" or has_permission(user.id, "features.channels"):
-        channels = Channels.get_channels_by_user_id(user.id)
-        log.debug(f"{channels=}")
-        for channel in channels:
-            await sio.enter_room(sid, f"channel:{channel.id}")
-
     return {"id": user.id, "name": user.name}
 
 
@@ -413,345 +394,6 @@ async def heartbeat(sid, data):
     if user:
         SESSION_POOL[sid] = {**user, "last_seen_at": int(time.time())}
         Users.update_last_active_by_id(user["id"])
-
-
-@sio.on("join-channels")
-async def join_channel(sid, data):
-    auth = data["auth"] if "auth" in data else None
-    if not auth or "token" not in auth:
-        return
-
-    data = decode_token(auth["token"])
-    if data is None or "id" not in data:
-        return
-
-    user = Users.get_user_by_id(data["id"])
-    if not user:
-        return
-
-    # Join all the channels only if user has channels permission
-    if user.role == "admin" or has_permission(user.id, "features.channels"):
-        channels = Channels.get_channels_by_user_id(user.id)
-        log.debug(f"{channels=}")
-        for channel in channels:
-            await sio.enter_room(sid, f"channel:{channel.id}")
-
-
-@sio.on("join-note")
-async def join_note(sid, data):
-    auth = data["auth"] if "auth" in data else None
-    if not auth or "token" not in auth:
-        return
-
-    token_data = decode_token(auth["token"])
-    if token_data is None or "id" not in token_data:
-        return
-
-    user = Users.get_user_by_id(token_data["id"])
-    if not user:
-        return
-
-    note = Notes.get_note_by_id(data["note_id"])
-    if not note:
-        log.error(f"Note {data['note_id']} not found for user {user.id}")
-        return
-
-    if (
-        user.role != "admin"
-        and user.id != note.user_id
-        and not AccessGrants.has_access(
-            user_id=user.id,
-            resource_type="note",
-            resource_id=note.id,
-            permission="read",
-        )
-    ):
-        log.error(f"User {user.id} does not have access to note {data['note_id']}")
-        return
-
-    log.debug(f"Joining note {note.id} for user {user.id}")
-    await sio.enter_room(sid, f"note:{note.id}")
-
-
-@sio.on("events:channel")
-async def channel_events(sid, data):
-    room = f"channel:{data['channel_id']}"
-    participants = sio.manager.get_participants(
-        namespace="/",
-        room=room,
-    )
-
-    sids = [sid for sid, _ in participants]
-    if sid not in sids:
-        return
-
-    event_data = data["data"]
-    event_type = event_data["type"]
-
-    user = SESSION_POOL.get(sid)
-
-    if not user:
-        return
-
-    if event_type == "typing":
-        await sio.emit(
-            "events:channel",
-            {
-                "channel_id": data["channel_id"],
-                "message_id": data.get("message_id", None),
-                "data": event_data,
-                "user": UserNameResponse(**user).model_dump(),
-            },
-            room=room,
-        )
-    elif event_type == "last_read_at":
-        Channels.update_member_last_read_at(data["channel_id"], user["id"])
-
-
-@sio.on("ydoc:document:join")
-async def ydoc_document_join(sid, data):
-    """Handle user joining a document"""
-    user = SESSION_POOL.get(sid)
-    if not user:
-        return
-
-    try:
-        document_id = data["document_id"]
-
-        if document_id.startswith("note:"):
-            note_id = document_id.split(":")[1]
-            note = Notes.get_note_by_id(note_id)
-            if not note:
-                log.error(f"Note {note_id} not found")
-                return
-
-            if (
-                user.get("role") != "admin"
-                and user.get("id") != note.user_id
-                and not AccessGrants.has_access(
-                    user_id=user.get("id"),
-                    resource_type="note",
-                    resource_id=note.id,
-                    permission="read",
-                )
-            ):
-                log.error(
-                    f"User {user.get('id')} does not have access to note {note_id}"
-                )
-                return
-
-        user_id = data.get("user_id", sid)
-        user_name = data.get("user_name", "Anonymous")
-        user_color = data.get("user_color", "#000000")
-
-        log.info(f"User {user_id} joining document {document_id}")
-        await YDOC_MANAGER.add_user(document_id=document_id, user_id=sid)
-
-        # Join Socket.IO room
-        await sio.enter_room(sid, f"doc_{document_id}")
-
-        active_session_ids = get_session_ids_from_room(f"doc_{document_id}")
-
-        # Get the Yjs document state
-        ydoc = Y.Doc()
-        updates = await YDOC_MANAGER.get_updates(document_id)
-        for update in updates:
-            ydoc.apply_update(bytes(update))
-
-        # Encode the entire document state as an update
-        state_update = ydoc.get_update()
-        await sio.emit(
-            "ydoc:document:state",
-            {
-                "document_id": document_id,
-                "state": list(state_update),  # Convert bytes to list for JSON
-                "sessions": active_session_ids,
-            },
-            room=sid,
-        )
-
-        # Notify other users about the new user
-        await sio.emit(
-            "ydoc:user:joined",
-            {
-                "document_id": document_id,
-                "user_id": user_id,
-                "user_name": user_name,
-                "user_color": user_color,
-            },
-            room=f"doc_{document_id}",
-            skip_sid=sid,
-        )
-
-        log.info(f"User {user_id} successfully joined document {document_id}")
-
-    except Exception as e:
-        log.error(f"Error in yjs_document_join: {e}")
-        await sio.emit("error", {"message": "Failed to join document"}, room=sid)
-
-
-async def document_save_handler(document_id, data, user):
-    if document_id.startswith("note:"):
-        note_id = document_id.split(":")[1]
-        note = Notes.get_note_by_id(note_id)
-        if not note:
-            log.error(f"Note {note_id} not found")
-            return
-
-        if (
-            user.get("role") != "admin"
-            and user.get("id") != note.user_id
-            and not AccessGrants.has_access(
-                user_id=user.get("id"),
-                resource_type="note",
-                resource_id=note.id,
-                permission="read",
-            )
-        ):
-            log.error(f"User {user.get('id')} does not have access to note {note_id}")
-            return
-
-        Notes.update_note_by_id(note_id, NoteUpdateForm(data=data))
-
-
-@sio.on("ydoc:document:state")
-async def yjs_document_state(sid, data):
-    """Send the current state of the Yjs document to the user"""
-    try:
-        document_id = data["document_id"]
-        room = f"doc_{document_id}"
-
-        active_session_ids = get_session_ids_from_room(room)
-
-        if sid not in active_session_ids:
-            log.warning(f"Session {sid} not in room {room}. Cannot send state.")
-            return
-
-        if not await YDOC_MANAGER.document_exists(document_id):
-            log.warning(f"Document {document_id} not found")
-            return
-
-        # Get the Yjs document state
-        ydoc = Y.Doc()
-        updates = await YDOC_MANAGER.get_updates(document_id)
-        for update in updates:
-            ydoc.apply_update(bytes(update))
-
-        # Encode the entire document state as an update
-        state_update = ydoc.get_update()
-
-        await sio.emit(
-            "ydoc:document:state",
-            {
-                "document_id": document_id,
-                "state": list(state_update),  # Convert bytes to list for JSON
-                "sessions": active_session_ids,
-            },
-            room=sid,
-        )
-    except Exception as e:
-        log.error(f"Error in yjs_document_state: {e}")
-
-
-@sio.on("ydoc:document:update")
-async def yjs_document_update(sid, data):
-    """Handle Yjs document updates"""
-    try:
-        document_id = data["document_id"]
-
-        try:
-            await stop_item_tasks(REDIS, document_id)
-        except:
-            pass
-
-        user_id = data.get("user_id", sid)
-
-        update = data["update"]  # List of bytes from frontend
-
-        await YDOC_MANAGER.append_to_updates(
-            document_id=document_id,
-            update=update,  # Convert list of bytes to bytes
-        )
-
-        # Broadcast update to all other users in the document
-        await sio.emit(
-            "ydoc:document:update",
-            {
-                "document_id": document_id,
-                "user_id": user_id,
-                "update": update,
-                "socket_id": sid,  # Add socket_id to match frontend filtering
-            },
-            room=f"doc_{document_id}",
-            skip_sid=sid,
-        )
-
-        user = SESSION_POOL.get(sid)
-        if not user:
-            return
-
-        async def debounced_save():
-            await asyncio.sleep(0.5)
-            await document_save_handler(document_id, data.get("data", {}), user)
-
-        if data.get("data"):
-            await create_task(REDIS, debounced_save(), document_id)
-
-    except Exception as e:
-        log.error(f"Error in yjs_document_update: {e}")
-
-
-@sio.on("ydoc:document:leave")
-async def yjs_document_leave(sid, data):
-    """Handle user leaving a document"""
-    try:
-        document_id = data["document_id"]
-        user_id = data.get("user_id", sid)
-
-        log.info(f"User {user_id} leaving document {document_id}")
-
-        # Remove user from the document
-        await YDOC_MANAGER.remove_user(document_id=document_id, user_id=sid)
-
-        # Leave Socket.IO room
-        await sio.leave_room(sid, f"doc_{document_id}")
-
-        # Notify other users
-        await sio.emit(
-            "ydoc:user:left",
-            {"document_id": document_id, "user_id": user_id},
-            room=f"doc_{document_id}",
-        )
-
-        if (
-            await YDOC_MANAGER.document_exists(document_id)
-            and len(await YDOC_MANAGER.get_users(document_id)) == 0
-        ):
-            log.info(f"Cleaning up document {document_id} as no users are left")
-            await YDOC_MANAGER.clear_document(document_id)
-
-    except Exception as e:
-        log.error(f"Error in yjs_document_leave: {e}")
-
-
-@sio.on("ydoc:awareness:update")
-async def yjs_awareness_update(sid, data):
-    """Handle awareness updates (cursors, selections, etc.)"""
-    try:
-        document_id = data["document_id"]
-        user_id = data.get("user_id", sid)
-        update = data["update"]
-
-        # Broadcast awareness update to all other users in the document
-        await sio.emit(
-            "ydoc:awareness:update",
-            {"document_id": document_id, "user_id": user_id, "update": update},
-            room=f"doc_{document_id}",
-            skip_sid=sid,
-        )
-
-    except Exception as e:
-        log.error(f"Error in yjs_awareness_update: {e}")
 
 
 @sio.event
@@ -770,7 +412,6 @@ async def disconnect(sid):
                 else:
                     USAGE_POOL[model_id] = connections
 
-        await YDOC_MANAGER.remove_user_from_all_documents(sid)
     else:
         pass
         # print(f"Unknown session ID {sid} disconnected")

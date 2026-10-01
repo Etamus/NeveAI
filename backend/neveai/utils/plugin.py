@@ -14,7 +14,6 @@ from neveai.env import (
     OFFLINE_MODE,
     ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS,
 )
-from neveai.models.functions import Functions
 from neveai.models.tools import Tools
 
 log = logging.getLogger(__name__)
@@ -256,57 +255,6 @@ def load_tool_module_by_id(tool_id, content=None):
         os.unlink(temp_file.name)
 
 
-def load_function_module_by_id(function_id: str, content: str | None = None):
-    if content is None:
-        function = Functions.get_function_by_id(function_id)
-        if not function:
-            raise Exception(f"Function not found: {function_id}")
-        content = function.content
-
-        content = replace_imports(content)
-        Functions.update_function_by_id(function_id, {"content": content})
-    else:
-        frontmatter = extract_frontmatter(content)
-        install_frontmatter_requirements(frontmatter.get("requirements", ""))
-
-    module_name = f"function_{function_id}"
-    module = types.ModuleType(module_name)
-    sys.modules[module_name] = module
-
-    # Create a temporary file and use it to define `__file__` so
-    # that it works as expected from the module's perspective.
-    temp_file = tempfile.NamedTemporaryFile(delete=False)
-    temp_file.close()
-    try:
-        with open(temp_file.name, "w", encoding="utf-8") as f:
-            f.write(content)
-        module.__dict__["__file__"] = temp_file.name
-
-        # Execute the modified content in the created module's namespace
-        exec(content, module.__dict__)
-        frontmatter = extract_frontmatter(content)
-        log.info(f"Loaded module: {module.__name__}")
-
-        # Create appropriate object based on available class type in the module
-        if hasattr(module, "Pipe"):
-            return module.Pipe(), "pipe", frontmatter
-        elif hasattr(module, "Filter"):
-            return module.Filter(), "filter", frontmatter
-        elif hasattr(module, "Action"):
-            return module.Action(), "action", frontmatter
-        else:
-            raise Exception("No Function class found in the module")
-    except Exception as e:
-        log.error(f"Error loading module: {function_id}: {e}")
-        # Cleanup by removing the module in case of error
-        del sys.modules[module_name]
-
-        Functions.update_function_by_id(function_id, {"is_active": False})
-        raise e
-    finally:
-        os.unlink(temp_file.name)
-
-
 def get_tool_module_from_cache(request, tool_id, load_from_db=True):
     if load_from_db:
         # Always load from the database by default
@@ -349,62 +297,6 @@ def get_tool_module_from_cache(request, tool_id, load_from_db=True):
     return tool_module, frontmatter
 
 
-def get_function_module_from_cache(request, function_id, load_from_db=True):
-    if load_from_db:
-        # Always load from the database by default
-        # This is useful for hooks like "inlet" or "outlet" where the content might change
-        # and we want to ensure the latest content is used.
-
-        function = Functions.get_function_by_id(function_id)
-        if not function:
-            raise Exception(f"Function not found: {function_id}")
-        content = function.content
-
-        new_content = replace_imports(content)
-        if new_content != content:
-            content = new_content
-            # Update the function content in the database
-            Functions.update_function_by_id(function_id, {"content": content})
-
-        if (
-            hasattr(request.app.state, "FUNCTION_CONTENTS")
-            and function_id in request.app.state.FUNCTION_CONTENTS
-        ) and (
-            hasattr(request.app.state, "FUNCTIONS")
-            and function_id in request.app.state.FUNCTIONS
-        ):
-            if request.app.state.FUNCTION_CONTENTS[function_id] == content:
-                return request.app.state.FUNCTIONS[function_id], None, None
-
-        function_module, function_type, frontmatter = load_function_module_by_id(
-            function_id, content
-        )
-    else:
-        # Load from cache (e.g. "stream" hook)
-        # This is useful for performance reasons
-
-        if (
-            hasattr(request.app.state, "FUNCTIONS")
-            and function_id in request.app.state.FUNCTIONS
-        ):
-            return request.app.state.FUNCTIONS[function_id], None, None
-
-        function_module, function_type, frontmatter = load_function_module_by_id(
-            function_id
-        )
-
-    if not hasattr(request.app.state, "FUNCTIONS"):
-        request.app.state.FUNCTIONS = {}
-
-    if not hasattr(request.app.state, "FUNCTION_CONTENTS"):
-        request.app.state.FUNCTION_CONTENTS = {}
-
-    request.app.state.FUNCTIONS[function_id] = function_module
-    request.app.state.FUNCTION_CONTENTS[function_id] = content
-
-    return function_module, function_type, frontmatter
-
-
 def install_frontmatter_requirements(requirements: str):
     if not ENABLE_PIP_INSTALL_FRONTMATTER_REQUIREMENTS:
         log.info(
@@ -434,23 +326,14 @@ def install_frontmatter_requirements(requirements: str):
         log.info("No requirements found in frontmatter.")
 
 
-def install_tool_and_function_dependencies():
+def install_tool_dependencies():
     """
-    Install all dependencies for all admin tools and active functions.
-
-    By first collecting all dependencies from the frontmatter of each tool and function,
-    and then installing them using pip. Duplicates or similar version specifications are
-    handled by pip as much as possible.
+    Install dependencies declared by the tools that are available locally.
     """
-    function_list = Functions.get_functions(active_only=True)
     tool_list = Tools.get_tools()
 
     all_dependencies = ""
     try:
-        for function in function_list:
-            frontmatter = extract_frontmatter(replace_imports(function.content))
-            if dependencies := frontmatter.get("requirements"):
-                all_dependencies += f"{dependencies}, "
         for tool in tool_list:
             # Only install requirements for admin tools
             if tool.user and tool.user.role == "admin":

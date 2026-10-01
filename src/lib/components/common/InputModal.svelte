@@ -16,7 +16,7 @@
 	export let autocomplete = false;
 	export let generateAutoCompletion = null;
 
-	export let onChange = () => {};
+	export let onChange: (content: any) => void = () => {};
 	export let onClose = () => {};
 
 	let inputElement;

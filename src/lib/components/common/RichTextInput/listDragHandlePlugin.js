@@ -2,7 +2,7 @@ import { Plugin, PluginKey, NodeSelection } from 'prosemirror-state';
 import { Decoration, DecorationSet } from 'prosemirror-view';
 import { Fragment } from 'prosemirror-model';
 
-export const listPointerDragKey = new PluginKey('listPointerDrag');
+const listPointerDragKey = new PluginKey('listPointerDrag');
 
 export function listDragHandlePlugin(options = {}) {
 	const {

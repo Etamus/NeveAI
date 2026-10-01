@@ -394,7 +394,7 @@
 													}
 												}}
 											>
-												<GarbageBin class="size-4" strokeWidth="1.5" />
+														<GarbageBin className="size-4" strokeWidth="1.5" />
 											</button>
 										</Tooltip>
 									</div>

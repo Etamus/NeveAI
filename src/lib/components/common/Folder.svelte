@@ -25,7 +25,7 @@
 
 	export let dragAndDrop = true;
 
-	let folderElement;
+	let folderElement: HTMLElement;
 	let loaded = false;
 
 	let draggedOver = false;
@@ -36,14 +36,14 @@
 		draggedOver = true;
 	};
 
-	const onDrop = (e) => {
+	const onDrop = (e: DragEvent) => {
 		e.preventDefault();
 		e.stopPropagation();
 
-		if (folderElement.contains(e.target)) {
+		if (folderElement.contains(e.target as Node)) {
 			console.log('Dropped on the Button');
 
-			if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+			if (e.dataTransfer?.items && e.dataTransfer.items.length > 0) {
 				// Iterate over all items in the DataTransferItemList use functional programming
 				for (const item of Array.from(e.dataTransfer.items)) {
 					// If dropped items aren't files, reject them
@@ -56,7 +56,7 @@
 							const reader = new FileReader();
 							reader.onload = async function (event) {
 								try {
-									const fileContent = JSON.parse(event.target.result);
+									const fileContent = JSON.parse(String(event.target?.result ?? ''));
 									console.log('Parsed JSON Content: ', fileContent);
 									open = true;
 									dispatch('import', fileContent);

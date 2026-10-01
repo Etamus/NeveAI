@@ -10,7 +10,6 @@
 
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
-	import ProfilePreview from '$lib/components/channel/Messages/Message/ProfilePreview.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
@@ -261,13 +260,11 @@
 										>
 											<div class="px-3 py-1.5 font-medium text-gray-900 dark:text-white flex-1">
 												<div class="flex items-center gap-2">
-													<ProfilePreview {user} side="right" align="center" sideOffset={6}>
-														<img
-															class="rounded-2xl w-6 h-6 object-cover flex-shrink-0"
-															src={`${NEVEAI_API_BASE_URL}/users/${user.id}/profile/image`}
-															alt="user"
-														/>
-													</ProfilePreview>
+											<img
+												class="rounded-2xl w-6 h-6 object-cover flex-shrink-0"
+												src={`${NEVEAI_API_BASE_URL}/users/${user.id}/profile/image`}
+												alt="user"
+											/>
 													<Tooltip content={user.email} placement="top-start">
 														<div class="font-medium truncate">{user.name}</div>
 													</Tooltip>

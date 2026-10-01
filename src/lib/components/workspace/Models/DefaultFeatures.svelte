@@ -20,10 +20,6 @@
 			label: $i18n.t('Busca na web'),
 			description: $i18n.t('Modelo pode buscar informações na web')
 		},
-		image_generation: {
-			label: $i18n.t('Criar imagem'),
-			description: $i18n.t('Modelo inicia com geração de imagem por padrão')
-		},
 		code_execution: {
 			label: $i18n.t('Artefatos'),
 			description: $i18n.t('Modelo pode abrir artefatos por padrão')
@@ -50,7 +46,6 @@
 		'web_search',
 		'deep_search',
 		'code_execution',
-		'image_generation',
 		'stable_diffusion',
 		'video_generation',
 		'music_generation'
@@ -147,8 +142,6 @@
 							<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" class="size-4">
 								<path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
 							</svg>
-						{:else if feature === 'image_generation'}
-							<Photo className="size-4" strokeWidth="1.5" />
 						{:else if feature === 'stable_diffusion'}
 							<ImageIcon className="size-4" strokeWidth="1.5" />
 						{:else if feature === 'music_generation'}

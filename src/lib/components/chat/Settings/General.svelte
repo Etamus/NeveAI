@@ -49,7 +49,7 @@
 
 	let showAdvanced = false;
 
-	let params = {
+	let params: Record<string, any> = {
 		// Advanced
 		stream_delta_chunk_size: null,
 		function_calling: null,

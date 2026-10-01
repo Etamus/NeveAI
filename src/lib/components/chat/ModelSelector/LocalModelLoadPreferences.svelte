@@ -394,7 +394,6 @@
 			class="relative z-20 shrink-0 self-center p-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
 			type="button"
 			aria-label={$i18n.t('Predefinições')}
-			on:pointerdown={stopEventPropagation}
 			on:click={stopEventPropagation}
 		>
 			<Bookmark className="w-[18px] h-[18px]" strokeWidth="1.5" />
@@ -434,7 +433,7 @@
 				bind:this={presetMenuElement}
 				class="absolute z-[60] w-56 rounded-md border border-gray-100 bg-white p-1 text-sm text-gray-700 shadow-md outline-hidden dark:border-gray-800 dark:bg-gray-850 dark:text-gray-200"
 				style="left: calc(100% + 0.2rem); top: 0.625rem; font-family: 'Segoe UI', sans-serif;"
-				transition={flyAndScale}
+				transition:flyAndScale
 				on:pointerdown|stopPropagation
 			>
 				{#each presetOptions as preset, presetIndex}

@@ -4,7 +4,6 @@ import sys
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from opentelemetry import trace
 from neveai.env import (
     ENABLE_AUDIT_STDOUT,
     ENABLE_AUDIT_LOGS_FILE,
@@ -14,8 +13,6 @@ from neveai.env import (
     GLOBAL_LOG_LEVEL,
     LOG_FORMAT,
     AUDIT_UVICORN_LOGGER_NAMES,
-    ENABLE_OTEL,
-    ENABLE_OTEL_LOGS,
     _LEVEL_MAP,
 )
 
@@ -90,24 +87,9 @@ class InterceptHandler(logging.Handler):
             frame = frame.f_back
             depth += 1
 
-        logger.opt(depth=depth, exception=record.exc_info).bind(
-            **self._get_extras()
-        ).log(level, record.getMessage())
-        if ENABLE_OTEL and ENABLE_OTEL_LOGS:
-            from neveai.utils.telemetry.logs import otel_handler
-
-            otel_handler.emit(record)
-
-    def _get_extras(self):
-        if not ENABLE_OTEL:
-            return {}
-
-        extras = {}
-        context = trace.get_current_span().get_span_context()
-        if context.is_valid:
-            extras["trace_id"] = trace.format_trace_id(context.trace_id)
-            extras["span_id"] = trace.format_span_id(context.span_id)
-        return extras
+        logger.opt(depth=depth, exception=record.exc_info).log(
+            level, record.getMessage()
+        )
 
 
 def file_format(record: "Record"):

@@ -146,7 +146,7 @@ const KNOWN_LANG_IDS = new Set([
 /**
  * Resolve a file extension to a Shiki language id, or null if not supported.
  */
-export function extToLang(ext: string): string | null {
+function extToLang(ext: string): string | null {
 	const lower = ext.toLowerCase();
 	// explicit override first
 	if (EXT_OVERRIDE[lower]) return EXT_OVERRIDE[lower];

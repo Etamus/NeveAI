@@ -481,7 +481,7 @@
 	};
 
 	// ── Lifecycle ────────────────────────────────────────────────────────
-	onMount(async () => {
+	onMount(() => {
 		const terminal = getTerminal();
 		if (!terminal) return;
 
@@ -531,12 +531,14 @@
 		});
 
 		if (!handledDisplayFile) {
-			if (savedPath === '/') {
-				const rawCwd = await getCwd(terminal.url, terminal.key);
-				const cwd = rawCwd ? normalizePath(rawCwd) : null;
-				if (cwd) savedPath = cwd.endsWith('/') ? cwd : cwd + '/';
-			}
-			loadDir(savedPath);
+			void (async () => {
+				if (savedPath === '/') {
+					const rawCwd = await getCwd(terminal.url, terminal.key);
+					const cwd = rawCwd ? normalizePath(rawCwd) : null;
+					if (cwd) savedPath = cwd.endsWith('/') ? cwd : cwd + '/';
+				}
+				await loadDir(savedPath);
+			})();
 		}
 
 		const onKeyDown = (e: KeyboardEvent) => {

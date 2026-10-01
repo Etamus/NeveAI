@@ -47,7 +47,7 @@
 
 		let reader = new FileReader();
 		reader.onload = (event) => {
-			let chats = JSON.parse(event.target.result);
+			let chats = JSON.parse(String(event.target?.result ?? ''));
 			console.log(chats);
 			if (getImportOrigin(chats) == 'openai') {
 				try {

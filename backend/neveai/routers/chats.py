@@ -1111,6 +1111,8 @@ async def delete_chat_by_id(
     user=Depends(get_verified_user),
     db: Session = Depends(get_session),
 ):
+    from neveai.tasks import stop_item_tasks
+
     if user.role == "admin":
         chat = Chats.get_chat_by_id(id, db=db)
         if not chat:
@@ -1118,6 +1120,7 @@ async def delete_chat_by_id(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=ERROR_MESSAGES.NOT_FOUND,
             )
+        await stop_item_tasks(request.app.state.redis, id)
         Chats.delete_orphan_tags_for_user(
             chat.meta.get("tags", []), user.id, threshold=1, db=db
         )
@@ -1140,6 +1143,7 @@ async def delete_chat_by_id(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=ERROR_MESSAGES.NOT_FOUND,
             )
+        await stop_item_tasks(request.app.state.redis, id)
         Chats.delete_orphan_tags_for_user(
             chat.meta.get("tags", []), user.id, threshold=1, db=db
         )

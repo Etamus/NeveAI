@@ -33,10 +33,10 @@ router = APIRouter()
 
 ProgressCallback = Callable[[str, Optional[int]], Awaitable[None]]
 
-COMFYUI_COMMIT = "b0f4b7b294ce482a2e071d9d762c133d38c7aa07"
+COMFYUI_COMMIT = "6b747c0428c343e1417219641db93a4fb7cb69ae"
 CLIPPROJ_COMMIT = "c01ba8fb8f41b4f2094dbd0b185cdc238fb6134c"
 TURBO_NODE_COMMIT = "4274783a23afcfdbea3b4876cb79effd6c510785"
-VIDEO_RUNTIME_REVISION = "neve-minimax-h3-fl2va-w4a8-v1"
+VIDEO_RUNTIME_REVISION = "neve-minimax-h3-fl2va-w4a8-v2-comfy-0.38"
 
 VIDEO_ROOT = CACHE_DIR / "video_generation"
 COMFYUI_DIR = VIDEO_ROOT / "ComfyUI"

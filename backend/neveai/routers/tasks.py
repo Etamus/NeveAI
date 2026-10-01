@@ -19,8 +19,6 @@ from neveai.utils.task import (
 from neveai.utils.auth import get_admin_user, get_verified_user
 from neveai.constants import TASKS
 
-from neveai.routers.pipelines import process_pipeline_inlet_filter
-
 from neveai.utils.task import get_task_model_id
 
 from neveai.config import (
@@ -216,13 +214,7 @@ async def generate_title(
         "model": task_model_id,
         "messages": [{"role": "user", "content": content}],
         "stream": False,
-        **(
-            {"max_tokens": max_tokens}
-            if models[task_model_id].get("owned_by") == "ollama"
-            else {
-                "max_completion_tokens": max_tokens,
-            }
-        ),
+        "max_completion_tokens": max_tokens,
         "metadata": {
             **(request.state.metadata if hasattr(request.state, "metadata") else {}),
             "task": str(TASKS.TITLE_GENERATION),
@@ -230,12 +222,6 @@ async def generate_title(
             "chat_id": form_data.get("chat_id", None),
         },
     }
-
-    # Process the payload through the pipeline
-    try:
-        payload = await process_pipeline_inlet_filter(request, payload, user, models)
-    except Exception as e:
-        raise e
 
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)
@@ -304,12 +290,6 @@ async def generate_follow_ups(
         },
     }
 
-    # Process the payload through the pipeline
-    try:
-        payload = await process_pipeline_inlet_filter(request, payload, user, models)
-    except Exception as e:
-        raise e
-
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)
     except Exception as e:
@@ -369,12 +349,6 @@ async def generate_image_prompt(
             "chat_id": form_data.get("chat_id", None),
         },
     }
-
-    # Process the payload through the pipeline
-    try:
-        payload = await process_pipeline_inlet_filter(request, payload, user, models)
-    except Exception as e:
-        raise e
 
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)
@@ -455,12 +429,6 @@ async def generate_queries(
         },
     }
 
-    # Process the payload through the pipeline
-    try:
-        payload = await process_pipeline_inlet_filter(request, payload, user, models)
-    except Exception as e:
-        raise e
-
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)
     except Exception as e:
@@ -540,12 +508,6 @@ async def generate_autocompletion(
         },
     }
 
-    # Process the payload through the pipeline
-    try:
-        payload = await process_pipeline_inlet_filter(request, payload, user, models)
-    except Exception as e:
-        raise e
-
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)
     except Exception as e:
@@ -594,13 +556,7 @@ async def generate_emoji(
         "model": task_model_id,
         "messages": [{"role": "user", "content": content}],
         "stream": False,
-        **(
-            {"max_tokens": 4}
-            if models[task_model_id].get("owned_by") == "ollama"
-            else {
-                "max_completion_tokens": 4,
-            }
-        ),
+        "max_completion_tokens": 4,
         "metadata": {
             **(request.state.metadata if hasattr(request.state, "metadata") else {}),
             "task": str(TASKS.EMOJI_GENERATION),
@@ -608,12 +564,6 @@ async def generate_emoji(
             "chat_id": form_data.get("chat_id", None),
         },
     }
-
-    # Process the payload through the pipeline
-    try:
-        payload = await process_pipeline_inlet_filter(request, payload, user, models)
-    except Exception as e:
-        raise e
 
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)
@@ -663,12 +613,6 @@ async def generate_moa_response(
             "task_body": form_data,
         },
     }
-
-    # Process the payload through the pipeline
-    try:
-        payload = await process_pipeline_inlet_filter(request, payload, user, models)
-    except Exception as e:
-        raise e
 
     try:
         return await generate_chat_completion(request, form_data=payload, user=user)

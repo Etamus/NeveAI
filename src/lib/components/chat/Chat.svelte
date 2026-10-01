@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { v4 as uuidv4 } from 'uuid';
 	import { toast } from 'svelte-sonner';
-	import { PaneGroup, Pane, PaneResizer } from 'paneforge';
+	import { PaneGroup, Pane, PaneResizer, type PaneAPI } from 'paneforge';
 
 	import { flushSync, getContext, onDestroy, onMount, tick } from 'svelte';
 	import { fade } from 'svelte/transition';
@@ -39,7 +39,6 @@
 		tools,
 		toolServers,
 		terminalServers,
-		functions,
 		selectedFolder,
 		pinnedChats,
 		showEmbeds,
@@ -106,7 +105,6 @@
 		LOCAL_MODEL_CONTEXT_OPTIONS
 	} from '$lib/utils/llamacppLoadPreferences';
 	import { getFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
-	import { getFunctions } from '$lib/apis/functions';
 	import { updateFolderById } from '$lib/apis/folders';
 
 	import Banner from '../common/Banner.svelte';
@@ -131,7 +129,7 @@
 	let loadedChatViewportReady = !chatIdProp;
 
 	const eventTarget = new EventTarget();
-	let controlPane: Pane | undefined;
+	let controlPane: PaneAPI | undefined;
 	let controlPaneComponent: ChatControls | undefined;
 
 	let messageInput: MessageInput | undefined;
@@ -179,10 +177,8 @@
 		selectedModelIds = selectedModels;
 	}
 
-	let selectedToolIds = [];
-	let selectedFilterIds = [];
+	let selectedToolIds: string[] = [];
 
-	let imageGenerationEnabled = false;
 	let webSearchEnabled = false;
 	let deepSearchEnabled = false;
 	let codeExecutionEnabled = false;
@@ -236,7 +232,7 @@
 	let generating = false;
 	let modelLoading = false;
 	let dragged = false;
-	let generationController = null;
+	let generationController: AbortController | null = null;
 
 	const USER_MESSAGE_ANCHOR_TOP_OFFSET_PX = 128;
 	const getGenerationBottomReadingPadding = () =>
@@ -398,7 +394,7 @@
 	let chat = null;
 	let tags = [];
 
-	let history = {
+	let history: any = {
 		messages: {},
 		currentId: null
 	};
@@ -408,8 +404,8 @@
 	// Chat Input
 	let prompt = '';
 	let chatFiles = [];
-	let files = [];
-	let params = {};
+	let files: any[] = [];
+	let params: Record<string, any> = {};
 
 	// ── Context size modal state (for auto-loading on send) ──
 	let showContextModal = false;
@@ -633,10 +629,8 @@
 		files = [];
 		messageQueue = [];
 		selectedToolIds = [];
-		selectedFilterIds = [];
 		webSearchEnabled = false;
 		deepSearchEnabled = false;
-		imageGenerationEnabled = false;
 		codeExecutionEnabled = false;
 		fileGenerationEnabled = getFileGenerationPreference(false);
 		stableDiffusionEnabled = false;
@@ -694,10 +688,8 @@
 						messageInput?.setText(input.prompt);
 						files = input.files;
 						selectedToolIds = input.selectedToolIds;
-						selectedFilterIds = input.selectedFilterIds;
 						webSearchEnabled = input.webSearchEnabled;
 						deepSearchEnabled = input.deepSearchEnabled ?? false;
-						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
 						fileGenerationEnabled = getFileGenerationPreference(
 							input.fileGenerationEnabled ?? false
@@ -765,10 +757,8 @@
 
 	const resetInput = () => {
 		selectedToolIds = [];
-		selectedFilterIds = [];
 		webSearchEnabled = false;
 		deepSearchEnabled = false;
-		imageGenerationEnabled = false;
 		codeExecutionEnabled = false;
 		fileGenerationEnabled = getFileGenerationPreference(false);
 		stableDiffusionEnabled = false;
@@ -784,7 +774,6 @@
 	type ChatIntegrationId =
 		| 'web_search'
 		| 'deep_search'
-		| 'image_generation'
 		| 'code_execution'
 		| 'stable_diffusion'
 		| 'music_generation'
@@ -794,7 +783,6 @@
 		const enabledIntegrations: ChatIntegrationId[] = [
 			webSearchEnabled ? 'web_search' : null,
 			deepSearchEnabled ? 'deep_search' : null,
-			imageGenerationEnabled ? 'image_generation' : null,
 			codeExecutionEnabled ? 'code_execution' : null,
 			stableDiffusionEnabled ? 'stable_diffusion' : null,
 			musicGenerationEnabled ? 'music_generation' : null,
@@ -809,18 +797,10 @@
 
 			webSearchEnabled = keep === 'web_search';
 			deepSearchEnabled = keep === 'deep_search';
-			imageGenerationEnabled = keep === 'image_generation';
 			codeExecutionEnabled = keep === 'code_execution';
 			stableDiffusionEnabled = keep === 'stable_diffusion';
 			musicGenerationEnabled = keep === 'music_generation';
 			videoGenerationEnabled = keep === 'video_generation';
-			selectedToolIds = [];
-			selectedFilterIds = [];
-			return;
-		}
-
-		if (selectedFilterIds.length > 0) {
-			selectedFilterIds = [selectedFilterIds.at(-1)];
 			selectedToolIds = [];
 			return;
 		}
@@ -833,21 +813,16 @@
 	const setNativeIntegration = (integration: ChatIntegrationId | null) => {
 		webSearchEnabled = integration === 'web_search';
 		deepSearchEnabled = integration === 'deep_search';
-		imageGenerationEnabled = integration === 'image_generation';
 		codeExecutionEnabled = integration === 'code_execution';
 		stableDiffusionEnabled = integration === 'stable_diffusion';
 		musicGenerationEnabled = integration === 'music_generation';
 		videoGenerationEnabled = integration === 'video_generation';
 		selectedToolIds = [];
-		selectedFilterIds = [];
 	};
 
 	const setDefaults = async () => {
 		if (!$tools) {
 			tools.set(await getTools(localStorage.token));
-		}
-		if (!$functions) {
-			functions.set(await getFunctions(localStorage.token));
 		}
 		if (selectedModels.length !== 1 && !atSelectedModel) {
 			return;
@@ -868,13 +843,6 @@
 				selectedToolIds = selectedToolIds.filter((id) => !id.startsWith('direct_server:'));
 			}
 
-			// Set Default Filters (Toggleable only)
-			if (model?.info?.meta?.defaultFilterIds) {
-				selectedFilterIds = model.info.meta.defaultFilterIds.filter((id) =>
-					model?.filters?.find((f) => f.id === id)
-				);
-			}
-
 			// Set Default Features
 			if (model?.info?.meta?.defaultFeatureIds) {
 				deepSearchEnabled = Boolean(
@@ -882,14 +850,6 @@
 						$config?.features?.enable_web_search &&
 						($user?.role === 'admin' || $user?.permissions?.features?.web_search)
 				);
-
-				if (
-					model.info?.meta?.capabilities?.['image_generation'] &&
-					$config?.features?.enable_image_generation &&
-					($user?.role === 'admin' || $user?.permissions?.features?.image_generation)
-				) {
-					imageGenerationEnabled = model.info.meta.defaultFeatureIds.includes('image_generation');
-				}
 
 				if (
 					model.info?.meta?.capabilities?.['web_search'] &&
@@ -2046,7 +2006,9 @@
 
 		$audioQueue?.destroy();
 
-		const audioQueueInstance = new AudioQueue(document.getElementById('audioElement'));
+		const audioElement = document.getElementById('audioElement') as HTMLAudioElement | null;
+		if (!audioElement) throw new Error('Audio element was not initialized.');
+		const audioQueueInstance = new AudioQueue(audioElement);
 		audioQueue.set(audioQueueInstance);
 
 		// Reset direct terminal enabled states — selectedTerminalId starts null on every page load
@@ -2123,10 +2085,8 @@
 
 				files = [];
 				selectedToolIds = [];
-				selectedFilterIds = [];
 				webSearchEnabled = false;
 				deepSearchEnabled = false;
-				imageGenerationEnabled = false;
 				codeExecutionEnabled = false;
 				fileGenerationEnabled = getFileGenerationPreference(false);
 				stableDiffusionEnabled = false;
@@ -2140,10 +2100,8 @@
 						messageInput?.setText(input.prompt);
 						files = input.files;
 						selectedToolIds = input.selectedToolIds;
-						selectedFilterIds = input.selectedFilterIds;
 						webSearchEnabled = input.webSearchEnabled;
 						deepSearchEnabled = input.deepSearchEnabled ?? false;
-						imageGenerationEnabled = input.imageGenerationEnabled;
 						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
 						fileGenerationEnabled = getFileGenerationPreference(
 							input.fileGenerationEnabled ?? false
@@ -2205,131 +2163,6 @@
 
 	// File upload functions
 
-	const uploadGoogleDriveFile = async (fileData) => {
-		console.log('Starting uploadGoogleDriveFile with:', {
-			id: fileData.id,
-			name: fileData.name,
-			url: fileData.url,
-			headers: {
-				Authorization: `Bearer ${token}`
-			}
-		});
-
-		// Validate input
-		if (!fileData?.id || !fileData?.name || !fileData?.url || !fileData?.headers?.Authorization) {
-			throw new Error('Invalid file data provided');
-		}
-
-		const tempItemId = uuidv4();
-		const fileItem = {
-			type: 'file',
-			file: '',
-			id: null,
-			url: fileData.url,
-			name: fileData.name,
-			collection_name: '',
-			status: 'uploading',
-			error: '',
-			itemId: tempItemId,
-			size: 0
-		};
-
-		try {
-			files = [...files, fileItem];
-			console.log('Processing web file with URL:', fileData.url);
-
-			// Configure fetch options with proper headers
-			const fetchOptions = {
-				headers: {
-					Authorization: fileData.headers.Authorization,
-					Accept: '*/*'
-				},
-				method: 'GET'
-			};
-
-			// Attempt to fetch the file
-			console.log('Fetching file content from Google Drive...');
-			const fileResponse = await fetch(fileData.url, fetchOptions);
-
-			if (!fileResponse.ok) {
-				const errorText = await fileResponse.text();
-				throw new Error(`Failed to fetch file (${fileResponse.status}): ${errorText}`);
-			}
-
-			// Get content type from response
-			const contentType = fileResponse.headers.get('content-type') || 'application/octet-stream';
-			console.log('Response received with content-type:', contentType);
-
-			// Convert response to blob
-			console.log('Converting response to blob...');
-			const fileBlob = await fileResponse.blob();
-
-			if (fileBlob.size === 0) {
-				throw new Error('Retrieved file is empty');
-			}
-
-			console.log('Blob created:', {
-				size: fileBlob.size,
-				type: fileBlob.type || contentType
-			});
-
-			// Create File object with proper MIME type
-			const file = new File([fileBlob], fileData.name, {
-				type: fileBlob.type || contentType
-			});
-
-			console.log('File object created:', {
-				name: file.name,
-				size: file.size,
-				type: file.type
-			});
-
-			if (file.size === 0) {
-				throw new Error('Created file is empty');
-			}
-
-			// If the file is an audio file, provide the language for STT.
-			let metadata = null;
-			if (
-				(file.type.startsWith('audio/') || file.type.startsWith('video/')) &&
-				$settings?.audio?.stt?.language
-			) {
-				metadata = {
-					language: $settings?.audio?.stt?.language
-				};
-			}
-
-			// Upload file to server
-			console.log('Uploading file to server...');
-			const uploadedFile = await uploadFile(localStorage.token, file, metadata);
-
-			if (!uploadedFile) {
-				throw new Error('Server returned null response for file upload');
-			}
-
-			console.log('File uploaded successfully:', uploadedFile);
-
-			// Update file item with upload results
-			fileItem.status = 'uploaded';
-			fileItem.file = uploadedFile;
-			fileItem.id = uploadedFile.id;
-			fileItem.size = file.size;
-			fileItem.collection_name = uploadedFile?.meta?.collection_name;
-			fileItem.url = `${uploadedFile.id}`;
-
-			files = files;
-			toast.success($i18n.t('File uploaded successfully'));
-		} catch (e) {
-			console.error('Error uploading file:', e);
-			files = files.filter((f) => f.itemId !== tempItemId);
-			toast.error(
-				$i18n.t('Error uploading file: {{error}}', {
-					error: e.message || 'Unknown error'
-				})
-			);
-		}
-	};
-
 	const uploadWeb = async (urls) => {
 		if ($user?.role !== 'admin' && !($user?.permissions?.chat?.web_upload ?? true)) {
 			toast.error($i18n.t('You do not have permission to upload web content.'));
@@ -2371,7 +2204,7 @@
 
 				files = [...files];
 			} catch (e) {
-				files = files.filter((f) => f.name !== url);
+				files = files.filter((f) => f.name !== fileItem.url);
 				toast.error(`${e}`);
 			}
 		}
@@ -2380,9 +2213,7 @@
 	const onUpload = async (event) => {
 		const { type, data } = event;
 
-		if (type === 'google-drive') {
-			await uploadGoogleDriveFile(data);
-		} else if (type === 'web') {
+		if (type === 'web') {
 			await uploadWeb(data);
 		}
 	};
@@ -2535,7 +2366,9 @@
 						modelSelectorButton.click();
 						await tick();
 
-						const modelSelectorInput = document.getElementById('model-search-input');
+						const modelSelectorInput = document.getElementById(
+							'model-search-input'
+						) as HTMLInputElement | null;
 						if (modelSelectorInput) {
 							modelSelectorInput.focus();
 							modelSelectorInput.value = urlModels[0];
@@ -2646,10 +2479,6 @@
 			webSearchEnabled = true;
 		}
 
-		if ($page.url.searchParams.get('image-generation') === 'true') {
-			imageGenerationEnabled = true;
-		}
-
 		if ($page.url.searchParams.get('tools')) {
 			selectedToolIds = $page.url.searchParams
 				.get('tools')
@@ -2750,7 +2579,7 @@
 				await tick();
 
 				if (history.currentId) {
-					for (const message of Object.values(history.messages)) {
+					for (const message of Object.values(history.messages) as any[]) {
 						if (message && message.role === 'assistant') {
 							message.done = true;
 						}
@@ -2774,7 +2603,7 @@
 		}
 	};
 
-	const scrollToBottom = async (behavior = 'auto') => {
+	const scrollToBottom = async (behavior: ScrollBehavior = 'auto') => {
 		await tick();
 		if (messagesContainerElement) {
 			messagesContainerElement.scrollTo({
@@ -2895,7 +2724,7 @@
 		await waitForAnimationFrame();
 	};
 
-	const scrollToContentBottom = async (behavior = 'auto') => {
+	const scrollToContentBottom = async (behavior: ScrollBehavior = 'auto') => {
 		await tick();
 		if (!messagesContainerElement) return;
 
@@ -3060,7 +2889,7 @@
 		}
 	};
 
-	const positionMessageAtTop = (messageId: string, behavior = 'auto', topOffset?: number) => {
+	const positionMessageAtTop = (messageId: string, behavior: ScrollBehavior = 'auto', topOffset?: number) => {
 		const messageElement = document.getElementById(`message-${messageId}`);
 		if (!messageElement) return;
 
@@ -3086,7 +2915,7 @@
 
 	const scrollToMessageTop = async (
 		messageId: string,
-		behavior = 'auto',
+		behavior: ScrollBehavior = 'auto',
 		{ topOffset, layoutFrames = 2 }: { topOffset?: number; layoutFrames?: number } = {}
 	) => {
 		if (!messageId) return;
@@ -3676,7 +3505,6 @@
 				...(m.usage ? { usage: m.usage } : {}),
 				...(m.sources ? { sources: m.sources } : {})
 			})),
-			filter_ids: selectedFilterIds.length > 0 ? selectedFilterIds : undefined,
 			model_item: $models.find((m) => m.id === modelId),
 			chat_id: _chatId,
 			session_id: $socket?.id,
@@ -4727,7 +4555,6 @@
 					if (
 						hasImages &&
 						!(model.info?.meta?.capabilities?.vision ?? true) &&
-						!requestFeatures?.image_generation &&
 						!requestFeatures?.stable_diffusion &&
 						!requestFeatures?.video_generation
 					) {
@@ -4768,24 +4595,17 @@
 		const effectiveDeepSearchEnabled =
 			deepSearchEnabled &&
 			!webSearchEnabled &&
-			!imageGenerationEnabled &&
 			!codeExecutionEnabled &&
 			!stableDiffusionEnabled &&
 			!musicGenerationEnabled &&
 			!videoGenerationEnabled &&
-			selectedToolIds.length === 0 &&
-			selectedFilterIds.length === 0;
+			selectedToolIds.length === 0;
 
-		let features = {};
+		let features: Record<string, any> = {};
 
 		if ($config?.features)
 			features = {
 				voice: $showCallOverlay,
-				image_generation:
-					$config?.features?.enable_image_generation &&
-					($user?.role === 'admin' || $user?.permissions?.features?.image_generation)
-						? imageGenerationEnabled
-						: false,
 				web_search:
 					$config?.features?.enable_web_search &&
 					($user?.role === 'admin' || $user?.permissions?.features?.web_search)
@@ -4800,7 +4620,6 @@
 				file_generation:
 					fileGenerationEnabled &&
 					!deepSearchEnabled &&
-					!imageGenerationEnabled &&
 					!stableDiffusionEnabled &&
 					!musicGenerationEnabled &&
 					!videoGenerationEnabled,
@@ -5194,7 +5013,6 @@
 
 				files: (files?.length ?? 0) > 0 ? files : undefined,
 
-				filter_ids: selectedFilterIds.length > 0 ? selectedFilterIds : undefined,
 				tool_ids: toolIds.length > 0 ? toolIds : undefined,
 				skill_ids: skillIds.length > 0 ? skillIds : undefined,
 				terminal_id: activeTerminalId ?? undefined,
@@ -5993,7 +5811,6 @@
 							}
 						}}
 						{history}
-						title={$chatTitle}
 						bind:selectedModels
 						shareEnabled={!!history.currentId}
 						{initNewChat}
@@ -6106,8 +5923,6 @@
 									bind:prompt
 									bind:autoScroll
 									bind:selectedToolIds
-									bind:selectedFilterIds
-									bind:imageGenerationEnabled
 									bind:codeExecutionEnabled
 									bind:fileGenerationEnabled
 									bind:webSearchEnabled
@@ -6127,7 +5942,6 @@
 									bind:atSelectedModel
 									bind:showCommands
 									bind:dragged
-									toolServers={$toolServers}
 									{generating}
 									sendDisabled={modelLoading}
 									{stopResponse}
@@ -6192,8 +6006,6 @@
 									bind:prompt
 									bind:autoScroll
 									bind:selectedToolIds
-									bind:selectedFilterIds
-									bind:imageGenerationEnabled
 									bind:codeExecutionEnabled
 									bind:fileGenerationEnabled
 									bind:webSearchEnabled
@@ -6213,7 +6025,6 @@
 									bind:atSelectedModel
 									bind:showCommands
 									bind:dragged
-									toolServers={$toolServers}
 									sendDisabled={modelLoading}
 									{stopResponse}
 									{createMessagePair}

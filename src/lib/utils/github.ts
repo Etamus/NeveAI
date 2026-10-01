@@ -1,4 +1,4 @@
-export type GitHubRepositoryReference = {
+type GitHubRepositoryReference = {
 	type: 'repository';
 	rawUrl: string;
 	url: string;
@@ -19,7 +19,7 @@ export type GitHubRepositoryMatch = {
 const GITHUB_URL_PATTERN = /https?:\/\/(?:www\.)?github\.com\/[^\s<>"']+/gi;
 const REPOSITORY_PART_PATTERN = /^[A-Za-z0-9_.-]{1,100}$/;
 
-export const parseGitHubRepositoryUrl = (rawUrl: string): GitHubRepositoryReference | null => {
+const parseGitHubRepositoryUrl = (rawUrl: string): GitHubRepositoryReference | null => {
 	try {
 		const parsed = new URL(rawUrl);
 		if (!['github.com', 'www.github.com'].includes(parsed.hostname.toLowerCase())) {

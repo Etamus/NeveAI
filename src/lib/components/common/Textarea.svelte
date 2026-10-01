@@ -15,7 +15,7 @@
 	export let ariaLabel = null;
 
 	export let spellcheck: boolean | null = null;
-	export let onInput = () => {};
+	export let onInput: (event: Event) => void = () => {};
 	export let onBlur = () => {};
 
 	let textareaElement;

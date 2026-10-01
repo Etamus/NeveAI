@@ -71,7 +71,7 @@ export class SocketIOCollaborationProvider {
 					})
 				];
 
-				// @ts-ignore
+			// @ts-expect-error Socket provider exposes this runtime callback dynamically.
 				plugins.push(yCursorPlugin(this.awareness));
 
 				return plugins;

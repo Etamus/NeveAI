@@ -179,7 +179,7 @@
 							alt="favicon"
 							class="size-4 rounded-full shrink-0 border border-white dark:border-gray-850 bg-white dark:bg-gray-900"
 							on:error={(e) => {
-								e.target.src = '/favicon.png';
+							(e.currentTarget as HTMLImageElement).src = '/favicon.png';
 							}}
 						/>
 					{/each}

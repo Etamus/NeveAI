@@ -1,9 +1,9 @@
 import { mount, unmount } from 'svelte';
 import { createClassComponent } from 'svelte/legacy';
 
-import tippy from 'tippy.js';
+import tippy, { type Instance as TippyInstance } from 'tippy.js';
 
-export function getSuggestionRenderer(Component: any, ComponentProps = {}) {
+export function getSuggestionRenderer(Component: any, ComponentProps: Record<string, any> = {}) {
 	return function suggestionRenderer() {
 		let component = null;
 		let container: HTMLDivElement | null = null;
@@ -100,7 +100,6 @@ export function getSuggestionRenderer(Component: any, ComponentProps = {}) {
 			onKeyDown: (props: any) => {
 				// forward to the Svelte component’s handler
 				// (expose this from component as `export function onKeyDown(evt)`)
-				// @ts-ignore
 				return component?._onKeyDown?.(props.event) ?? false;
 			},
 

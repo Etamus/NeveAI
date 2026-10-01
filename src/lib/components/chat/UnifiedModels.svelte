@@ -36,7 +36,6 @@
 	import { config, models as _models, settings, user, showSettingsModelId } from '$lib/stores';
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
 
 	import {
 		getLocalModels,
@@ -74,7 +73,6 @@
 	} from '$lib/utils/unifiedModelsData';
 
 	import ModelSettingsModal from '$lib/components/admin/Settings/Models/ModelSettingsModal.svelte';
-	import ManageModelsModal from '$lib/components/admin/Settings/Models/ManageModelsModal.svelte';
 	import DownloadNeveModelsModal from '$lib/components/chat/DownloadNeveModelsModal.svelte';
 	import ModelEditor from '$lib/components/workspace/Models/ModelEditor.svelte';
 	import ModelMenu from '$lib/components/admin/Settings/Models/ModelMenu.svelte';
@@ -247,7 +245,6 @@
 	let baseModels: any[] | null = null;
 	let selectedModelId: string | null = null;
 	let showConfigModal = false;
-	let showManageModal = false;
 	let showDownloadModal = false;
 	let viewOption = '';
 	let preloadApplied = false;
@@ -1480,16 +1477,6 @@
 		saveAs(blob, `${model.id}-${Date.now()}.json`);
 	};
 
-	const cloneHandler = async (model: any) => {
-		sessionStorage.model = JSON.stringify({
-			...model,
-			base_model_id: model.id,
-			id: `${model.id}-clone`,
-			name: `${model.name} (Clone)`
-		});
-		goto('/workspace/models/create');
-	};
-
 	const pinModelHandler = async (modelId: string) => {
 		let pinnedModels = $settings?.pinnedModels ?? [];
 		if (pinnedModels.includes(modelId)) {
@@ -1632,7 +1619,6 @@
 {/if}
 
 <ModelSettingsModal bind:show={showConfigModal} initHandler={initAdmin} />
-<ManageModelsModal bind:show={showManageModal} />
 <DownloadNeveModelsModal
 	bind:show={showDownloadModal}
 	on:modelsChanged={refreshAfterCatalogChange}
@@ -1803,11 +1789,7 @@
 							{/if}
 						{:else if am}
 							<span class="line-clamp-1">
-								{!!am?.meta?.description
-									? am?.meta?.description
-									: am?.ollama?.digest
-										? `${am.id} (${am?.ollama?.digest})`
-										: am.id}
+								{am?.meta?.description || am.id}
 							</span>
 						{/if}
 					</div>

@@ -21,7 +21,7 @@
 		isParamDisabled(key) ? 'opacity-50 grayscale pointer-events-none select-none' : '';
 	const MAX_TOKENS_LIMIT = 262144;
 
-	const defaultParams = {
+	const defaultParams: Record<string, any> = {
 		// Advanced - llama.cpp compatible params only
 		seed: -1,
 		stop: null,
@@ -43,7 +43,7 @@
 		dry_base: null
 	};
 
-	export let params = defaultParams;
+	export let params: Record<string, any> = defaultParams;
 	$: if (params && (params?.max_tokens ?? null) !== null) {
 		const maxTokens = Number(params.max_tokens);
 		if (Number.isFinite(maxTokens) && maxTokens > MAX_TOKENS_LIMIT) {
@@ -841,7 +841,7 @@
 									placeholder={$i18n.t('Custom Parameter Name')}
 									value={key}
 									on:change={(e) => {
-										const newKey = e.target.value.trim();
+										const newKey = (e.currentTarget as HTMLInputElement).value.trim();
 										if (newKey && newKey !== key) {
 											params.custom_params[newKey] = params.custom_params[key];
 											delete params.custom_params[key];

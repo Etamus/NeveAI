@@ -1445,29 +1445,6 @@ function UI-Invoke([scriptblock]$sb) {
     $window.Dispatcher.Invoke([Action]$sb)
 }
 
-function UI-Log([string]$msg, [string]$kind='info') {
-    UI-Invoke {
-        $color = switch ($kind) {
-            'ok'    { '[OK] ' }
-            'warn'  { '[!]  ' }
-            'err'   { '[X]  ' }
-            'step'  { '==>  ' }
-            default { '     ' }
-        }
-        $line = "$color$msg`r`n"
-        $ctl.LogBox.AppendText($line)
-        $ctl.LogScroll.ScrollToEnd()
-    }
-}
-
-function UI-Progress([int]$val, [string]$phase) {
-    UI-Invoke {
-        $ctl.Progress.Value     = $val
-        $ctl.LblProgressTxt.Text = "$val%"
-        if ($phase) { $ctl.LblPhase.Text = $phase; $ctl.LblStep.Text = $phase }
-    }
-}
-
 function ConvertTo-ProcessArgument([string]$arg) {
     if ($null -eq $arg) { throw 'Argumento nulo.' }
     if ($arg.Length -gt 0 -and $arg -notmatch '[\s"]') { return $arg }
@@ -2331,19 +2308,11 @@ VITE_NEVEAI_BACKEND_URL=http://localhost:8080
 ENV=dev
 PORT=8080
 NEVE_SECRET_KEY=troque-esta-chave-por-algo-seguro
-NEVE_AUTH=False
 NEVE_NAME=NeveAI
-ENABLE_OLLAMA_API=False
-ENABLE_OPENAI_API=False
-ENABLE_WEB_SEARCH=False
-ENABLE_IMAGE_GENERATION=False
 ENABLE_VIDEO_GENERATION=True
 ENABLE_WEBSOCKET_SUPPORT=True
 ENABLE_COMMUNITY_SHARING=False
-ENABLE_MESSAGE_RATING=False
 BYPASS_MODEL_ACCESS_CONTROL=True
-ENABLE_SIGNUP=True
-ENABLE_LOGIN_FORM=True
 SAFE_MODE=False
 CORS_ALLOW_ORIGIN=http://localhost:8080
 USER_AGENT=NeveAI

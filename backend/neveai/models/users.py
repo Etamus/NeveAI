@@ -9,7 +9,6 @@ from neveai.env import DATABASE_USER_ACTIVE_STATUS_UPDATE_INTERVAL
 
 from neveai.models.chats import Chats
 from neveai.models.groups import Groups, GroupMember
-from neveai.models.channels import ChannelMember
 
 from neveai.utils.misc import throttle
 from neveai.utils.validate import validate_profile_image_url
@@ -29,7 +28,6 @@ from sqlalchemy import (
     cast,
 )
 from sqlalchemy import or_, case, func
-from sqlalchemy.dialects.postgresql import JSONB
 
 import datetime
 
@@ -125,32 +123,6 @@ class UserStatusModel(UserModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ApiKey(Base):
-    __tablename__ = "api_key"
-
-    id = Column(Text, primary_key=True, unique=True)
-    user_id = Column(Text, nullable=False)
-    key = Column(Text, unique=True, nullable=False)
-    data = Column(JSON, nullable=True)
-    expires_at = Column(BigInteger, nullable=True)
-    last_used_at = Column(BigInteger, nullable=True)
-    created_at = Column(BigInteger, nullable=False)
-    updated_at = Column(BigInteger, nullable=False)
-
-
-class ApiKeyModel(BaseModel):
-    id: str
-    user_id: str
-    key: str
-    data: Optional[dict] = None
-    expires_at: Optional[int] = None
-    last_used_at: Optional[int] = None
-    created_at: int  # timestamp in epoch
-    updated_at: int  # timestamp in epoch
-
-    model_config = ConfigDict(from_attributes=True)
-
-
 ####################
 # Forms
 ####################
@@ -239,24 +211,6 @@ class UserProfileImageResponse(UserNameResponse):
     profile_image_url: str
 
 
-class UserRoleUpdateForm(BaseModel):
-    id: str
-    role: str
-
-
-class UserUpdateForm(BaseModel):
-    role: str
-    name: str
-    email: str
-    profile_image_url: str
-    password: Optional[str] = None
-
-    @field_validator("profile_image_url")
-    @classmethod
-    def check_profile_image_url(cls, v: str) -> str:
-        return validate_profile_image_url(v)
-
-
 class UsersTable:
     def insert_new_user(
         self,
@@ -303,21 +257,6 @@ class UsersTable:
         except Exception:
             return None
 
-    def get_user_by_api_key(
-        self, api_key: str, db: Optional[Session] = None
-    ) -> Optional[UserModel]:
-        try:
-            with get_db_context(db) as db:
-                user = (
-                    db.query(User)
-                    .join(ApiKey, User.id == ApiKey.user_id)
-                    .filter(ApiKey.key == api_key)
-                    .first()
-                )
-                return UserModel.model_validate(user) if user else None
-        except Exception:
-            return None
-
     def get_user_by_email(
         self, email: str, db: Optional[Session] = None
     ) -> Optional[UserModel]:
@@ -328,50 +267,6 @@ class UsersTable:
                     .filter(func.lower(User.email) == email.lower())
                     .first()
                 )
-                return UserModel.model_validate(user) if user else None
-        except Exception:
-            return None
-
-    def get_user_by_oauth_sub(
-        self, provider: str, sub: str, db: Optional[Session] = None
-    ) -> Optional[UserModel]:
-        try:
-            with get_db_context(db) as db:  # type: Session
-                dialect_name = db.bind.dialect.name
-
-                query = db.query(User)
-                if dialect_name == "sqlite":
-                    query = query.filter(User.oauth.contains({provider: {"sub": sub}}))
-                elif dialect_name == "postgresql":
-                    query = query.filter(
-                        User.oauth[provider].cast(JSONB)["sub"].astext == sub
-                    )
-
-                user = query.first()
-                return UserModel.model_validate(user) if user else None
-        except Exception as e:
-            # You may want to log the exception here
-            return None
-
-    def get_user_by_scim_external_id(
-        self, provider: str, external_id: str, db: Optional[Session] = None
-    ) -> Optional[UserModel]:
-        try:
-            with get_db_context(db) as db:  # type: Session
-                dialect_name = db.bind.dialect.name
-
-                query = db.query(User)
-                if dialect_name == "sqlite":
-                    query = query.filter(
-                        User.scim.contains({provider: {"external_id": external_id}})
-                    )
-                elif dialect_name == "postgresql":
-                    query = query.filter(
-                        User.scim[provider].cast(JSONB)["external_id"].astext
-                        == external_id
-                    )
-
-                user = query.first()
                 return UserModel.model_validate(user) if user else None
         except Exception:
             return None
@@ -394,17 +289,6 @@ class UsersTable:
                         or_(
                             User.name.ilike(f"%{query_key}%"),
                             User.email.ilike(f"%{query_key}%"),
-                        )
-                    )
-
-                channel_id = filter.get("channel_id")
-                if channel_id:
-                    query = query.filter(
-                        exists(
-                            select(ChannelMember.id).where(
-                                ChannelMember.user_id == User.id,
-                                ChannelMember.channel_id == channel_id,
-                            )
                         )
                     )
 
@@ -555,24 +439,6 @@ class UsersTable:
         except Exception:
             return None
 
-    def get_user_webhook_url_by_id(
-        self, id: str, db: Optional[Session] = None
-    ) -> Optional[str]:
-        try:
-            with get_db_context(db) as db:
-                user = db.query(User).filter_by(id=id).first()
-
-                if user.settings is None:
-                    return None
-                else:
-                    return (
-                        user.settings.get("ui", {})
-                        .get("notifications", {})
-                        .get("webhook_url", None)
-                    )
-        except Exception:
-            return None
-
     def get_num_users_active_today(self, db: Optional[Session] = None) -> Optional[int]:
         with get_db_context(db) as db:
             current_timestamp = int(datetime.datetime.now().timestamp())
@@ -644,70 +510,6 @@ class UsersTable:
         except Exception:
             return None
 
-    def update_user_oauth_by_id(
-        self, id: str, provider: str, sub: str, db: Optional[Session] = None
-    ) -> Optional[UserModel]:
-        """
-        Update or insert an OAuth provider/sub pair into the user's oauth JSON field.
-        Example resulting structure:
-            {
-                "google": { "sub": "123" },
-                "github": { "sub": "abc" }
-            }
-        """
-        try:
-            with get_db_context(db) as db:
-                user = db.query(User).filter_by(id=id).first()
-                if not user:
-                    return None
-
-                # Load existing oauth JSON or create empty
-                oauth = user.oauth or {}
-
-                # Update or insert provider entry
-                oauth[provider] = {"sub": sub}
-
-                # Persist updated JSON
-                db.query(User).filter_by(id=id).update({"oauth": oauth})
-                db.commit()
-
-                return UserModel.model_validate(user)
-
-        except Exception:
-            return None
-
-    def update_user_scim_by_id(
-        self,
-        id: str,
-        provider: str,
-        external_id: str,
-        db: Optional[Session] = None,
-    ) -> Optional[UserModel]:
-        """
-        Update or insert a SCIM provider/external_id pair into the user's scim JSON field.
-        Example resulting structure:
-            {
-                "microsoft": { "external_id": "abc" },
-                "okta": { "external_id": "def" }
-            }
-        """
-        try:
-            with get_db_context(db) as db:
-                user = db.query(User).filter_by(id=id).first()
-                if not user:
-                    return None
-
-                scim = user.scim or {}
-                scim[provider] = {"external_id": external_id}
-
-                db.query(User).filter_by(id=id).update({"scim": scim})
-                db.commit()
-
-                return UserModel.model_validate(user)
-
-        except Exception:
-            return None
-
     def update_user_by_id(
         self, id: str, updated: dict, db: Optional[Session] = None
     ) -> Optional[UserModel]:
@@ -765,49 +567,6 @@ class UsersTable:
                 return True
             else:
                 return False
-        except Exception:
-            return False
-
-    def get_user_api_key_by_id(
-        self, id: str, db: Optional[Session] = None
-    ) -> Optional[str]:
-        try:
-            with get_db_context(db) as db:
-                api_key = db.query(ApiKey).filter_by(user_id=id).first()
-                return api_key.key if api_key else None
-        except Exception:
-            return None
-
-    def update_user_api_key_by_id(
-        self, id: str, api_key: str, db: Optional[Session] = None
-    ) -> bool:
-        try:
-            with get_db_context(db) as db:
-                db.query(ApiKey).filter_by(user_id=id).delete()
-                db.commit()
-
-                now = int(time.time())
-                new_api_key = ApiKey(
-                    id=f"key_{id}",
-                    user_id=id,
-                    key=api_key,
-                    created_at=now,
-                    updated_at=now,
-                )
-                db.add(new_api_key)
-                db.commit()
-
-                return True
-
-        except Exception:
-            return False
-
-    def delete_user_api_key_by_id(self, id: str, db: Optional[Session] = None) -> bool:
-        try:
-            with get_db_context(db) as db:
-                db.query(ApiKey).filter_by(user_id=id).delete()
-                db.commit()
-                return True
         except Exception:
             return False
 

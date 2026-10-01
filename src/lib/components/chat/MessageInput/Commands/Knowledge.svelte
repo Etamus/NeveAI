@@ -60,7 +60,7 @@
 		const item = document.querySelector(`[data-selected="true"]`);
 		if (item) {
 			// click the item
-			item.click();
+			(item as HTMLElement).click();
 		}
 	};
 

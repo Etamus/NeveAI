@@ -44,7 +44,6 @@
 	};
 
 	// This method will be called from the suggestion renderer
-	// @ts-ignore
 	export function _onKeyDown(event: KeyboardEvent) {
 		return onKeyDown(event);
 	}

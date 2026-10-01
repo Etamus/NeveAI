@@ -48,7 +48,7 @@
 	export let selected = false;
 	export let shiftKey = false;
 
-	export let onDragEnd = () => {};
+	export let onDragEnd: (event: DragEvent) => void = () => {};
 
 	function formatTimeAgo(timestamp: number): string {
 		const now = Date.now();
@@ -70,8 +70,10 @@
 	}
 
 	let chat = null;
+	let draggable = true;
 
 	let mouseOver = false;
+	let chatMenuOpen = false;
 
 	const loadChat = async () => {
 		if (!chat) {
@@ -276,7 +278,7 @@
 		await tick();
 
 		setTimeout(() => {
-			const input = document.getElementById(`chat-title-input-${id}`);
+			const input = document.getElementById(`chat-title-input-${id}`) as HTMLInputElement | null;
 			if (input) {
 				input.focus();
 				input.select();
@@ -381,7 +383,7 @@
 			draggable="false"
 		>
 			<div class="flex self-center flex-1 w-full min-w-0">
-				<div dir="auto" class="text-left self-center overflow-hidden w-full h-[20px] truncate {$activeChatIds.has(id) && !mouseOver && !selected && id !== $chatId ? 'sidebar-chat-title-fade' : ''}">
+				<div dir="auto" class="text-left self-center overflow-hidden w-full h-[20px] truncate {$activeChatIds.has(id) && !mouseOver && !chatMenuOpen && !selected && id !== $chatId ? 'sidebar-chat-title-fade' : ''}">
 					{title}
 				</div>
 			</div>
@@ -430,13 +432,14 @@
 				</Tooltip>
 			</div>
 		{:else}
-			{#if $activeChatIds.has(id) && !mouseOver}
+			{#if $activeChatIds.has(id) && !mouseOver && !chatMenuOpen}
 				<div class="flex self-center z-10 items-center">
 					<Spinner className="size-3" />
 				</div>
 			{:else}
 			<div class="flex self-center z-10 items-end">
 				<ChatMenu
+					bind:show={chatMenuOpen}
 					chatId={id}
 					cloneChatHandler={() => {
 						cloneChatHandler(id);

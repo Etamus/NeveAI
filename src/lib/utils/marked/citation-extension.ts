@@ -1,4 +1,4 @@
-export function citationExtension() {
+function citationExtension() {
 	return {
 		name: 'citation',
 		level: 'inline' as const,

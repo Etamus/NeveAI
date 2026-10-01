@@ -11,8 +11,6 @@
 
 	const dispatch = createEventDispatcher();
 
-	import { createNewFeedback, getFeedbackById, updateFeedbackById } from '$lib/apis/evaluations';
-	import { getChatById } from '$lib/apis/chats';
 
 	import {
 		audioQueue,
@@ -23,14 +21,11 @@
 		TTSWorker,
 		user
 	} from '$lib/stores';
-	import { synthesizeSpeech } from '$lib/apis/audio';
-	import { imageGenerations } from '$lib/apis/images';
 	import {
 		copyToClipboard as _copyToClipboard,
 		approximateToHumanReadable,
 		getMessageContentParts,
 		sanitizeResponseContent,
-		createMessagesList,
 		formatDate,
 		removeDetails,
 		removeAllDetails,
@@ -43,13 +38,12 @@
 	import Skeleton from './Skeleton.svelte';
 	import Image from '$lib/components/common/Image.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import RateComment from './RateComment.svelte';
 	import WebSearchResults from './ResponseMessage/WebSearchResults.svelte';
 	import Sparkles from '$lib/components/icons/Sparkles.svelte';
 
 	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 
-	import Error from './Error.svelte';
+	import ErrorDisplay from './Error.svelte';
 	import Citations from './Citations.svelte';
 	import CodeExecutions from './CodeExecutions.svelte';
 	import ContentRenderer from './ContentRenderer.svelte';
@@ -64,10 +58,12 @@
 	import GeneratedMediaProgress from './GeneratedMediaProgress.svelte';
 
 	interface MessageType {
+		[key: string]: any;
 		id: string;
 		model: string;
 		content: string;
 		files?: {
+			[key: string]: any;
 			id?: string;
 			type: string;
 			url: string;
@@ -78,6 +74,7 @@
 		timestamp: number;
 		role: string;
 		statusHistory?: {
+			hidden?: boolean;
 			done: boolean;
 			action: string;
 			description: string;
@@ -128,9 +125,9 @@
 	}
 
 	export let chatId = '';
-	export let history;
-	export let messageId;
-	export let selectedModels = [];
+	export let history: any;
+	export let messageId: string;
+	export let selectedModels: any[] = [];
 
 	let message: MessageType = structuredClone(history.messages[messageId]);
 	$: if (history.messages) {
@@ -147,7 +144,7 @@
 		}
 	}
 
-	export let siblings;
+	export let siblings: any[] = [];
 
 	export let setInputText: Function = () => {};
 	export let gotoMessage: Function = () => {};
@@ -172,13 +169,38 @@
 	export let editCodeBlock = false;
 	export let topPadding = false;
 
-	let citationsElement: HTMLDivElement;
+	let ctrlPressed = false;
+	$: currentMessageIndex = Math.max(
+		0,
+		(siblings ?? []).findIndex((sibling: any) => sibling?.id === messageId)
+	);
+
+	const updateControlKey = (event: KeyboardEvent) => {
+		ctrlPressed = event.ctrlKey || event.metaKey;
+	};
+	const clearControlKey = () => {
+		ctrlPressed = false;
+	};
+
+	onMount(() => {
+		window.addEventListener('keydown', updateControlKey);
+		window.addEventListener('keyup', updateControlKey);
+		window.addEventListener('blur', clearControlKey);
+	});
+
+	onDestroy(() => {
+		window.removeEventListener('keydown', updateControlKey);
+		window.removeEventListener('keyup', updateControlKey);
+		window.removeEventListener('blur', clearControlKey);
+	});
+
+	let citationsElement: any;
 
 	let contentContainerElement: HTMLDivElement;
 	let buttonsContainerElement: HTMLDivElement;
 	let showDeleteConfirm = false;
 
-	let model = null;
+	let model: any = null;
 	$: model = $models.find((m) => m.id === message.model);
 
 	let edit = false;
@@ -192,7 +214,6 @@
 
 	let loadingSpeech = false;
 
-	let showRateComment = false;
 	$: isGeneratedImageResponse = Boolean(
 		message?.files?.some(
 			(file) => file.type === 'image' || (file?.content_type ?? '').startsWith('image/')
@@ -320,129 +341,72 @@
 
 		speaking = true;
 		const content = removeAllDetails(message.content);
-
-		// Get voice: model-specific > user settings > config default
 		const getVoiceId = () => {
-			// Check for model-specific TTS voice first
-			if (model?.info?.meta?.tts?.voice) {
-				return model.info.meta.tts.voice;
-			}
-			// Fall back to user settings or config default
+			if (model?.info?.meta?.tts?.voice) return model.info.meta.tts.voice;
 			if ($settings?.audio?.tts?.defaultVoice === $config.audio.tts.voice) {
 				return $settings?.audio?.tts?.voice ?? $config?.audio?.tts?.voice;
 			}
 			return $config?.audio?.tts?.voice;
 		};
 
-		if ($config.audio.tts.engine === '') {
-			let voices = [];
-			const getVoicesLoop = setInterval(() => {
-				voices = speechSynthesis.getVoices();
-				if (voices.length > 0) {
-					clearInterval(getVoicesLoop);
-
-					const voiceId = getVoiceId();
-					const voice = voices?.filter((v) => v.voiceURI === voiceId)?.at(0) ?? undefined;
-
-					console.log(voice);
-
-					const speech = new SpeechSynthesisUtterance(content);
-					speech.rate = $settings.audio?.tts?.playbackRate ?? 1;
-
-					console.log(speech);
-
-					speech.onend = () => {
-						speaking = false;
-						if ($settings.conversationMode) {
-							document.getElementById('voice-input-button')?.click();
-						}
-					};
-
-					if (voice) {
-						speech.voice = voice;
-					}
-
-					speechSynthesis.speak(speech);
-				}
-			}, 100);
-		} else {
+		if ($settings.audio?.tts?.engine === 'browser-kokoro') {
 			$audioQueue.setId(`${message.id}`);
 			$audioQueue.setPlaybackRate($settings.audio?.tts?.playbackRate ?? 1);
 			$audioQueue.onStopped = () => {
 				speaking = false;
 				speakingIdx = undefined;
 			};
-
 			loadingSpeech = true;
 			const messageContentParts: string[] = getMessageContentParts(
 				content,
 				$config?.audio?.tts?.split_on ?? 'punctuation'
 			);
-
 			if (!messageContentParts.length) {
-				console.log('No content to speak');
 				toast.info($i18n.t('No content to speak'));
-
 				speaking = false;
 				loadingSpeech = false;
 				return;
 			}
-
-			const voiceId = getVoiceId();
-			console.debug('Prepared message content for TTS', messageContentParts, 'voice:', voiceId);
-
-			if ($settings.audio?.tts?.engine === 'browser-kokoro') {
-				if (!$TTSWorker) {
-					await TTSWorker.set(
-						new KokoroWorker({
-							dtype: $settings.audio?.tts?.engineConfig?.dtype ?? 'fp32'
-						})
-					);
-
-					await $TTSWorker.init();
-				}
-
-				for (const [idx, sentence] of messageContentParts.entries()) {
-					const url = await $TTSWorker
-						.generate({
-							text: sentence,
-							voice: voiceId
-						})
-						.catch((error) => {
-							console.error(error);
-							toast.error(`${error}`);
-
-							speaking = false;
-							loadingSpeech = false;
-						});
-
-					if (url && speaking) {
-						$audioQueue.enqueue(url);
+			if (!$TTSWorker) {
+				await TTSWorker.set(
+					new KokoroWorker($settings.audio?.tts?.engineConfig?.dtype ?? 'fp32')
+				);
+				await $TTSWorker.init();
+			}
+			for (const sentence of messageContentParts) {
+				const url = await $TTSWorker
+					.generate({ text: sentence, voice: getVoiceId() })
+					.catch((error) => {
+						console.error(error);
+						toast.error(`${error}`);
+						speaking = false;
 						loadingSpeech = false;
-					}
-				}
-			} else {
-				for (const [idx, sentence] of messageContentParts.entries()) {
-					const res = await synthesizeSpeech(localStorage.token, voiceId, sentence).catch(
-						(error) => {
-							console.error(error);
-							toast.error(`${error}`);
-
-							speaking = false;
-							loadingSpeech = false;
-						}
-					);
-
-					if (res && speaking) {
-						const blob = await res.blob();
-						const url = URL.createObjectURL(blob);
-
-						$audioQueue.enqueue(url);
-						loadingSpeech = false;
-					}
+					});
+				if (url && speaking) {
+					$audioQueue.enqueue(url);
+					loadingSpeech = false;
 				}
 			}
+			return;
 		}
+
+		let voices = [];
+		const getVoicesLoop = setInterval(() => {
+			voices = speechSynthesis.getVoices();
+			if (voices.length === 0) return;
+			clearInterval(getVoicesLoop);
+			const voice = voices.find((item) => item.voiceURI === getVoiceId());
+			const speech = new SpeechSynthesisUtterance(content);
+			speech.rate = $settings.audio?.tts?.playbackRate ?? 1;
+			speech.onend = () => {
+				speaking = false;
+				if ($settings.conversationMode) {
+					document.getElementById('voice-input-button')?.click();
+				}
+			};
+			if (voice) speech.voice = voice;
+			speechSynthesis.speak(speech);
+		}, 100);
 	};
 
 	let preprocessedDetailsCache = [];
@@ -505,100 +469,6 @@
 		await tick();
 	};
 
-	let feedbackLoading = false;
-
-	const feedbackHandler = async (rating: number | null = null, details: object | null = null) => {
-		feedbackLoading = true;
-		console.log('Feedback', rating, details);
-
-		const updatedMessage = {
-			...message,
-			annotation: {
-				...(message?.annotation ?? {}),
-				...(rating !== null ? { rating: rating } : {}),
-				...(details ? details : {})
-			}
-		};
-
-		const chat = await getChatById(localStorage.token, chatId).catch((error) => {
-			toast.error(`${error}`);
-		});
-		if (!chat) {
-			return;
-		}
-
-		const messages = createMessagesList(history, message.id);
-
-		let feedbackItem = {
-			type: 'rating',
-			data: {
-				...(updatedMessage?.annotation ? updatedMessage.annotation : {}),
-				model_id: message?.selectedModelId ?? message.model,
-				...(history.messages[message.parentId].childrenIds.length > 1
-					? {
-							sibling_model_ids: history.messages[message.parentId].childrenIds
-								.filter((id) => id !== message.id)
-								.map((id) => history.messages[id]?.selectedModelId ?? history.messages[id].model)
-						}
-					: {})
-			},
-			meta: {
-				arena: message ? message.arena : false,
-				model_id: message.model,
-				message_id: message.id,
-				message_index: messages.length,
-				chat_id: chatId
-			},
-			snapshot: {
-				chat: chat
-			}
-		};
-
-		const baseModels = [
-			feedbackItem.data.model_id,
-			...(feedbackItem.data.sibling_model_ids ?? [])
-		].reduce((acc, modelId) => {
-			const model = $models.find((m) => m.id === modelId);
-			if (model) {
-				acc[model.id] = model?.info?.base_model_id ?? null;
-			} else {
-				// Log or handle cases where corresponding model is not found
-				console.warn(`Model with ID ${modelId} not found`);
-			}
-			return acc;
-		}, {});
-		feedbackItem.meta.base_models = baseModels;
-
-		let feedback = null;
-		if (message?.feedbackId) {
-			feedback = await updateFeedbackById(
-				localStorage.token,
-				message.feedbackId,
-				feedbackItem
-			).catch((error) => {
-				toast.error(`${error}`);
-			});
-		} else {
-			feedback = await createNewFeedback(localStorage.token, feedbackItem).catch((error) => {
-				toast.error(`${error}`);
-			});
-
-			if (feedback) {
-				updatedMessage.feedbackId = feedback.id;
-			}
-		}
-
-		console.log(updatedMessage);
-		saveMessage(message.id, updatedMessage);
-
-		await tick();
-
-		if (!details) {
-			showRateComment = true;
-		}
-
-		feedbackLoading = false;
-	};
 
 	const deleteMessageHandler = async () => {
 		deleteMessage(message.id);
@@ -813,9 +683,10 @@
 									on:input={(e) => {
 										const messagesContainer = document.getElementById('messages-container');
 										const savedScrollTop = messagesContainer?.scrollTop;
+										const textarea = e.currentTarget as HTMLTextAreaElement;
 
-										e.target.style.height = '';
-										e.target.style.height = `${e.target.scrollHeight}px`;
+										textarea.style.height = '';
+										textarea.style.height = `${textarea.scrollHeight}px`;
 
 										if (messagesContainer) messagesContainer.scrollTop = savedScrollTop;
 									}}
@@ -912,7 +783,9 @@
 							{/if}
 
 							{#if message?.error}
-								<Error content={message?.error?.content ?? message.content} />
+								<ErrorDisplay
+									content={typeof message.error === 'object' ? message.error.content : message.content}
+								/>
 							{/if}
 
 							{#if (message?.sources || message?.citations) && (model?.info?.meta?.capabilities?.citations ?? true)}
@@ -1079,7 +952,6 @@
 												aria-label={$i18n.t('Regenerate')}
 												class="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-full dark:hover:text-white hover:text-black transition regenerate-response-button"
 												on:click={() => {
-													showRateComment = false;
 													regenerateResponse(message);
 													(model?.actions ?? []).forEach((action) => {
 														dispatch('action', {
@@ -1143,78 +1015,6 @@
 									{/if}
 								{/if}
 								{#if !readOnly && !isGeneratedMediaResponse}
-									{#if !$temporaryChatEnabled && ($config?.features.enable_message_rating ?? true) && ($user?.role === 'admin' || ($user?.permissions?.chat?.rate_response ?? true))}
-										<Tooltip content={$i18n.t('Good Response')} placement="bottom">
-											<button
-												aria-label={$i18n.t('Good Response')}
-												class="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-full {(
-													message?.annotation?.rating ?? ''
-												).toString() === '1'
-													? 'bg-gray-100 dark:bg-gray-800'
-													: ''} dark:hover:text-white hover:text-black transition disabled:cursor-progress disabled:hover:bg-transparent"
-												disabled={feedbackLoading}
-												on:click={async () => {
-													await feedbackHandler(1);
-													window.setTimeout(() => {
-														document
-															.getElementById(`message-feedback-${message.id}`)
-															?.scrollIntoView();
-													}, 0);
-												}}
-											>
-												<svg
-													aria-hidden="true"
-													stroke="currentColor"
-													fill="none"
-													stroke-width="2.3"
-													viewBox="0 0 24 24"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													class="w-4 h-4"
-													xmlns="http://www.w3.org/2000/svg"
-												>
-													<path
-														d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"
-													/>
-												</svg>
-											</button>
-										</Tooltip>
-										<Tooltip content={$i18n.t('Bad Response')} placement="bottom">
-											<button
-												aria-label={$i18n.t('Bad Response')}
-												class="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-full {(
-													message?.annotation?.rating ?? ''
-												).toString() === '-1'
-													? 'bg-gray-100 dark:bg-gray-800'
-													: ''} dark:hover:text-white hover:text-black transition disabled:cursor-progress disabled:hover:bg-transparent"
-												disabled={feedbackLoading}
-												on:click={async () => {
-													await feedbackHandler(-1);
-													window.setTimeout(() => {
-														document
-															.getElementById(`message-feedback-${message.id}`)
-															?.scrollIntoView();
-													}, 0);
-												}}
-											>
-												<svg
-													aria-hidden="true"
-													stroke="currentColor"
-													fill="none"
-													stroke-width="2.3"
-													viewBox="0 0 24 24"
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													class="w-4 h-4"
-													xmlns="http://www.w3.org/2000/svg"
-												>
-													<path
-														d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"
-													/>
-												</svg>
-											</button>
-										</Tooltip>
-									{/if}
 									{#if $user?.role === 'admin' || ($user?.permissions?.chat?.delete_message ?? true)}
 										{#if siblings.length > 1}
 											<Tooltip content={$i18n.t('Delete')} placement="bottom">
@@ -1277,17 +1077,6 @@
 							{/if}
 						{/if}
 					</div>
-					{#if message.done && showRateComment}
-						<RateComment
-							bind:message
-							bind:show={showRateComment}
-							on:save={async (e) => {
-								await feedbackHandler(null, {
-									...e.detail
-								});
-							}}
-						/>
-					{/if}
 				{/if}
 			</div>
 		</div>

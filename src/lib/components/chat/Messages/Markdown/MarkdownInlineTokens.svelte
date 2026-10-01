@@ -17,8 +17,6 @@
 	import HtmlToken from './HTMLToken.svelte';
 	import TextToken from './MarkdownInlineTokens/TextToken.svelte';
 	import CodespanToken from './MarkdownInlineTokens/CodespanToken.svelte';
-	import MentionToken from './MarkdownInlineTokens/MentionToken.svelte';
-	import NoteLinkToken from './MarkdownInlineTokens/NoteLinkToken.svelte';
 	import SourceToken from './SourceToken.svelte';
 
 	export let id: string;
@@ -26,24 +24,6 @@
 	export let tokens: Token[];
 	export let sourceIds = [];
 	export let onSourceClick: Function = () => {};
-
-	/**
-	 * Check if a URL is a same-origin note link and return the note ID if so.
-	 */
-	const getNoteIdFromHref = (href: string): string | null => {
-		try {
-			const url = new URL(href, window.location.origin);
-			if (url.origin === window.location.origin) {
-				const match = url.pathname.match(/^\/notes\/([^/]+)$/);
-				if (match) {
-					return match[1];
-				}
-			}
-		} catch {
-			// Invalid URL
-		}
-		return null;
-	};
 
 	/**
 	 * Handle link clicks - intercept same-origin app URLs for in-app navigation
@@ -54,9 +34,7 @@
 			// Check if same origin and an in-app route
 			if (
 				url.origin === window.location.origin &&
-				(url.pathname.startsWith('/notes/') ||
-					url.pathname.startsWith('/c/') ||
-					url.pathname.startsWith('/channels/'))
+				url.pathname.startsWith('/c/')
 			) {
 				e.preventDefault();
 				goto(url.pathname + url.search + url.hash);
@@ -71,12 +49,9 @@
 	{#if token.type === 'escape'}
 		{unescapeHtml(token.text)}
 	{:else if token.type === 'html'}
-		<HtmlToken {id} {token} {onSourceClick} />
+		<HtmlToken {id} {token} />
 	{:else if token.type === 'link'}
-		{@const noteId = getNoteIdFromHref(token.href)}
-		{#if noteId}
-			<NoteLinkToken {noteId} href={token.href} />
-		{:else if token.tokens}
+		{#if token.tokens}
 			<a
 				href={token.href}
 				target="_blank"
@@ -119,13 +94,13 @@
 			frameborder="0"
 			on:load={(e) => {
 				try {
-					e.currentTarget.style.height =
-						e.currentTarget.contentWindow.document.body.scrollHeight + 20 + 'px';
+					const iframe = e.currentTarget as HTMLIFrameElement;
+					iframe.style.height = iframe.contentWindow!.document.body.scrollHeight + 20 + 'px';
 				} catch {}
 			}}
 		></iframe>
 	{:else if token.type === 'mention'}
-		<MentionToken {token} />
+		<TextToken {token} {done} />
 	{:else if token.type === 'footnote'}
 		{@html DOMPurify.sanitize(
 			`<sup class="footnote-ref footnote-ref-text">${token.escapedText}</sup>`

@@ -153,7 +153,7 @@
 																id="input-variable-{idx}"
 																on:input={(e) => {
 																	// Convert the color value to uppercase immediately
-																	variableValues[variable] = e.target.value.toUpperCase();
+													variableValues[variable] = (e.currentTarget as HTMLInputElement).value.toUpperCase();
 																}}
 																{...variableAttributes}
 															/>

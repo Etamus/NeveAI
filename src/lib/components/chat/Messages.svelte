@@ -36,21 +36,21 @@
 	export let chatId = '';
 	export let user = $_user;
 
-	export let prompt;
-	export let history = {};
-	export let selectedModels;
-	export let atSelectedModel;
+	export let prompt: any = '';
+	export let history: any = {};
+	export let selectedModels: any[] = [];
+	export let atSelectedModel: any = null;
 
-	let messages = [];
+	let messages: any[] = [];
 
 	export let setInputText: Function = () => {};
 
 	export let sendMessage: Function;
 	export let continueResponse: Function;
 	export let regenerateResponse: Function;
-	export let mergeResponses: Function;
+	export let mergeResponses: Function = () => {};
 
-	export let chatActionHandler: Function;
+	export let chatActionHandler: Function = () => {};
 	export let showMessage: Function = () => {};
 	export let submitMessage: Function = () => {};
 	export let addMessages: Function = () => {};
@@ -98,7 +98,7 @@
 		return null;
 	};
 
-	const restoreTopVisibleMessageAnchor = (anchor) => {
+	const restoreTopVisibleMessageAnchor = (anchor: any) => {
 		const element = getMessagesContainer();
 		if (!element || !anchor) return;
 
@@ -147,11 +147,11 @@
 		messagesLoading = false;
 	};
 
-	let pendingRebuild = null;
-	let lastCurrentId = null;
+	let pendingRebuild: number | null = null;
+	let lastCurrentId: string | null = null;
 
 	const buildMessages = () => {
-		let _messages = [];
+		let _messages: any[] = [];
 
 		let message = history.messages[history.currentId];
 		const visitedMessageIds = new Set();
@@ -172,7 +172,7 @@
 
 	// Throttle message list rebuilds to once per animation frame during streaming.
 	// Structural changes (currentId change) always rebuild immediately.
-	const handleHistoryChange = (currentId, _messages) => {
+	const handleHistoryChange = (currentId: string | null, _messages: any) => {
 		if (!currentId) {
 			messages = [];
 			return;
@@ -225,13 +225,13 @@
 		}
 	};
 
-	const gotoMessage = async (message, idx) => {
+	const gotoMessage = async (message: any, idx: number) => {
 		// Determine the correct sibling list (either parent's children or root messages)
 		let siblings;
 		if (message.parentId !== null) {
 			siblings = history.messages[message.parentId].childrenIds;
 		} else {
-			siblings = Object.values(history.messages)
+			siblings = (Object.values(history.messages) as any[])
 				.filter((msg) => msg.parentId === null)
 				.map((msg) => msg.id);
 		}
@@ -284,7 +284,7 @@
 				history.currentId = messageId;
 			}
 		} else {
-			let childrenIds = Object.values(history.messages)
+			let childrenIds = (Object.values(history.messages) as any[])
 				.filter((message) => message.parentId === null)
 				.map((message) => message.id);
 			let messageId = childrenIds[Math.max(childrenIds.indexOf(message.id) - 1, 0)];
@@ -334,7 +334,7 @@
 				history.currentId = messageId;
 			}
 		} else {
-			let childrenIds = Object.values(history.messages)
+			let childrenIds = (Object.values(history.messages) as any[])
 				.filter((message) => message.parentId === null)
 				.map((message) => message.id);
 			let messageId =

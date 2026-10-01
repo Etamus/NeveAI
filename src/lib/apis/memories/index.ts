@@ -90,37 +90,6 @@ export const updateMemoryById = async (token: string, id: string, content: strin
 	return res;
 };
 
-export const queryMemory = async (token: string, content: string) => {
-	let error = null;
-
-	const res = await fetch(`${NEVEAI_API_BASE_URL}/memories/query`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			authorization: `Bearer ${token}`
-		},
-		body: JSON.stringify({
-			content: content
-		})
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			error = err.detail;
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
 export const deleteMemoryById = async (token: string, id: string) => {
 	let error = null;
 

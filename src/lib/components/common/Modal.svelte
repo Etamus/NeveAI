@@ -84,9 +84,10 @@
 		appendModalElement();
 		focusTrap = FocusTrap.createFocusTrap(modalElement, {
 			allowOutsideClick: (e) => {
+				const target = e.target as Element;
 				return (
-					e.target.closest('[data-sonner-toast]') !== null ||
-					e.target.closest('.modal-content') === null
+					target.closest('[data-sonner-toast]') !== null ||
+					target.closest('.modal-content') === null
 				);
 			},
 			fallbackFocus: modalElement

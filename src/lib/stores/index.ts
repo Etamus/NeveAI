@@ -53,17 +53,13 @@ export const chatCodeExecutionEnabled = writable(false);
 // Electron App
 export const isApp = writable(false);
 export const appInfo = writable(null);
-export const appData = writable(null);
 
 // Frontend
-export const MODEL_DOWNLOAD_POOL = writable({});
 
 export const mobile = writable(false);
 
 export const socket: Writable<null | Socket> = writable(null);
-export const activeUserIds: Writable<null | string[]> = writable(null);
 export const activeChatIds: Writable<Set<string>> = writable(new Set());
-export const USAGE_POOL: Writable<null | string[]> = writable(null);
 
 export const theme = writable('system');
 
@@ -71,9 +67,6 @@ export const TTSWorker = writable(null);
 
 export const chatId = writable('');
 export const chatTitle = writable('');
-
-export const channels = writable([]);
-export const channelId = writable(null);
 
 export const chats = writable(null);
 export const pinnedChats = writable([]);
@@ -86,8 +79,6 @@ export const models: Writable<Model[]> = writable([]);
 
 export const knowledge: Writable<null | Document[]> = writable(null);
 export const tools = writable(null);
-export const skills = writable(null);
-export const functions = writable(null);
 
 export const toolServers = writable([]);
 export const terminalServers = writable([]);
@@ -108,19 +99,14 @@ export const showSearch = writable(false);
 export const showSettings = writable(false);
 export const showSettingsTab = writable('');
 export const showSettingsModelId = writable('');
-export const showAdminModelsModal = writable(false);
 export const showLocalModelsModal = writable(false);
-export const showShortcuts = writable(false);
-export const showArchivedChats = writable(false);
-export const showChangelog = writable(false);
+const showChangelog = writable(false);
 
 export const showControls = writable(false);
 export const showModelSettings = writable(false);
 export const showEmbeds = writable(false);
-export const showOverview = writable(false);
 export const showArtifacts = writable(false);
 export const showCallOverlay = writable(false);
-export const showFileNav = writable(false);
 export const showFileNavPath: Writable<string | null> = writable(null);
 export const showFileNavDir: Writable<string | null> = writable(null);
 export const selectedTerminalId: Writable<string | null> = writable(null);
@@ -137,59 +123,28 @@ export const currentChatPage = writable(1);
 export const isLastActiveTab = writable(true);
 export const playingNotificationSound = writable(false);
 
-export type Model = OpenAIModel | OllamaModel;
+export type Model = OpenAIModel;
 
 type BaseModel = {
+	[key: string]: any;
 	id: string;
 	name: string;
 	info?: ModelConfig;
-	owned_by: 'ollama' | 'openai' | 'arena';
+	owned_by: string;
 };
 
-export interface OpenAIModel extends BaseModel {
-	owned_by: 'openai';
+interface OpenAIModel extends BaseModel {
+	owned_by: string;
 	external: boolean;
 	source?: string;
 }
 
-export interface OllamaModel extends BaseModel {
-	owned_by: 'ollama';
-	details: OllamaModelDetails;
-	size: number;
-	description: string;
-	model: string;
-	modified_at: string;
-	digest: string;
-	ollama?: {
-		name?: string;
-		model?: string;
-		modified_at: string;
-		size?: number;
-		digest?: string;
-		details?: {
-			parent_model?: string;
-			format?: string;
-			family?: string;
-			families?: string[];
-			parameter_size?: string;
-			quantization_level?: string;
-		};
-		urls?: number[];
-	};
-}
-
-type OllamaModelDetails = {
-	parent_model: string;
-	format: string;
-	family: string;
-	families: string[] | null;
-	parameter_size: string;
-	quantization_level: string;
-};
-
 type Settings = {
-	pinnedModels?: never[];
-	toolServers?: never[];
+	[key: string]: any;
+	pinnedModels?: any[];
+	toolServers?: any[];
+	terminalServers?: any[];
+	directConnections?: any[];
 	detectArtifacts?: boolean;
 	showUpdateToast?: boolean;
 	showChangelog?: boolean;
@@ -234,7 +189,7 @@ type Settings = {
 	title?: TitleSettings;
 	showChatTitleInTab?: boolean;
 	splitLargeDeltas?: boolean;
-	chatDirection?: 'LTR' | 'RTL' | 'auto';
+	chatDirection?: 'ltr' | 'rtl' | 'auto';
 	ctrlEnterToSend?: boolean;
 	renderMarkdownInPreviews?: boolean;
 
@@ -279,6 +234,7 @@ type Document = {
 };
 
 type Config = {
+	[key: string]: any;
 	license_metadata: any;
 	status: boolean;
 	name: string;
@@ -287,15 +243,13 @@ type Config = {
 	default_models: string;
 	default_prompt_suggestions: PromptSuggestion[];
 	features: {
+		[key: string]: any;
 		auth: boolean;
 		auth_trusted_header: boolean;
 		enable_api_keys: boolean;
 		enable_signup: boolean;
 		enable_login_form: boolean;
 		enable_web_search?: boolean;
-		enable_google_drive_integration: boolean;
-		enable_onedrive_integration: boolean;
-		enable_image_generation: boolean;
 		enable_stable_diffusion?: boolean;
 		enable_music_generation?: boolean;
 		enable_video_generation?: boolean;
@@ -315,6 +269,7 @@ type Config = {
 		};
 	};
 	ui?: {
+		[key: string]: any;
 		pending_user_overlay_title?: string;
 		pending_user_overlay_content?: string;
 	};
@@ -326,6 +281,7 @@ type PromptSuggestion = {
 };
 
 export type SessionUser = {
+	[key: string]: any;
 	permissions: any;
 	id: string;
 	email: string;

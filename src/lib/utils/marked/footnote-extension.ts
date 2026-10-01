@@ -8,7 +8,7 @@ function escapeHtml(s: string) {
 	);
 }
 
-export function footnoteExtension() {
+function footnoteExtension() {
 	return {
 		name: 'footnote',
 		level: 'inline' as const,

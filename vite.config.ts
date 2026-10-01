@@ -2,7 +2,6 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 
 import { viteStaticCopy } from 'vite-plugin-static-copy';
-import { visualizer } from 'rollup-plugin-visualizer';
 
 export default defineConfig({
 	plugins: [
@@ -15,12 +14,6 @@ export default defineConfig({
 					dest: 'wasm'
 				}
 			]
-		}),
-		visualizer({
-			filename: 'build/stats.html',
-			open: false,
-			gzipSize: true,
-			brotliSize: true
 		})
 	],
 	define: {
@@ -50,7 +43,6 @@ export default defineConfig({
 		watch: {
 			ignored: [
 				'**/backend/**',
-				'**/cypress/**',
 				'**/test/**',
 				'**/static/pyodide/**',
 				'**/static/sql.js/**',
@@ -75,19 +67,11 @@ export default defineConfig({
 				changeOrigin: true,
 				ws: true
 			},
-			'/ollama': {
-				target: 'http://localhost:8080',
-				changeOrigin: true
-			},
 			'/openai': {
 				target: 'http://localhost:8080',
 				changeOrigin: true
 			},
 			'/audio': {
-				target: 'http://localhost:8080',
-				changeOrigin: true
-			},
-			'/images': {
 				target: 'http://localhost:8080',
 				changeOrigin: true
 			},

@@ -187,7 +187,7 @@
 		iframeElement.contentWindow.addEventListener(
 			'click',
 			function (e) {
-				const target = e.target.closest('a');
+				const target = (e.target as Element).closest('a') as HTMLAnchorElement | null;
 				if (target && target.href) {
 					e.preventDefault();
 					const url = new URL(target.href, iframeElement.baseURI);

@@ -1,5 +1,12 @@
 export class AudioQueue {
-	constructor(audioElement) {
+	audio: HTMLAudioElement;
+	queue: string[];
+	current: string | null;
+	id: string | null;
+	_onEnded: () => void;
+	onStopped: ((detail: { event: string; id: string | null }) => void) | null;
+
+	constructor(audioElement: HTMLAudioElement) {
 		this.audio = audioElement;
 		this.queue = [];
 		this.current = null;
@@ -11,7 +18,7 @@ export class AudioQueue {
 		this.onStopped = null; // optional callback
 	}
 
-	setId(newId) {
+	setId(newId: string | null) {
 		console.log('Setting audio queue ID to:', newId);
 		if (this.id !== newId) {
 			this.stop();
@@ -20,12 +27,12 @@ export class AudioQueue {
 		}
 	}
 
-	setPlaybackRate(rate) {
+	setPlaybackRate(rate: number) {
 		console.log('Setting audio playback rate to:', rate);
 		this.audio.playbackRate = rate;
 	}
 
-	enqueue(url) {
+	enqueue(url: string) {
 		console.log('Enqueuing audio URL:', url);
 		this.queue.push(url);
 
@@ -44,7 +51,7 @@ export class AudioQueue {
 	}
 
 	next() {
-		this.current = this.queue.shift();
+		this.current = this.queue.shift() ?? null;
 		if (this.current) {
 			this.audio.src = this.current;
 			this.audio.play();
@@ -68,6 +75,5 @@ export class AudioQueue {
 		this.audio.removeEventListener('ended', this._onEnded);
 		this.stop();
 		this.onStopped = null;
-		this.audio = null;
 	}
 }

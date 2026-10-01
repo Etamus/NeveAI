@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { config, models, settings, showCallOverlay, TTSWorker } from '$lib/stores';
-	import { onMount, tick, getContext, onDestroy, createEventDispatcher } from 'svelte';
+	import { onMount, tick, getContext, createEventDispatcher } from 'svelte';
 
 	const dispatch = createEventDispatcher();
 
 	import { blobToFile } from '$lib/utils';
 	import { generateEmoji } from '$lib/apis';
-	import { synthesizeSpeech, transcribeAudio } from '$lib/apis/audio';
+	import { transcribeAudio } from '$lib/apis/audio';
 
 	import { toast } from 'svelte-sonner';
 
@@ -20,13 +20,13 @@
 	export let eventTarget: EventTarget;
 	export let submitPrompt: Function;
 	export let stopResponse: Function;
-	export let files;
-	export let chatId;
-	export let modelId;
+	export let files: any[];
+	export let chatId: string;
+	export let modelId: string;
 
-	let wakeLock = null;
+	let wakeLock: WakeLockSentinel | null = null;
 
-	let model = null;
+	let model: any = null;
 
 	let loading = false;
 	let confirmed = false;
@@ -35,7 +35,7 @@
 
 	let emoji = null;
 	let camera = false;
-	let cameraStream = null;
+	let cameraStream: MediaStream | null = null;
 
 	let chatStreaming = false;
 	let rmsLevel = 0;
@@ -51,7 +51,7 @@
 		const devices = await navigator.mediaDevices.enumerateDevices();
 		videoInputDevices = devices.filter((device) => device.kind === 'videoinput');
 
-		if (!!navigator.mediaDevices.getDisplayMedia) {
+		if (navigator.mediaDevices.getDisplayMedia) {
 			videoInputDevices = [
 				...videoInputDevices,
 				{
@@ -82,13 +82,11 @@
 	};
 
 	const startVideoStream = async () => {
-		const video = document.getElementById('camera-feed');
+		const video = document.getElementById('camera-feed') as HTMLVideoElement | null;
 		if (video) {
 			if (selectedVideoInputDeviceId === 'screen') {
 				cameraStream = await navigator.mediaDevices.getDisplayMedia({
-					video: {
-						cursor: 'always'
-					},
+					video: true,
 					audio: false
 				});
 			} else {
@@ -117,14 +115,17 @@
 	};
 
 	const takeScreenshot = () => {
-		const video = document.getElementById('camera-feed');
-		const canvas = document.getElementById('camera-canvas');
+		const video = document.getElementById('camera-feed') as HTMLVideoElement | null;
+		const canvas = document.getElementById('camera-canvas') as HTMLCanvasElement | null;
 
-		if (!canvas) {
+		if (!canvas || !video) {
 			return;
 		}
 
 		const context = canvas.getContext('2d');
+		if (!context) {
+			return;
+		}
 
 		// Make the canvas match the video dimensions
 		canvas.width = video.videoWidth;
@@ -451,7 +452,7 @@
 			currentUtterance = null;
 		}
 
-		const audioElement = document.getElementById('audioElement');
+		const audioElement = document.getElementById('audioElement') as HTMLAudioElement | null;
 		if (audioElement) {
 			audioElement.muted = true;
 			audioElement.pause();
@@ -489,19 +490,6 @@
 
 					if (url) {
 						audioCache.set(content, new Audio(url));
-					}
-				} else if ($config.audio.tts.engine !== '') {
-					const res = await synthesizeSpeech(localStorage.token, getVoiceId(), content).catch(
-						(error) => {
-							console.error(error);
-							return null;
-						}
-					);
-
-					if (res) {
-						const blob = await res.blob();
-						const blobUrl = URL.createObjectURL(blob);
-						audioCache.set(content, new Audio(blobUrl));
 					}
 				} else {
 					audioCache.set(content, true);
@@ -622,10 +610,17 @@
 		chatStreaming = false;
 	};
 
-	onMount(async () => {
+	onMount(() => {
+		let disposed = false;
+
 		const setWakeLock = async () => {
 			try {
 				wakeLock = await navigator.wakeLock.request('screen');
+				if (disposed) {
+					await wakeLock.release();
+					wakeLock = null;
+					return;
+				}
 			} catch (err) {
 				// The Wake Lock request has failed - usually system related, such as battery.
 				console.log(err);
@@ -640,58 +635,41 @@
 			}
 		};
 
-		if ('wakeLock' in navigator) {
-			await setWakeLock();
+		const handleVisibilityChange = async () => {
+			if (document.visibilityState === 'visible') await setWakeLock();
+		};
+		void (async () => {
+			if ('wakeLock' in navigator) {
+				await setWakeLock();
+				document.addEventListener('visibilitychange', handleVisibilityChange);
+			}
 
-			document.addEventListener('visibilitychange', async () => {
-				// Re-request the wake lock if the document becomes visible
-				if (wakeLock !== null && document.visibilityState === 'visible') {
-					await setWakeLock();
-				}
-			});
-		}
-
-		model = $models.find((m) => m.id === modelId);
-
-		startRecording();
+			model = $models.find((m) => m.id === modelId);
+			await startRecording();
+			if (disposed) {
+				await stopRecordingCallback(false);
+			}
+		})();
 
 		eventTarget.addEventListener('chat:start', chatStartHandler);
 		eventTarget.addEventListener('chat', chatEventHandler);
 		eventTarget.addEventListener('chat:finish', chatFinishHandler);
 
-		return async () => {
-			await stopAllAudio();
-
-			stopAudioStream();
-
+		return () => {
+			disposed = true;
+			document.removeEventListener('visibilitychange', handleVisibilityChange);
 			eventTarget.removeEventListener('chat:start', chatStartHandler);
 			eventTarget.removeEventListener('chat', chatEventHandler);
 			eventTarget.removeEventListener('chat:finish', chatFinishHandler);
-
 			audioAbortController.abort();
-			await tick();
-
-			await stopAllAudio();
-
-			await stopRecordingCallback(false);
-			await stopCamera();
+			void (async () => {
+				await stopAllAudio();
+				await stopAudioStream();
+				await stopRecordingCallback(false);
+				await stopCamera();
+				await wakeLock?.release();
+			})();
 		};
-	});
-
-	onDestroy(async () => {
-		await stopAllAudio();
-		await stopRecordingCallback(false);
-		await stopCamera();
-
-		await stopAudioStream();
-		eventTarget.removeEventListener('chat:start', chatStartHandler);
-		eventTarget.removeEventListener('chat', chatEventHandler);
-		eventTarget.removeEventListener('chat:finish', chatFinishHandler);
-		audioAbortController.abort();
-
-		await tick();
-
-		await stopAllAudio();
 	});
 </script>
 

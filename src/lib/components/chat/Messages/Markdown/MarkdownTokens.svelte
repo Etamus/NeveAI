@@ -26,7 +26,7 @@
 	export let id: string;
 	export let tokens: Token[];
 	export let top = true;
-	export let attributes = {};
+	export let attributes: Record<string, any> = {};
 	export let sourceIds = [];
 
 	export let done = true;
@@ -39,9 +39,9 @@
 	export let editCodeBlock = true;
 	export let topPadding = false;
 
-	export let onSave: Function = () => {};
-	export let onUpdate: Function = () => {};
-	export let onPreview: Function = () => {};
+	export let onSave: (value: any) => void = () => {};
+	export let onUpdate: (value: any) => void = () => {};
+	export let onPreview: (value: any) => void = () => {};
 
 	export let onTaskClick: Function = () => {};
 	export let onSourceClick: Function = () => {};
@@ -291,7 +291,7 @@
 										tokenIdx: tokenIdx,
 										item: item,
 										itemIdx: itemIdx,
-										checked: e.target.checked
+									checked: (e.currentTarget as HTMLInputElement).checked
 									});
 								}}
 							/>
@@ -327,7 +327,7 @@
 										tokenIdx: tokenIdx,
 										item: item,
 										itemIdx: itemIdx,
-										checked: e.target.checked
+									checked: (e.currentTarget as HTMLInputElement).checked
 									});
 								}}
 							/>
@@ -382,7 +382,6 @@
 				disabled={textContent.length === 0}
 				attributes={token?.attributes}
 				className="w-full space-y-1"
-				dir="auto"
 			>
 				<div class=" mb-1.5" slot="content">
 					{#if textContent.length > 0}
@@ -401,7 +400,7 @@
 			</Collapsible>
 		{/if}
 	{:else if token.type === 'html'}
-		<HtmlToken {id} {token} {onSourceClick} />
+		<HtmlToken {id} {token} />
 	{:else if token.type === 'iframe'}
 		<iframe
 			src="{NEVEAI_BASE_URL}/api/v1/files/{token.fileId}/content"
@@ -410,8 +409,8 @@
 			frameborder="0"
 			on:load={(e) => {
 				try {
-					e.currentTarget.style.height =
-						e.currentTarget.contentWindow.document.body.scrollHeight + 20 + 'px';
+					const iframe = e.currentTarget as HTMLIFrameElement;
+					iframe.style.height = iframe.contentWindow!.document.body.scrollHeight + 20 + 'px';
 				} catch {}
 			}}
 		></iframe>
@@ -440,10 +439,10 @@
 	{:else if token.type === 'text'}
 		{#if top}
 			<p>
-				{#if token.tokens}
+				{#if (token as any).tokens}
 					<MarkdownInlineTokens
 						id={`${id}-${tokenIdx}-t`}
-						tokens={token.tokens}
+						tokens={(token as any).tokens}
 						{done}
 						{sourceIds}
 						{onSourceClick}
@@ -452,10 +451,10 @@
 					{unescapeHtml(token.text)}
 				{/if}
 			</p>
-		{:else if token.tokens}
+		{:else if (token as any).tokens}
 			<MarkdownInlineTokens
 				id={`${id}-${tokenIdx}-p`}
-				tokens={token.tokens ?? []}
+				tokens={(token as any).tokens ?? []}
 				{done}
 				{sourceIds}
 				{onSourceClick}

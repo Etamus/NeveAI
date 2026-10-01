@@ -304,9 +304,10 @@
 								const messagesContainer = document.getElementById('messages-container');
 								const savedScrollTop = messagesContainer?.scrollTop;
 								const savedInnerScroll = editScrollContainer?.scrollTop;
+								const textarea = e.currentTarget as HTMLTextAreaElement;
 
-								e.target.style.height = '';
-								e.target.style.height = `${e.target.scrollHeight}px`;
+								textarea.style.height = '';
+								textarea.style.height = `${textarea.scrollHeight}px`;
 
 								if (messagesContainer) messagesContainer.scrollTop = savedScrollTop;
 								if (editScrollContainer) editScrollContainer.scrollTop = savedInnerScroll;
@@ -431,15 +432,15 @@
 											min="1"
 											max={siblings.length}
 											on:focus={(e) => {
-												e.target.select();
+												(e.currentTarget as HTMLInputElement).select();
 											}}
 											on:blur={(e) => {
-												gotoMessage(message, e.target.value - 1);
+												gotoMessage(message, Number((e.currentTarget as HTMLInputElement).value) - 1);
 												messageIndexEdit = false;
 											}}
 											on:keydown={(e) => {
 												if (e.key === 'Enter') {
-													gotoMessage(message, e.target.value - 1);
+													gotoMessage(message, Number((e.currentTarget as HTMLInputElement).value) - 1);
 													messageIndexEdit = false;
 												}
 											}}
@@ -454,7 +455,7 @@
 											messageIndexEdit = true;
 
 											await tick();
-											const input = document.getElementById(`message-index-input-${message.id}`);
+											const input = document.getElementById(`message-index-input-${message.id}`) as HTMLInputElement | null;
 											if (input) {
 												input.focus();
 												input.select();
@@ -609,15 +610,15 @@
 											min="1"
 											max={siblings.length}
 											on:focus={(e) => {
-												e.target.select();
+												(e.currentTarget as HTMLInputElement).select();
 											}}
 											on:blur={(e) => {
-												gotoMessage(message, e.target.value - 1);
+												gotoMessage(message, Number((e.currentTarget as HTMLInputElement).value) - 1);
 												messageIndexEdit = false;
 											}}
 											on:keydown={(e) => {
 												if (e.key === 'Enter') {
-													gotoMessage(message, e.target.value - 1);
+													gotoMessage(message, Number((e.currentTarget as HTMLInputElement).value) - 1);
 													messageIndexEdit = false;
 												}
 											}}
@@ -632,7 +633,7 @@
 											messageIndexEdit = true;
 
 											await tick();
-											const input = document.getElementById(`message-index-input-${message.id}`);
+											const input = document.getElementById(`message-index-input-${message.id}`) as HTMLInputElement | null;
 											if (input) {
 												input.focus();
 												input.select();

@@ -4,7 +4,7 @@
 
 <script lang="ts">
 	import { slide } from 'svelte/transition';
-	import { Pane, PaneResizer } from 'paneforge';
+	import { Pane, PaneResizer, type PaneAPI } from 'paneforge';
 	import { v4 as uuidv4 } from 'uuid';
 
 	import { onDestroy, onMount, tick, getContext } from 'svelte';
@@ -47,7 +47,7 @@
 	export let files;
 	export let modelId;
 
-	export let pane: Pane | null = null;
+	export let pane: PaneAPI | null = null;
 
 	let largeScreen = false;
 	let dragged = false;
@@ -314,7 +314,7 @@
 				{:else if $showEmbeds}
 					<Embeds />
 				{:else if $showArtifacts}
-					<Artifacts {history} />
+					<Artifacts />
 				{:else if showFilesTab}
 					<!-- Files panel -->
 					<div class="flex flex-col h-full min-h-0">
@@ -409,7 +409,7 @@
 					{:else if $showEmbeds}
 						<Embeds overlay={dragged} />
 					{:else if $showArtifacts}
-						<Artifacts {history} overlay={dragged} />
+						<Artifacts overlay={dragged} />
 					{:else if showFilesTab}
 						<!-- Files panel -->
 						<div class="flex flex-col h-full min-h-0">

@@ -31,7 +31,6 @@
 	import Messages from '../chat/Messages.svelte';
 	import { goto } from '$app/navigation';
 	import PencilSquare from '../icons/PencilSquare.svelte';
-	import PageEdit from '../icons/PageEdit.svelte';
 	import XMark from '../icons/XMark.svelte';
 	dayjs.extend(calendar);
 	dayjs.extend(localizedFormat);
@@ -220,7 +219,7 @@
 		} else if (e.code === 'Enter') {
 			const item = document.querySelector(`[data-arrow-selected="true"]`);
 			if (item) {
-				item?.click();
+				(item as HTMLElement).click();
 				show = false;
 			}
 
@@ -260,24 +259,6 @@
 	};
 
 	onMount(() => {
-		actions = [
-			...actions,
-			...(($config?.features?.enable_notes ?? false) &&
-			($user?.role === 'admin' || ($user?.permissions?.features?.notes ?? true))
-				? [
-						{
-							label: $i18n.t('Create a new note'),
-							onClick: async () => {
-								await goto(`/notes?content=${query}`);
-								show = false;
-								onClose();
-							},
-							icon: PageEdit
-						}
-					]
-				: [])
-		];
-
 		document.addEventListener('keydown', onKeyDown);
 	});
 
@@ -311,7 +292,7 @@
 						if (e.code === 'Enter' && (chatList ?? []).length > 0) {
 							const item = document.querySelector(`[data-arrow-selected="true"]`);
 							if (item) {
-								item?.click();
+								(item as HTMLElement).click();
 							}
 
 							show = false;
@@ -358,7 +339,7 @@
 							? 'bg-gray-50 dark:bg-gray-850'
 							: ''}"
 						data-arrow-selected={selectedIdx === idx ? 'true' : undefined}
-						dragabble="false"
+						draggable="false"
 						on:mouseenter={() => {
 							selectedIdx = idx;
 						}}
@@ -485,7 +466,6 @@
 							readOnly={true}
 							{selectedModels}
 							bind:history
-							bind:messages
 							autoScroll={true}
 							sendMessage={() => {}}
 							continueResponse={() => {}}

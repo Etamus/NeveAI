@@ -39,6 +39,10 @@
 	const resolvingGroupIds = new Set<string>();
 	let userById: Record<string, any> = {};
 	const resolvingUserIds = new Set<string>();
+	let readGroupIds: string[] = [];
+	let writeGroupIds: string[] = [];
+	let readUserIds: string[] = [];
+	let writeUserIds: string[] = [];
 
 	let showAddAccessModal = false;
 
@@ -349,12 +353,13 @@
 	$: if (readGroupIds.length > 0 || writeGroupIds.length > 0) {
 		void ensureGroupsByIds([...readGroupIds, ...writeGroupIds]);
 	}
-	$: readGroupIds = (accessGrants, getPrincipalIdsByPermission('group', 'read'));
-	$: writeGroupIds = (accessGrants, getPrincipalIdsByPermission('group', 'write'));
-	$: readUserIds =
-		(accessGrants, getPrincipalIdsByPermission('user', 'read').filter((id) => id !== '*'));
-	$: writeUserIds =
-		(accessGrants, getPrincipalIdsByPermission('user', 'write').filter((id) => id !== '*'));
+	$: {
+		accessGrants;
+		readGroupIds = getPrincipalIdsByPermission('group', 'read');
+		writeGroupIds = getPrincipalIdsByPermission('group', 'write');
+		readUserIds = getPrincipalIdsByPermission('user', 'read').filter((id) => id !== '*');
+		writeUserIds = getPrincipalIdsByPermission('user', 'write').filter((id) => id !== '*');
+	}
 
 	$: selectedUserIds = Array.from(new Set([...readUserIds, ...writeUserIds]));
 

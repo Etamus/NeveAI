@@ -132,10 +132,6 @@ export const setLocalModelContextShiftPreference = (
 	localStorage.setItem(CONTEXT_SHIFT_KEY, preference);
 };
 
-export const getContextPreferenceLabel = (preference: LocalModelContextPreference) => {
-	return preference === 'ask' ? 'Perguntar' : preference.toLocaleString('pt-BR');
-};
-
 export const getVisionPreferenceLabel = (preference: LocalModelVisionPreference) => {
 	if (preference === 'yes') return 'Sim';
 	if (preference === 'no') return 'Não';

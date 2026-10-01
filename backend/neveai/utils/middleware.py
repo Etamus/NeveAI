@@ -54,19 +54,8 @@ from neveai.retrieval.github import (
     normalize_github_repository_url,
 )
 from neveai.utils.tools import get_builtin_tools
-from neveai.routers.images import (
-    image_generations,
-    CreateImageForm,
-    image_edits,
-    EditImageForm,
-)
-from neveai.routers.pipelines import (
-    process_pipeline_inlet_filter,
-    process_pipeline_outlet_filter,
-)
 from neveai.routers.memories import query_memory, QueryMemoryForm
 
-from neveai.utils.webhook import post_webhook
 from neveai.utils.files import (
     convert_markdown_base64_images,
     get_file_url_from_base64,
@@ -77,7 +66,6 @@ from neveai.routers.files import upload_file_handler
 
 
 from neveai.models.users import UserModel
-from neveai.models.functions import Functions
 from neveai.models.models import Models
 from neveai.models.files import Files
 from neveai.storage.provider import Storage
@@ -115,11 +103,6 @@ from neveai.utils.tools import (
     get_terminal_tools,
 )
 from neveai.utils.access_control import has_connection_access, has_permission
-from neveai.utils.plugin import load_function_module_by_id
-from neveai.utils.filter import (
-    get_sorted_filter_ids,
-    process_filter_functions,
-)
 from neveai.utils.code_interpreter import execute_code_jupyter
 from neveai.utils.payload import apply_system_prompt_to_body
 from neveai.utils.response import normalize_usage
@@ -679,7 +662,7 @@ def serialize_output(output: list, hide_reasoning: bool = False) -> str:
                 if status == "completed" or duration is not None or not is_last_item:
                     content = f'{content}<details type="reasoning" done="true" duration="{duration or 0}">\n<summary>Pensou por {duration or 0} segundos</summary>\n{display}\n</details>\n'
                 else:
-                    content = f'{content}<details type="reasoning" done="false">\n<summary>Pensandoâ€¦</summary>\n{display}\n</details>\n'
+                    content = f'{content}<details type="reasoning" done="false">\n<summary>Pensando...</summary>\n{display}\n</details>\n'
 
         elif item_type == "neveai:code_interpreter":
             content_stripped, original_whitespace = split_content_and_whitespace(
@@ -730,7 +713,7 @@ def serialize_output(output: list, hide_reasoning: bool = False) -> str:
                 if ci_output_text:
                     content += f"\n```\n{ci_output_text}\n```\n"
             else:
-                content += f'<details type="code_interpreter" done="false"{output_attr}>\n<summary>Analyzingâ€¦</summary>\n{display}\n</details>\n'
+                content += f'<details type="code_interpreter" done="false"{output_attr}>\n<summary>Analyzing...</summary>\n{display}\n</details>\n'
 
     return content.strip()
 
@@ -3571,200 +3554,6 @@ def add_file_context(messages: list, chat_id: str, user) -> list:
     return messages
 
 
-async def chat_image_generation_handler(
-    request: Request, form_data: dict, extra_params: dict, user
-):
-    metadata = extra_params.get("__metadata__", {})
-    chat_id = metadata.get("chat_id", None)
-    __event_emitter__ = extra_params.get("__event_emitter__", None)
-
-    if not chat_id or not isinstance(chat_id, str) or not __event_emitter__:
-        return form_data
-
-    if chat_id.startswith("local:"):
-        message_list = form_data.get("messages", [])
-    else:
-        chat = Chats.get_chat_by_id_and_user_id(chat_id, user.id)
-        await __event_emitter__(
-            {
-                "type": "status",
-                "data": {"description": "Creating image", "done": False},
-            }
-        )
-
-        messages_map = chat.chat.get("history", {}).get("messages", {})
-        message_id = chat.chat.get("history", {}).get("currentId")
-        message_list = get_message_list(messages_map, message_id)
-
-    user_message = get_last_user_message(message_list)
-
-    prompt = user_message
-    message_images = get_images_from_messages(message_list)
-
-    # Limit to first 2 sets of images
-    # We may want to change this in the future to allow more images
-    input_images = []
-    for idx, images in enumerate(message_images):
-        if idx >= 2:
-            break
-        for image in images:
-            input_images.append(image)
-
-    system_message_content = ""
-
-    if len(input_images) > 0 and request.app.state.config.ENABLE_IMAGE_EDIT:
-        # Edit image(s)
-        try:
-            images = await image_edits(
-                request=request,
-                form_data=EditImageForm(**{"prompt": prompt, "image": input_images}),
-                metadata={
-                    "chat_id": metadata.get("chat_id", None),
-                    "message_id": metadata.get("message_id", None),
-                },
-                user=user,
-            )
-
-            await __event_emitter__(
-                {
-                    "type": "status",
-                    "data": {"description": "Image created", "done": True},
-                }
-            )
-
-            await __event_emitter__(
-                {
-                    "type": "files",
-                    "data": {
-                        "files": [
-                            {
-                                "type": "image",
-                                "url": image["url"],
-                            }
-                            for image in images
-                        ]
-                    },
-                }
-            )
-
-            system_message_content = "<context>The requested image has been edited and created and is now being shown to the user. Let them know that it has been generated.</context>"
-        except Exception as e:
-            log.debug(e)
-
-            error_message = ""
-            if isinstance(e, HTTPException):
-                if e.detail and isinstance(e.detail, dict):
-                    error_message = e.detail.get("message", str(e.detail))
-                else:
-                    error_message = str(e.detail)
-
-            await __event_emitter__(
-                {
-                    "type": "status",
-                    "data": {
-                        "description": f"An error occurred while generating an image",
-                        "done": True,
-                    },
-                }
-            )
-
-            system_message_content = f"<context>Image generation was attempted but failed. The system is currently unable to generate the image. Tell the user that the following error occurred: {error_message}</context>"
-
-    else:
-        # Create image(s)
-        if request.app.state.config.ENABLE_IMAGE_PROMPT_GENERATION:
-            try:
-                res = await generate_image_prompt(
-                    request,
-                    {
-                        "model": form_data["model"],
-                        "messages": form_data["messages"],
-                        "chat_id": metadata.get("chat_id"),
-                    },
-                    user,
-                )
-
-                response = res["choices"][0]["message"]["content"]
-
-                try:
-                    bracket_start = response.find("{")
-                    bracket_end = response.rfind("}") + 1
-
-                    if bracket_start == -1 or bracket_end == -1:
-                        raise Exception("No JSON object found in the response")
-
-                    response = response[bracket_start:bracket_end]
-                    response = json.loads(response)
-                    prompt = response.get("prompt", [])
-                except Exception as e:
-                    prompt = user_message
-
-            except Exception as e:
-                log.exception(e)
-                prompt = user_message
-
-        try:
-            images = await image_generations(
-                request=request,
-                form_data=CreateImageForm(**{"prompt": prompt}),
-                metadata={
-                    "chat_id": metadata.get("chat_id", None),
-                    "message_id": metadata.get("message_id", None),
-                },
-                user=user,
-            )
-
-            await __event_emitter__(
-                {
-                    "type": "status",
-                    "data": {"description": "Image created", "done": True},
-                }
-            )
-
-            await __event_emitter__(
-                {
-                    "type": "files",
-                    "data": {
-                        "files": [
-                            {
-                                "type": "image",
-                                "url": image["url"],
-                            }
-                            for image in images
-                        ]
-                    },
-                }
-            )
-
-            system_message_content = "<context>The requested image has been created by the system successfully and is now being shown to the user. Let the user know that the image they requested has been generated and is now shown in the chat.</context>"
-        except Exception as e:
-            log.debug(e)
-
-            error_message = ""
-            if isinstance(e, HTTPException):
-                if e.detail and isinstance(e.detail, dict):
-                    error_message = e.detail.get("message", str(e.detail))
-                else:
-                    error_message = str(e.detail)
-
-            await __event_emitter__(
-                {
-                    "type": "status",
-                    "data": {
-                        "description": f"An error occurred while generating an image",
-                        "done": True,
-                    },
-                }
-            )
-
-            system_message_content = f"<context>Image generation was attempted but failed because of an error. The system is currently unable to generate the image. Tell the user that the following error occurred: {error_message}</context>"
-
-    if system_message_content:
-        form_data["messages"] = add_or_update_system_message(
-            system_message_content, form_data["messages"]
-        )
-
-    return form_data
 
 
 FILE_DIRECT_CONTEXT_MAX_CHARS = 18_000
@@ -4223,6 +4012,144 @@ def _load_model_json(content: str) -> dict:
     return value
 
 
+def _build_file_generation_fallback_plan(
+    prompt: str, source_payloads: list[dict]
+) -> Optional[dict]:
+    """Build a conservative plan when the semantic planner is unavailable."""
+    normalized_prompt = str(prompt or "").casefold()
+    transformations = []
+    transformation_patterns = (
+        ("summarize", r"\b(?:resum\w*|summar\w*)\b"),
+        ("rewrite", r"\b(?:reescrev\w*|reformul\w*|rewrite\w*)\b"),
+        ("translate", r"\b(?:traduz\w*|translat\w*)\b"),
+        ("merge", r"\b(?:mescl\w*|junt\w*|combin\w*|merge\w*)\b"),
+        ("reorganize", r"\b(?:reorganiz\w*|reestrutur\w*|reorgan\w*)\b"),
+        ("select", r"\b(?:extra\w*|selecion\w*|extract\w*|select\w*)\b"),
+        ("edit", r"\b(?:edit\w*|alter\w*|modific\w*)\b"),
+        ("convert", r"\b(?:convert\w*|transform\w*)\b"),
+    )
+    for transformation, pattern in transformation_patterns:
+        if re.search(pattern, normalized_prompt):
+            transformations.append(transformation)
+
+    requests_deliverable = bool(
+        re.search(
+            r"\b(?:cri\w*|ger\w*|fa[cç]\w*|salv\w*|export\w*|produz\w*|"
+            r"mont\w*|prepar\w*|escrev\w*|redig\w*|create\w*|generate\w*|"
+            r"make\w*|save\w*|export\w*|build\w*|prepare\w*|write\w*)\b",
+            normalized_prompt,
+        )
+        and re.search(
+            r"\b(?:arquivo|documento|relat[oó]rio|planilha|tabela|apresenta\w*|"
+            r"slides?|pdf|docx|xlsx|pptx|csv|txt|md|markdown|html|json|xml|ya?ml|"
+            r"file|document|report|spreadsheet|table|presentation)\b",
+            normalized_prompt,
+        )
+    )
+    if not requests_deliverable and not (source_payloads and transformations):
+        return None
+
+    source_formats = {
+        Path(str(source.get("name") or "")).suffix.casefold().lstrip(".")
+        for source in source_payloads
+        if Path(str(source.get("name") or "")).suffix
+    }
+    source_formats.intersection_update(FILE_GENERATION_OUTPUT_FORMATS)
+    output_format = next(iter(source_formats)) if len(source_formats) == 1 else ""
+    if not output_format:
+        for candidate in FILE_GENERATION_OUTPUT_FORMATS:
+            if re.search(rf"(?<!\w)\.?{re.escape(candidate)}(?!\w)", normalized_prompt):
+                output_format = candidate
+                break
+    output_format = output_format or "docx"
+
+    if source_payloads:
+        source_path = Path(str(source_payloads[0].get("name") or "Documento"))
+        suffix_label = "resumo" if "summarize" in transformations else "revisado"
+        filename = f"{source_path.stem} - {suffix_label}.{output_format}"
+    else:
+        filename = f"Documento.{output_format}"
+
+    operation = "create"
+    for candidate in ("merge", "convert", "edit"):
+        if candidate in transformations:
+            operation = candidate
+            break
+    if operation == "create" and source_payloads:
+        operation = "edit"
+
+    semantic_transformations = [
+        item
+        for item in transformations
+        if item in {"merge", "summarize", "translate", "rewrite", "reorganize", "select"}
+    ]
+    if not semantic_transformations and source_payloads:
+        semantic_transformations = ["rewrite"]
+
+    return {
+        "should_generate_file": True,
+        "operation": operation,
+        "preserve_all_unique_content": "summarize" not in semantic_transformations,
+        "include_citations": False,
+        "allow_new_content": False,
+        "strip_source_metadata": False,
+        "requires_semantic_rewrite": bool(semantic_transformations),
+        "semantic_transformations": semantic_transformations,
+        "output_format": output_format,
+        "filename": filename,
+        "objective": prompt,
+        "source_payloads": source_payloads,
+    }
+
+
+def _has_file_generation_intent(prompt: str, has_source_files: bool) -> bool:
+    """Cheaply reject ordinary chat before invoking the semantic file planner."""
+    normalized_prompt = str(prompt or "").casefold().strip()
+    if not normalized_prompt:
+        return False
+
+    instructional_question = re.search(
+        r"\b(?:como|how (?:do|can|would|should)|explique como|me ensine a|"
+        r"ensine(?:-me)? a|qual (?:e|é) (?:a )?forma de|what is the (?:best )?way to)\s+"
+        r"(?:cri\w*|ger\w*|faz\w*|edit\w*|alter\w*|convert\w*|export\w*|"
+        r"create\w*|generate\w*|make\w*|edit\w*|convert\w*|export\w*)\b",
+        normalized_prompt,
+    )
+    if instructional_question:
+        return False
+
+    transformation_requested = bool(
+        re.search(
+            r"\b(?:resum\w*|reescrev\w*|reformul\w*|traduz\w*|mescl\w*|"
+            r"junt\w*|combin\w*|reorganiz\w*|reestrutur\w*|extra\w*|"
+            r"selecion\w*|edit\w*|alter\w*|modific\w*|convert\w*|transform\w*|"
+            r"summar\w*|rewrite\w*|translat\w*|merge\w*|join\w*|reorgan\w*|"
+            r"extract\w*|select\w*)\b",
+            normalized_prompt,
+        )
+    )
+    if has_source_files and transformation_requested:
+        return True
+
+    deliverable_action = bool(
+        re.search(
+            r"\b(?:crie|criar|gere|gerar|faça|fazer|salve|salvar|exporte|exportar|"
+            r"produza|produzir|monte|montar|prepare|preparar|escreva|escrever|"
+            r"redija|redigir|create|generate|make|save|export|build|prepare|write)\b",
+            normalized_prompt,
+        )
+    )
+    deliverable_named = bool(
+        re.search(
+            r"\b(?:arquivo|documento|relat[oó]rio|planilha|tabela|apresenta\w*|"
+            r"slides?|pdf|docx|xlsx|pptx|csv|txt|md|markdown|html|json|xml|ya?ml|"
+            r"file|document|report|spreadsheet|table|presentation)\b",
+            normalized_prompt,
+        )
+    )
+    return deliverable_named and (deliverable_action or transformation_requested)
+
+
 async def _verify_single_source_semantic_rewrite(
     request: Request,
     user: UserModel,
@@ -4422,12 +4349,18 @@ async def _plan_attachment_file_generation(
         },
         "metadata": {"task": str(TASKS.FUNCTION_CALLING)},
     }
-    response = await generate_chat_completion(
-        request, form_data=planner_payload, user=user
-    )
-    plan = _load_model_json(_get_json_response_content(response))
+    try:
+        response = await generate_chat_completion(
+            request, form_data=planner_payload, user=user
+        )
+        plan = _load_model_json(_get_json_response_content(response))
+    except Exception as error:
+        log.warning(
+            "File-generation planner failed; using conservative fallback: %s", error
+        )
+        return _build_file_generation_fallback_plan(prompt, source_payloads)
     if not plan.get("should_generate_file"):
-        return None
+        return _build_file_generation_fallback_plan(prompt, source_payloads)
 
     operation = str(plan.get("operation") or "other")
     semantic_transformations = list(
@@ -6438,23 +6371,19 @@ def apply_params_to_form_data(form_data, model):
         # If custom_params are provided, merge them into params
         params = deep_update(params, custom_params)
 
-    if model.get("owned_by") == "ollama":
-        # Ollama specific parameters
-        form_data["options"] = params
-    else:
-        if isinstance(params, dict):
-            for key, value in params.items():
-                if value is not None:
-                    form_data[key] = value
+    if isinstance(params, dict):
+        for key, value in params.items():
+            if value is not None:
+                form_data[key] = value
 
-        if "logit_bias" in params and params["logit_bias"] is not None:
-            try:
-                logit_bias = convert_logit_bias_input_to_json(params["logit_bias"])
+    if "logit_bias" in params and params["logit_bias"] is not None:
+        try:
+            logit_bias = convert_logit_bias_input_to_json(params["logit_bias"])
 
-                if logit_bias:
-                    form_data["logit_bias"] = json.loads(logit_bias)
-            except Exception as e:
-                log.exception(f"Error parsing logit_bias: {e}")
+            if logit_bias:
+                form_data["logit_bias"] = json.loads(logit_bias)
+        except Exception as e:
+            log.exception(f"Error parsing logit_bias: {e}")
 
     return form_data
 
@@ -6809,30 +6738,6 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     variables = form_data.pop("variables", None)
 
-    # Process the form_data through the pipeline
-    try:
-        form_data = await process_pipeline_inlet_filter(
-            request, form_data, user, models
-        )
-    except Exception as e:
-        raise e
-
-    try:
-        filter_ids = get_sorted_filter_ids(
-            request, model, metadata.get("filter_ids", [])
-        )
-        filter_functions = Functions.get_functions_by_ids(filter_ids)
-
-        form_data, flags = await process_filter_functions(
-            request=request,
-            filter_functions=filter_functions,
-            filter_type="inlet",
-            form_data=form_data,
-            extra_params=extra_params,
-        )
-    except Exception as e:
-        raise Exception(f"{e}")
-
     features = form_data.pop("features", None) or {}
     submitted_features = metadata.get("features", {}) or {}
     if submitted_features.get("stable_diffusion"):
@@ -6863,7 +6768,6 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         for feature_id in (
             "web_search",
             "deep_search",
-            "image_generation",
             "code_execution",
             "file_generation",
             "stable_diffusion",
@@ -6896,17 +6800,6 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             # Skip forced RAG web search when native FC is enabled - model can use web_search tool
             if metadata.get("params", {}).get("function_calling") != "native":
                 form_data = await chat_web_search_handler(
-                    request, form_data, extra_params, user
-                )
-
-        if (
-            "image_generation" in features
-            and features["image_generation"]
-            and not features.get("stable_diffusion")
-        ):
-            # Skip forced image generation when native FC is enabled - model can use generate_image tool
-            if metadata.get("params", {}).get("function_calling") != "native":
-                form_data = await chat_image_generation_handler(
                     request, form_data, extra_params, user
                 )
 
@@ -7336,7 +7229,11 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     file_generation_plan = None
     generated_file_ready = False
-    if deferred_file_generation_tools:
+    file_generation_intent = bool(
+        deferred_file_generation_tools
+        and _has_file_generation_intent(prompt, bool(file_generation_files))
+    )
+    if deferred_file_generation_tools and file_generation_intent:
         try:
             file_generation_plan = await _plan_attachment_file_generation(
                 request,
@@ -7371,7 +7268,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     # For default function calling, decide after attachment context is available.
     # Explicit attachment transformations require the file tool; ordinary document
     # questions keep the regular optional selection behavior.
-    if deferred_file_generation_tools:
+    if deferred_file_generation_tools and file_generation_intent:
         pending_file_count = len(metadata.get("pending_generated_files", []))
         if file_generation_required:
             await event_emitter(
@@ -7531,16 +7428,6 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                         "tool_result": True,
                     }
                 )
-            else:
-                _, flags = await chat_completion_tools_handler(
-                    request,
-                    file_tool_form_data,
-                    extra_params,
-                    user,
-                    models,
-                    deferred_file_generation_tools,
-                )
-                sources.extend(flags.get("sources", []))
         except Exception as e:
             log.exception(e)
         finally:
@@ -8044,22 +7931,6 @@ async def non_streaming_chat_response_handler(response, ctx):
                     }
                 )
 
-                # Send a webhook notification if the user is not active
-                if content and not Users.is_user_active(user.id):
-                    webhook_url = Users.get_user_webhook_url_by_id(user.id)
-                    if webhook_url:
-                        await post_webhook(
-                            request.app.state.NEVEAI_NAME,
-                            webhook_url,
-                            f"{title} - {request.app.state.config.NEVEAI_URL}/c/{metadata['chat_id']}\n\n{content}",
-                            {
-                                "action": "chat",
-                                "message": content,
-                                "title": title,
-                                "url": f"{request.app.state.config.NEVEAI_URL}/c/{metadata['chat_id']}",
-                            },
-                        )
-
                 await background_tasks_handler(ctx)
 
             response = build_response_object(
@@ -8100,13 +7971,6 @@ async def streaming_chat_response_handler(response, ctx):
         "__request__": request,
         "__model__": model,
     }
-
-    filter_functions = [
-        Functions.get_function_by_id(filter_id)
-        for filter_id in get_sorted_filter_ids(
-            request, model, metadata.get("filter_ids", [])
-        )
-    ]
 
     # Standard streaming response handler
     if event_emitter and event_caller:
@@ -8583,14 +8447,6 @@ async def streaming_chat_response_handler(response, ctx):
 
                         try:
                             data = json.loads(data)
-
-                            data, _ = await process_filter_functions(
-                                request=request,
-                                filter_functions=filter_functions,
-                                filter_type="stream",
-                                form_data=data,
-                                extra_params={"__body__": form_data, **extra_params},
-                            )
 
                             if data:
                                 if "event" in data and not getattr(
@@ -9788,22 +9644,6 @@ async def streaming_chat_response_handler(response, ctx):
                         {"usage": usage},
                     )
 
-                # Send a webhook notification if the user is not active
-                if not Users.is_user_active(user.id):
-                    webhook_url = Users.get_user_webhook_url_by_id(user.id)
-                    if webhook_url:
-                        await post_webhook(
-                            request.app.state.NEVEAI_NAME,
-                            webhook_url,
-                            f"{title} - {request.app.state.config.NEVEAI_URL}/c/{metadata['chat_id']}\n\n{content}",
-                            {
-                                "action": "chat",
-                                "message": content,
-                                "title": title,
-                                "url": f"{request.app.state.config.NEVEAI_URL}/c/{metadata['chat_id']}",
-                            },
-                        )
-
                 try:
                     await publish_pending_generated_files(metadata, event_emitter)
                 except Exception as e:
@@ -9844,26 +9684,10 @@ async def streaming_chat_response_handler(response, ctx):
                 return f"data: {item}\n\n"
 
             for event in events:
-                event, _ = await process_filter_functions(
-                    request=request,
-                    filter_functions=filter_functions,
-                    filter_type="stream",
-                    form_data=event,
-                    extra_params=extra_params,
-                )
-
                 if event:
                     yield wrap_item(json.dumps(event))
 
             async for data in original_generator:
-                data, _ = await process_filter_functions(
-                    request=request,
-                    filter_functions=filter_functions,
-                    filter_type="stream",
-                    form_data=data,
-                    extra_params=extra_params,
-                )
-
                 if data:
                     yield data
 

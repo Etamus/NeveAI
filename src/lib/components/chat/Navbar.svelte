@@ -439,11 +439,13 @@
 					{#if ($config?.license_metadata?.type ?? null) === 'trial'}
 						<Banner
 							banner={{
+								id: 'trial-license',
 								type: 'info',
 								title: 'Trial License',
 								content: $i18n.t(
 									'You are currently using a trial license. Please contact support to upgrade your license.'
-								)
+								),
+								timestamp: 0
 							}}
 						/>
 					{/if}
@@ -451,11 +453,13 @@
 					{#if ($config?.license_metadata?.seats ?? null) !== null && $config?.user_count > $config?.license_metadata?.seats}
 						<Banner
 							banner={{
+								id: 'license-seats',
 								type: 'error',
 								title: 'License Error',
 								content: $i18n.t(
 									'Exceeded the number of seats in your license. Please contact support to increase the number of seats.'
-								)
+								),
+								timestamp: 0
 							}}
 						/>
 					{/if}

@@ -23,7 +23,7 @@
 				const _item = {
 					...model,
 					modelName: model?.name,
-					tags: model?.info?.meta?.tags?.map((tag) => tag.name).join(' '),
+					tags: (model?.info?.meta?.tags as any[] | undefined)?.map((tag) => tag.name).join(' '),
 					desc: model?.info?.meta?.description
 				};
 				return _item;
