@@ -1,8 +1,7 @@
 ﻿<script lang="ts">
-	import { getContext, onMount, onDestroy } from 'svelte';
+	import { getContext, onDestroy } from 'svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
-	import { highlightCode } from '$lib/utils/codeHighlight';
 	import {
 		createNotebookSession,
 		executeNotebookCell,

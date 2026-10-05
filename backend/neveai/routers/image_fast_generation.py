@@ -1,4 +1,4 @@
-"""Isolated ComfyUI runtime for Neve Image 2 Fast (Qwen Image 2.1 + Viggle)."""
+"""Isolated ComfyUI runtime for Neve Image 2 (Qwen Image 2.1 + Viggle)."""
 
 import asyncio
 import base64
@@ -45,8 +45,10 @@ MODEL_FILE = "qwen-image-2.1-UC-Q4_K_M.gguf"
 ENCODER_REPO = "Comfy-Org/Qwen-Image-2.1"
 ENCODER_FILE = "qwen3vl_8b_int8_convrot.safetensors"
 VAE_FILE = "qwen_image_2.1_vae_bf16.safetensors"
-LORA_FILE = "Qwen-Image-2.1-viggle-turbo-v0.2.1-6step-lora-r128.safetensors"
-SIGMAS = "1.0, 0.9375, 0.875, 0.75, 0.5, 0.25"
+LORA_FILE = "Qwen-Image-2.1-viggle-turbo-v0.3-6step-lora-r128.safetensors"
+SIGMAS = "1.0, 0.9583, 0.9167, 0.875, 0.75, 0.5, 0.25, 0.16666666666666666, 0.08333333333333333"
+TURBO_STEPS = 7
+BASE_STEPS = 2
 DIMENSIONS = {
     "1:1": (1152, 1152),
     "16:9": (1216, 704),
@@ -98,7 +100,7 @@ def _replace_archive(url: str, destination: Path) -> None:
             archive.extractall(root / "extracted")
         source_dirs = [path for path in (root / "extracted").iterdir() if path.is_dir()]
         if len(source_dirs) != 1:
-            raise RuntimeError("Pacote ComfyUI invalido para Neve Image 2 Fast")
+            raise RuntimeError("Pacote ComfyUI invalido para Neve Image 2")
         if destination.exists():
             shutil.rmtree(destination)
         shutil.move(str(source_dirs[0]), str(destination))
@@ -160,20 +162,20 @@ class NeveImage2SRuntime:
                 output.append(decoded)
                 if len(output) > 30:
                     output.pop(0)
-                log.debug("Neve Image 2 Fast setup: %s", decoded)
+                log.debug("Neve Image 2 setup: %s", decoded)
             code = await process.wait()
         except asyncio.CancelledError:
             process.kill()
             await process.wait()
             raise
         if code:
-            raise RuntimeError("Falha ao instalar Neve Image 2 Fast:\n" + "\n".join(output))
+            raise RuntimeError("Falha ao instalar Neve Image 2:\n" + "\n".join(output))
 
     async def _install(self, progress: ProgressCallback) -> None:
         if self.is_installed:
             return
         if os.name != "nt":
-            raise RuntimeError("Neve Image 2 Fast via ComfyUI requer Windows nesta instalacao.")
+            raise RuntimeError("Neve Image 2 via ComfyUI requer Windows nesta instalacao.")
         IMAGE_ROOT.mkdir(parents=True, exist_ok=True)
         await progress(2)
         check = await asyncio.create_subprocess_exec(
@@ -237,13 +239,13 @@ for repo, filename, subdir in items:
 """
         await self._command([str(_python()), "-c", script])
         if not self.models_ready:
-            raise RuntimeError("Os arquivos de Neve Image 2 Fast nao foram baixados por completo.")
+            raise RuntimeError("Os arquivos de Neve Image 2 nao foram baixados por completo.")
         await progress(18)
 
     @staticmethod
     def build_workflow(prompt: str, width: int, height: int, refs: list[str], seed: int) -> dict:
         if not 1 <= len(refs) + 1 <= 4:
-            raise ValueError("Neve Image 2 Fast aceita no maximo tres imagens de referencia.")
+            raise ValueError("Neve Image 2 aceita no maximo tres imagens de referencia.")
         if refs:
             from neveai.routers.stable_diffusion import _normalize_qwen_reference_tokens
 
@@ -264,8 +266,8 @@ for repo, filename, subdir in items:
             "8": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
             "9": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
             "10": {"class_type": "ViggleTurboSigmas", "inputs": {"latent": ["6", 0], "nodes": SIGMAS}},
-            "11": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["8", 0], "guider": ["7", 0], "sampler": ["9", 0], "sigmas": ["10", 0], "latent_image": ["6", 0]}},
-            "12": {"class_type": "VAEDecode", "inputs": {"samples": ["11", 0], "vae": ["4", 0]}},
+            "11": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["8", 0], "guider": ["7", 0], "sampler": ["9", 0], "sigmas": ["20", 0], "latent_image": ["6", 0]}},
+            "12": {"class_type": "VAEDecode", "inputs": {"samples": ["24", 0], "vae": ["4", 0]}},
             "13": {"class_type": "SaveImage", "inputs": {"images": ["12", 0], "filename_prefix": "neve_image_2s"}},
         }
         if refs:
@@ -275,6 +277,14 @@ for repo, filename, subdir in items:
             node_id = str(14 + index)
             workflow[node_id] = {"class_type": "LoadImage", "inputs": {"image": filename}}
             workflow["5"]["inputs"][f"images.image_{index}"] = [node_id, 0]
+        # Continue the same noisy latent with the unpatched base, never the Turbo KV cache.
+        workflow.update({
+            "20": {"class_type": "SplitSigmas", "inputs": {"sigmas": ["10", 0], "step": TURBO_STEPS}},
+            "21": {"class_type": "DisableNoise", "inputs": {}},
+            "22": {"class_type": "QwenImage21Cache", "inputs": {"model": ["1", 0], "device": "off", "dtype": "default"}},
+            "23": {"class_type": "BasicGuider", "inputs": {"model": ["22", 0], "conditioning": ["5", 0]}},
+            "24": {"class_type": "SamplerCustomAdvanced", "inputs": {"noise": ["21", 0], "guider": ["23", 0], "sampler": ["9", 0], "sigmas": ["20", 1], "latent_image": ["11", 0]}},
+        })
         return workflow
 
     async def _capture_logs(self, process: asyncio.subprocess.Process) -> None:
@@ -283,7 +293,7 @@ for repo, filename, subdir in items:
             self._log_tail.append(decoded)
             if len(self._log_tail) > 100:
                 self._log_tail.pop(0)
-            log.debug("Neve Image 2 Fast ComfyUI: %s", decoded)
+            log.debug("Neve Image 2 ComfyUI: %s", decoded)
 
     async def _stop(self) -> None:
         process, self._process = self._process, None
@@ -349,14 +359,14 @@ for repo, filename, subdir in items:
                 except httpx.HTTPError:
                     pass
                 await asyncio.sleep(0.5)
-        raise RuntimeError("ComfyUI do Neve Image 2 Fast nao respondeu.")
+        raise RuntimeError("ComfyUI do Neve Image 2 nao respondeu.")
 
     async def run(
         self, prompt: str, resolution: str, references: list[str], user_id: Optional[str],
         progress: ProgressCallback, dimensions: Optional[DimensionsCallback] = None,
     ) -> str:
         if len(references) > 3:
-            raise ValueError("Neve Image 2 Fast aceita ate tres imagens de referencia.")
+            raise ValueError("Neve Image 2 aceita ate tres imagens de referencia.")
         if not prompt.strip():
             raise ValueError("Descreva a imagem que deseja criar.")
         if os.name == "nt":
@@ -370,7 +380,7 @@ for repo, filename, subdir in items:
 
             if _preferred_sd_cpp_windows_backend() == "vulkan":
                 width, height = DIMENSIONS.get(resolution, DIMENSIONS["1:1"])
-                log.warning("Neve Image 2 Fast: modo AMD Vulkan usa Qwen Image 2.1 sem o LoRA Viggle de 6 passos")
+                log.warning("Neve Image 2: modo AMD Vulkan usa Qwen Image 2.1 com amostragem propria, sem o LoRA Viggle")
                 return await _sd_pipeline.run(
                     model_id=QWEN_IMAGE_21_REPO,
                     hf_token=None,
@@ -426,7 +436,7 @@ for repo, filename, subdir in items:
                     response.raise_for_status()
                     payload = response.json()
                     if payload.get("node_errors"):
-                        raise RuntimeError(f"Workflow Neve Image 2 Fast invalido: {payload['node_errors']}")
+                        raise RuntimeError(f"Workflow Neve Image 2 invalido: {payload['node_errors']}")
                     self._prompt_id = str(payload.get("prompt_id") or "")
                     if not self._prompt_id:
                         raise RuntimeError("ComfyUI nao retornou identificador da imagem.")
@@ -450,7 +460,10 @@ for repo, filename, subdir in items:
                                             if data.get("type") == "progress":
                                                 item = data.get("data") or {}
                                                 if item.get("prompt_id") == self._prompt_id and item.get("max"):
-                                                    last_progress = max(last_progress, min(94, 40 + int(54 * item["value"] / item["max"])))
+                                                    completed = item["value"]
+                                                    if str(item.get("node")) == "24":
+                                                        completed += TURBO_STEPS
+                                                    last_progress = max(last_progress, min(94, 40 + int(54 * completed / (TURBO_STEPS + BASE_STEPS))))
                                     except asyncio.TimeoutError:
                                         pass
                                 else:
@@ -463,7 +476,7 @@ for repo, filename, subdir in items:
                                     continue
                                 status = history.get("status") or {}
                                 if status.get("status_str") == "error":
-                                    raise RuntimeError(f"Neve Image 2 Fast falhou: {status.get('messages')}")
+                                    raise RuntimeError(f"Neve Image 2 falhou: {status.get('messages')}")
                                 outputs = history.get("outputs") or {}
                                 images = outputs.get("13", {}).get("images") or []
                                 if images:
@@ -475,14 +488,14 @@ for repo, filename, subdir in items:
                                     with Image.open(io.BytesIO(response.content)) as generated:
                                         if generated.size != (width, height):
                                             raise RuntimeError(
-                                                f"Neve Image 2 Fast retornou {generated.width}x{generated.height}; esperado {width}x{height}."
+                                                f"Neve Image 2 retornou {generated.width}x{generated.height}; esperado {width}x{height}."
                                             )
                                     output_path = (OUTPUT_DIR / item.get("subfolder", "") / item["filename"]).resolve()
                                     if output_path.is_relative_to(OUTPUT_DIR.resolve()):
                                         output_path.unlink(missing_ok=True)
                                     await progress(99)
                                     return "data:image/png;base64," + base64.b64encode(response.content).decode("ascii")
-                            raise RuntimeError("Neve Image 2 Fast excedeu o tempo limite.")
+                            raise RuntimeError("Neve Image 2 excedeu o tempo limite.")
                         finally:
                             if websocket is not None:
                                 await websocket.close()

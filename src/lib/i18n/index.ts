@@ -28,22 +28,6 @@ const createI18nStore = (i18n: i18nType) => {
 	return i18nWritable;
 };
 
-const createIsLoadingStore = (i18n: i18nType) => {
-	const isLoading = writable(false);
-
-	// if loaded resources are empty || {}, set loading to true
-	i18n.on('loaded', (resources) => {
-		// console.log('loaded:', resources);
-		isLoading.set(Object.keys(resources).length === 0);
-	});
-
-	// if resources failed loading, set loading to true
-	i18n.on('failedLoading', () => {
-		isLoading.set(true);
-	});
-
-	return isLoading;
-};
 
 export const initI18n = (defaultLocale?: string | undefined) => {
 	const storedLocale = typeof localStorage !== 'undefined' ? localStorage.getItem('neveai.language') : null;
@@ -82,7 +66,6 @@ export const initI18n = (defaultLocale?: string | undefined) => {
 };
 
 const i18n = createI18nStore(i18next);
-const isLoadingStore = createIsLoadingStore(i18next);
 export const changeLanguage = (lang: string) => {
 	if (!isSupportedLocale(lang)) return;
 	localStorage.setItem('neveai.language', lang);
@@ -92,4 +75,3 @@ export const changeLanguage = (lang: string) => {
 };
 
 export default i18n;
-const isLoading = isLoadingStore;

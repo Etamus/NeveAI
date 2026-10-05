@@ -17,6 +17,32 @@
 	let zoomLevel = 1;
 	let rerenderTimer: ReturnType<typeof setTimeout> | null = null;
 	let lastRenderedZoom = 1;
+	let pageObserver: IntersectionObserver | null = null;
+	let loadingTask: any = null;
+	let destroyed = false;
+	const renders = new Map<HTMLCanvasElement, any>();
+	let renderQueue = Promise.resolve();
+
+	const renderCanvas = async (canvas: HTMLCanvasElement, forZoom: number) => {
+		if (destroyed || !pdfDoc) return;
+		const previous = renders.get(canvas);
+		previous?.cancel();
+		await previous?.promise?.catch(() => {});
+		if (destroyed || !pdfDoc) return;
+		const page = await pdfDoc.getPage(Number(canvas.dataset.page));
+		const viewport = page.getViewport({ scale: 1 });
+		const cssScale = (outerContainer?.clientWidth || 800) / viewport.width;
+		const requested = cssScale * forZoom * Math.min(window.devicePixelRatio || 1, 2);
+		const scale = Math.min(requested, Math.sqrt(8000000 / (viewport.width * viewport.height)));
+		const scaledViewport = page.getViewport({ scale });
+		canvas.width = Math.ceil(scaledViewport.width);
+		canvas.height = Math.ceil(scaledViewport.height);
+		const task = page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport: scaledViewport });
+		renders.set(canvas, task);
+		try { await task.promise; canvas.dataset.rendered = 'true'; }
+		catch (error) { if (!destroyed && (error as Error).name !== 'RenderingCancelledException') throw error; }
+		finally { if (renders.get(canvas) === task) renders.delete(canvas); }
+	};
 
 	const initPanzoom = () => {
 		if (pzInstance) {
@@ -84,51 +110,41 @@
 	// Re-render existing canvases at a new zoom level (preserves panzoom transform)
 	const rerenderPages = async (forZoom: number) => {
 		if (!pdfDoc || !sceneElement) return;
-		const dpr = window.devicePixelRatio || 1;
-		const containerWidth = outerContainer?.clientWidth || 800;
-
-		const canvases = sceneElement.querySelectorAll('canvas');
-
-		for (let i = 0; i < canvases.length; i++) {
-			const page = await pdfDoc.getPage(i + 1);
-			const viewport = page.getViewport({ scale: 1 });
-			const cssScale = containerWidth / viewport.width;
-			const renderScale = cssScale * forZoom * dpr;
-			const scaledViewport = page.getViewport({ scale: renderScale });
-
-			const canvas = canvases[i];
-			canvas.width = scaledViewport.width;
-			canvas.height = scaledViewport.height;
-
-			const ctx = canvas.getContext('2d');
-			if (ctx) {
-				await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+		renderQueue = renderQueue.then(async () => {
+			if (destroyed) return;
+			for (const canvas of sceneElement.querySelectorAll<HTMLCanvasElement>('canvas[data-rendered="true"]')) {
+				if (destroyed) return;
+				await renderCanvas(canvas, forZoom);
 			}
-		}
-		lastRenderedZoom = forZoom;
+			lastRenderedZoom = forZoom;
+		}).catch(() => {});
+		await renderQueue;
 	};
 
 	const renderAllPages = async () => {
 		if (!pdfDoc || !sceneElement) return;
+		pageObserver?.disconnect();
+		pageObserver = new IntersectionObserver((entries) => {
+			for (const entry of entries) if (entry.isIntersecting) {
+				pageObserver?.unobserve(entry.target);
+				renderQueue = renderQueue.then(() => renderCanvas(entry.target as HTMLCanvasElement, zoomLevel)).catch(() => {});
+			}
+		}, { root: outerContainer, rootMargin: '500px' });
 
 		// Clear previous canvases
 		sceneElement.innerHTML = '';
 
-		const dpr = window.devicePixelRatio || 1;
-
 		for (let i = 1; i <= pdfDoc.numPages; i++) {
+			if (destroyed) return;
 			const page = await pdfDoc.getPage(i);
 			const viewport = page.getViewport({ scale: 1 });
 
 			// Scale to fit container width
 			const containerWidth = outerContainer?.clientWidth || 800;
 			const cssScale = containerWidth / viewport.width;
-			const renderScale = cssScale * dpr;
-			const scaledViewport = page.getViewport({ scale: renderScale });
 
 			const canvas = document.createElement('canvas');
-			canvas.width = scaledViewport.width;
-			canvas.height = scaledViewport.height;
+			canvas.dataset.page = String(i);
 			// CSS size stays at the CSS-pixel dimensions for layout
 			canvas.style.width = `${Math.round(cssScale * viewport.width)}px`;
 			canvas.style.height = `${Math.round(cssScale * viewport.height)}px`;
@@ -140,11 +156,8 @@
 
 			sceneElement.appendChild(canvas);
 
-			const ctx = canvas.getContext('2d');
-			await page.render({
-				canvasContext: ctx,
-				viewport: scaledViewport
-			}).promise;
+			if (i === 1) { await renderCanvas(canvas, 1); loading = false; }
+			else pageObserver.observe(canvas);
 		}
 
 		lastRenderedZoom = 1;
@@ -170,7 +183,10 @@
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);
 				pdfData = await res.arrayBuffer();
 			}
-			pdfDoc = await pdfjs.getDocument({ data: pdfData }).promise;
+			if (destroyed) return;
+			loadingTask = pdfjs.getDocument({ data: pdfData });
+			pdfDoc = await loadingTask.promise;
+			if (destroyed) return;
 			await renderAllPages();
 		} catch (e) {
 			console.error('PDF render error:', e);
@@ -185,12 +201,13 @@
 	});
 
 	onDestroy(() => {
+		destroyed = true;
+		pageObserver?.disconnect();
+		for (const task of renders.values()) task.cancel();
 		if (rerenderTimer) clearTimeout(rerenderTimer);
 		pzInstance?.dispose();
-		if (pdfDoc) {
-			pdfDoc.destroy();
-			pdfDoc = null;
-		}
+		void loadingTask?.destroy()?.catch(() => {});
+		pdfDoc = null;
 	});
 </script>
 

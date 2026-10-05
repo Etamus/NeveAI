@@ -69,5 +69,4 @@ export function mentionExtension(opts: MentionOptions = {}) {
 }
 
 // Usage:
-// import { marked } from 'marked';
 // marked.use({ extensions: [mentionExtension({ triggerChar: '@' })] });

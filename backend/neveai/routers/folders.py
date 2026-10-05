@@ -2,7 +2,6 @@ import logging
 import os
 import shutil
 import uuid
-from pathlib import Path
 from typing import Optional
 from pydantic import BaseModel
 import mimetypes
@@ -20,17 +19,15 @@ from neveai.models.files import Files
 from neveai.models.knowledge import Knowledges
 
 
-from neveai.config import UPLOAD_DIR
 from neveai.constants import ERROR_MESSAGES
 from neveai.internal.db import get_session
 from sqlalchemy.orm import Session
 
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import (APIRouter, Depends, HTTPException, status, Request)
 
 
-from neveai.utils.auth import get_admin_user, get_verified_user
+from neveai.utils.auth import get_verified_user
 from neveai.utils.access_control import has_permission
 
 log = logging.getLogger(__name__)

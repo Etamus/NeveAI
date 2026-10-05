@@ -1,5 +1,4 @@
 <script lang="ts">
-	import DOMPurify from 'dompurify';
 	import { toast } from 'svelte-sonner';
 
 	import { marked } from 'marked';
@@ -22,25 +21,7 @@
 
 	const dispatch = createEventDispatcher();
 
-	import {
-		type Model,
-		mobile,
-		settings,
-		models,
-		config,
-		showCallOverlay,
-		tools,
-		toolServers,
-		terminalServers,
-		user as _user,
-		showControls,
-		showArtifacts,
-		showSettings,
-		selectedTerminalId,
-		TTSWorker,
-		temporaryChatEnabled,
-		chatId
-	} from '$lib/stores';
+	import { type Model, mobile, settings, models, config, tools, toolServers, terminalServers, user as _user, showArtifacts, temporaryChatEnabled, chatId } from '$lib/stores';
 	import { getChatById } from '$lib/apis/chats';
 
 	import {
@@ -60,17 +41,13 @@
 	} from '$lib/utils';
 	import { uploadFile } from '$lib/apis/files';
 	import { generateAutoCompletion } from '$lib/apis';
-	import { deleteFileById } from '$lib/apis/files';
 	import { getSessionUser } from '$lib/apis/auths';
 	import { getTools } from '$lib/apis/tools';
 
 	import { fly } from 'svelte/transition';
+	import { animateComposerHeight } from '$lib/utils/animateComposerHeight';
 	import { autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
-	import {
-		NEVEAI_BASE_URL,
-		NEVEAI_API_BASE_URL,
-		PASTED_TEXT_CHARACTER_LIMIT
-	} from '$lib/constants';
+	import { NEVEAI_API_BASE_URL, PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
 
 	import { getSuggestionRenderer } from '../common/RichTextInput/suggestions';
 
@@ -80,7 +57,8 @@
 
 	import RichTextInput from '../common/RichTextInput.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
-	import Switch from '../common/Switch.svelte';
+	import ReasoningDropdown from './MessageInput/ReasoningDropdown.svelte';
+	import { getReasoningLevel, getReasoningState, setReasoningLevel, type ReasoningLevel } from '$lib/utils/reasoningModes';
 	import FileItem from '../common/FileItem.svelte';
 	import Image from '../common/Image.svelte';
 	import Spinner from '../common/Spinner.svelte';
@@ -104,13 +82,9 @@
 	import PlusAlt from '../icons/PlusAlt.svelte';
 	import Dropdown from '../common/Dropdown.svelte';
 
-	import { DropdownMenu } from 'bits-ui';
-	import { flyAndScale } from '$lib/utils/transitions';
-
 	import CommandSuggestionList from './MessageInput/CommandSuggestionList.svelte';
 	import ValvesModal from '../workspace/common/ValvesModal.svelte';
 	import PageEdit from '../icons/PageEdit.svelte';
-	import { goto } from '$app/navigation';
 	import InputModal from '../common/InputModal.svelte';
 	import QueuedMessageItem from './MessageInput/QueuedMessageItem.svelte';
 
@@ -406,6 +380,8 @@
 	export let onNativeIntegrationChange: Function = () => {};
 	export let thinkingEnabled = true;
 	export let thinkingExtendedEnabled = true;
+	export let thinkingUnlimitedEnabled = false;
+	let reasoningLevel: ReasoningLevel = getReasoningLevel();
 
 	let previousFileGenerationEnabled = fileGenerationEnabled;
 	let previousAttachmentFingerprint = '';
@@ -524,7 +500,9 @@
 
 	$: isCompact =
 		atSelectedModel === undefined &&
-		!history?.currentId &&
+		!generating &&
+		!uploadPending &&
+		!(history?.currentId && history?.messages[history.currentId]?.done !== true) &&
 		files.length === 0 &&
 		!webSearchEnabled &&
 		!deepSearchEnabled &&
@@ -947,33 +925,17 @@
 		saveImageResolution(stableDiffusionQuality);
 		showImageResolutionDropdown = false;
 	};
-	const THINKING_MODE_STORAGE_KEY = 'neveai.globalThinkingEnabled';
-	const THINKING_EXTENDED_STORAGE_KEY = 'neveai.thinkingExtendedEnabled';
 	let appliedThinkingModeKey = '';
-
-	const getGlobalThinkingEnabled = () => {
-		if (typeof window === 'undefined' || typeof localStorage === 'undefined') return true;
-		return localStorage.getItem(THINKING_MODE_STORAGE_KEY) !== 'false';
+	const applyReasoningLevel = (level: ReasoningLevel) => {
+		reasoningLevel = level;
+		const state = getReasoningState(level);
+		thinkingEnabled = state.enabled;
+		thinkingExtendedEnabled = state.extended;
+		thinkingUnlimitedEnabled = state.unlimited;
 	};
-
-	const setThinkingMode = (enabled: boolean) => {
-		thinkingEnabled = enabled;
-		showThinkingDropdown = false;
-		if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-			localStorage.setItem(THINKING_MODE_STORAGE_KEY, String(enabled));
-		}
-	};
-
-	const getThinkingExtendedEnabled = () => {
-		if (typeof window === 'undefined' || typeof localStorage === 'undefined') return true;
-		return localStorage.getItem(THINKING_EXTENDED_STORAGE_KEY) !== 'false';
-	};
-
-	const setThinkingExtendedMode = (enabled: boolean) => {
-		thinkingExtendedEnabled = enabled;
-		if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
-			localStorage.setItem(THINKING_EXTENDED_STORAGE_KEY, String(enabled));
-		}
+	const changeReasoningLevel = (level: ReasoningLevel) => {
+		setReasoningLevel(level);
+		applyReasoningLevel(level);
 	};
 
 	let isComposing = false;
@@ -1025,6 +987,7 @@
 				fullWidth?: boolean;
 				positionAnchorId?: string;
 				fitAvailableHeight?: boolean;
+				tokenUsage?: boolean;
 		  };
 
 	function viewportDropdown(node: HTMLElement, options: ViewportDropdownOptions = false) {
@@ -1158,11 +1121,14 @@
 			const revision = ++updateRevision;
 			if (fullWidth && widthAnchor)
 				node.style.width = `${widthAnchor.getBoundingClientRect().width}px`;
-			const alignEnd = anchorId === 'thinking-dropdown-container';
-			const middleware = [offset(6), flip(), shift({ padding: 8 })];
+			const tokenUsage = typeof options === 'object' && options.tokenUsage;
+			const alignEnd = anchorId === 'thinking-dropdown-container' || (tokenUsage && ($mobile || $showArtifacts));
+			const middleware = [offset(tokenUsage ? 10 : 6), flip(), shift({ padding: 8, crossAxis: anchorId === 'thinking-dropdown-container' })];
 			const { x, y } = await computePosition(positionAnchor, node, {
 				strategy: 'fixed',
-				placement: `${history?.currentId ? 'top' : 'bottom'}-${alignEnd ? 'end' : 'start'}`,
+				placement: tokenUsage
+					? (alignEnd ? 'top-end' : 'top')
+					: `${history?.currentId ? 'top' : 'bottom'}-${alignEnd ? 'end' : 'start'}`,
 				middleware
 			});
 			if (!active || revision !== updateRevision) return;
@@ -1230,13 +1196,13 @@
 	$: showThinkingButton = selectedModels.length > 0;
 	$: thinkingModeModelKey = showThinkingButton ? selectedModels.join('\u0000') : '';
 	$: if (showThinkingButton && thinkingModeModelKey !== appliedThinkingModeKey) {
-		thinkingEnabled = getGlobalThinkingEnabled();
-		thinkingExtendedEnabled = getThinkingExtendedEnabled();
+		applyReasoningLevel(getReasoningLevel());
 		appliedThinkingModeKey = thinkingModeModelKey;
 	}
 	$: if (!showThinkingButton) {
 		thinkingEnabled = true;
 		thinkingExtendedEnabled = true;
+		thinkingUnlimitedEnabled = false;
 		appliedThinkingModeKey = '';
 	}
 
@@ -1925,6 +1891,162 @@
 	});
 </script>
 
+{#snippet usageIndicator()}
+{#if lastUsage && !stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled}
+	{@const totalTokens =
+		lastUsage.total_tokens ??
+		(lastUsage.prompt_tokens ?? lastUsage.input_tokens ?? 0) +
+			(lastUsage.completion_tokens ?? lastUsage.output_tokens ?? 0)}
+	{@const contextModel = (() => {
+		const mid = atSelectedModel?.id ?? selectedModels?.[0];
+		return $models.find((m) => m.id === mid);
+	})()}
+	{@const contextWindow =
+		contextModel?.llamacpp?.n_ctx ||
+		contextModel?.info?.params?.num_ctx ||
+		contextModel?.info?.meta?.context_length ||
+		128000}
+	{@const usageRatio = Math.min(totalTokens / contextWindow, 1)}
+	{@const ringRadius = 9}
+	{@const circumference = 2 * Math.PI * ringRadius}
+	{@const strokeOffset = circumference * (1 - usageRatio)}
+	{@const ringColor =
+		usageRatio > 0.9 ? '#ef4444' : usageRatio > 0.7 ? '#f59e0b' : '#6b7280'}
+	{@const tokensPerSecond = getTokensPerSecond(lastUsage)}
+	<!-- svelte-ignore a11y-no-static-element-interactions -->
+	<div
+		class="relative flex items-center self-center"
+		style="margin-left: -2px; margin-right: 3px;"
+		data-token-usage-trigger
+		on:mouseenter={() => (showTokenPopup = true)}
+		on:mouseleave={() => (showTokenPopup = false)}
+	>
+		<div class="flex items-center gap-1 px-1 cursor-default select-none">
+			<svg width="24" height="24" viewBox="0 0 22 22" class="shrink-0">
+				<circle
+					cx="11"
+					cy="11"
+					r={ringRadius}
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					class="text-gray-200 dark:text-gray-700"
+				/>
+				<circle
+					cx="11"
+					cy="11"
+					r={ringRadius}
+					fill="none"
+					stroke={ringColor}
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-dasharray={circumference}
+					stroke-dashoffset={strokeOffset}
+					transform="rotate(-90 11 11)"
+					class="transition-all duration-500"
+				/>
+			</svg>
+			<span
+				class="text-[14px] font-medium tabular-nums"
+				style="color: {ringColor}">{(usageRatio * 100).toFixed(1)}%</span
+			>
+		</div>
+
+		{#if showTokenPopup}
+			<div
+				class="fixed z-[10030] w-56 rounded-xl border border-gray-200/70 dark:border-gray-700/60 bg-white dark:bg-gray-850 shadow-xl p-3.5"
+				data-token-usage-popup
+				use:viewportDropdown={{ tokenUsage: true }}
+				style="font-family: 'Segoe UI', sans-serif;"
+				transition:fly={{ y: 4, duration: 150 }}
+			>
+				<div class="flex items-center gap-1.5 mb-2.5">
+					<svg width="16" height="16" viewBox="0 0 22 22" class="shrink-0">
+						<circle
+							cx="11"
+							cy="11"
+							r="9"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							class="text-gray-300 dark:text-gray-600"
+						/>
+						<circle
+							cx="11"
+							cy="11"
+							r="9"
+							fill="none"
+							stroke={ringColor}
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-dasharray={circumference}
+							stroke-dashoffset={strokeOffset}
+							transform="rotate(-90 11 11)"
+						/>
+					</svg>
+					<span
+						class="text-[14px] font-semibold text-gray-700 dark:text-gray-200"
+						>{$i18n.t('Uso de tokens')}</span
+					>
+				</div>
+				<div
+					class="w-full h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 mb-3 overflow-hidden"
+				>
+					<div
+						class="h-full rounded-full transition-all duration-500"
+						style="width: {Math.max(
+							usageRatio * 100,
+							1
+						)}%; background-color: {ringColor}"
+					/>
+				</div>
+				<div class="space-y-1.5">
+					<div class="flex justify-between items-center">
+						<span class="text-[14px] text-gray-500 dark:text-gray-400"
+							>Tokens/s</span
+						>
+						<span
+							class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
+							>{formatTokensPerSecond(tokensPerSecond)}</span
+						>
+					</div>
+					<div class="flex justify-between items-center">
+						<span class="text-[14px] text-gray-500 dark:text-gray-400"
+							>Total</span
+						>
+						<span
+							class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
+							>{formatTokens(totalTokens)}</span
+						>
+					</div>
+					<div class="flex justify-between items-center">
+						<span class="text-[14px] text-gray-500 dark:text-gray-400"
+							>{$i18n.t('Contexto')}</span
+						>
+						<span
+							class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
+							>{formatTokens(contextWindow)}</span
+						>
+					</div>
+					<div
+						class="flex justify-between items-center pt-1.5 mt-1 border-t border-gray-100 dark:border-gray-700/50"
+					>
+						<span class="text-[14px] text-gray-500 dark:text-gray-400"
+							>{$i18n.t('Utilização')}</span
+						>
+						<span
+							class="text-[14px] font-semibold tabular-nums"
+							style="color: {ringColor}"
+							>{(usageRatio * 100).toFixed(1)}%</span
+						>
+					</div>
+				</div>
+			</div>
+		{/if}
+	</div>
+{/if}
+{/snippet}
+
 <svelte:window
 	on:resize={closeComposerDropdowns}
 	on:click={(e) => {
@@ -2024,7 +2146,7 @@
 />
 
 {#if loaded}
-	<div class="w-full font-primary">
+	<div class="w-full font-primary" data-composer-root data-ongoing={Boolean(history?.currentId)}>
 		<div class=" mx-auto inset-x-0 bg-transparent flex justify-center">
 			<div
 				class="flex flex-col px-3 {($settings?.widescreenMode ?? null)
@@ -2127,7 +2249,8 @@
 
 						<div
 							id="message-input-container"
-							class="flex-1 flex {isCompact
+							use:animateComposerHeight={{ key: `${isCompact}:${stableDiffusionQuality}:${webSearchEnabled}:${deepSearchEnabled}:${codeExecutionEnabled}:${stableDiffusionEnabled}:${musicGenerationEnabled}:${videoGenerationEnabled}:${selectedToolIds.length}`, context: `${$chatId}:${selectedModels.join(',')}` }}
+							class="min-h-0 flex-none flex {isCompact
 								? 'flex-row items-center rounded-full'
 								: 'flex-col rounded-3xl'} relative z-40 w-full shadow-lg border {chatDragged
 								? 'border-blue-400 dark:border-blue-500 ring-2 ring-blue-300/50 dark:ring-blue-500/30'
@@ -2269,6 +2392,7 @@
 
 							{#if isCompact}
 								<InputMenu
+									above={Boolean(history?.currentId)}
 									bind:files
 									{mediaAttachmentPolicy}
 									selectedModels={atSelectedModel ? [atSelectedModel.id] : selectedModels}
@@ -2305,14 +2429,15 @@
 									}}
 								>
 									<div
+										id="input-menu-button"
 										class="bg-transparent hover:bg-gray-100 text-gray-700 dark:text-white dark:hover:bg-gray-800 rounded-full size-8 flex justify-center items-center outline-hidden focus:outline-hidden"
 									>
-										<PlusAlt className="size-5.5" />
+										<PlusAlt className="composer-add-icon size-5.5" />
 									</div>
 								</InputMenu>
 							{/if}
 
-							<div class={isCompact ? 'flex-1 min-w-0 px-1 flex items-center' : 'px-2.5'}>
+							<div class="composer-editor {isCompact ? 'flex-1 min-w-0 px-1 flex items-center' : 'px-2.5'}">
 								<div
 									bind:this={chatInputContainerEl}
 									class="chat-input-scroll rtl:text-right ltr:text-left bg-transparent dark:text-gray-100 outline-hidden w-full px-1 resize-none h-fit max-h-47 overflow-auto {files.length ===
@@ -2499,127 +2624,12 @@
 							</div>
 
 							{#if isCompact}
-								<div class="self-center flex items-center gap-3 shrink-0 pr-1">
+								<div class="composer-compact-controls self-center flex items-center gap-1.5 shrink-0 pr-1">
 									{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
-										<div
-											class="relative flex items-center self-center"
-											id="thinking-dropdown-container"
-										>
-											<button
-												type="button"
-												class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition cursor-pointer bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-												style="font-size: 0.79rem; font-family: 'Segoe UI', sans-serif; font-weight: 400; letter-spacing: 0.01em;"
-												aria-label={`${$i18n.t(thinkingEnabled ? 'Raciocínio' : 'Rápido')}${thinkingExtendedEnabled ? ` ${$i18n.t('Aprimorado')}` : ''}`}
-												on:click|preventDefault={() => {
-													showThinkingDropdown = !showThinkingDropdown;
-												}}
-											>
-												<span>{thinkingEnabled ? $i18n.t('Raciocínio') : $i18n.t('Rápido')}</span>
-												{#if thinkingExtendedEnabled}
-													<span class="text-gray-500 dark:text-gray-500"
-														>{$i18n.t('Aprimorado')}</span
-													>
-												{/if}
-												<svg
-													xmlns="http://www.w3.org/2000/svg"
-													viewBox="0 0 20 20"
-													fill="currentColor"
-													class="size-3.5 transition-transform {showThinkingDropdown
-														? ''
-														: 'rotate-180'}"
-												>
-													<path
-														fill-rule="evenodd"
-														d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
-														clip-rule="evenodd"
-													/>
-												</svg>
-											</button>
-
-											{#if showThinkingDropdown}
-												<div
-													use:viewportDropdown
-													class="fixed z-50 w-[15.5rem] rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
-													style="font-family: 'Segoe UI', sans-serif;"
-													transition:fly={{ y: -5, duration: 150 }}
-													on:click|stopPropagation
-												>
-													<button
-														type="button"
-														class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
-														on:click={() => setThinkingMode(false)}
-													>
-														<div class="flex-1 text-left">
-															<div>{$i18n.t('Rápido')}</div>
-															<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">
-																{$i18n.t('Para respostas imediatas')}
-															</div>
-														</div>
-														{#if !thinkingEnabled}
-															<svg
-																xmlns="http://www.w3.org/2000/svg"
-																fill="none"
-																viewBox="0 0 24 24"
-																stroke-width="1.7"
-																stroke="currentColor"
-																class="size-4"
-															>
-																<path
-																	stroke-linecap="round"
-																	stroke-linejoin="round"
-																	d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-																/>
-															</svg>
-														{/if}
-													</button>
-													<button
-														type="button"
-														class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
-														on:click={() => setThinkingMode(true)}
-													>
-														<div class="flex-1 text-left">
-															<div>{$i18n.t('Raciocínio')}</div>
-															<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">
-																{$i18n.t('Para tarefas complexas')}
-															</div>
-														</div>
-														{#if thinkingEnabled}
-															<svg
-																xmlns="http://www.w3.org/2000/svg"
-																fill="none"
-																viewBox="0 0 24 24"
-																stroke-width="1.7"
-																stroke="currentColor"
-																class="size-4"
-															>
-																<path
-																	stroke-linecap="round"
-																	stroke-linejoin="round"
-																	d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-																/>
-															</svg>
-														{/if}
-													</button>
-													<div class="my-1 border-t border-gray-100 dark:border-gray-800"></div>
-													<div
-														class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200"
-													>
-														<div class="flex-1 text-left">
-															<div>{$i18n.t('Aprimorado')}</div>
-															<div class="text-[13px] text-gray-400 dark:text-gray-500 font-normal">
-																{$i18n.t('Aumenta esforço do pensamento')}
-															</div>
-														</div>
-														<Switch
-															bind:state={thinkingExtendedEnabled}
-															on:change={(e) => setThinkingExtendedMode(e.detail)}
-														/>
-													</div>
-												</div>
-											{/if}
-										</div>
+										<ReasoningDropdown ongoing={!!history?.currentId} level={reasoningLevel} bind:show={showThinkingDropdown} onLevelChange={changeReasoningLevel} position={viewportDropdown} />
 									{/if}
 
+									{@render usageIndicator()}
 									<Tooltip content={$i18n.t('Send message')}>
 										<button
 											id="send-message-button"
@@ -2648,7 +2658,7 @@
 
 							{#if !isCompact}
 								<div
-									class="message-input-actions flex justify-between mt-2 mb-2.5 mx-0.5 max-w-full {stableDiffusionEnabled &&
+									class="message-input-actions flex justify-between mt-2 mb-2 mx-0.5 max-w-full {stableDiffusionEnabled &&
 									(stableDiffusionQuality === 'neve_image_2' ||
 										stableDiffusionQuality === 'qwen_image_2s')
 										? 'stable-image-actions'
@@ -2662,6 +2672,7 @@
 									>
 										<div class="message-input-add-control shrink-0">
 											<InputMenu
+												above={Boolean(history?.currentId)}
 												bind:files
 												{mediaAttachmentPolicy}
 												selectedModels={atSelectedModel ? [atSelectedModel.id] : selectedModels}
@@ -2701,7 +2712,7 @@
 													id="input-menu-button"
 													class="bg-transparent hover:bg-gray-100 text-gray-700 dark:text-white dark:hover:bg-gray-800 rounded-full size-8 flex justify-center items-center outline-hidden focus:outline-hidden"
 												>
-													<PlusAlt className="size-5.5" />
+													<PlusAlt className="composer-add-icon size-5.5" />
 												</div>
 											</InputMenu>
 										</div>
@@ -2714,7 +2725,7 @@
 													})}
 												>
 													<button
-														class="translate-y-[0.5px] px-1 flex gap-1 items-center text-gray-600 dark:text-gray-300 hover:text-gray-700 dark:hover:text-gray-200 rounded-lg self-center transition"
+														class="translate-y-[0.5px] px-2.5 py-[7px] flex gap-1 items-center text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-full self-center transition-colors"
 														aria-label="Available Tools"
 														type="button"
 														on:click={() => {
@@ -2734,7 +2745,7 @@
 												<button
 													on:click|preventDefault={() => (webSearchEnabled = !webSearchEnabled)}
 													type="button"
-													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-sky-500 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-600/10"
+													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
 												>
 													<div class="relative size-4 shrink-0 flex items-center justify-center">
 														<span class="group-hover:hidden flex items-center justify-center">
@@ -2755,7 +2766,7 @@
 												<button
 													on:click|preventDefault={() => (deepSearchEnabled = !deepSearchEnabled)}
 													type="button"
-													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-sky-600 dark:text-sky-200 hover:bg-sky-100 dark:hover:bg-sky-600/10"
+													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
 												>
 													<div class="relative size-4 shrink-0 flex items-center justify-center">
 														<span class="group-hover:hidden flex items-center justify-center">
@@ -2781,7 +2792,7 @@
 													on:click|preventDefault={() =>
 														(codeExecutionEnabled = !codeExecutionEnabled)}
 													type="button"
-													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] transition-colors duration-300 max-w-full overflow-hidden text-emerald-500 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-700/10 {($settings?.highContrastMode ??
+													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] transition-colors duration-300 max-w-full overflow-hidden text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 {($settings?.highContrastMode ??
 													false)
 														? 'm-1'
 														: 'focus:outline-hidden rounded-full'}"
@@ -2819,7 +2830,7 @@
 													on:click|preventDefault={() =>
 														(stableDiffusionEnabled = !stableDiffusionEnabled)}
 													type="button"
-													class="stable-image-toggle group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-pink-500 dark:text-pink-300 hover:bg-pink-100 dark:hover:bg-pink-700/10"
+													class="stable-image-toggle group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
 												>
 													<div class="relative size-4 shrink-0 flex items-center justify-center">
 														<span class="group-hover:hidden flex items-center justify-center">
@@ -2853,7 +2864,7 @@
 															>{stableDiffusionQuality === 'qwen_image_2_1_official'
 																? 'Neve Image 2.1'
 															: stableDiffusionQuality === 'qwen_image_2s'
-																? 'Neve Image 2 Fast'
+																? 'Neve Image 2'
 																	: stableDiffusionQuality === 'neve_image_2'
 																	? 'Neve Image 1.5'
 																		: 'Neve Image 1'}</span
@@ -2878,7 +2889,7 @@
 															class="fixed z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
 															transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
 														>
-													{#each [{ id: 'neve_image', label: 'Neve Image 1' }, { id: 'neve_image_2', label: 'Neve Image 1.5' }, { id: 'qwen_image_2s', label: 'Neve Image 2 Fast' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.1' }] as quality}
+													{#each [{ id: 'neve_image', label: 'Neve Image 1' }, { id: 'neve_image_2', label: 'Neve Image 1.5' }, { id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.1' }] as quality}
 																<button
 																	type="button"
 																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -2999,7 +3010,7 @@
 													on:click|preventDefault={() =>
 														(musicGenerationEnabled = !musicGenerationEnabled)}
 													type="button"
-													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-violet-500 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-700/10"
+													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
 												>
 													<div class="relative size-4 shrink-0 flex items-center justify-center">
 														<span class="group-hover:hidden flex items-center justify-center">
@@ -3023,7 +3034,7 @@
 														onNativeIntegrationChange(null);
 													}}
 													type="button"
-													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-yellow-500 dark:text-yellow-300 hover:bg-yellow-50 dark:hover:bg-yellow-900/10"
+													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] rounded-full transition-colors duration-300 focus:outline-hidden max-w-full overflow-hidden text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700"
 												>
 													<div class="relative size-4 shrink-0 flex items-center justify-center">
 														<span class="group-hover:hidden flex items-center justify-center">
@@ -3222,7 +3233,7 @@
 										</div>
 									</div>
 									<div
-										class="message-input-actions-secondary self-end flex space-x-1 mr-1 shrink-0 gap-[0.5px]"
+										class="message-input-actions-secondary self-end flex mr-1 shrink-0 {history?.currentId ? 'gap-[calc(0.375rem+0.5px)]' : 'space-x-1 gap-[0.5px]'}"
 									>
 										{#if generating || (history?.currentId && history?.messages[history.currentId]?.done !== true) || uploadPending}
 											<Tooltip content={$i18n.t('Stop')}>
@@ -3258,290 +3269,10 @@
 											{/if}
 
 											{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
-												<div
-													class="relative flex items-center self-center mr-2"
-													id="thinking-dropdown-container"
-												>
-													<button
-														type="button"
-														class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition cursor-pointer bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-														style="font-size: 0.79rem; font-family: 'Segoe UI', sans-serif; font-weight: 400; letter-spacing: 0.01em;"
-														aria-label={`${$i18n.t(thinkingEnabled ? 'Raciocínio' : 'Rápido')}${thinkingExtendedEnabled ? ` ${$i18n.t('Aprimorado')}` : ''}`}
-														on:click|preventDefault={() => {
-															showThinkingDropdown = !showThinkingDropdown;
-														}}
-													>
-														<span
-															>{thinkingEnabled ? $i18n.t('Raciocínio') : $i18n.t('Rápido')}</span
-														>
-														{#if thinkingExtendedEnabled}
-															<span class="text-gray-500 dark:text-gray-500"
-																>{$i18n.t('Aprimorado')}</span
-															>
-														{/if}
-														<svg
-															xmlns="http://www.w3.org/2000/svg"
-															viewBox="0 0 20 20"
-															fill="currentColor"
-															class="size-3.5 transition-transform {history?.currentId
-																? showThinkingDropdown
-																	? 'rotate-180'
-																	: ''
-																: showThinkingDropdown
-																	? ''
-																	: 'rotate-180'}"
-														>
-															<path
-																fill-rule="evenodd"
-																d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
-																clip-rule="evenodd"
-															/>
-														</svg>
-													</button>
-
-													{#if showThinkingDropdown}
-														<div
-															use:viewportDropdown
-															class="fixed z-50 w-[15.5rem] rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
-															style="font-family: 'Segoe UI', sans-serif;"
-															transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
-															on:click|stopPropagation
-														>
-															<button
-																type="button"
-																class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
-																on:click={() => setThinkingMode(false)}
-															>
-																<div class="flex-1 text-left">
-																	<div>{$i18n.t('Rápido')}</div>
-																	<div
-																		class="text-[13px] text-gray-400 dark:text-gray-500 font-normal"
-																	>
-																		{$i18n.t('Para respostas imediatas')}
-																	</div>
-																</div>
-																{#if !thinkingEnabled}
-																	<svg
-																		xmlns="http://www.w3.org/2000/svg"
-																		fill="none"
-																		viewBox="0 0 24 24"
-																		stroke-width="1.7"
-																		stroke="currentColor"
-																		class="size-4"
-																	>
-																		<path
-																			stroke-linecap="round"
-																			stroke-linejoin="round"
-																			d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-																		/>
-																	</svg>
-																{/if}
-															</button>
-															<button
-																type="button"
-																class="flex w-full items-center gap-2.5 px-2 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer text-gray-700 dark:text-gray-200 rounded-md"
-																on:click={() => setThinkingMode(true)}
-															>
-																<div class="flex-1 text-left">
-																	<div>{$i18n.t('Raciocínio')}</div>
-																	<div
-																		class="text-[13px] text-gray-400 dark:text-gray-500 font-normal"
-																	>
-																		{$i18n.t('Para tarefas complexas')}
-																	</div>
-																</div>
-																{#if thinkingEnabled}
-																	<svg
-																		xmlns="http://www.w3.org/2000/svg"
-																		fill="none"
-																		viewBox="0 0 24 24"
-																		stroke-width="1.7"
-																		stroke="currentColor"
-																		class="size-4"
-																	>
-																		<path
-																			stroke-linecap="round"
-																			stroke-linejoin="round"
-																			d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-																		/>
-																	</svg>
-																{/if}
-															</button>
-															<div class="my-1 border-t border-gray-100 dark:border-gray-800"></div>
-															<div
-																class="flex w-full items-center gap-2.5 px-2 py-2 text-gray-700 dark:text-gray-200"
-															>
-																<div class="flex-1 text-left">
-																	<div>{$i18n.t('Aprimorado')}</div>
-																	<div
-																		class="text-[13px] text-gray-400 dark:text-gray-500 font-normal"
-																	>
-																		{$i18n.t('Aumenta esforço do pensamento')}
-																	</div>
-																</div>
-																<Switch
-																	bind:state={thinkingExtendedEnabled}
-																	on:change={(e) => setThinkingExtendedMode(e.detail)}
-																/>
-															</div>
-														</div>
-													{/if}
-												</div>
+												<ReasoningDropdown ongoing={!!history?.currentId} spacious={!history?.currentId} level={reasoningLevel} bind:show={showThinkingDropdown} onLevelChange={changeReasoningLevel} position={viewportDropdown} />
 											{/if}
 
-											{#if lastUsage && !stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled}
-												{@const totalTokens =
-													lastUsage.total_tokens ??
-													(lastUsage.prompt_tokens ?? lastUsage.input_tokens ?? 0) +
-														(lastUsage.completion_tokens ?? lastUsage.output_tokens ?? 0)}
-												{@const contextModel = (() => {
-													const mid = atSelectedModel?.id ?? selectedModels?.[0];
-													return $models.find((m) => m.id === mid);
-												})()}
-												{@const contextWindow =
-													contextModel?.llamacpp?.n_ctx ||
-													contextModel?.info?.params?.num_ctx ||
-													contextModel?.info?.meta?.context_length ||
-													128000}
-												{@const usageRatio = Math.min(totalTokens / contextWindow, 1)}
-												{@const ringRadius = 9}
-												{@const circumference = 2 * Math.PI * ringRadius}
-												{@const strokeOffset = circumference * (1 - usageRatio)}
-												{@const ringColor =
-													usageRatio > 0.9 ? '#ef4444' : usageRatio > 0.7 ? '#f59e0b' : '#6b7280'}
-												{@const tokensPerSecond = getTokensPerSecond(lastUsage)}
-												<!-- svelte-ignore a11y-no-static-element-interactions -->
-												<div
-													class="relative flex items-center mr-3"
-													on:mouseenter={() => (showTokenPopup = true)}
-													on:mouseleave={() => (showTokenPopup = false)}
-												>
-													<div class="flex items-center gap-1 px-1 cursor-default select-none">
-														<svg width="24" height="24" viewBox="0 0 22 22" class="shrink-0">
-															<circle
-																cx="11"
-																cy="11"
-																r={ringRadius}
-																fill="none"
-																stroke="currentColor"
-																stroke-width="2"
-																class="text-gray-200 dark:text-gray-700"
-															/>
-															<circle
-																cx="11"
-																cy="11"
-																r={ringRadius}
-																fill="none"
-																stroke={ringColor}
-																stroke-width="2"
-																stroke-linecap="round"
-																stroke-dasharray={circumference}
-																stroke-dashoffset={strokeOffset}
-																transform="rotate(-90 11 11)"
-																class="transition-all duration-500"
-															/>
-														</svg>
-														<span
-															class="text-[14px] font-medium tabular-nums"
-															style="color: {ringColor}">{(usageRatio * 100).toFixed(1)}%</span
-														>
-													</div>
-
-													{#if showTokenPopup}
-														<div
-															class="absolute bottom-full mb-2.5 z-[60] w-56 rounded-xl border border-gray-200/70 dark:border-gray-700/60 bg-white dark:bg-gray-850 shadow-xl p-3.5 {$mobile
-																? 'right-0'
-																: $showArtifacts
-																	? 'right-0'
-																	: 'right-1/2 translate-x-1/2'}"
-															style="font-family: 'Segoe UI', sans-serif;"
-															transition:fly={{ y: 4, duration: 150 }}
-														>
-															<div class="flex items-center gap-1.5 mb-2.5">
-																<svg width="16" height="16" viewBox="0 0 22 22" class="shrink-0">
-																	<circle
-																		cx="11"
-																		cy="11"
-																		r="9"
-																		fill="none"
-																		stroke="currentColor"
-																		stroke-width="2"
-																		class="text-gray-300 dark:text-gray-600"
-																	/>
-																	<circle
-																		cx="11"
-																		cy="11"
-																		r="9"
-																		fill="none"
-																		stroke={ringColor}
-																		stroke-width="2"
-																		stroke-linecap="round"
-																		stroke-dasharray={circumference}
-																		stroke-dashoffset={strokeOffset}
-																		transform="rotate(-90 11 11)"
-																	/>
-																</svg>
-																<span
-																	class="text-[14px] font-semibold text-gray-700 dark:text-gray-200"
-																	>Uso de tokens</span
-																>
-															</div>
-															<div
-																class="w-full h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 mb-3 overflow-hidden"
-															>
-																<div
-																	class="h-full rounded-full transition-all duration-500"
-																	style="width: {Math.max(
-																		usageRatio * 100,
-																		1
-																	)}%; background-color: {ringColor}"
-																/>
-															</div>
-															<div class="space-y-1.5">
-																<div class="flex justify-between items-center">
-																	<span class="text-[14px] text-gray-500 dark:text-gray-400"
-																		>Tokens/s</span
-																	>
-																	<span
-																		class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
-																		>{formatTokensPerSecond(tokensPerSecond)}</span
-																	>
-																</div>
-																<div class="flex justify-between items-center">
-																	<span class="text-[14px] text-gray-500 dark:text-gray-400"
-																		>Total</span
-																	>
-																	<span
-																		class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
-																		>{formatTokens(totalTokens)}</span
-																	>
-																</div>
-																<div class="flex justify-between items-center">
-																	<span class="text-[14px] text-gray-500 dark:text-gray-400"
-																		>Contexto</span
-																	>
-																	<span
-																		class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
-																		>{formatTokens(contextWindow)}</span
-																	>
-																</div>
-																<div
-																	class="flex justify-between items-center pt-1.5 mt-1 border-t border-gray-100 dark:border-gray-700/50"
-																>
-																	<span class="text-[14px] text-gray-500 dark:text-gray-400"
-																		>{$i18n.t('Utilização')}</span
-																	>
-																	<span
-																		class="text-[14px] font-semibold tabular-nums"
-																		style="color: {ringColor}"
-																		>{(usageRatio * 100).toFixed(1)}%</span
-																	>
-																</div>
-															</div>
-														</div>
-													{/if}
-												</div>
-											{/if}
+											{@render usageIndicator()}
 
 											<div class=" flex items-center">
 												<Tooltip
@@ -3693,6 +3424,37 @@
 {/if}
 
 <style>
+	.message-input-active-controls :global(button.group:not(:hover)),
+	.message-input-active-controls :global(button[aria-label='Available Tools']:not(:hover)) {
+		background-color: transparent;
+	}
+	:global(html:not(.dark)) .message-input-active-controls :global(button.bg-gray-100:not(:hover)) {
+		background-color: transparent;
+	}
+	.message-input-active-controls :global(button.bg-gray-100) {
+		padding-right: 0.75rem;
+	}
+	:global(.dark) .message-input-active-controls :global(button.bg-gray-100) {
+		color: var(--color-gray-200, #e5e7eb);
+	}
+	:global(#message-input-container.composer-height-transition) {
+		overflow: clip;
+	}
+	:global(#message-input-container.composer-height-transition.flex-col) {
+		justify-content: flex-end;
+	}
+	:global([data-composer-root][data-ongoing='true'] #message-input-container.composer-height-transition.flex-row) {
+		align-items: flex-end;
+	}
+	:global([data-composer-root][data-ongoing='true'] #message-input-container.composer-height-transition.flex-row > *) {
+		align-self: flex-end;
+	}
+	:global([data-composer-root][data-ongoing='true'] #message-input-container.composer-height-transition.flex-row > .composer-editor) {
+		align-self: center;
+	}
+	:global(#message-input-container.composer-height-transition > *) {
+		flex-shrink: 0;
+	}
 	.image-style-dropdown-ready {
 		animation: enter-image-style-dropdown 180ms cubic-bezier(0.33, 1, 0.68, 1);
 	}
@@ -3708,7 +3470,36 @@
 		}
 	}
 
+	.stable-image-toggle {
+		flex-shrink: 0;
+		white-space: nowrap;
+	}
+	.stable-image-toggle .chip-label {
+		white-space: nowrap;
+	}
+	@container (max-width: 28rem) {
+		.stable-image-actions .stable-image-toggle .chip-label { display: none; }
+		.stable-image-actions .image-quality-control > button,
+		.stable-image-actions .image-resolution-control > button,
+		.stable-image-actions .image-style-control > button { padding-inline: 0.25rem; white-space: nowrap; }
+		.stable-image-actions .image-style-control { min-width: 0; flex-shrink: 1; }
+		.stable-image-actions .image-style-control > button { max-width: 100%; min-width: 0; }
+		.stable-image-actions .image-style-control > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+		.stable-image-actions .image-style-control svg { flex-shrink: 0; }
+	}
+	@media (max-width: 480px) {
+		.composer-compact-controls { gap: 0.375rem; }
+		:global(#thinking-dropdown-container > button > span) { display: none; }
+	}
 	@media (max-width: 640px) {
+		:global(.composer-add-icon) { translate: none; transform: none; }
+		.message-input-active-controls { flex-wrap: wrap; max-width: 100%; }
+		.image-quality-control button, .image-style-control button,
+		.image-resolution-control button { white-space: nowrap; }
+		:global(#thinking-dropdown-container > button) { white-space: nowrap; padding-inline: 0.375rem; }
+		.thinking-enhanced-label {
+			display: none;
+		}
 		.message-input-active-controls .chip-label {
 			display: none !important;
 		}
@@ -3719,7 +3510,7 @@
 
 		.stable-image-actions .message-input-actions-primary {
 			display: grid;
-			grid-template-columns: 2rem max-content max-content max-content;
+			grid-template-columns: 2rem minmax(0, 1fr) max-content minmax(0, 0.7fr);
 			max-width: calc(100% - 2.75rem);
 			column-gap: 0.125rem;
 			row-gap: 0.25rem;
@@ -3735,11 +3526,13 @@
 		}
 
 		.stable-image-actions .image-quality-control {
+			min-width: 0;
 			grid-column: 1 / 3;
 			grid-row: 1;
 		}
 
 		.stable-image-actions .image-style-control {
+			min-width: 0;
 			grid-column: 4;
 			grid-row: 1;
 		}
@@ -3750,8 +3543,14 @@
 		}
 
 		.stable-image-actions-no-style .message-input-actions-primary {
-			grid-template-columns: 2rem max-content max-content max-content;
+			grid-template-columns: 2rem minmax(0, 1fr) max-content;
 		}
+		.stable-image-actions .image-quality-control > button,
+		.stable-image-actions .image-style-control > button { width: 100%; min-width: 0; padding-inline: 0.25rem; }
+		.stable-image-actions .image-quality-control > button > span,
+		.stable-image-actions .image-style-control > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+		.stable-image-actions .image-quality-control svg,
+		.stable-image-actions .image-style-control svg { flex-shrink: 0; }
 
 		.stable-image-actions-no-style .image-resolution-control {
 			grid-column: 3;

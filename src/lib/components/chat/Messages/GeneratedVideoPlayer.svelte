@@ -3,11 +3,13 @@
 	import { getFileContentById } from '$lib/apis/files';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 	import GeneratedVideoPreview from './GeneratedVideoPreview.svelte';
+	import { mediaDuration } from '$lib/utils/mediaDuration';
 
 	export let src = '';
 	export let fileId: string | null = null;
 	export let name = 'video.mp4';
 	export let initialAspectRatio = 16 / 9;
+	export let fitContainer = false;
 
 	const i18n = getContext('i18n');
 	let playerElement: HTMLDivElement;
@@ -20,6 +22,21 @@
 	let expandedAutoplay = false;
 	let metadataLoaded = false;
 	let videoAspectRatio = Math.max(0.01, Number(initialAspectRatio) || 16 / 9);
+	let narrowControls = false;
+	let availableWidth = 0;
+	let availableHeight = 0;
+	const observePlayerWidth = (node: HTMLDivElement) => {
+		const update = () => {
+			narrowControls = node.clientWidth < 420;
+			availableWidth = node.parentElement?.clientWidth ?? 0;
+			availableHeight = node.parentElement?.clientHeight ?? 0;
+		};
+		update();
+		const observer = new ResizeObserver(update);
+		observer.observe(node);
+		if (fitContainer && node.parentElement) observer.observe(node.parentElement);
+		return { destroy() { observer.disconnect(); } };
+	};
 
 	$: resolvedSrc = src.startsWith('/') ? `${NEVEAI_BASE_URL}${src}` : src;
 	$: if (!metadataLoaded) {
@@ -27,6 +44,7 @@
 	}
 	$: progress = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
 	$: videoDisplayWidth = Math.min(32, 32 * videoAspectRatio);
+	$: fittedWidth = Math.min(availableWidth, availableHeight * videoAspectRatio);
 
 	const formatTime = (seconds: number) => {
 		if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -90,10 +108,12 @@
 
 <div
 	bind:this={playerElement}
+	use:observePlayerWidth
 	data-generated-visual-media
-	class="video-player relative w-full self-start overflow-hidden rounded-lg bg-transparent text-gray-700 dark:text-gray-200"
-	class:portrait-video={videoAspectRatio < 1}
-	style={`aspect-ratio: ${videoAspectRatio}; width: min(100%, ${videoDisplayWidth}rem); max-height: 32rem;`}
+	class="video-player relative w-full {fitContainer ? 'self-center' : 'self-start'} overflow-hidden rounded-lg bg-transparent text-gray-700 dark:text-gray-200"
+	class:portrait-video={videoAspectRatio < 1 || narrowControls}
+	class:fit-container={fitContainer}
+	style={`aspect-ratio: ${videoAspectRatio}; width: min(100%, ${fitContainer && fittedWidth > 0 ? `${fittedWidth}px` : `${videoDisplayWidth}rem`}); max-height: ${fitContainer ? '100%' : '32rem'};`}
 >
 	<!-- Generated clips do not have a caption track available. -->
 	<!-- svelte-ignore a11y_media_has_caption -->
@@ -102,15 +122,17 @@
 		playsinline
 		preload="metadata"
 		src={resolvedSrc}
-		class="absolute inset-0 block size-full object-cover"
+		class="absolute inset-0 block size-full {fitContainer ? 'object-contain' : 'object-cover'}"
 		on:loadedmetadata={() => {
 			metadataLoaded = true;
-			duration = videoElement.duration || 0;
+			duration = mediaDuration(videoElement);
 			if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
 				videoAspectRatio = videoElement.videoWidth / videoElement.videoHeight;
 			}
 		}}
-		on:durationchange={() => (duration = videoElement.duration || 0)}
+		on:durationchange={() => (duration = mediaDuration(videoElement))}
+		on:loadeddata={() => (duration = mediaDuration(videoElement))}
+		on:progress={() => (duration = mediaDuration(videoElement))}
 		on:timeupdate={() => (currentTime = videoElement.currentTime || 0)}
 		on:play={() => (playing = true)}
 		on:pause={() => (playing = false)}
@@ -136,7 +158,7 @@
 			{/if}
 		</button>
 
-		{#if videoAspectRatio < 1}
+		{#if videoAspectRatio < 1 || narrowControls}
 			<span class="video-time-combined whitespace-nowrap text-[0.6875rem] tabular-nums text-white drop-shadow-md dark:text-gray-200">
 				{formatTime(currentTime)} / {formatTime(duration)}
 			</span>
@@ -154,7 +176,7 @@
 			style="--video-progress: {progress}%"
 			on:input={seek}
 		/>
-		{#if videoAspectRatio >= 1}
+		{#if videoAspectRatio >= 1 && !narrowControls}
 			<span class="video-duration w-[2.3rem] shrink-0 text-right text-[0.6875rem] tabular-nums text-white drop-shadow-md dark:text-gray-200">{formatTime(duration)}</span>
 		{/if}
 
@@ -177,6 +199,23 @@
 </div>
 
 <style>
+	.video-player { container-type: inline-size; }
+	@container (max-width: 300px) {
+		.video-player.portrait-video .video-controls {
+			grid-template-columns: repeat(4, minmax(0, 1fr));
+			grid-template-rows: 0.75rem 1.5rem 1rem;
+			height: 4.5rem;
+			padding: 0.25rem;
+			gap: 0.25rem 0;
+		}
+		.video-player.portrait-video .video-time-combined { grid-column: 1 / -1; grid-row: 3; text-align: center; font-size: 0.625rem; }
+		.video-player.portrait-video .video-actions { display: contents; }
+		.video-player.portrait-video .video-controls button { grid-row: 2; width: min(100%, 1.5rem); height: 1.5rem; justify-self: center; }
+		.video-player.portrait-video .video-actions button:first-child { grid-column: 2; }
+		.video-player.portrait-video .video-actions button:nth-child(2) { grid-column: 3; }
+		.video-player.portrait-video .video-actions button:last-child { grid-column: 4; }
+		.video-player.portrait-video .video-controls button svg { max-width: 100%; }
+	}
 	.video-player {
 		border-radius: 0.5rem;
 		clip-path: inset(0 round 0.5rem);

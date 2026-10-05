@@ -3,33 +3,19 @@ import logging
 import os
 import shutil
 import base64
-import redis
 
 from datetime import datetime
 from pathlib import Path
-from typing import Generic, Union, Optional, TypeVar
+from typing import Optional
 from urllib.parse import urlparse
 
 import requests
 from pydantic import BaseModel
 from sqlalchemy import JSON, Column, DateTime, Integer, func
-from neveai.env import (
-    DATA_DIR,
-    DATABASE_URL,
-    ENABLE_DB_MIGRATIONS,
-    ENV,
-    REDIS_URL,
-    REDIS_KEY_PREFIX,
-    REDIS_SENTINEL_HOSTS,
-    REDIS_SENTINEL_PORT,
-    FRONTEND_BUILD_DIR,
-    OFFLINE_MODE,
-    NEVEAI_DIR,
-    NEVEAI_FAVICON_URL,
-    NEVEAI_NAME,
-    log,
-)
+from neveai.env import (DATA_DIR, ENABLE_DB_MIGRATIONS, ENV, FRONTEND_BUILD_DIR, OFFLINE_MODE, NEVEAI_DIR, NEVEAI_NAME, log)
 from neveai.internal.db import Base, get_db
+from neveai.internal.legacy_state import import_config_namespace
+from neveai.internal.settings import RuntimeSettings, Setting, SettingsStore
 from neveai.utils.redis import get_redis_connection
 
 
@@ -121,30 +107,20 @@ def get_config():
 
 
 CONFIG_DATA = get_config()
-
-
-def get_config_value(config_path: str):
-    path_parts = config_path.split(".")
-    cur_config = CONFIG_DATA
-    for key in path_parts:
-        if key in cur_config:
-            cur_config = cur_config[key]
-        else:
-            return None
-    return cur_config
+if import_config_namespace(CONFIG_DATA):
+    save_to_db(CONFIG_DATA)
 
 
 PERSISTENT_CONFIG_REGISTRY = []
 
 
 def save_config(config):
-    global CONFIG_DATA
-    global PERSISTENT_CONFIG_REGISTRY
     try:
-        save_to_db(config)
-        CONFIG_DATA = config
-
-        # Trigger updates on all registered PersistentConfig entries
+        with _settings_store.lock:
+            save_to_db(config)
+            if config is not CONFIG_DATA:
+                CONFIG_DATA.clear()
+                CONFIG_DATA.update(config)
         for config_item in PERSISTENT_CONFIG_REGISTRY:
             config_item.update()
     except Exception as e:
@@ -153,132 +129,34 @@ def save_config(config):
     return True
 
 
-T = TypeVar("T")
-
 ENABLE_PERSISTENT_CONFIG = (
     os.environ.get("ENABLE_PERSISTENT_CONFIG", "True").lower() == "true"
 )
 
 
-class PersistentConfig(Generic[T]):
-    def __init__(self, env_name: str, config_path: str, env_value: T):
-        self.env_name = env_name
-        self.config_path = config_path
-        self.env_value = env_value
-        self.config_value = get_config_value(config_path)
+_settings_store = SettingsStore(CONFIG_DATA, lambda document: save_to_db(document))
 
-        if self.config_value is not None and ENABLE_PERSISTENT_CONFIG:
-            if (
-                self.config_path.startswith("oauth.")
-                and not ENABLE_OAUTH_PERSISTENT_CONFIG
-            ):
-                log.info(
-                    f"Skipping loading of '{env_name}' as OAuth persistent config is disabled"
-                )
-                self.value = env_value
-            else:
-                log.info(f"'{env_name}' loaded from the latest database entry")
-                self.value = self.config_value
-        else:
-            self.value = env_value
 
+class PersistentConfig(Setting):
+    def __init__(self, env_name: str, config_path: str, env_value):
+        use_saved = ENABLE_PERSISTENT_CONFIG and not config_path.startswith("oauth.")
+        super().__init__(env_name, config_path, env_value, _settings_store, use_saved)
         PERSISTENT_CONFIG_REGISTRY.append(self)
 
-    def __str__(self):
-        return str(self.value)
 
-    @property
-    def __dict__(self):
-        raise TypeError(
-            "PersistentConfig object cannot be converted to dict, use config_get or .value instead."
-        )
-
-    def __getattribute__(self, item):
-        if item == "__dict__":
-            raise TypeError(
-                "PersistentConfig object cannot be converted to dict, use config_get or .value instead."
-            )
-        return super().__getattribute__(item)
-
-    def update(self):
-        new_value = get_config_value(self.config_path)
-        if new_value is not None:
-            self.value = new_value
-            log.info(f"Updated {self.env_name} to new value {self.value}")
-
-    def save(self):
-        log.info(f"Saving '{self.env_name}' to the database")
-        path_parts = self.config_path.split(".")
-        sub_config = CONFIG_DATA
-        for key in path_parts[:-1]:
-            if key not in sub_config:
-                sub_config[key] = {}
-            sub_config = sub_config[key]
-        sub_config[path_parts[-1]] = self.value
-        save_to_db(CONFIG_DATA)
-        self.config_value = self.value
-
-
-class AppConfig:
-    _redis: Union[redis.Redis, redis.cluster.RedisCluster] = None
-    _redis_key_prefix: str
-
-    _state: dict[str, PersistentConfig]
-
+class AppConfig(RuntimeSettings):
     def __init__(
         self,
         redis_url: Optional[str] = None,
-        redis_sentinels: Optional[list] = [],
+        redis_sentinels: Optional[list] = None,
         redis_cluster: Optional[bool] = False,
         redis_key_prefix: str = "neveai",
     ):
-        if redis_url:
-            super().__setattr__("_redis_key_prefix", redis_key_prefix)
-            super().__setattr__(
-                "_redis",
-                get_redis_connection(
-                    redis_url,
-                    redis_sentinels,
-                    redis_cluster,
-                    decode_responses=True,
-                ),
-            )
-
-        super().__setattr__("_state", {})
-
-    def __setattr__(self, key, value):
-        if isinstance(value, PersistentConfig):
-            self._state[key] = value
-        else:
-            self._state[key].value = value
-            self._state[key].save()
-
-            if self._redis and ENABLE_PERSISTENT_CONFIG:
-                redis_key = f"{self._redis_key_prefix}:config:{key}"
-                self._redis.set(redis_key, json.dumps(self._state[key].value))
-
-    def __getattr__(self, key):
-        if key not in self._state:
-            raise AttributeError(f"Config key '{key}' not found")
-
-        # If Redis is available and persistent config is enabled, check for an updated value
-        if self._redis and ENABLE_PERSISTENT_CONFIG:
-            redis_key = f"{self._redis_key_prefix}:config:{key}"
-            redis_value = self._redis.get(redis_key)
-
-            if redis_value is not None:
-                try:
-                    decoded_value = json.loads(redis_value)
-
-                    # Update the in-memory value if different
-                    if self._state[key].value != decoded_value:
-                        self._state[key].value = decoded_value
-                        log.info(f"Updated {key} from Redis: {decoded_value}")
-
-                except json.JSONDecodeError:
-                    log.error(f"Invalid JSON format in Redis for {key}: {redis_value}")
-
-        return self._state[key].value
+        transport = get_redis_connection(
+            redis_url, redis_sentinels or [], redis_cluster, decode_responses=True
+        ) if redis_url else None
+        super().__init__(transport, redis_key_prefix,
+                         lambda: ENABLE_PERSISTENT_CONFIG, log)
 
 
 JWT_EXPIRES_IN = PersistentConfig(
@@ -291,11 +169,7 @@ if JWT_EXPIRES_IN.value == "-1":
         "    Tokens will never expire — review this for production deployments.\n"
     )
 
-####################################
-# OAuth user login is not part of the local NeveAI runtime.
-####################################
 
-ENABLE_OAUTH_PERSISTENT_CONFIG = False
 
 ####################################
 # Static DIR
@@ -350,15 +224,8 @@ if frontend_loader.exists():
         logging.error(f"An error occurred: {e}")
 
 
-####################################
-# CUSTOM_NAME
-####################################
 
-CUSTOM_NAME = os.environ.get("CUSTOM_NAME", "")
 
-####################################
-# Local Storage
-####################################
 
 ####################################
 # File Upload DIR
@@ -435,7 +302,7 @@ TERMINAL_SERVER_CONNECTIONS = PersistentConfig(
 ####################################
 
 
-NEVEAI_URL = PersistentConfig("NEVEAI_URL", "webui.url", os.environ.get("NEVE_URL", ""))
+NEVEAI_URL = PersistentConfig("NEVEAI_URL", "neve.url", os.environ.get("NEVE_URL", ""))
 
 
 DEFAULT_LOCALE = PersistentConfig(
@@ -446,12 +313,6 @@ DEFAULT_LOCALE = PersistentConfig(
 
 DEFAULT_MODELS = PersistentConfig(
     "DEFAULT_MODELS", "ui.default_models", os.environ.get("DEFAULT_MODELS", None)
-)
-
-DEFAULT_PINNED_MODELS = PersistentConfig(
-    "DEFAULT_PINNED_MODELS",
-    "ui.default_pinned_models",
-    os.environ.get("DEFAULT_PINNED_MODELS", None),
 )
 
 try:
@@ -513,13 +374,6 @@ DEFAULT_MODEL_PARAMS = PersistentConfig(
     {},
 )
 
-DEFAULT_GROUP_ID = PersistentConfig(
-    "DEFAULT_GROUP_ID",
-    "ui.default_group_id",
-    os.environ.get("DEFAULT_GROUP_ID", ""),
-)
-
-
 RESPONSE_WATERMARK = PersistentConfig(
     "RESPONSE_WATERMARK",
     "ui.watermark",
@@ -532,24 +386,6 @@ USER_PERMISSIONS_WORKSPACE_MODELS_ACCESS = (
     == "true"
 )
 
-USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ACCESS = (
-    os.environ.get("USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ACCESS", "False").lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_PROMPTS_ACCESS = (
-    os.environ.get("USER_PERMISSIONS_WORKSPACE_PROMPTS_ACCESS", "False").lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_TOOLS_ACCESS = (
-    os.environ.get("USER_PERMISSIONS_WORKSPACE_TOOLS_ACCESS", "False").lower() == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_SKILLS_ACCESS = (
-    os.environ.get("USER_PERMISSIONS_WORKSPACE_SKILLS_ACCESS", "False").lower()
-    == "true"
-)
 
 USER_PERMISSIONS_WORKSPACE_MODELS_IMPORT = (
     os.environ.get("USER_PERMISSIONS_WORKSPACE_MODELS_IMPORT", "False").lower()
@@ -558,103 +394,6 @@ USER_PERMISSIONS_WORKSPACE_MODELS_IMPORT = (
 
 USER_PERMISSIONS_WORKSPACE_MODELS_EXPORT = (
     os.environ.get("USER_PERMISSIONS_WORKSPACE_MODELS_EXPORT", "False").lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_PROMPTS_IMPORT = (
-    os.environ.get("USER_PERMISSIONS_WORKSPACE_PROMPTS_IMPORT", "False").lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_PROMPTS_EXPORT = (
-    os.environ.get("USER_PERMISSIONS_WORKSPACE_PROMPTS_EXPORT", "False").lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_TOOLS_IMPORT = (
-    os.environ.get("USER_PERMISSIONS_WORKSPACE_TOOLS_IMPORT", "False").lower() == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_TOOLS_EXPORT = (
-    os.environ.get("USER_PERMISSIONS_WORKSPACE_TOOLS_EXPORT", "False").lower() == "true"
-)
-
-
-USER_PERMISSIONS_WORKSPACE_MODELS_ALLOW_SHARING = (
-    os.environ.get("USER_PERMISSIONS_WORKSPACE_MODELS_ALLOW_SHARING", "False").lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_MODELS_ALLOW_PUBLIC_SHARING = (
-    os.environ.get(
-        "USER_PERMISSIONS_WORKSPACE_MODELS_ALLOW_PUBLIC_SHARING", "False"
-    ).lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_SHARING = (
-    os.environ.get(
-        "USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_SHARING", "False"
-    ).lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_PUBLIC_SHARING = (
-    os.environ.get(
-        "USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_PUBLIC_SHARING", "False"
-    ).lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_PROMPTS_ALLOW_SHARING = (
-    os.environ.get("USER_PERMISSIONS_WORKSPACE_PROMPTS_ALLOW_SHARING", "False").lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_PROMPTS_ALLOW_PUBLIC_SHARING = (
-    os.environ.get(
-        "USER_PERMISSIONS_WORKSPACE_PROMPTS_ALLOW_PUBLIC_SHARING", "False"
-    ).lower()
-    == "true"
-)
-
-
-USER_PERMISSIONS_WORKSPACE_TOOLS_ALLOW_SHARING = (
-    os.environ.get("USER_PERMISSIONS_WORKSPACE_TOOLS_ALLOW_SHARING", "False").lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_TOOLS_ALLOW_PUBLIC_SHARING = (
-    os.environ.get(
-        "USER_PERMISSIONS_WORKSPACE_TOOLS_ALLOW_PUBLIC_SHARING", "False"
-    ).lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_SKILLS_ALLOW_SHARING = (
-    os.environ.get("USER_PERMISSIONS_WORKSPACE_SKILLS_ALLOW_SHARING", "False").lower()
-    == "true"
-)
-
-USER_PERMISSIONS_WORKSPACE_SKILLS_ALLOW_PUBLIC_SHARING = (
-    os.environ.get(
-        "USER_PERMISSIONS_WORKSPACE_SKILLS_ALLOW_PUBLIC_SHARING", "False"
-    ).lower()
-    == "true"
-)
-
-
-USER_PERMISSIONS_NOTES_ALLOW_SHARING = (
-    os.environ.get("USER_PERMISSIONS_NOTES_ALLOW_SHARING", "False").lower() == "true"
-)
-
-USER_PERMISSIONS_NOTES_ALLOW_PUBLIC_SHARING = (
-    os.environ.get("USER_PERMISSIONS_NOTES_ALLOW_PUBLIC_SHARING", "False").lower()
-    == "true"
-)
-
-USER_PERMISSIONS_ACCESS_GRANTS_ALLOW_USERS = (
-    os.environ.get("USER_PERMISSIONS_ACCESS_GRANTS_ALLOW_USERS", "True").lower()
     == "true"
 )
 
@@ -708,9 +447,6 @@ USER_PERMISSIONS_CHAT_EDIT = (
     os.environ.get("USER_PERMISSIONS_CHAT_EDIT", "True").lower() == "true"
 )
 
-USER_PERMISSIONS_CHAT_SHARE = (
-    os.environ.get("USER_PERMISSIONS_CHAT_SHARE", "True").lower() == "true"
-)
 
 USER_PERMISSIONS_CHAT_EXPORT = (
     os.environ.get("USER_PERMISSIONS_CHAT_EXPORT", "True").lower() == "true"
@@ -784,75 +520,7 @@ USER_PERMISSIONS_SETTINGS_INTERFACE = (
 )
 
 
-DEFAULT_USER_PERMISSIONS = {
-    "workspace": {
-        "models": USER_PERMISSIONS_WORKSPACE_MODELS_ACCESS,
-        "knowledge": USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ACCESS,
-        "prompts": USER_PERMISSIONS_WORKSPACE_PROMPTS_ACCESS,
-        "tools": USER_PERMISSIONS_WORKSPACE_TOOLS_ACCESS,
-        "skills": USER_PERMISSIONS_WORKSPACE_SKILLS_ACCESS,
-        "models_import": USER_PERMISSIONS_WORKSPACE_MODELS_IMPORT,
-        "models_export": USER_PERMISSIONS_WORKSPACE_MODELS_EXPORT,
-        "prompts_import": USER_PERMISSIONS_WORKSPACE_PROMPTS_IMPORT,
-        "prompts_export": USER_PERMISSIONS_WORKSPACE_PROMPTS_EXPORT,
-        "tools_import": USER_PERMISSIONS_WORKSPACE_TOOLS_IMPORT,
-        "tools_export": USER_PERMISSIONS_WORKSPACE_TOOLS_EXPORT,
-    },
-    "sharing": {
-        "models": USER_PERMISSIONS_WORKSPACE_MODELS_ALLOW_SHARING,
-        "public_models": USER_PERMISSIONS_WORKSPACE_MODELS_ALLOW_PUBLIC_SHARING,
-        "knowledge": USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_SHARING,
-        "public_knowledge": USER_PERMISSIONS_WORKSPACE_KNOWLEDGE_ALLOW_PUBLIC_SHARING,
-        "prompts": USER_PERMISSIONS_WORKSPACE_PROMPTS_ALLOW_SHARING,
-        "public_prompts": USER_PERMISSIONS_WORKSPACE_PROMPTS_ALLOW_PUBLIC_SHARING,
-        "tools": USER_PERMISSIONS_WORKSPACE_TOOLS_ALLOW_SHARING,
-        "public_tools": USER_PERMISSIONS_WORKSPACE_TOOLS_ALLOW_PUBLIC_SHARING,
-        "skills": USER_PERMISSIONS_WORKSPACE_SKILLS_ALLOW_SHARING,
-        "public_skills": USER_PERMISSIONS_WORKSPACE_SKILLS_ALLOW_PUBLIC_SHARING,
-        "notes": USER_PERMISSIONS_NOTES_ALLOW_SHARING,
-        "public_notes": USER_PERMISSIONS_NOTES_ALLOW_PUBLIC_SHARING,
-    },
-    "access_grants": {
-        "allow_users": USER_PERMISSIONS_ACCESS_GRANTS_ALLOW_USERS,
-    },
-    "chat": {
-        "controls": USER_PERMISSIONS_CHAT_CONTROLS,
-        "valves": USER_PERMISSIONS_CHAT_VALVES,
-        "system_prompt": USER_PERMISSIONS_CHAT_SYSTEM_PROMPT,
-        "params": USER_PERMISSIONS_CHAT_PARAMS,
-        "file_upload": USER_PERMISSIONS_CHAT_FILE_UPLOAD,
-        "web_upload": USER_PERMISSIONS_CHAT_WEB_UPLOAD,
-        "delete": USER_PERMISSIONS_CHAT_DELETE,
-        "delete_message": USER_PERMISSIONS_CHAT_DELETE_MESSAGE,
-        "continue_response": USER_PERMISSIONS_CHAT_CONTINUE_RESPONSE,
-        "regenerate_response": USER_PERMISSIONS_CHAT_REGENERATE_RESPONSE,
-        "rate_response": USER_PERMISSIONS_CHAT_RATE_RESPONSE,
-        "edit": USER_PERMISSIONS_CHAT_EDIT,
-        "share": USER_PERMISSIONS_CHAT_SHARE,
-        "export": USER_PERMISSIONS_CHAT_EXPORT,
-        "stt": USER_PERMISSIONS_CHAT_STT,
-        "tts": USER_PERMISSIONS_CHAT_TTS,
-        "call": USER_PERMISSIONS_CHAT_CALL,
-        "multiple_models": USER_PERMISSIONS_CHAT_MULTIPLE_MODELS,
-        "temporary": USER_PERMISSIONS_CHAT_TEMPORARY,
-        "temporary_enforced": USER_PERMISSIONS_CHAT_TEMPORARY_ENFORCED,
-    },
-    "features": {
-        # General features
-        "folders": USER_PERMISSIONS_FEATURES_FOLDERS,
-        "direct_tool_servers": USER_PERMISSIONS_FEATURES_DIRECT_TOOL_SERVERS,
-        # Chat features
-        "web_search": USER_PERMISSIONS_FEATURES_WEB_SEARCH,
-        "code_interpreter": USER_PERMISSIONS_FEATURES_CODE_INTERPRETER,
-        "memories": USER_PERMISSIONS_FEATURES_MEMORIES,
-        "stable_diffusion": USER_PERMISSIONS_FEATURES_STABLE_DIFFUSION,
-        "music_generation": USER_PERMISSIONS_FEATURES_MUSIC_GENERATION,
-        "video_generation": USER_PERMISSIONS_FEATURES_VIDEO_GENERATION,
-    },
-    "settings": {
-        "interface": USER_PERMISSIONS_SETTINGS_INTERFACE,
-    },
-}
+DEFAULT_USER_PERMISSIONS = {'workspace': {'models': USER_PERMISSIONS_WORKSPACE_MODELS_ACCESS, 'models_import': USER_PERMISSIONS_WORKSPACE_MODELS_IMPORT, 'models_export': USER_PERMISSIONS_WORKSPACE_MODELS_EXPORT}, 'chat': {'controls': USER_PERMISSIONS_CHAT_CONTROLS, 'valves': USER_PERMISSIONS_CHAT_VALVES, 'system_prompt': USER_PERMISSIONS_CHAT_SYSTEM_PROMPT, 'params': USER_PERMISSIONS_CHAT_PARAMS, 'file_upload': USER_PERMISSIONS_CHAT_FILE_UPLOAD, 'web_upload': USER_PERMISSIONS_CHAT_WEB_UPLOAD, 'delete': USER_PERMISSIONS_CHAT_DELETE, 'delete_message': USER_PERMISSIONS_CHAT_DELETE_MESSAGE, 'continue_response': USER_PERMISSIONS_CHAT_CONTINUE_RESPONSE, 'regenerate_response': USER_PERMISSIONS_CHAT_REGENERATE_RESPONSE, 'rate_response': USER_PERMISSIONS_CHAT_RATE_RESPONSE, 'edit': USER_PERMISSIONS_CHAT_EDIT, 'export': USER_PERMISSIONS_CHAT_EXPORT, 'stt': USER_PERMISSIONS_CHAT_STT, 'tts': USER_PERMISSIONS_CHAT_TTS, 'call': USER_PERMISSIONS_CHAT_CALL, 'multiple_models': USER_PERMISSIONS_CHAT_MULTIPLE_MODELS, 'temporary': USER_PERMISSIONS_CHAT_TEMPORARY, 'temporary_enforced': USER_PERMISSIONS_CHAT_TEMPORARY_ENFORCED}, 'features': {'folders': USER_PERMISSIONS_FEATURES_FOLDERS, 'direct_tool_servers': USER_PERMISSIONS_FEATURES_DIRECT_TOOL_SERVERS, 'web_search': USER_PERMISSIONS_FEATURES_WEB_SEARCH, 'code_interpreter': USER_PERMISSIONS_FEATURES_CODE_INTERPRETER, 'memories': USER_PERMISSIONS_FEATURES_MEMORIES, 'stable_diffusion': USER_PERMISSIONS_FEATURES_STABLE_DIFFUSION, 'music_generation': USER_PERMISSIONS_FEATURES_MUSIC_GENERATION, 'video_generation': USER_PERMISSIONS_FEATURES_VIDEO_GENERATION}, 'settings': {'interface': USER_PERMISSIONS_SETTINGS_INTERFACE}}
 
 USER_PERMISSIONS = PersistentConfig(
     "USER_PERMISSIONS",
@@ -874,9 +542,6 @@ FOLDER_MAX_FILE_COUNT = PersistentConfig(
 
 ENABLE_ADMIN_EXPORT = os.environ.get("ENABLE_ADMIN_EXPORT", "True").lower() == "true"
 
-ENABLE_ADMIN_WORKSPACE_CONTENT_ACCESS = (
-    os.environ.get("ENABLE_ADMIN_WORKSPACE_CONTENT_ACCESS", "True").lower() == "true"
-)
 
 BYPASS_ADMIN_ACCESS_CONTROL = (
     os.environ.get(
@@ -890,11 +555,6 @@ ENABLE_ADMIN_CHAT_ACCESS = (
     os.environ.get("ENABLE_ADMIN_CHAT_ACCESS", "True").lower() == "true"
 )
 
-ENABLE_COMMUNITY_SHARING = PersistentConfig(
-    "ENABLE_COMMUNITY_SHARING",
-    "ui.enable_community_sharing",
-    os.environ.get("ENABLE_COMMUNITY_SHARING", "True").lower() == "true",
-)
 
 # FastAPI / AnyIO settings
 THREAD_POOL_SIZE = os.getenv("THREAD_POOL_SIZE", None)
@@ -966,7 +626,6 @@ except Exception as e:
 NEVEAI_BANNERS = PersistentConfig("NEVEAI_BANNERS", "ui.banners", banners)
 
 
-
 ####################################
 # TASKS
 ####################################
@@ -978,11 +637,6 @@ TASK_MODEL = PersistentConfig(
     os.environ.get("TASK_MODEL", ""),
 )
 
-TASK_MODEL_EXTERNAL = PersistentConfig(
-    "TASK_MODEL_EXTERNAL",
-    "task.model.external",
-    os.environ.get("TASK_MODEL_EXTERNAL", ""),
-)
 
 TITLE_GENERATION_PROMPT_TEMPLATE = PersistentConfig(
     "TITLE_GENERATION_PROMPT_TEMPLATE",
@@ -1417,7 +1071,6 @@ CODE_INTERPRETER_PYODIDE_PROMPT = """
 # Local Vector Database (Chroma)
 ####################################
 
-VECTOR_DB = "chroma"
 CHROMA_DATA_PATH = f"{DATA_DIR}/vector_db"
 
 import chromadb
@@ -1591,9 +1244,6 @@ RAG_EMBEDDING_QUERY_PREFIX = os.environ.get("RAG_EMBEDDING_QUERY_PREFIX", None)
 
 RAG_EMBEDDING_CONTENT_PREFIX = os.environ.get("RAG_EMBEDDING_CONTENT_PREFIX", None)
 
-RAG_EMBEDDING_PREFIX_FIELD_NAME = os.environ.get(
-    "RAG_EMBEDDING_PREFIX_FIELD_NAME", None
-)
 
 RAG_RERANKING_ENGINE = PersistentConfig(
     "RAG_RERANKING_ENGINE",
@@ -1632,7 +1282,6 @@ ENABLE_MARKDOWN_HEADER_TEXT_SPLITTER = PersistentConfig(
 )
 
 
-TIKTOKEN_CACHE_DIR = os.environ.get("TIKTOKEN_CACHE_DIR", f"{CACHE_DIR}/tiktoken")
 TIKTOKEN_ENCODING_NAME = PersistentConfig(
     "TIKTOKEN_ENCODING_NAME",
     "rag.tiktoken_encoding_name",
@@ -1923,10 +1572,6 @@ WHISPER_MODEL = PersistentConfig(
 
 WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
 WHISPER_MODEL_DIR = os.getenv("WHISPER_MODEL_DIR", f"{CACHE_DIR}/whisper/models")
-WHISPER_MODEL_AUTO_UPDATE = (
-    not OFFLINE_MODE
-    and os.environ.get("WHISPER_MODEL_AUTO_UPDATE", "").lower() == "true"
-)
 
 WHISPER_VAD_FILTER = os.getenv("WHISPER_VAD_FILTER", "False").lower() == "true"
 

@@ -1,29 +1,28 @@
 <script lang="ts">
-	import { marked } from 'marked';
 	import { toast } from 'svelte-sonner';
 
-	import { getContext, tick } from 'svelte';
+	import { getContext } from 'svelte';
 
-	import { mobile, settings } from '$lib/stores';
-	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
+	import { settings } from '$lib/stores';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import { copyToClipboard, sanitizeResponseContent } from '$lib/utils';
+	import { copyToClipboard } from '$lib/utils';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
-	import Pin from '$lib/components/icons/Pin.svelte';
-	import PinSlash from '$lib/components/icons/PinSlash.svelte';
+	import Bookmark from '$lib/components/icons/Bookmark.svelte';
 	import Tag from '$lib/components/icons/Tag.svelte';
 	import Label from '$lib/components/icons/Label.svelte';
 
 	const i18n = getContext('i18n');
 
 	export let selectedModelIdx: number = -1;
+	export let keyboardNavigation = false;
 	export let item: any = {};
 	export let index: number = -1;
 	export let value: string = '';
 	export let profileImageUrl: string = '';
 
-	export let pinModelHandler: (modelId: string) => void = () => {};
+	export let favoriteModelHandler: (modelId: string) => void = () => {};
 	export let reorderEnabled = false;
 
 	export let onClick: () => void = () => {};
@@ -32,6 +31,9 @@
 		typeof item?.model?.info?.meta?.description === 'string'
 			? item.model.info.meta.description.trim()
 			: '';
+	$: modelDescriptionPreview = modelDescription.length > 35
+		? `${modelDescription.slice(0, 34).trimEnd()}\u2026`
+		: modelDescription;
 
 	const getModelImageVersion = (model: any) =>
 		model?.updated_at ?? model?.info?.updated_at ?? model?.meta?.updated_at ?? '';
@@ -59,10 +61,9 @@
 	role="option"
 	aria-selected={value === item.value}
 	aria-label={$i18n.t('Select {{modelName}} model', { modelName: item.label })}
-	class="flex group/item w-full text-left font-medium line-clamp-1 select-none items-center rounded-lg py-1.5 my-0.5 pl-3 pr-1.5 text-sm text-gray-700 dark:text-gray-100 outline-hidden transition-all duration-75 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer data-highlighted:bg-muted {index ===
-	selectedModelIdx
+	class="flex group/item h-14 shrink-0 w-full text-left font-normal select-none items-center rounded-lg py-2 pl-3 pr-1.5 text-sm text-gray-700 dark:text-gray-100 outline-hidden transition-all duration-75 hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer data-highlighted:bg-muted {value === item.value
 		? 'bg-gray-100 dark:bg-gray-700/60'
-		: ''} {reorderEnabled ? 'cursor-grab active:cursor-grabbing' : ''}"
+		: ''} {keyboardNavigation && index === selectedModelIdx && value !== item.value ? 'ring-1 ring-inset ring-gray-300 dark:ring-gray-600' : ''} {reorderEnabled ? 'cursor-grab active:cursor-grabbing' : ''}"
 	data-model-selector-row="true"
 	data-arrow-selected={index === selectedModelIdx}
 	data-value={item.value}
@@ -70,7 +71,7 @@
 		onClick();
 	}}
 >
-	<div class="flex flex-col flex-1 gap-1.5">
+	<div class="flex min-w-0 flex-col flex-1 gap-1.5">
 		<!-- {#if (item?.model?.tags ?? []).length > 0}
 			<div
 				class="flex gap-0.5 self-center items-start h-full w-full translate-y-[0.5px] overflow-x-auto scrollbar-none"
@@ -87,42 +88,35 @@
 			</div>
 		{/if} -->
 
-		<div class="flex items-center gap-2">
-			<div class="flex items-center min-w-fit relative group/pin">
+		<div class="flex min-w-0 items-center gap-3">
+			<div class="flex items-center min-w-fit relative group/favorite">
 				<img
 					src={profileImageUrl || getModelProfileImageUrl(item.model, $i18n.language)}
 					alt={$i18n.t('{{modelName}} profile image', { modelName: item.label })}
-					class="rounded-full size-5 flex items-center group-hover/pin:opacity-0 transition-opacity"
+					class="rounded-full size-7 flex items-center group-hover/favorite:opacity-0 transition-opacity"
 					loading="eager"
 					decoding="async"
 				/>
-				<!-- svelte-ignore a11y-click-events-have-key-events -->
-				<!-- svelte-ignore a11y-no-static-element-interactions -->
 				<div
-					class="absolute inset-0 size-5 rounded-full flex items-center justify-center opacity-0 group-hover/pin:opacity-100 transition-opacity text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer"
-					on:click|stopPropagation|preventDefault={() => pinModelHandler(item.model.id)}
+					role="button"
+					tabindex="0"
+					aria-label={$i18n.t(($settings?.favoriteModels ?? []).includes(item.model.id) ? 'Remove from favorites' : 'Add to favorites')}
+					title={$i18n.t(($settings?.favoriteModels ?? []).includes(item.model.id) ? 'Remove from favorites' : 'Add to favorites')}
+					aria-pressed={($settings?.favoriteModels ?? []).includes(item.model.id)}
+					class="absolute inset-0 size-7 rounded-full flex items-center justify-center opacity-0 group-hover/favorite:opacity-100 focus-visible:opacity-100 focus-visible:bg-gray-100 dark:focus-visible:bg-gray-800 transition-opacity text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer"
+					on:pointerdown|stopPropagation
+					on:keydown|stopPropagation={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); favoriteModelHandler(item.model.id); } }}
+					on:click|stopPropagation|preventDefault={() => favoriteModelHandler(item.model.id)}
 				>
-					{#if ($settings?.pinnedModels ?? []).includes(item.model.id)}
-						<PinSlash className="size-3.5" />
-					{:else}
-						<Pin className="size-3.5" />
-					{/if}
+					<Bookmark className="size-3.5 {($settings?.favoriteModels ?? []).includes(item.model.id) ? 'fill-current' : ''}" />
 				</div>
 			</div>
 
-			<div class="flex items-center">
+			<div class="min-w-0 flex-1">
+				<div class="truncate dark:text-white dark:font-medium">{item.label}</div>
 				{#if modelDescription}
-					<Tooltip
-						content={`${marked.parse(sanitizeResponseContent(modelDescription).replaceAll('\n', '<br>'))}`}
-						placement="top-start"
-					>
-						<div class="line-clamp-1">
-							{item.label}
-						</div>
-					</Tooltip>
-				{:else}
-					<div class="line-clamp-1">
-						{item.label}
+					<div class="mt-0.5 max-w-[32ch] truncate text-xs font-normal text-gray-500 dark:text-gray-400" title={modelDescription}>
+						{modelDescriptionPreview}
 					</div>
 				{/if}
 			</div>
@@ -195,7 +189,7 @@
 		</div>
 	</div>
 
-	<div class="ml-auto pl-2 pr-1 flex items-center gap-1.5 shrink-0">
+	<div class="ml-auto w-7 pl-2 pr-1 flex justify-end items-center gap-1.5 shrink-0">
 		{#if value === item.value}
 			<div>
 				<CheckCircle className="size-4" strokeWidth="1.7" />

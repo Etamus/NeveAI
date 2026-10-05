@@ -5,22 +5,9 @@
 
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
-
-	import { downloadChatAsPDF } from '$lib/apis/utils';
 	import { copyToClipboard, createMessagesList } from '$lib/utils';
 
-	import {
-		showControls,
-		showArtifacts,
-		mobile,
-		temporaryChatEnabled,
-		theme,
-		user,
-		settings,
-		folders,
-		showEmbeds,
-		artifactContents
-	} from '$lib/stores';
+	import { temporaryChatEnabled, user, settings, folders } from '$lib/stores';
 	import { fade } from 'svelte/transition';
 	import { getChatById } from '$lib/apis/chats';
 
@@ -34,12 +21,9 @@
 
 	const i18n = getContext('i18n');
 
-	export let shareEnabled: boolean = false;
 
-	export let shareHandler: Function;
 	export let moveChatHandler: Function;
 
-	// export let tagHandler: Function;
 
 	export let chat;
 	export let onClose: Function = () => {};

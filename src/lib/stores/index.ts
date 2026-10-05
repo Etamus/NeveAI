@@ -141,7 +141,7 @@ interface OpenAIModel extends BaseModel {
 
 type Settings = {
 	[key: string]: any;
-	pinnedModels?: any[];
+	favoriteModels?: string[];
 	toolServers?: any[];
 	terminalServers?: any[];
 	directConnections?: any[];
@@ -235,7 +235,6 @@ type Document = {
 
 type Config = {
 	[key: string]: any;
-	license_metadata: any;
 	status: boolean;
 	name: string;
 	version: string;

@@ -51,6 +51,8 @@
 	$: isReasoningCodeBlock = hideToolbar || attributes?.type === 'reasoning';
 
 	let pyodideWorker = null;
+	let executionTimeout: ReturnType<typeof setTimeout>;
+	const displayResult = (value: unknown): string => typeof value === 'string' ? value : JSON.stringify(value) ?? String(value);
 
 	let _code = '';
 	$: if (code) {
@@ -184,7 +186,7 @@
 				}
 
 				if (output['result']) {
-					result = output['result'];
+					result = displayResult(output['result']);
 					const resultLines = result.split('\n');
 
 					for (const [idx, line] of resultLines.entries()) {
@@ -231,7 +233,6 @@
 			/\bimport\s+seaborn\b|\bfrom\s+seaborn\b/.test(code) ? 'seaborn' : null,
 			/\bimport\s+sklearn\b|\bfrom\s+sklearn\b/.test(code) ? 'scikit-learn' : null,
 			/\bimport\s+scipy\b|\bfrom\s+scipy\b/.test(code) ? 'scipy' : null,
-			/\bimport\s+re\b|\bfrom\s+re\b/.test(code) ? 'regex' : null,
 			/\bimport\s+seaborn\b|\bfrom\s+seaborn\b/.test(code) ? 'seaborn' : null,
 			/\bimport\s+sympy\b|\bfrom\s+sympy\b/.test(code) ? 'sympy' : null,
 			/\bimport\s+tiktoken\b|\bfrom\s+tiktoken\b/.test(code) ? 'tiktoken' : null,
@@ -248,7 +249,8 @@
 			packages: packages
 		});
 
-		setTimeout(() => {
+		clearTimeout(executionTimeout);
+		executionTimeout = setTimeout(() => {
 			if (executing) {
 				executing = false;
 				stderr = 'Execution Time Limit Exceeded';
@@ -257,6 +259,7 @@
 		}, 60000);
 
 		pyodideWorker.onmessage = (event) => {
+			clearTimeout(executionTimeout);
 			console.log('pyodideWorker.onmessage', event);
 			const { id, ...data } = event.data;
 
@@ -291,8 +294,8 @@
 				}
 			}
 
-			if (data['result']) {
-				result = data['result'];
+			if (data['result'] !== null && data['result'] !== undefined) {
+				result = displayResult(data['result']);
 				const resultLines = result.split('\n');
 
 				for (const [idx, line] of resultLines.entries()) {
@@ -321,12 +324,15 @@
 			}
 
 			data['stderr'] && (stderr = data['stderr']);
-			data['result'] && (result = data['result']);
 
 			executing = false;
+			pyodideWorker?.terminate();
 		};
 
 		pyodideWorker.onerror = (event) => {
+			clearTimeout(executionTimeout);
+			stderr = event.message || $i18n.t('Code execution failed');
+			pyodideWorker?.terminate();
 			console.log('pyodideWorker.onerror', event);
 			executing = false;
 		};
@@ -416,6 +422,7 @@
 
 	onDestroy(() => {
 		if (pyodideWorker) {
+			clearTimeout(executionTimeout);
 			pyodideWorker.terminate();
 		}
 	});
@@ -448,11 +455,11 @@
 		{:else}
 			{#if !isReasoningCodeBlock}
 			<div
-				class="sticky {stickyButtonsClassName} left-0 right-0 py-1.5 px-3 gap-2 flex items-center justify-end w-full z-10 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-[#2a2a2a] rounded-t-lg border-b border-gray-200/50 dark:border-gray-700/40"
+				class="sticky {stickyButtonsClassName} left-0 right-0 py-1.5 px-3 gap-2 flex items-center justify-end w-full z-10 text-xs text-gray-500 dark:text-gray-400 bg-[#f8f9fa] dark:bg-[#1a1a1a] rounded-t-lg"
 			>
 				<div class="flex-1 truncate">
 					<Tooltip content={lang} placement="top-start">
-						<span class=" truncate text-ellipsis">
+						<span class="truncate text-ellipsis font-bold">
 							{lang}
 						</span>
 					</Tooltip>

@@ -514,7 +514,7 @@
 	};
 </script>
 
-<div class={className}>
+<div class={className} data-messages-content>
 	{#if Object.keys(history?.messages ?? {}).length == 0}
 		<ChatPlaceholder modelIds={selectedModels} {atSelectedModel} {onSelect} />
 	{:else}
@@ -575,7 +575,7 @@
 						/>
 					{/if}
 				</section>
-				<div class="pb-18" />
+				<div class="pb-4" />
 				{#if bottomPadding}
 					<div class="  pb-6" />
 				{/if}

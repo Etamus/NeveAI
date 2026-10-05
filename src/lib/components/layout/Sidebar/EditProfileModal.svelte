@@ -4,7 +4,6 @@
 
 	import { user } from '$lib/stores';
 	import { updateUserProfile, getSessionUser } from '$lib/apis/auths';
-	import { generateInitialsImage } from '$lib/utils';
 	import { getCustomUserName, getUserDisplayName } from '$lib/utils/user';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 

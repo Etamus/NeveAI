@@ -146,7 +146,6 @@ export const AIAutocompletion = Extension.create({
 							//   // Generate completion
 							//   if (loading) return true
 							//   loading = true
-							//   const prompt = node.textContent
 							//   this.options.generateCompletion(prompt).then(suggestion => {
 							//     if (suggestion && suggestion.trim() !== '') {
 							//       dispatch(state.tr.setNodeMarkup($head.before(), null, {
@@ -241,7 +240,6 @@ export const AIAutocompletion = Extension.create({
 						// 	const { state, dispatch } = view;
 						// 	const { selection } = state;
 						// 	const { $head } = selection;
-						// 	const node = $head.parent;
 
 						// 	// Reset debounce timer on mouse click
 						// 	clearTimeout(debounceTimer);

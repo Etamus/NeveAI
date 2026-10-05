@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { shortcuts } from '$lib/shortcuts';
-	import { settings } from '$lib/stores';
 
 	export let name: string;
 	export let className = '';

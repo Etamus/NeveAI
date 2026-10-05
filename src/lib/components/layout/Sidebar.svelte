@@ -3,31 +3,8 @@
 	import { v4 as uuidv4 } from 'uuid';
 
 	import { goto } from '$app/navigation';
-	import {
-		user,
-		chats,
-		settings,
-		showSettings,
-		chatId,
-		tags,
-		folders as _folders,
-		showSidebar,
-		showSearch,
-		mobile,
-		pinnedChats,
-		scrollPaginationEnabled,
-		currentChatPage,
-		temporaryChatEnabled,
-		socket,
-		config,
-		isApp,
-		models,
-		selectedFolder,
-		NEVEAI_NAME,
-		sidebarWidth,
-		activeChatIds
-	} from '$lib/stores';
-	import { onMount, getContext, tick, onDestroy } from 'svelte';
+	import { user, chats, settings, chatId, tags, folders as _folders, showSidebar, showSearch, mobile, pinnedChats, scrollPaginationEnabled, currentChatPage, temporaryChatEnabled, socket, config, isApp, models, selectedFolder, NEVEAI_NAME, sidebarWidth, activeChatIds } from '$lib/stores';
+	import { onMount, getContext, tick } from 'svelte';
 
 	const i18n = getContext('i18n');
 
@@ -42,7 +19,7 @@
 	} from '$lib/apis/chats';
 	import { createNewFolder, getFolders, updateFolderParentIdById } from '$lib/apis/folders';
 	import { checkActiveChats } from '$lib/apis/tasks';
-	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import { generateInitialsImage } from '$lib/utils';
 	import { getUserDisplayName } from '$lib/utils/user';
 
@@ -54,10 +31,10 @@
 	import Folders from './Sidebar/Folders.svelte';
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Search from '../icons/Search.svelte';
+	import Library from '../icons/Library.svelte';
 	import SearchModal from './SearchModal.svelte';
 	import FolderModal from './Sidebar/Folders/FolderModal.svelte';
 	import Sidebar from '../icons/Sidebar.svelte';
-	import PinnedModelList from './Sidebar/PinnedModelList.svelte';
 	import HotkeyHint from '../common/HotkeyHint.svelte';
 
 	const BREAKPOINT = 768;
@@ -68,6 +45,7 @@
 	let shiftKey = false;
 
 	let selectedChatId = null;
+	$: if ($selectedFolder) selectedChatId = null;
 	const USER_NAME_MAX_LENGTH = 21;
 	const getLimitedUserName = (name?: string | null) =>
 		getUserDisplayName(name).slice(0, USER_NAME_MAX_LENGTH);
@@ -78,9 +56,7 @@
 
 	let showCreateFolderModal = false;
 
-	let pinnedModels = [];
 
-	let showPinnedModels = false;
 	let showFolders = false;
 	let showChats = true;
 
@@ -508,12 +484,6 @@
 						console.error('Failed to initialize sidebar data:', e);
 					}
 				}
-			}),
-			settings.subscribe((value) => {
-				if (pinnedModels !== (value?.pinnedModels ?? [])) {
-					pinnedModels = value?.pinnedModels ?? [];
-					showPinnedModels = pinnedModels.length > 0;
-				}
 			})
 		];
 
@@ -716,7 +686,7 @@
 				</div>
 
 				<div>
-					<Tooltip content={$i18n.t('Search')} placement="right">
+					<Tooltip content={$i18n.t('Sidebar Search')} placement="right">
 						<button
 							class=" cursor-pointer flex rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition group"
 							on:click={(e) => {
@@ -726,7 +696,7 @@
 								showSearch.set(true);
 							}}
 							draggable="false"
-							aria-label={$i18n.t('Search')}
+							aria-label={$i18n.t('Sidebar Search')}
 						>
 							<div class=" self-center flex items-center justify-center size-9">
 								<Search className="size-4.5" />
@@ -735,6 +705,19 @@
 					</Tooltip>
 				</div>
 
+				<Tooltip content={$i18n.t('Library')} placement="right">
+					<a
+						href="/library"
+						aria-label={$i18n.t('Library')}
+						class="flex size-9 items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800"
+						on:click={(event) => {
+							event.stopPropagation();
+							if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+							event.preventDefault();
+							void goto('/library');
+						}}
+					><Library /></a>
+				</Tooltip>
 			</div>
 		</button>
 
@@ -744,7 +727,6 @@
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
 							role={$user?.role}
-							showActiveUsers={false}
 							on:show={(e) => {
 							}}
 						>
@@ -779,17 +761,16 @@
 		bind:this={navElement}
 		id="sidebar"
 		class="h-screen max-h-[100dvh] min-h-screen select-none {$showSidebar
-			? `${$mobile ? 'bg-gray-50 dark:bg-gray-850' : 'bg-gray-50/70 dark:bg-gray-850/80'} z-50 translate-x-0`
-			: 'bg-transparent z-0 -translate-x-full pointer-events-none'} {$isApp
+			? 'translate-x-0'
+			: '-translate-x-full pointer-events-none'} {$mobile ? 'bg-gray-50 dark:bg-gray-850' : 'sidebar-desktop'} z-50 {$isApp
 			? `ml-[4.5rem] md:ml-0 `
-			: ''} shrink-0 text-gray-900 dark:text-gray-200 text-sm fixed top-0 left-0 overflow-x-hidden transition-transform duration-[250ms] ease-out
+			: ''} shrink-0 text-gray-900 dark:text-gray-200 text-sm fixed top-0 left-0 overflow-x-hidden transition-transform duration-[250ms] ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none
         "
 		data-state={$showSidebar}
+		inert={!$showSidebar}
 	>
 		<div
-			class=" my-auto flex flex-col justify-between h-screen max-h-[100dvh] w-[var(--sidebar-width)] overflow-x-hidden scrollbar-hidden z-50 {$showSidebar
-				? ''
-				: 'invisible'}"
+			class=" my-auto flex flex-col justify-between h-screen max-h-[100dvh] w-[var(--sidebar-width)] overflow-x-hidden scrollbar-hidden z-50"
 		>
 			<div
 				class="sidebar px-[0.5625rem] pt-2 pb-1.5 flex justify-between space-x-1 text-gray-600 dark:text-gray-400 sticky top-0 z-10"
@@ -828,11 +809,11 @@
 				></div>
 			</div>
 
-			<div class="shrink-0 pt-2">
+			<div class="shrink-0 pt-2 pb-0.5">
 				<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
 					<a
 						id="sidebar-new-chat-button"
-						class="group grow flex items-center space-x-3 rounded-lg px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none"
+						class="group grow flex items-center space-x-3 rounded-lg px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none"
 						href="/"
 						draggable="false"
 						on:click={newChatHandler}
@@ -863,23 +844,23 @@
 					}
 				}}
 			>
-				<div class="pb-1.5">
+				<div class="pb-0.5">
 					<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
 						<button
 							id="sidebar-search-button"
-							class="group grow flex items-center space-x-3 rounded-lg px-2.5 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none"
+							class="group grow flex items-center space-x-3 rounded-lg px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none"
 							on:click={() => {
 								showSearch.set(true);
 							}}
 							draggable="false"
-							aria-label={$i18n.t('Search')}
+							aria-label={$i18n.t('Sidebar Search')}
 						>
 							<div class="self-center">
 								<Search strokeWidth="2" className="size-4.5" />
 							</div>
 
 							<div class="flex flex-1 self-center translate-y-[0.5px]">
-								<div class=" self-center text-sm">{$i18n.t('Search')}</div>
+								<div class=" self-center text-sm">{$i18n.t('Sidebar Search')}</div>
 							</div>
 							<HotkeyHint name="search" className=" group-hover:visible invisible" />
 						</button>
@@ -887,20 +868,13 @@
 
 				</div>
 
+				<div class="px-[0.4375rem] pb-0.5 flex text-gray-800 dark:text-gray-200">
+					<a href="/library" class="grow flex items-center gap-3 rounded-lg px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none" aria-label={$i18n.t('Library')} on:click={() => { if ($mobile) showSidebar.set(false); }}>
+						<Library /><span class="text-sm">{$i18n.t('Library')}</span>
+					</a>
+				</div>
 				<div class="mt-2"></div>
 
-				{#if ($models ?? []).length > 0 && (($settings?.pinnedModels ?? []).length > 0 || $config?.default_pinned_models)}
-					<Folder
-						id="sidebar-models"
-						bind:open={showPinnedModels}
-						className="px-2 mt-0.5"
-						name={$i18n.t('Models')}
-						chevron={true}
-						dragAndDrop={false}
-					>
-						<PinnedModelList bind:selectedChatId {shiftKey} />
-					</Folder>
-				{/if}
 
 
 				{#if $config?.features?.enable_folders && ($user?.role === 'admin' || ($user?.permissions?.features?.folders ?? true))}
@@ -1170,8 +1144,6 @@
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
 							role={$user?.role}
-							showActiveUsers={false}
-							className="max-w-[11rem]"
 							align="start"
 							on:show={(e) => {
 							}}
@@ -1216,6 +1188,13 @@
 	{/if}
 
 <style>
+	.sidebar-desktop {
+		background-color: color-mix(in srgb, var(--color-gray-50) 70%, white);
+	}
+	:global(.dark) .sidebar-desktop {
+		background-color: color-mix(in srgb, var(--color-gray-850) 80%, var(--color-gray-950));
+	}
+
 	:global(.dark) .sidebar-scroll-fade {
 		-webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 1.5rem), transparent 100%);
 		mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 1.5rem), transparent 100%);

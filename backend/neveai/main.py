@@ -18,26 +18,13 @@ from urllib.parse import urlencode, parse_qs, urlparse, unquote
 from pydantic import BaseModel
 from sqlalchemy import text
 
-from typing import Optional
-from aiocache import cached
 import aiohttp
 import anyio.to_thread
 import requests
 from redis import Redis
 
 
-from fastapi import (
-    Depends,
-    FastAPI,
-    File,
-    Form,
-    HTTPException,
-    Request,
-    UploadFile,
-    status,
-    applications,
-    BackgroundTasks,
-)
+from fastapi import (Depends, FastAPI, HTTPException, Request, status, applications, BackgroundTasks)
 from fastapi.openapi.docs import get_swagger_ui_html
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -48,8 +35,8 @@ from starlette_compress import CompressMiddleware
 
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.middleware.sessions import SessionMiddleware
-from starlette.responses import Response, StreamingResponse
+from neveai.utils.session import NeveSessionMiddleware
+from starlette.responses import Response
 from starlette.datastructures import Headers
 
 from neveai.utils import logger
@@ -61,7 +48,6 @@ from neveai.socket.main import (
     periodic_usage_pool_cleanup,
     periodic_session_pool_cleanup,
     get_event_emitter,
-    get_models_in_use,
 )
 from neveai.routers import (
     audio,
@@ -72,7 +58,6 @@ from neveai.routers import (
     chats,
     folders,
     configs,
-    groups,
     files,
     memories,
     models,
@@ -95,196 +80,15 @@ from neveai.routers.retrieval import (
 )
 
 
-from sqlalchemy.orm import Session
-from neveai.internal.db import ScopedSession, engine, get_session
+from neveai.config import (ENABLE_DIRECT_CONNECTIONS, ENABLE_BASE_MODELS_CACHE, THREAD_POOL_SIZE, TOOL_SERVER_CONNECTIONS, TERMINAL_SERVER_CONNECTIONS, ENABLE_CODE_EXECUTION, CODE_EXECUTION_ENGINE, CODE_EXECUTION_JUPYTER_URL, CODE_EXECUTION_JUPYTER_AUTH, CODE_EXECUTION_JUPYTER_AUTH_TOKEN, CODE_EXECUTION_JUPYTER_AUTH_PASSWORD, CODE_EXECUTION_JUPYTER_TIMEOUT, ENABLE_CODE_INTERPRETER, CODE_INTERPRETER_ENGINE, CODE_INTERPRETER_PROMPT_TEMPLATE, CODE_INTERPRETER_JUPYTER_URL, CODE_INTERPRETER_JUPYTER_AUTH, CODE_INTERPRETER_JUPYTER_AUTH_TOKEN, CODE_INTERPRETER_JUPYTER_AUTH_PASSWORD, CODE_INTERPRETER_JUPYTER_TIMEOUT, ENABLE_MEMORIES, ENABLE_STABLE_DIFFUSION, ENABLE_MUSIC_GENERATION, ENABLE_VIDEO_GENERATION, STABLE_DIFFUSION_MODEL, STABLE_DIFFUSION_HF_TOKEN, STABLE_DIFFUSION_WIDTH, STABLE_DIFFUSION_HEIGHT, STABLE_DIFFUSION_STEPS, STABLE_DIFFUSION_GUIDANCE_SCALE, AUDIO_STT_SUPPORTED_CONTENT_TYPES, AUDIO_TTS_VOICE, AUDIO_TTS_SPLIT_ON, WEB_LOADER_CONCURRENT_REQUESTS, WEB_LOADER_TIMEOUT, WHISPER_MODEL, RAG_TEMPLATE, RAG_FULL_CONTEXT, BYPASS_EMBEDDING_AND_RETRIEVAL, RAG_EMBEDDING_ENGINE, RAG_EMBEDDING_MODEL, RAG_RERANKING_MODEL, RAG_EMBEDDING_BATCH_SIZE, ENABLE_ASYNC_EMBEDDING, RAG_EMBEDDING_CONCURRENT_REQUESTS, RAG_RERANKING_ENGINE, RAG_TOP_K, RAG_TOP_K_RERANKER, RAG_RELEVANCE_THRESHOLD, RAG_HYBRID_BM25_WEIGHT, RAG_ALLOWED_FILE_EXTENSIONS, RAG_FILE_MAX_COUNT, RAG_FILE_MAX_SIZE, FILE_IMAGE_COMPRESSION_WIDTH, FILE_IMAGE_COMPRESSION_HEIGHT, CHUNK_OVERLAP, CHUNK_MIN_SIZE_TARGET, CHUNK_SIZE, RAG_TEXT_SPLITTER, ENABLE_MARKDOWN_HEADER_TEXT_SPLITTER, TIKTOKEN_ENCODING_NAME, PDF_EXTRACT_IMAGES, PDF_LOADER_MODE, YOUTUBE_LOADER_LANGUAGE, YOUTUBE_LOADER_PROXY_URL, ENABLE_WEB_SEARCH, WEB_SEARCH_ENGINE, BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL, BYPASS_WEB_SEARCH_WEB_LOADER, WEB_SEARCH_RESULT_COUNT, WEB_SEARCH_CONCURRENT_REQUESTS, WEB_SEARCH_TRUST_ENV, WEB_SEARCH_DOMAIN_FILTER_LIST, SEARXNG_QUERY_URL, SEARXNG_LANGUAGE, DDGS_BACKEND, ENABLE_RAG_HYBRID_SEARCH, ENABLE_RAG_HYBRID_SEARCH_ENRICHED_TEXTS, ENABLE_WEB_LOADER_SSL_VERIFICATION, NEVEAI_NAME, NEVEAI_BANNERS, JWT_EXPIRES_IN, ENABLE_FOLDERS, FOLDER_MAX_FILE_COUNT, BYPASS_ADMIN_ACCESS_CONTROL, USER_PERMISSIONS, DEFAULT_PROMPT_SUGGESTIONS, DEFAULT_MODELS, MODEL_ORDER_LIST, DEFAULT_MODEL_METADATA, DEFAULT_MODEL_PARAMS, ENV, CACHE_DIR, STATIC_DIR, FRONTEND_BUILD_DIR, CORS_ALLOW_ORIGIN, DEFAULT_LOCALE, NEVEAI_URL, RESPONSE_WATERMARK, ENABLE_ADMIN_CHAT_ACCESS, BYPASS_ADMIN_ACCESS_CONTROL, ENABLE_ADMIN_EXPORT, TASK_MODEL, ENABLE_TITLE_GENERATION, ENABLE_FOLLOW_UP_GENERATION, ENABLE_SEARCH_QUERY_GENERATION, ENABLE_RETRIEVAL_QUERY_GENERATION, ENABLE_AUTOCOMPLETE_GENERATION, TITLE_GENERATION_PROMPT_TEMPLATE, FOLLOW_UP_GENERATION_PROMPT_TEMPLATE, IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE, TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE, VOICE_MODE_PROMPT_TEMPLATE, QUERY_GENERATION_PROMPT_TEMPLATE, AUTOCOMPLETE_GENERATION_PROMPT_TEMPLATE, AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH, AppConfig, reset_config)
+
+from neveai.internal.db import (ScopedSession, engine)
 
 from neveai.models.models import Models
-from neveai.models.users import UserModel, Users
+from neveai.models.users import Users
 from neveai.models.chats import Chats
 
-from neveai.config import (
-    # OpenAI
-    # Direct Connections
-    ENABLE_DIRECT_CONNECTIONS,
-    # Model list
-    ENABLE_BASE_MODELS_CACHE,
-    # Thread pool size for FastAPI/AnyIO
-    THREAD_POOL_SIZE,
-    # Tool Server Configs
-    TOOL_SERVER_CONNECTIONS,
-    # Terminal Server
-    TERMINAL_SERVER_CONNECTIONS,
-    # Code Execution
-    ENABLE_CODE_EXECUTION,
-    CODE_EXECUTION_ENGINE,
-    CODE_EXECUTION_JUPYTER_URL,
-    CODE_EXECUTION_JUPYTER_AUTH,
-    CODE_EXECUTION_JUPYTER_AUTH_TOKEN,
-    CODE_EXECUTION_JUPYTER_AUTH_PASSWORD,
-    CODE_EXECUTION_JUPYTER_TIMEOUT,
-    ENABLE_CODE_INTERPRETER,
-    CODE_INTERPRETER_ENGINE,
-    CODE_INTERPRETER_PROMPT_TEMPLATE,
-    CODE_INTERPRETER_JUPYTER_URL,
-    CODE_INTERPRETER_JUPYTER_AUTH,
-    CODE_INTERPRETER_JUPYTER_AUTH_TOKEN,
-    CODE_INTERPRETER_JUPYTER_AUTH_PASSWORD,
-    CODE_INTERPRETER_JUPYTER_TIMEOUT,
-    ENABLE_MEMORIES,
-    # Stable Diffusion Local
-    ENABLE_STABLE_DIFFUSION,
-    ENABLE_MUSIC_GENERATION,
-    ENABLE_VIDEO_GENERATION,
-    STABLE_DIFFUSION_MODEL,
-    STABLE_DIFFUSION_HF_TOKEN,
-    STABLE_DIFFUSION_WIDTH,
-    STABLE_DIFFUSION_HEIGHT,
-    STABLE_DIFFUSION_STEPS,
-    STABLE_DIFFUSION_GUIDANCE_SCALE,
-    # Audio
-    AUDIO_STT_SUPPORTED_CONTENT_TYPES,
-    AUDIO_TTS_VOICE,
-    AUDIO_TTS_SPLIT_ON,
-    WEB_LOADER_CONCURRENT_REQUESTS,
-    WEB_LOADER_TIMEOUT,
-    WHISPER_MODEL,
-    WHISPER_VAD_FILTER,
-    WHISPER_LANGUAGE,
-    WHISPER_MODEL_AUTO_UPDATE,
-    WHISPER_MODEL_DIR,
-    # Retrieval
-    RAG_TEMPLATE,
-    DEFAULT_RAG_TEMPLATE,
-    RAG_FULL_CONTEXT,
-    BYPASS_EMBEDDING_AND_RETRIEVAL,
-    RAG_EMBEDDING_ENGINE,
-    RAG_EMBEDDING_MODEL,
-    RAG_EMBEDDING_MODEL_AUTO_UPDATE,
-    RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE,
-    RAG_RERANKING_MODEL,
-    RAG_RERANKING_MODEL_AUTO_UPDATE,
-    RAG_RERANKING_MODEL_TRUST_REMOTE_CODE,
-    RAG_EMBEDDING_BATCH_SIZE,
-    ENABLE_ASYNC_EMBEDDING,
-    RAG_EMBEDDING_CONCURRENT_REQUESTS,
-    RAG_RERANKING_ENGINE,
-    RAG_TOP_K,
-    RAG_TOP_K_RERANKER,
-    RAG_RELEVANCE_THRESHOLD,
-    RAG_HYBRID_BM25_WEIGHT,
-    RAG_ALLOWED_FILE_EXTENSIONS,
-    RAG_FILE_MAX_COUNT,
-    RAG_FILE_MAX_SIZE,
-    FILE_IMAGE_COMPRESSION_WIDTH,
-    FILE_IMAGE_COMPRESSION_HEIGHT,
-    CHUNK_OVERLAP,
-    CHUNK_MIN_SIZE_TARGET,
-    CHUNK_SIZE,
-    RAG_TEXT_SPLITTER,
-    ENABLE_MARKDOWN_HEADER_TEXT_SPLITTER,
-    TIKTOKEN_ENCODING_NAME,
-    PDF_EXTRACT_IMAGES,
-    PDF_LOADER_MODE,
-    YOUTUBE_LOADER_LANGUAGE,
-    YOUTUBE_LOADER_PROXY_URL,
-    # Retrieval (Web Search)
-    ENABLE_WEB_SEARCH,
-    WEB_SEARCH_ENGINE,
-    BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL,
-    BYPASS_WEB_SEARCH_WEB_LOADER,
-    WEB_SEARCH_RESULT_COUNT,
-    WEB_SEARCH_CONCURRENT_REQUESTS,
-    WEB_SEARCH_TRUST_ENV,
-    WEB_SEARCH_DOMAIN_FILTER_LIST,
-    SEARXNG_QUERY_URL,
-    SEARXNG_LANGUAGE,
-    DDGS_BACKEND,
-    ENABLE_RAG_HYBRID_SEARCH,
-    ENABLE_RAG_HYBRID_SEARCH_ENRICHED_TEXTS,
-    ENABLE_RAG_LOCAL_WEB_FETCH,
-    ENABLE_WEB_LOADER_SSL_VERIFICATION,
-    UPLOAD_DIR,
-    # NeveAI
-    NEVEAI_NAME,
-    NEVEAI_BANNERS,
-    JWT_EXPIRES_IN,
-    ENABLE_FOLDERS,
-    FOLDER_MAX_FILE_COUNT,
-    ENABLE_COMMUNITY_SHARING,
-    BYPASS_ADMIN_ACCESS_CONTROL,
-    USER_PERMISSIONS,
-    DEFAULT_GROUP_ID,
-    DEFAULT_PROMPT_SUGGESTIONS,
-    DEFAULT_MODELS,
-    DEFAULT_PINNED_MODELS,
-    MODEL_ORDER_LIST,
-    DEFAULT_MODEL_METADATA,
-    DEFAULT_MODEL_PARAMS,
-    # Misc
-    ENV,
-    CACHE_DIR,
-    STATIC_DIR,
-    FRONTEND_BUILD_DIR,
-    CORS_ALLOW_ORIGIN,
-    DEFAULT_LOCALE,
-    NEVEAI_URL,
-    RESPONSE_WATERMARK,
-    # Admin
-    ENABLE_ADMIN_CHAT_ACCESS,
-    BYPASS_ADMIN_ACCESS_CONTROL,
-    ENABLE_ADMIN_EXPORT,
-    # Tasks
-    TASK_MODEL,
-    TASK_MODEL_EXTERNAL,
-    ENABLE_TITLE_GENERATION,
-    ENABLE_FOLLOW_UP_GENERATION,
-    ENABLE_SEARCH_QUERY_GENERATION,
-    ENABLE_RETRIEVAL_QUERY_GENERATION,
-    ENABLE_AUTOCOMPLETE_GENERATION,
-    TITLE_GENERATION_PROMPT_TEMPLATE,
-    FOLLOW_UP_GENERATION_PROMPT_TEMPLATE,
-    IMAGE_PROMPT_GENERATION_PROMPT_TEMPLATE,
-    TOOLS_FUNCTION_CALLING_PROMPT_TEMPLATE,
-    VOICE_MODE_PROMPT_TEMPLATE,
-    QUERY_GENERATION_PROMPT_TEMPLATE,
-    AUTOCOMPLETE_GENERATION_PROMPT_TEMPLATE,
-    AUTOCOMPLETE_GENERATION_INPUT_MAX_LENGTH,
-    AppConfig,
-    reset_config,
-)
-from neveai.env import (
-    ENABLE_CUSTOM_MODEL_FALLBACK,
-    AUDIT_EXCLUDED_PATHS,
-    AUDIT_LOG_LEVEL,
-    CHANGELOG,
-    REDIS_URL,
-    REDIS_CLUSTER,
-    REDIS_KEY_PREFIX,
-    REDIS_SENTINEL_HOSTS,
-    REDIS_SENTINEL_PORT,
-    GLOBAL_LOG_LEVEL,
-    MAX_BODY_LOG_SIZE,
-    SAFE_MODE,
-    BASE_DIR,
-    VERSION,
-    DEPLOYMENT_ID,
-    INSTANCE_ID,
-    NEVEAI_BUILD_HASH,
-    NEVEAI_SECRET_KEY,
-    NEVEAI_SESSION_COOKIE_SAME_SITE,
-    NEVEAI_SESSION_COOKIE_SECURE,
-    NEVEAI_AUTH_SIGNOUT_REDIRECT_URL,
-    ENABLE_COMPRESSION_MIDDLEWARE,
-    ENABLE_WEBSOCKET_SUPPORT,
-    BYPASS_MODEL_ACCESS_CONTROL,
-    RESET_CONFIG_ON_START,
-    ENABLE_VERSION_UPDATE_CHECK,
-    EXTERNAL_PWA_MANIFEST_URL,
-    AIOHTTP_CLIENT_SESSION_SSL,
-    ENABLE_PUBLIC_ACTIVE_USERS_COUNT,
-    ENABLE_EASTER_EGGS,
-    LOG_FORMAT,
-)
+from neveai.env import (ENABLE_CUSTOM_MODEL_FALLBACK, AUDIT_EXCLUDED_PATHS, AUDIT_LOG_LEVEL, CHANGELOG, REDIS_URL, REDIS_CLUSTER, REDIS_KEY_PREFIX, REDIS_SENTINEL_HOSTS, REDIS_SENTINEL_PORT, GLOBAL_LOG_LEVEL, MAX_BODY_LOG_SIZE, SAFE_MODE, BASE_DIR, VERSION, DEPLOYMENT_ID, INSTANCE_ID, NEVEAI_SECRET_KEY, NEVEAI_SESSION_COOKIE_SAME_SITE, NEVEAI_SESSION_COOKIE_SECURE, NEVEAI_AUTH_SIGNOUT_REDIRECT_URL, ENABLE_COMPRESSION_MIDDLEWARE, ENABLE_WEBSOCKET_SUPPORT, BYPASS_MODEL_ACCESS_CONTROL, RESET_CONFIG_ON_START, ENABLE_VERSION_UPDATE_CHECK, EXTERNAL_PWA_MANIFEST_URL, AIOHTTP_CLIENT_SESSION_SSL)
 
 
 from neveai.utils.models import (
@@ -530,8 +334,6 @@ app.state.config = AppConfig(
 app.state.redis = None
 
 app.state.NEVEAI_NAME = NEVEAI_NAME
-app.state.LICENSE_METADATA = None
-
 
 
 ########################################
@@ -590,14 +392,12 @@ app.state.config.JWT_EXPIRES_IN = JWT_EXPIRES_IN
 
 
 app.state.config.DEFAULT_MODELS = DEFAULT_MODELS
-app.state.config.DEFAULT_PINNED_MODELS = DEFAULT_PINNED_MODELS
 app.state.config.MODEL_ORDER_LIST = MODEL_ORDER_LIST
 app.state.config.DEFAULT_MODEL_METADATA = DEFAULT_MODEL_METADATA
 app.state.config.DEFAULT_MODEL_PARAMS = DEFAULT_MODEL_PARAMS
 
 
 app.state.config.DEFAULT_PROMPT_SUGGESTIONS = DEFAULT_PROMPT_SUGGESTIONS
-app.state.config.DEFAULT_GROUP_ID = DEFAULT_GROUP_ID
 
 app.state.config.RESPONSE_WATERMARK = RESPONSE_WATERMARK
 
@@ -607,7 +407,6 @@ app.state.config.BANNERS = NEVEAI_BANNERS
 
 app.state.config.ENABLE_FOLDERS = ENABLE_FOLDERS
 app.state.config.FOLDER_MAX_FILE_COUNT = FOLDER_MAX_FILE_COUNT
-app.state.config.ENABLE_COMMUNITY_SHARING = ENABLE_COMMUNITY_SHARING
 
 # Migrate legacy access_control â†’ access_grants on boot
 from neveai.utils.access_control import migrate_access_control
@@ -617,7 +416,6 @@ if any("access_control" in c.get("config", {}) for c in connections):
     for connection in connections:
         migrate_access_control(connection.get("config", {}))
     app.state.config.TOOL_SERVER_CONNECTIONS = connections
-
 
 
 app.state.NEVEAI_AUTH_SIGNOUT_REDIRECT_URL = NEVEAI_AUTH_SIGNOUT_REDIRECT_URL
@@ -857,7 +655,6 @@ app.state.faster_whisper_model = None
 
 
 app.state.config.TASK_MODEL = TASK_MODEL
-app.state.config.TASK_MODEL_EXTERNAL = TASK_MODEL_EXTERNAL
 
 
 app.state.config.ENABLE_SEARCH_QUERY_GENERATION = ENABLE_SEARCH_QUERY_GENERATION
@@ -948,7 +745,6 @@ app.add_middleware(SecurityHeadersMiddleware)
 @app.middleware("http")
 async def commit_session_after_request(request: Request, call_next):
     response = await call_next(request)
-    # log.debug("Commit session after request")
     try:
         ScopedSession.commit()
     finally:
@@ -1034,7 +830,6 @@ app.include_router(skills.router, prefix="/api/v1/skills", tags=["skills"])
 
 app.include_router(memories.router, prefix="/api/v1/memories", tags=["memories"])
 app.include_router(folders.router, prefix="/api/v1/folders", tags=["folders"])
-app.include_router(groups.router, prefix="/api/v1/groups", tags=["groups"])
 app.include_router(files.router, prefix="/api/v1/files", tags=["files"])
 app.include_router(utils.router, prefix="/api/v1/utils", tags=["utils"])
 app.include_router(terminals.router, prefix="/api/v1/terminals", tags=["terminals"])
@@ -1068,14 +863,6 @@ async def get_models(
 
     models = []
     for model in all_models:
-        # Filter out filter pipelines
-        if "pipeline" in model and model["pipeline"].get("type", None) == "filter":
-            continue
-
-        # Filter out arena / evaluation models from the user-facing list
-        if model.get("owned_by") == "arena":
-            continue
-
         # Remove profile image URL to reduce payload size
         if model.get("info", {}).get("meta", {}).get("profile_image_url"):
             model["info"]["meta"].pop("profile_image_url", None)
@@ -1492,8 +1279,6 @@ async def get_app_config(request: Request):
             "enable_login_form": False,
             "enable_websocket": ENABLE_WEBSOCKET_SUPPORT,
             "enable_version_update_check": ENABLE_VERSION_UPDATE_CHECK,
-            "enable_public_active_users_count": ENABLE_PUBLIC_ACTIVE_USERS_COUNT,
-            "enable_easter_eggs": ENABLE_EASTER_EGGS,
             **(
                 {
                     "enable_direct_connections": app.state.config.ENABLE_DIRECT_CONNECTIONS,
@@ -1506,7 +1291,6 @@ async def get_app_config(request: Request):
                     "enable_music_generation": app.state.config.ENABLE_MUSIC_GENERATION,
                     "enable_video_generation": app.state.config.ENABLE_VIDEO_GENERATION,
                     "enable_autocomplete_generation": app.state.config.ENABLE_AUTOCOMPLETE_GENERATION,
-                    "enable_community_sharing": app.state.config.ENABLE_COMMUNITY_SHARING,
                     "enable_admin_export": ENABLE_ADMIN_EXPORT,
                     "enable_admin_chat_access": ENABLE_ADMIN_CHAT_ACCESS,
                     "enable_memories": app.state.config.ENABLE_MEMORIES,
@@ -1518,7 +1302,6 @@ async def get_app_config(request: Request):
         **(
             {
                 "default_models": app.state.config.DEFAULT_MODELS,
-                "default_pinned_models": app.state.config.DEFAULT_PINNED_MODELS,
                 "default_prompt_suggestions": app.state.config.DEFAULT_PROMPT_SUGGESTIONS,
                 "user_count": user_count,
                 "code": {
@@ -1547,7 +1330,6 @@ async def get_app_config(request: Request):
                 "ui": {
                     "response_watermark": app.state.config.RESPONSE_WATERMARK,
                 },
-                "license_metadata": app.state.LICENSE_METADATA,
                 **(
                     {
                         "active_entries": app.state.USER_COUNT,
@@ -1564,20 +1346,6 @@ async def get_app_config(request: Request):
                         }
                     }
                     if user and user.role == "pending"
-                    else {}
-                ),
-                **(
-                    {
-                        "metadata": {
-                            "login_footer": app.state.LICENSE_METADATA.get(
-                                "login_footer", ""
-                            ),
-                            "auth_logo_position": app.state.LICENSE_METADATA.get(
-                                "auth_logo_position", ""
-                            ),
-                        }
-                    }
-                    if app.state.LICENSE_METADATA
                     else {}
                 ),
             }
@@ -1655,14 +1423,6 @@ def is_project_update_available(current: str, latest: str):
     current_key += [0] * (max_len - len(current_key))
     latest_key += [0] * (max_len - len(latest_key))
     return latest_key > current_key
-
-
-def sanitize_github_release_error(error: Exception):
-    response = getattr(error, "response", None)
-    if response is not None and getattr(response, "status", None) == 403:
-        return "Limite temporário do GitHub atingido. A verificação será tentada novamente depois."
-
-    return str(error)
 
 
 def get_installed_llamacpp_info():
@@ -1937,29 +1697,6 @@ async def get_app_changelog():
     return {key: CHANGELOG[key] for idx, key in enumerate(CHANGELOG) if idx < 5}
 
 
-@app.get("/api/usage")
-async def get_current_usage(user=Depends(get_verified_user)):
-    """
-    Get current usage statistics for Neve.
-    This is an experimental endpoint and subject to change.
-    """
-    try:
-        # If public visibility is disabled, only allow admins to access this endpoint
-        if not ENABLE_PUBLIC_ACTIVE_USERS_COUNT and user.role != "admin":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied. Only administrators can view usage statistics.",
-            )
-
-        return {
-            "model_ids": get_models_in_use(),
-            "user_count": Users.get_active_user_count(),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"Error getting usage statistics: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 
 ############################
@@ -1992,9 +1729,9 @@ if len(app.state.config.TOOL_SERVER_CONNECTIONS) > 0:
                     pass
 
 app.add_middleware(
-    SessionMiddleware,
+    NeveSessionMiddleware,
     secret_key=NEVEAI_SECRET_KEY,
-    session_cookie="owui-session",
+    session_cookie="neve-session",
     same_site=NEVEAI_SESSION_COOKIE_SAME_SITE,
     https_only=NEVEAI_SESSION_COOKIE_SECURE,
 )

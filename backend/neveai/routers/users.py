@@ -9,43 +9,15 @@ from sqlalchemy.orm import Session
 from neveai.constants import ERROR_MESSAGES
 from neveai.env import STATIC_DIR
 from neveai.internal.db import get_session
-from neveai.models.groups import Groups
 from neveai.models.users import (
-    UserInfoListResponse,
-    UserInfoResponse,
     UserSettings,
     Users,
 )
-from neveai.utils.access_control import has_permission
 from neveai.utils.auth import get_verified_user
 
 
 router = APIRouter()
 PAGE_ITEM_COUNT = 30
-
-
-@router.get("/search", response_model=UserInfoListResponse)
-async def search_users(
-    query: Optional[str] = None,
-    order_by: Optional[str] = None,
-    direction: Optional[str] = None,
-    page: int = 1,
-    user=Depends(get_verified_user),
-    db: Session = Depends(get_session),
-):
-    filters = {}
-    if query:
-        filters["query"] = query
-    if order_by:
-        filters["order_by"] = order_by
-    if direction:
-        filters["direction"] = direction
-    return Users.get_users(
-        filter=filters,
-        skip=(max(1, page) - 1) * PAGE_ITEM_COUNT,
-        limit=PAGE_ITEM_COUNT,
-        db=db,
-    )
 
 
 @router.get("/user/settings", response_model=Optional[UserSettings])
@@ -100,23 +72,6 @@ async def update_user_info(
     if not updated:
         raise HTTPException(400, detail=ERROR_MESSAGES.USER_NOT_FOUND)
     return updated.info
-
-
-@router.get("/{user_id}/info", response_model=UserInfoResponse)
-async def get_user_info(
-    user_id: str,
-    user=Depends(get_verified_user),
-    db: Session = Depends(get_session),
-):
-    target = Users.get_user_by_id(user_id, db=db)
-    if not target:
-        raise HTTPException(400, detail=ERROR_MESSAGES.USER_NOT_FOUND)
-    groups = Groups.get_groups_by_member_id(user_id, db=db)
-    return UserInfoResponse(
-        **target.model_dump(),
-        groups=[{"id": group.id, "name": group.name} for group in groups],
-        is_active=Users.is_user_active(user_id, db=db),
-    )
 
 
 @router.get("/{user_id}/profile/image")

@@ -1,22 +1,12 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { goto, invalidate, invalidateAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
 	import { onMount, getContext, createEventDispatcher, tick, onDestroy } from 'svelte';
 	const i18n = getContext('i18n');
 
 	const dispatch = createEventDispatcher();
 
-	import {
-		cloneChatById,
-		deleteChatById,
-		getAllTags,
-		getChatById,
-		getChatList,
-		getChatListByTagName,
-		getPinnedChatList,
-		updateChatById,
-		updateChatFolderIdById
-	} from '$lib/apis/chats';
+	import { cloneChatById, deleteChatById, getAllTags, getChatById, getChatList, getPinnedChatList, updateChatById, updateChatFolderIdById } from '$lib/apis/chats';
 	import {
 		chatId,
 		chatTitle as _chatTitle,
@@ -32,7 +22,6 @@
 
 	import ChatMenu from './ChatMenu.svelte';
 	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
-	import ShareChatModal from '$lib/components/chat/ShareChatModal.svelte';
 	import GarbageBin from '$lib/components/icons/GarbageBin.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import DragGhost from '$lib/components/common/DragGhost.svelte';
@@ -46,6 +35,7 @@
 	export let createdAt: number | null = null;
 
 	export let selected = false;
+	$: isCurrentChat = !$selectedFolder && id === $chatId;
 	export let shiftKey = false;
 
 	export let onDragEnd: (event: DragEvent) => void = () => {};
@@ -83,7 +73,6 @@
 		}
 	};
 
-	let showShareChatModal = false;
 	let confirmEdit = false;
 
 	let chatTitle = title;
@@ -288,7 +277,6 @@
 
 </script>
 
-<ShareChatModal bind:show={showShareChatModal} chatId={id} />
 
 <DeleteConfirmDialog
 	bind:show={showDeleteConfirm}
@@ -325,7 +313,7 @@
 	{#if confirmEdit}
 		<div
 			id="sidebar-chat-item"
-			class=" w-full flex justify-between rounded-lg px-[11px] py-[6px] {id === $chatId ||
+			class=" w-full flex justify-between rounded-lg px-[11px] py-[6px] {isCurrentChat ||
 			confirmEdit
 				? 'bg-gray-100 dark:bg-gray-800 selected'
 				: selected
@@ -349,7 +337,7 @@
 	{:else}
 		<a
 			id="sidebar-chat-item"
-			class=" w-full flex justify-between rounded-lg px-[11px] py-[6px] {id === $chatId ||
+			class=" w-full flex justify-between rounded-lg px-[11px] py-[6px] {isCurrentChat ||
 			confirmEdit
 				? 'bg-gray-100 dark:bg-gray-800 selected'
 				: selected
@@ -397,7 +385,7 @@
 		<div
 		id="sidebar-chat-item-menu"
 		class="
-        {id === $chatId
+        {isCurrentChat
 			? 'from-gray-100 dark:from-gray-800 selected'
 			: selected
 				? 'from-gray-100 dark:from-gray-800 selected'
@@ -443,9 +431,6 @@
 					chatId={id}
 					cloneChatHandler={() => {
 						cloneChatHandler(id);
-					}}
-					shareHandler={() => {
-						showShareChatModal = true;
 					}}
 					{moveChatHandler}
 					{renameHandler}

@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 from pathlib import Path
-from cryptography.hazmat.primitives import serialization
 import re
 
 
@@ -41,7 +40,6 @@ try:
 except ImportError:
     print("dotenv not installed, skipping...")
 
-DOCKER = os.environ.get("DOCKER", "False").lower() == "true"
 
 # device type embedding models - "cpu" (default), "cuda" (nvidia gpu required) or "mps" (apple silicon) - choosing this right can lead to better performance
 USE_CUDA = os.environ.get("USE_CUDA_DOCKER", "false")
@@ -136,7 +134,6 @@ SRC_LOG_LEVELS = {}  # Legacy variable, do not remove
 NEVEAI_NAME = os.environ.get("NEVE_NAME", "NeveAI")
 # Custom name - no suffix appended
 
-NEVEAI_FAVICON_URL = "/static/favicon.png"
 
 ####################################
 # ENV (dev,test,prod)
@@ -264,13 +261,8 @@ FORWARD_SESSION_INFO_HEADER_CHAT_ID = os.environ.get(
     "FORWARD_SESSION_INFO_HEADER_CHAT_ID", "X-NeveAI-Chat-Id"
 )
 
-ENABLE_EASTER_EGGS = os.environ.get("ENABLE_EASTER_EGGS", "True").lower() == "true"
 
-####################################
-# NEVEAI_BUILD_HASH
-####################################
 
-NEVEAI_BUILD_HASH = os.environ.get("NEVE_BUILD_HASH", "dev-build")
 
 ####################################
 # DATA/FRONTEND BUILD DIR
@@ -315,15 +307,9 @@ if FROM_INIT_PY:
 # Database
 ####################################
 
-# Check if the file exists (legacy migrations: ollama.db -> webui.db -> neve.db)
-if os.path.exists(f"{DATA_DIR}/ollama.db") and not os.path.exists(f"{DATA_DIR}/neve.db"):
-    os.rename(f"{DATA_DIR}/ollama.db", f"{DATA_DIR}/neve.db")
-    log.info("Database migrated from Ollama successfully.")
-elif os.path.exists(f"{DATA_DIR}/webui.db") and not os.path.exists(f"{DATA_DIR}/neve.db"):
-    os.rename(f"{DATA_DIR}/webui.db", f"{DATA_DIR}/neve.db")
-    log.info("Database migrated to neve.db successfully.")
-else:
-    pass
+from neveai.internal.legacy_state import import_database
+
+import_database(Path(DATA_DIR))
 
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DATA_DIR}/neve.db")
 
@@ -415,9 +401,6 @@ DATABASE_ENABLE_SESSION_SHARING = (
 )
 
 # Enable public visibility of active user count (when disabled, only admins can see it)
-ENABLE_PUBLIC_ACTIVE_USERS_COUNT = (
-    os.environ.get("ENABLE_PUBLIC_ACTIVE_USERS_COUNT", "False").lower() == "true"
-)
 
 RESET_CONFIG_ON_START = (
     os.environ.get("RESET_CONFIG_ON_START", "False").lower() == "true"
@@ -491,8 +474,6 @@ except ValueError:
 
 NEVEAI_AUTH = False
 
-PASSWORD_VALIDATION_HINT = os.environ.get("PASSWORD_VALIDATION_HINT", "")
-
 
 BYPASS_MODEL_ACCESS_CONTROL = (
     os.environ.get("BYPASS_MODEL_ACCESS_CONTROL", "False").lower() == "true"
@@ -526,13 +507,7 @@ ENABLE_COMPRESSION_MIDDLEWARE = (
 ####################################
 # OAUTH Configuration
 ####################################
-ENABLE_OAUTH_EMAIL_FALLBACK = (
-    os.environ.get("ENABLE_OAUTH_EMAIL_FALLBACK", "False").lower() == "true"
-)
 
-ENABLE_OAUTH_ID_TOKEN_COOKIE = (
-    os.environ.get("ENABLE_OAUTH_ID_TOKEN_COOKIE", "True").lower() == "true"
-)
 
 OAUTH_CLIENT_INFO_ENCRYPTION_KEY = os.environ.get(
     "OAUTH_CLIENT_INFO_ENCRYPTION_KEY", NEVEAI_SECRET_KEY
@@ -544,29 +519,9 @@ OAUTH_SESSION_TOKEN_ENCRYPTION_KEY = os.environ.get(
 
 # Maximum number of concurrent OAuth sessions per user per provider
 # This prevents unbounded session growth while allowing multi-device usage
-OAUTH_MAX_SESSIONS_PER_USER = int(os.environ.get("OAUTH_MAX_SESSIONS_PER_USER", "10"))
 
 # Token Exchange Configuration
 # Allows external apps to exchange OAuth tokens for NeveAI tokens
-ENABLE_OAUTH_TOKEN_EXCHANGE = (
-    os.environ.get("ENABLE_OAUTH_TOKEN_EXCHANGE", "False").lower() == "true"
-)
-
-LICENSE_BLOB = None
-LICENSE_BLOB_PATH = os.environ.get("LICENSE_BLOB_PATH", DATA_DIR / "l.data")
-if LICENSE_BLOB_PATH and os.path.exists(LICENSE_BLOB_PATH):
-    with open(LICENSE_BLOB_PATH, "rb") as f:
-        LICENSE_BLOB = f.read()
-
-LICENSE_PUBLIC_KEY = os.environ.get("LICENSE_PUBLIC_KEY", "")
-
-pk = None
-if LICENSE_PUBLIC_KEY:
-    pk = serialization.load_pem_public_key(f"""
------BEGIN PUBLIC KEY-----
-{LICENSE_PUBLIC_KEY}
------END PUBLIC KEY-----
-""".encode("utf-8"))
 
 
 ####################################
@@ -576,15 +531,6 @@ if LICENSE_PUBLIC_KEY:
 ENABLE_CUSTOM_MODEL_FALLBACK = (
     os.environ.get("ENABLE_CUSTOM_MODEL_FALLBACK", "False").lower() == "true"
 )
-
-MODELS_CACHE_TTL = os.environ.get("MODELS_CACHE_TTL", "1")
-if MODELS_CACHE_TTL == "":
-    MODELS_CACHE_TTL = None
-else:
-    try:
-        MODELS_CACHE_TTL = int(MODELS_CACHE_TTL)
-    except Exception:
-        MODELS_CACHE_TTL = 1
 
 
 ####################################
@@ -715,8 +661,6 @@ else:
         WEBSOCKET_EVENT_CALLER_TIMEOUT = 300
 
 
-REQUESTS_VERIFY = os.environ.get("REQUESTS_VERIFY", "True").lower() == "true"
-
 AIOHTTP_CLIENT_TIMEOUT = os.environ.get("AIOHTTP_CLIENT_TIMEOUT", "")
 
 if AIOHTTP_CLIENT_TIMEOUT == "":
@@ -731,19 +675,6 @@ else:
 AIOHTTP_CLIENT_SESSION_SSL = (
     os.environ.get("AIOHTTP_CLIENT_SESSION_SSL", "True").lower() == "true"
 )
-
-AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST = os.environ.get(
-    "AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST",
-    os.environ.get("AIOHTTP_CLIENT_TIMEOUT_OPENAI_MODEL_LIST", "10"),
-)
-
-if AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST == "":
-    AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST = None
-else:
-    try:
-        AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST = int(AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST)
-    except Exception:
-        AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST = 10
 
 
 AIOHTTP_CLIENT_TIMEOUT_TOOL_SERVER_DATA = os.environ.get(

@@ -12,26 +12,9 @@
 	const dispatch = createEventDispatcher();
 
 
-	import {
-		audioQueue,
-		config,
-		models,
-		settings,
-		temporaryChatEnabled,
-		TTSWorker,
-		user
-	} from '$lib/stores';
-	import {
-		copyToClipboard as _copyToClipboard,
-		approximateToHumanReadable,
-		getMessageContentParts,
-		sanitizeResponseContent,
-		formatDate,
-		removeDetails,
-		removeAllDetails,
-		removeReasoningControlTokens
-	} from '$lib/utils';
-	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
+	import { audioQueue, config, models, settings, TTSWorker, user } from '$lib/stores';
+	import { copyToClipboard as _copyToClipboard, getMessageContentParts, removeAllDetails, removeReasoningControlTokens } from '$lib/utils';
+	import { NEVEAI_BASE_URL } from '$lib/constants';
 
 	import Name from './Name.svelte';
 	import ProfileImage from './ProfileImage.svelte';
@@ -50,7 +33,6 @@
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 	import FileItem from '$lib/components/common/FileItem.svelte';
 	import { fade } from 'svelte/transition';
-	import { flyAndScale } from '$lib/utils/transitions';
 	import StatusHistory from './ResponseMessage/StatusHistory.svelte';
 	import FullHeightIframe from '$lib/components/common/FullHeightIframe.svelte';
 	import GeneratedMusicPlayer from './GeneratedMusicPlayer.svelte';
@@ -130,6 +112,11 @@
 	export let selectedModels: any[] = [];
 
 	let message: MessageType = structuredClone(history.messages[messageId]);
+	$: hasGeneratedDocument = (message?.files ?? []).some(
+		(file) => file?.generated &&
+			!['image', 'audio', 'video'].includes(file.type) &&
+			!/^(image|audio|video)\//.test(file.content_type ?? '')
+	);
 	$: if (history.messages) {
 		const source = history.messages[messageId];
 		if (source) {
@@ -525,7 +512,6 @@
 	};
 
 	onMount(async () => {
-		// console.log('ResponseMessage mounted');
 
 		await tick();
 		if (buttonsContainerElement) {
@@ -559,6 +545,7 @@
 {#key message.id}
 	<div
 		class=" flex w-full message-{message.id}"
+		class:document-response={hasGeneratedDocument}
 		id="message-{message.id}"
 		dir={$settings.chatDirection}
 		style="scroll-margin-top: 3rem;"
@@ -629,7 +616,7 @@
 												/>
 											{:else}
 												<div
-													class="w-full min-w-[18rem] max-w-md rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 dark:border-gray-700/70 dark:bg-gray-800/50"
+													class="mx-auto self-center w-full min-w-0 max-w-md rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 dark:border-gray-700/70 dark:bg-gray-800/50"
 												>
 													<audio
 														controls
@@ -914,35 +901,6 @@
 									</button>
 								</Tooltip>
 							{/if}
-							{#if !isGeneratedMediaResponse && !readOnly && ($settings?.editResponseWithCtrl ? ctrlPressed : true) && ($user?.role === 'admin' || ($user?.permissions?.chat?.edit ?? true)) && ($settings?.responseEditorMode ?? false) === false}
-								<Tooltip content={$i18n.t('Edit')} placement="bottom">
-									<button
-										aria-label={$i18n.t('Edit')}
-										id="edit-response-message-button"
-										class="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-full dark:hover:text-white hover:text-black transition"
-										on:click={() => {
-											editMessageHandler();
-										}}
-									>
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke-width="2"
-											aria-hidden="true"
-											stroke="currentColor"
-											class="w-4 h-4"
-										>
-											<path
-												stroke-linecap="round"
-												stroke-linejoin="round"
-												d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"
-											/>
-											<path stroke-linecap="round" stroke-linejoin="round" d="m15 5 4 4" />
-										</svg>
-									</button>
-								</Tooltip>
-							{/if}
 							{#if message.done}
 								{#if !readOnly}
 									{#if $user?.role === 'admin' || ($user?.permissions?.chat?.regenerate_response ?? true)}
@@ -980,9 +938,9 @@
 										</Tooltip>
 									{/if}
 									{#if !isGeneratedMediaResponse && isLastMessage && ($user?.role === 'admin' || ($user?.permissions?.chat?.continue_response ?? true))}
-										<Tooltip content="Continuar" placement="bottom">
+										<Tooltip content={$i18n.t('Continuar')} placement="bottom">
 											<button
-												aria-label="Continuar"
+												aria-label={$i18n.t('Continuar')}
 												type="button"
 												id="continue-response-button"
 												class="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded-full dark:hover:text-white hover:text-black transition"
@@ -1084,6 +1042,10 @@
 {/key}
 
 <style>
+	/* Keep the entire document reply on one raster origin, including hovered controls. */
+	.document-response {
+		transform: translateZ(0);
+	}
 	.buttons::-webkit-scrollbar {
 		display: none; /* for Chrome, Safari and Opera */
 	}

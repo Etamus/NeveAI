@@ -1,9 +1,5 @@
 <script lang="ts">
-	import { getContext, onMount, tick } from 'svelte';
-	import { models, config } from '$lib/stores';
-
-	import { toast } from 'svelte-sonner';
-	import { copyToClipboard } from '$lib/utils';
+	import { getContext, tick } from 'svelte';
 
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';

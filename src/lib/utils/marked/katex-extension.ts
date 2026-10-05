@@ -19,13 +19,10 @@ const ALLOWED_SURROUNDING_CHARS =
 // markdown rendering time to be spent in KaTeX regex compilation.
 const ALLOWED_SURROUNDING_CHARS_REGEX = new RegExp(`[${ALLOWED_SURROUNDING_CHARS}]`, 'u');
 
-// const DELIMITER_LIST = [
 //     { left: '$$', right: '$$', display: false },
 //     { left: '$', right: '$', display: false },
 // ];
 
-// const inlineRule = /^(\${1,2})(?!\$)((?:\\.|[^\\\n])*?(?:\\.|[^\\\n\$]))\1(?=[\s?!\.,:？！。，：]|$)/;
-// const blockRule = /^(\${1,2})\n((?:\\[^]|[^\\])+?)\n\1(?:\n|$)/;
 
 const inlinePatterns = [];
 const blockPatterns = [];
@@ -47,7 +44,7 @@ function generateRegexRules(delimiters) {
 		} else {
 			// Block delimiters doubles as inline delimiters when not followed by a newline
 			inlinePatterns.push(`${escapedLeft}(?!\\n)((?:\\\\[^]|[^\\\\])+?)(?!\\n)${escapedRight}`);
-			blockPatterns.push(`${escapedLeft}\\n((?:\\\\[^]|[^\\\\])+?)\\n${escapedRight}`);
+			blockPatterns.push(`${escapedLeft}(?:\\r?\\n)?((?:\\\\[^]|[^\\\\])+?)(?:\\r?\\n)?${escapedRight}`);
 		}
 	});
 
@@ -75,13 +72,16 @@ export default function (options = {}) {
 function katexStart(src, displayMode: boolean) {
 	for (let i = 0; i < src.length; i++) {
 		const ch = src.charCodeAt(i);
+		// A closing delimiter inside a line must not split the paragraph into a new block.
+		if (displayMode && i > 0 && src.charAt(i - 1) !== '\n') continue;
 
 		if (ch === 36 /* $ */) {
 			// Display mode requires $$, skip single $ for display
 			if (displayMode && src.charAt(i + 1) !== '$') {
 				continue;
 			}
-			if (i === 0 || ALLOWED_SURROUNDING_CHARS_REGEX.test(src.charAt(i - 1))) {
+			if ((i === 0 || ALLOWED_SURROUNDING_CHARS_REGEX.test(src.charAt(i - 1))) &&
+				(!displayMode || blockRule.test(src.slice(i)))) {
 				return i;
 			}
 		} else if (ch === 92 /* \ */) {
@@ -94,7 +94,8 @@ function katexStart(src, displayMode: boolean) {
 				// Inline: \( or \ce{ or \pu{
 				if (next !== '(' && next !== 'c' && next !== 'p') continue;
 			}
-			if (i === 0 || ALLOWED_SURROUNDING_CHARS_REGEX.test(src.charAt(i - 1))) {
+			if ((i === 0 || ALLOWED_SURROUNDING_CHARS_REGEX.test(src.charAt(i - 1))) &&
+				(!displayMode || blockRule.test(src.slice(i)))) {
 				return i;
 			}
 		}

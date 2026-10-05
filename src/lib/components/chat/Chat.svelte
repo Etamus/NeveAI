@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { v4 as uuidv4 } from 'uuid';
 	import { toast } from 'svelte-sonner';
-	import { PaneGroup, Pane, PaneResizer, type PaneAPI } from 'paneforge';
+	import { PaneGroup, Pane, type PaneAPI } from 'paneforge';
 
-	import { flushSync, getContext, onDestroy, onMount, tick } from 'svelte';
+	import { flushSync, getContext, onMount, tick } from 'svelte';
 	import { fade } from 'svelte/transition';
 	const i18n: Writable<i18nType> = getContext('i18n');
 
@@ -14,40 +14,7 @@
 	import type { i18n as i18nType } from 'i18next';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 
-	import {
-		chatId,
-		chats,
-		config,
-		type Model,
-		models,
-		tags as allTags,
-		settings,
-		showSidebar,
-		NEVEAI_NAME,
-		banners,
-		user,
-		socket,
-		audioQueue,
-		showControls,
-		showCallOverlay,
-		currentChatPage,
-		temporaryChatEnabled,
-		mobile,
-		chatTitle,
-		showArtifacts,
-		artifactContents,
-		tools,
-		toolServers,
-		terminalServers,
-		selectedFolder,
-		pinnedChats,
-		showEmbeds,
-		selectedTerminalId,
-		showFileNavPath,
-		showFileNavDir,
-		chatCodeExecutionEnabled,
-		activeChatIds
-	} from '$lib/stores';
+	import { chatId, chats, config, type Model, models, tags as allTags, settings, banners, user, socket, audioQueue, showControls, showCallOverlay, currentChatPage, temporaryChatEnabled, mobile, chatTitle, showArtifacts, artifactContents, tools, toolServers, terminalServers, selectedFolder, pinnedChats, showEmbeds, selectedTerminalId, showFileNavPath, showFileNavDir, chatCodeExecutionEnabled, activeChatIds } from '$lib/stores';
 
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
@@ -76,34 +43,25 @@
 		updateChatFolderIdById
 	} from '$lib/apis/chats';
 	import { generateOpenAIChatCompletion } from '$lib/apis/openai';
-	import { processWeb, processWebSearch, processYoutubeVideo } from '$lib/apis/retrieval';
-	import { getAndUpdateUserLocation, getUserSettings, updateUserSettings } from '$lib/apis/users';
-	import {
-		chatCompleted,
-		generateQueries,
-		chatAction,
-		generateMoACompletion,
-		stopTask,
-		getTaskIdsByChatId,
-		getModels
-	} from '$lib/apis';
+	import { processWeb, processYoutubeVideo } from '$lib/apis/retrieval';
+	import { getAndUpdateUserLocation, updateUserSettings } from '$lib/apis/users';
+	import { chatCompleted, chatAction, generateMoACompletion, stopTask, getTaskIdsByChatId, getModels } from '$lib/apis';
 	import { getTools } from '$lib/apis/tools';
 	import { getModelById } from '$lib/apis/models';
-	import { uploadFile } from '$lib/apis/files';
 	import { createOpenAITextStream } from '$lib/apis/streaming';
 	import {
 		getLoadedLocalModels,
 		getMmProjFiles,
+		getLlamaCppStatus,
 		loadLocalModel,
 		normalizeLlamaCppErrorMessage,
 		unloadLocalModel,
 		type LocalModel
 	} from '$lib/apis/llamacpp';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
-	import {
-		getLocalModelLoadPreferences,
-		LOCAL_MODEL_CONTEXT_OPTIONS
-	} from '$lib/utils/llamacppLoadPreferences';
+	import { getMessageScrollAnchor } from '$lib/utils/messageScrollAnchor';
+	import { getMessagesContentHeight } from '$lib/utils/messageScrollGeometry';
+	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
 	import { getFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
 	import { updateFolderById } from '$lib/apis/folders';
 
@@ -141,6 +99,8 @@
 	let scrollToBottomButtonSuppressUntil = 0;
 	let scrollToBottomButtonSuppressTimer: ReturnType<typeof setTimeout> | null = null;
 	let generationBottomSpacerHeight = 0;
+	let bottomNavigationFrame: number | null = null;
+	let cancelBottomNavigation: (() => void) | null = null;
 	let scrollStateRAF: ReturnType<typeof requestAnimationFrame> | null = null;
 	let generationAnchorRAF: ReturnType<typeof requestAnimationFrame>[] = [];
 	let generationSpacerRAF: ReturnType<typeof requestAnimationFrame> | null = null;
@@ -219,6 +179,7 @@
 	let restoringStableDiffusionStandbyModel = false;
 	let placingVideoModelInStandby = false;
 	let thinkingEnabled = true;
+	let thinkingUnlimitedEnabled = false;
 	let thinkingExtendedEnabled = true;
 
 	// Sincronizar toggle do chat com a store — controla auto-show de artifacts
@@ -235,10 +196,7 @@
 	let generationController: AbortController | null = null;
 
 	const USER_MESSAGE_ANCHOR_TOP_OFFSET_PX = 128;
-	const getGenerationBottomReadingPadding = () =>
-		Math.round(
-			Math.min(220, Math.max(120, (messagesContainerElement?.clientHeight ?? 640) * 0.24))
-		);
+	const getGenerationBottomReadingPadding = () => 24;
 
 	// Content buffer system: accumulate streaming content in plain JS (outside Svelte 5 proxy)
 	// to avoid triggering deep reactivity on every token.
@@ -407,39 +365,6 @@
 	let files: any[] = [];
 	let params: Record<string, any> = {};
 
-	// ── Context size modal state (for auto-loading on send) ──
-	let showContextModal = false;
-	let contextModalSize = 8192;
-	let contextModalModelName = '';
-	let contextModalResolve: ((size: number | null) => void) | null = null;
-	let showVisionModal = false;
-	let visionModalModelName = '';
-	let visionModalResolve: ((useVision: boolean) => void) | null = null;
-
-	function openContextModal(modelName: string): Promise<number | null> {
-		contextModalModelName = modelName;
-		contextModalSize = 8192;
-		showContextModal = true;
-		return new Promise((resolve) => {
-			contextModalResolve = resolve;
-		});
-	}
-
-	function confirmContextModal() {
-		showContextModal = false;
-		if (contextModalResolve) {
-			contextModalResolve(contextModalSize);
-			contextModalResolve = null;
-		}
-	}
-
-	function cancelContextModal() {
-		showContextModal = false;
-		if (contextModalResolve) {
-			contextModalResolve(null);
-			contextModalResolve = null;
-		}
-	}
 
 	const hasActiveChatResponse = () => {
 		const currentMessage = history?.currentId ? history.messages[history.currentId] : null;
@@ -498,14 +423,12 @@
 			const standbyLoadPreferences = getLocalModelLoadPreferences();
 			const standbyCacheType =
 				standbyLoadPreferences.cache === 'default' ? 'f16' : standbyLoadPreferences.cache;
-			const standbyContextShift = normalizeLocalContextShift(
-				standbyModel.context_shift ?? standbyLoadPreferences.contextShift
-			);
 			const standbyTokenPrediction = normalizeLocalTokenPrediction(
-				standbyModel.token_prediction ?? standbyLoadPreferences.tokenPrediction
+				standbyLoadPreferences.tokenPrediction
 			);
+			const standbyContextShift = normalizeLocalContextShift(standbyLoadPreferences.contextShift);
 			const standbySpeculativePreference =
-				standbyModel.speculative_decoding ?? standbyLoadPreferences.speculative;
+				standbyLoadPreferences.speculative;
 			const standbySpeculativeDecoding =
 				isLocalContextShiftEnabled(standbyContextShift) ||
 				isLocalTokenPredictionEnabled(standbyTokenPrediction)
@@ -516,7 +439,7 @@
 				localStorage.token,
 				standbyModel.filename,
 				standbyModel.n_gpu_layers ?? -1,
-				standbyModel.n_ctx ?? 8192,
+				standbyModel.context_auto ? 0 : standbyModel.n_ctx ?? 8192,
 				standbyModel.mmproj_filename ?? null,
 				standbyCacheType,
 				standbySpeculativeDecoding,
@@ -577,30 +500,6 @@
 		previousVideoGenerationEnabled = videoGenerationEnabled;
 	}
 
-	function openVisionModal(modelName: string): Promise<boolean> {
-		visionModalModelName = modelName;
-		showVisionModal = true;
-		return new Promise((resolve) => {
-			visionModalResolve = resolve;
-		});
-	}
-
-	function confirmVisionModal() {
-		showVisionModal = false;
-		if (visionModalResolve) {
-			visionModalResolve(true);
-			visionModalResolve = null;
-		}
-	}
-
-	function declineVisionModal() {
-		showVisionModal = false;
-		if (visionModalResolve) {
-			visionModalResolve(false);
-			visionModalResolve = null;
-		}
-	}
-
 	// Message queue for storing messages while generating
 	let messageQueue: {
 		id: string;
@@ -645,14 +544,12 @@
 			const loadedChatId = chatIdProp;
 			loading = false;
 			flushSync();
+			await setDefaults();
 			await restoreLoadedChatBottom(loadedChatId);
 			if (chatIdProp !== loadedChatId || $chatId !== loadedChatId) return;
 			loadedChatViewportReady = true;
 
 			await tick();
-
-			// Sync model params into Chat Controls after chat (and its saved params) are loaded
-			await setDefaults();
 
 			// Restore queue from sessionStorage
 			const storedQueueData = sessionStorage.getItem(`chat-queue-${chatIdProp}`);
@@ -1043,15 +940,6 @@
 					message.files = data.files;
 				} else if (type === 'chat:message:embeds' || type === 'embeds') {
 					message.embeds = data.embeds;
-
-					// Auto-scroll to the embed once it's rendered in the DOM
-					await tick();
-					setTimeout(() => {
-						const embedEl = document.getElementById(`${event.message_id}-embeds-container`);
-						if (embedEl) {
-							embedEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-						}
-					}, 100);
 				} else if (type === 'chat:message:error') {
 					if (typeof data?.error?.content === 'string') {
 						data.error.content = normalizeContextSizeErrorMessage(data.error.content);
@@ -2145,6 +2033,7 @@
 				}
 				cancelMessagesBottomWheelLock();
 				cancelGenerationAnchorRAF();
+				cancelBottomNavigation?.();
 				if (codeBlockScrollTimer) {
 					clearTimeout(codeBlockScrollTimer);
 					codeBlockScrollTimer = null;
@@ -2327,6 +2216,7 @@
 	//////////////////////////
 
 	const initNewChat = async () => {
+		cancelBottomNavigation?.();
 		console.log('initNewChat');
 		if ($user?.role !== 'admin' && $user?.permissions?.chat?.temporary_enforced) {
 			await temporaryChatEnabled.set(true);
@@ -2519,6 +2409,7 @@
 	};
 
 	const loadChat = async () => {
+		cancelBottomNavigation?.();
 		chatId.set(chatIdProp);
 
 		if ($temporaryChatEnabled) {
@@ -2605,6 +2496,7 @@
 
 	const scrollToBottom = async (behavior: ScrollBehavior = 'auto') => {
 		await tick();
+		if (cancelBottomNavigation) return;
 		if (messagesContainerElement) {
 			messagesContainerElement.scrollTo({
 				top: messagesContainerElement.scrollHeight,
@@ -2771,7 +2663,7 @@
 
 		const effectiveScrollHeight = Math.max(
 			messagesContainerElement.clientHeight,
-			messagesContainerElement.scrollHeight - generationBottomSpacerHeight
+			getMessagesContentHeight(messagesContainerElement, generationBottomSpacerHeight)
 		);
 		messagesContainerElement.scrollTo({
 			top: effectiveScrollHeight,
@@ -2783,7 +2675,7 @@
 		if (!messagesContainerElement) return true;
 		const effectiveScrollHeight = Math.max(
 			messagesContainerElement.clientHeight,
-			messagesContainerElement.scrollHeight - generationBottomSpacerHeight
+			getMessagesContentHeight(messagesContainerElement, generationBottomSpacerHeight)
 		);
 		return (
 			effectiveScrollHeight - messagesContainerElement.scrollTop <=
@@ -2794,6 +2686,7 @@
 	const updateScrollStateFromContainer = ({
 		updateAutoScroll = !anchoredGeneratingMessageId
 	}: { updateAutoScroll?: boolean } = {}) => {
+		if (cancelBottomNavigation) updateAutoScroll = false;
 		if (!messagesContainerElement) {
 			showScrollToBottomButton = false;
 			return;
@@ -2804,9 +2697,7 @@
 			: null;
 
 		if (activeMessageElement) {
-			const containerRect = messagesContainerElement.getBoundingClientRect();
-			const messageRect = activeMessageElement.getBoundingClientRect();
-			const hasHiddenContentBelow = messageRect.bottom > containerRect.bottom + 4;
+			const hasHiddenContentBelow = !isMessagesContainerAtBottom();
 			showScrollToBottomButton =
 				hasHiddenContentBelow && Date.now() >= scrollToBottomButtonSuppressUntil;
 
@@ -2838,24 +2729,25 @@
 	};
 
 	const fitGenerationSpacerToViewport = async (
-		desiredScrollTop = messagesContainerElement?.scrollTop ?? 0
+		desiredScrollTop = messagesContainerElement?.scrollTop ?? 0,
+		preserveExistingPosition = false
 	) => {
-		if (!messagesContainerElement || generationBottomSpacerHeight <= 0) return;
+		if (!messagesContainerElement || (generationBottomSpacerHeight <= 0 && !preserveExistingPosition)) return;
 
-		const realScrollHeight = Math.max(
-			messagesContainerElement.clientHeight,
-			messagesContainerElement.scrollHeight - generationBottomSpacerHeight
-		);
+		const realScrollHeight = getMessagesContentHeight(messagesContainerElement, generationBottomSpacerHeight);
 		const requestedSpacerHeight = Math.max(
 			0,
 			Math.ceil(desiredScrollTop + messagesContainerElement.clientHeight - realScrollHeight)
 		);
 		const nextSpacerHeight =
-			activeGenerationSpacerHeightLimit === null
+			preserveExistingPosition || activeGenerationSpacerHeightLimit === null
 				? requestedSpacerHeight
 				: Math.min(requestedSpacerHeight, activeGenerationSpacerHeightLimit);
+		if (preserveExistingPosition && activeGenerationSpacerHeightLimit !== null) {
+			activeGenerationSpacerHeightLimit = Math.max(activeGenerationSpacerHeightLimit, nextSpacerHeight);
+		}
 
-		const spacerHeightChanged = nextSpacerHeight > generationBottomSpacerHeight + 1;
+		const spacerHeightChanged = Math.abs(nextSpacerHeight - generationBottomSpacerHeight) > 1;
 		if (spacerHeightChanged) {
 			generationBottomSpacerHeight = nextSpacerHeight;
 			await tick();
@@ -2898,7 +2790,7 @@
 		}
 
 		const containerRect = messagesContainerElement.getBoundingClientRect();
-		const messageRect = messageElement.getBoundingClientRect();
+		const messageRect = getMessageScrollAnchor(messageElement).getBoundingClientRect();
 		const scrollMarginTop =
 			topOffset ?? (parseFloat(getComputedStyle(messageElement).scrollMarginTop || '0') || 0);
 		const targetTop =
@@ -2939,19 +2831,16 @@
 		if (!messageElement) return;
 
 		const containerRect = messagesContainerElement.getBoundingClientRect();
-		const messageRect = messageElement.getBoundingClientRect();
+		const messageRect = getMessageScrollAnchor(messageElement).getBoundingClientRect();
 		const targetTop =
 			messagesContainerElement.scrollTop + messageRect.top - containerRect.top - topOffset;
-		const maxScrollTop = Math.max(
-			0,
-			messagesContainerElement.scrollHeight -
-				generationBottomSpacerHeight -
-				messagesContainerElement.clientHeight
-		);
+		const naturalOverflow =
+			getMessagesContentHeight(messagesContainerElement, generationBottomSpacerHeight) -
+			messagesContainerElement.clientHeight;
 		const requiredSpacerHeight = Math.max(
 			0,
 			Math.ceil(
-				targetTop - maxScrollTop + (includeReadingPadding ? getGenerationBottomReadingPadding() : 0)
+				targetTop - naturalOverflow + (includeReadingPadding ? getGenerationBottomReadingPadding() : 0)
 			)
 		);
 
@@ -3034,6 +2923,15 @@
 		generationSpacerScrollAllowance = null;
 		autoScroll = false;
 		flushSync();
+		if (document.getElementById(`message-${scrollTargetMessageId}`)?.querySelector('[data-user-message-scroll-anchor]')) {
+			// The attachment preview has just left the composer; reserve its final height before anchoring.
+			const pane = messagesContainerElement?.closest<HTMLElement>('#chat-pane');
+			const composer = pane?.querySelector<HTMLElement>('[data-composer-root]');
+			if (composer?.dataset.ongoing === 'true') {
+				const readingGap = composer.querySelector('#message-input-container')?.classList.contains('flex-col') ? 24 : 8;
+				pane.style.setProperty('--chat-composer-height', `${Math.ceil(composer.getBoundingClientRect().height + readingGap)}px`);
+			}
+		}
 		prepareGenerationSpacerForMessageTop(scrollTargetMessageId, topOffset, includeReadingPadding);
 		positionMessageAtTop(scrollTargetMessageId, 'auto', topOffset);
 		await fitGenerationSpacerToViewport(messagesContainerElement?.scrollTop ?? 0);
@@ -3051,7 +2949,7 @@
 
 	const anchorGeneratingMessageBottom = async (messageId: string) => {
 		anchoredGeneratingMessageId = messageId;
-		generationBottomSpacerHeight = messagesContainerElement?.clientHeight ?? 0;
+		generationBottomSpacerHeight = 0;
 		generationSpacerScrollLimit = null;
 		generationSpacerScrollAllowance = null;
 		autoScroll = false;
@@ -3094,8 +2992,7 @@
 		if (!messagesContainerElement) return 0;
 		return Math.max(
 			0,
-			messagesContainerElement.scrollHeight -
-				generationBottomSpacerHeight -
+			getMessagesContentHeight(messagesContainerElement, generationBottomSpacerHeight) -
 				messagesContainerElement.clientHeight
 		);
 	};
@@ -3186,8 +3083,7 @@
 		await tick();
 		const maxScrollWithoutSpacer = Math.max(
 			0,
-			messagesContainerElement.scrollHeight -
-				generationBottomSpacerHeight -
+			getMessagesContentHeight(messagesContainerElement, generationBottomSpacerHeight) -
 				messagesContainerElement.clientHeight
 		);
 
@@ -3237,6 +3133,21 @@
 		if (!messagesContainerElement) return;
 
 		const currentScrollTop = messagesContainerElement.scrollTop;
+		const maxScrollTop = getMessagesMaxScrollTop();
+		if (
+			anchoredGeneratingMessageId &&
+			visualMediaGenerationAnchorId !== anchoredGeneratingMessageId &&
+			!cancelBottomNavigation &&
+			currentScrollTop < lastMessagesScrollTop - 0.5 &&
+			maxScrollTop < lastMessagesScrollTop - 0.5 &&
+			Math.abs(currentScrollTop - maxScrollTop) <= 1
+		) {
+			// A collapsing tool result clamps to the new bottom; it is not an upward user scroll.
+			void fitGenerationSpacerToViewport(lastMessagesScrollTop, true);
+			flushSync();
+			messagesContainerElement.scrollTop = lastMessagesScrollTop;
+			return;
+		}
 		const upwardDistance = lastMessagesScrollTop - currentScrollTop;
 		lastMessagesScrollTop = currentScrollTop;
 		if (
@@ -3275,6 +3186,7 @@
 	};
 
 	const beginGenerationSpacerPointerScroll = () => {
+		cancelBottomNavigation?.();
 		if (!messagesContainerElement) return;
 		if (anchoredGeneratingMessageId) {
 			textGenerationAnchorUserMoved = true;
@@ -3337,6 +3249,7 @@
 	};
 
 	const preventMessagesBottomWheelJitter = (event: WheelEvent) => {
+		cancelBottomNavigation?.();
 		if (!messagesContainerElement) return;
 		if (anchoredGeneratingMessageId) {
 			textGenerationAnchorUserMoved = true;
@@ -3419,13 +3332,76 @@
 		}
 
 		let resizeFrame: ReturnType<typeof requestAnimationFrame> | null = null;
+		let reasoningLayout: { scrollTop: number } | null = null;
+		let reasoningLayoutTimer: ReturnType<typeof setTimeout> | null = null;
+		const applyReasoningLayout = () => {
+			if (!reasoningLayout || !messagesContainerElement) return false;
+			if (getMessagesMaxScrollTop() < reasoningLayout.scrollTop) {
+				void fitGenerationSpacerToViewport(reasoningLayout.scrollTop, true);
+				flushSync();
+			}
+			messagesContainerElement.scrollTop = reasoningLayout.scrollTop;
+			lastMessagesScrollTop = messagesContainerElement.scrollTop;
+			if (anchoredGeneratingMessageId) textGenerationAnchorScrollTop = lastMessagesScrollTop;
+			updateScrollStateFromContainer({ updateAutoScroll: false });
+			return true;
+		};
+		const handleReasoningLayout = () => {
+			if (!messagesContainerElement) return;
+			// Accordion changes preserve the reading position; they never navigate to the bottom.
+			reasoningLayout = {
+				scrollTop: messagesContainerElement.scrollTop
+			};
+			cancelMessagesBottomWheelLock();
+			cancelGenerationAnchorRAF();
+			if (generationSpacerRAF) {
+				cancelAnimationFrame(generationSpacerRAF);
+				generationSpacerRAF = null;
+			}
+			if (reasoningLayoutTimer) clearTimeout(reasoningLayoutTimer);
+			reasoningLayoutTimer = setTimeout(() => {
+				applyReasoningLayout();
+				reasoningLayout = null;
+				reasoningLayoutTimer = null;
+				updateScrollStateFromContainer();
+			}, 220);
+		};
+		const cancelReasoningLayout = () => {
+			reasoningLayout = null;
+			if (reasoningLayoutTimer) clearTimeout(reasoningLayoutTimer);
+			reasoningLayoutTimer = null;
+		};
+		node.addEventListener('neve:reasoning-layout', handleReasoningLayout);
+		node.addEventListener('wheel', cancelReasoningLayout, { passive: true });
+		node.addEventListener('pointerdown', cancelReasoningLayout);
+		const preserveGenerationPosition = () => {
+			if (applyReasoningLayout()) return;
+			if (!anchoredGeneratingMessageId || visualMediaGenerationAnchorId === anchoredGeneratingMessageId || textGenerationAnchorScrollTop === null || !messagesContainerElement || cancelBottomNavigation) return;
+			const desiredTop = textGenerationAnchorUserMoved ? lastMessagesScrollTop : textGenerationAnchorScrollTop;
+			if (Math.abs(messagesContainerElement.scrollTop - desiredTop) <= 0.5 && getMessagesMaxScrollTop() >= desiredTop) return;
+			// Status replacements and streamed markdown can shrink content and clamp scrolling before paint.
+			void fitGenerationSpacerToViewport(desiredTop, true);
+			flushSync();
+			messagesContainerElement.scrollTop = desiredTop;
+		};
+		const contentObserver = new MutationObserver(preserveGenerationPosition);
+		contentObserver.observe(node, {
+			childList: true,
+			characterData: true,
+			attributes: true,
+			attributeFilter: ['style', 'open'],
+			subtree: true
+		});
 		const observer = new ResizeObserver(() => {
+			preserveGenerationPosition();
 			if (resizeFrame) {
 				cancelAnimationFrame(resizeFrame);
 			}
 
 			resizeFrame = requestAnimationFrame(() => {
 				resizeFrame = null;
+				if (applyReasoningLayout()) return;
+				scheduleGenerationSpacerFit();
 				clampIdleGenerationSpacerScroll();
 				if (
 					anchoredGeneratingMessageId &&
@@ -3442,10 +3418,18 @@
 		});
 
 		observer.observe(node);
+		// The viewport-filling wrapper can stay the same size while an accordion shrinks.
+		const messagesContent = node.querySelector<HTMLElement>('[data-messages-content]');
+		if (messagesContent) observer.observe(messagesContent);
 
 		return {
 			destroy() {
+				node.removeEventListener('neve:reasoning-layout', handleReasoningLayout);
+				node.removeEventListener('wheel', cancelReasoningLayout);
+				node.removeEventListener('pointerdown', cancelReasoningLayout);
+				if (reasoningLayoutTimer) clearTimeout(reasoningLayoutTimer);
 				observer.disconnect();
+				contentObserver.disconnect();
 				if (resizeFrame) {
 					cancelAnimationFrame(resizeFrame);
 				}
@@ -3464,12 +3448,19 @@
 	};
 
 	const scrollToBottomFromInput = async () => {
+		cancelBottomNavigation?.();
 		const isAnchoredGeneration = Boolean(anchoredGeneratingMessageId);
 		if (isAnchoredGeneration) {
 			textGenerationAnchorUserMoved = true;
 		}
+		cancelGenerationAnchorRAF();
+		cancelMessagesBottomWheelLock();
+		generationBottomSpacerHeight = 0;
+		generationSpacerScrollLimit = null;
+		generationSpacerScrollAllowance = null;
+		activeGenerationSpacerHeightLimit = isAnchoredGeneration ? 0 : null;
 
-		scrollToBottomButtonSuppressUntil = Date.now() + (isAnchoredGeneration ? 120 : 350);
+		scrollToBottomButtonSuppressUntil = Date.now() + 500;
 		showScrollToBottomButton = false;
 		if (scrollToBottomButtonSuppressTimer) {
 			clearTimeout(scrollToBottomButtonSuppressTimer);
@@ -3479,9 +3470,33 @@
 			generationSpacerRAF = null;
 		}
 
-		await scrollToContentBottom(isAnchoredGeneration ? 'auto' : 'smooth');
+		autoScroll = false;
+		await tick();
+		if (messagesContainerElement) {
+			const element = messagesContainerElement;
+			const from = element.scrollTop;
+			const started = performance.now();
+			const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 320;
+			await new Promise<void>((resolve) => {
+				const finish = () => {
+					if (bottomNavigationFrame !== null) cancelAnimationFrame(bottomNavigationFrame);
+					bottomNavigationFrame = null;
+					cancelBottomNavigation = null;
+					resolve();
+				};
+				cancelBottomNavigation = finish;
+				const move = (now: number) => {
+					const progress = duration ? Math.max(0, Math.min(1, (now - started) / duration)) : 1;
+					const target = Math.max(0, element.scrollHeight - element.clientHeight);
+					element.scrollTop = from + (target - from) * (1 - Math.pow(1 - progress, 3));
+					if (progress < 1) bottomNavigationFrame = requestAnimationFrame(move);
+					else finish();
+				};
+				bottomNavigationFrame = requestAnimationFrame(move);
+			});
+		}
 		if (!anchoredGeneratingMessageId) {
-			autoScroll = true;
+			autoScroll = isMessagesContainerAtBottom();
 		}
 
 		scrollToBottomButtonSuppressTimer = setTimeout(
@@ -3490,7 +3505,7 @@
 				scrollToBottomButtonSuppressUntil = 0;
 				updateScrollStateFromContainer({ updateAutoScroll: !anchoredGeneratingMessageId });
 			},
-			isAnchoredGeneration ? 120 : 350
+			500
 		);
 	};
 	const chatCompletedHandler = async (_chatId, modelId, responseMessageId, messages) => {
@@ -3862,7 +3877,6 @@
 
 		if (selected_model_id) {
 			message.selectedModelId = selected_model_id;
-			message.arena = true;
 		}
 
 		if (usage) {
@@ -4024,42 +4038,19 @@
 		const modelFilename = llamacppInfo.filename ?? modelId;
 		const loadPreferences = getLocalModelLoadPreferences();
 
-		let contextSize: number;
-		if (loadPreferences.context === 'ask') {
-			if (loadedModel?.n_ctx) {
-				contextSize = loadedModel.n_ctx;
-			} else {
-				const modalSize = await openContextModal(model.name ?? modelId);
-				if (modalSize === null) {
-					return null;
-				}
-				contextSize = modalSize;
-			}
-		} else {
-			contextSize = loadPreferences.context;
+		let contextSize = loadPreferences.context === 'auto' ? 0 : loadPreferences.context;
+		if (contextSize === 0 && !(await getLlamaCppStatus(localStorage.token)).automatic_context) {
+			// Keep already-loaded sessions usable until the updated backend is restarted.
+			if (loadedModel?.n_ctx) contextSize = loadedModel.n_ctx;
+			else throw new Error('Reinicie a interface para ativar o contexto automático atualizado.');
 		}
 
 		const mmProjFiles = await getMmProjFiles(localStorage.token);
 		const matchingMmproj = findMatchingMmproj(modelFilename, mmProjFiles);
-		let mmprojFilename = '';
+		const mmprojFilename = loadPreferences.vision === 'yes' ? matchingMmproj ?? '' : '';
 
-		if (matchingMmproj) {
-			if (loadPreferences.vision === 'ask') {
-				if (loadedModel) {
-					mmprojFilename = loadedModel.mmproj_filename ?? '';
-				} else {
-					const useVision = await openVisionModal(model.name ?? modelId);
-					mmprojFilename = useVision ? matchingMmproj : '';
-				}
-			} else {
-				mmprojFilename = loadPreferences.vision === 'yes' ? matchingMmproj : '';
-			}
-		}
-
+		const tokenPrediction = normalizeLocalTokenPrediction(loadPreferences.tokenPrediction);
 		const contextShift = normalizeLocalContextShift(loadPreferences.contextShift);
-		const tokenPrediction = isLocalContextShiftEnabled(contextShift)
-			? 'off'
-			: normalizeLocalTokenPrediction(loadPreferences.tokenPrediction);
 		const speculativeDecoding =
 			isLocalContextShiftEnabled(contextShift) || isLocalTokenPredictionEnabled(tokenPrediction)
 				? 'off'
@@ -4079,7 +4070,7 @@
 
 	const loadedLocalModelMatchesPlan = (loadedModel: LocalModel, loadPlan: LocalModelLoadPlan) => {
 		return (
-			(loadedModel.n_ctx ?? loadPlan.contextSize) === loadPlan.contextSize &&
+			(loadPlan.contextSize === 0 ? loadedModel.context_auto === true : loadedModel.n_ctx === loadPlan.contextSize) &&
 			(loadedModel.mmproj_filename ?? '') === loadPlan.mmprojFilename &&
 			normalizeLocalCacheType(loadedModel.cache_type) === loadPlan.cacheType &&
 			normalizeLocalSpeculativeDecoding(loadedModel.speculative_decoding) ===
@@ -4998,7 +4989,8 @@
 					...(currentModelsUseLlamaCpp()
 						? {
 								reasoning_mode: thinkingEnabled ? 'reasoning' : 'quick',
-								reasoning_extended: thinkingExtendedEnabled
+								reasoning_extended: thinkingExtendedEnabled,
+								reasoning_unlimited: thinkingUnlimitedEnabled
 							}
 						: currentModelsExplicitlyToggleReasoning()
 							? { reasoning_extended: thinkingExtendedEnabled }
@@ -5696,71 +5688,8 @@
 	}}
 />
 
-{#if showContextModal}
-	<div
-		class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40"
-		transition:fade={{ duration: 80 }}
-	>
-		<div class="bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-xl mx-4 w-80 flex flex-col gap-3">
-			<p class="text-sm font-semibold text-gray-900 dark:text-white">{$i18n.t('Context size')}</p>
-			<div class="flex flex-col gap-1.5 max-h-80 overflow-y-auto scrollbar-none">
-				{#each LOCAL_MODEL_CONTEXT_OPTIONS as sz}
-					<button
-						class="flex items-center justify-between px-3 py-2 rounded-lg text-xs text-left transition {contextModalSize ===
-						sz
-							? 'bg-black text-white dark:bg-white dark:text-black'
-							: 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
-						on:click={() => (contextModalSize = sz)}
-					>
-						<span>{sz.toLocaleString()} tokens</span>
-						{#if sz === 8192}
-							<span class="text-[11px] opacity-60">{$i18n.t('Default')}</span>
-						{/if}
-					</button>
-				{/each}
-			</div>
-			<div class="flex justify-end gap-2 mt-1">
-				<button
-					class="px-4 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
-					on:click={cancelContextModal}>{$i18n.t('Cancel')}</button
-				>
-				<button
-					class="px-4 py-1.5 text-xs rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium"
-					on:click={confirmContextModal}>{$i18n.t('Confirm')}</button
-				>
-			</div>
-		</div>
-	</div>
-{/if}
-
-{#if showVisionModal}
-	<div
-		class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40"
-		transition:fade={{ duration: 80 }}
-	>
-		<div class="bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-xl mx-4 w-80 flex flex-col gap-3">
-			<p class="text-sm font-semibold text-gray-900 dark:text-white">{$i18n.t('Load vision?')}</p>
-			<p class="text-xs text-gray-500 dark:text-gray-400">
-				{$i18n.t('{{model}} will load with image analysis support.', {
-					model: visionModalModelName
-				})}
-			</p>
-			<div class="flex justify-end gap-2 mt-1">
-				<button
-					class="px-4 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
-					on:click={declineVisionModal}>{$i18n.t('No')}</button
-				>
-				<button
-					class="px-4 py-1.5 text-xs rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium"
-					on:click={confirmVisionModal}>{$i18n.t('Yes')}</button
-				>
-			</div>
-		</div>
-	</div>
-{/if}
-
 <div
-	class="relative h-screen max-h-[100dvh] w-full max-w-full flex flex-col"
+	class="relative h-screen max-h-[100dvh] w-full max-w-full flex flex-col dark:bg-black"
 	id="chat-container"
 >
 	{#if !loading}
@@ -5778,11 +5707,10 @@
 				<div
 					class="absolute top-0 left-0 w-full h-full bg-linear-to-t from-white to-white/85 dark:from-black dark:to-black/90 z-0"
 				/>
-			{:else if $settings?.backgroundImageUrl ?? $config?.license_metadata?.background_image_url ?? null}
+			{:else if $settings?.backgroundImageUrl}
 				<div
 					class="absolute top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
-					style="background-image: url({$settings?.backgroundImageUrl ??
-						$config?.license_metadata?.background_image_url})  "
+					style="background-image: url({$settings.backgroundImageUrl})  "
 				/>
 
 				<div
@@ -5812,7 +5740,7 @@
 						}}
 						{history}
 						bind:selectedModels
-						shareEnabled={!!history.currentId}
+						menuEnabled={!!history.currentId}
 						{initNewChat}
 						{moveChatHandler}
 						onSaveTempChat={async () => {
@@ -5856,7 +5784,7 @@
 
 					<div
 						id="chat-pane"
-						class="flex flex-col flex-auto min-h-0 z-10 w-full @container overflow-auto"
+						class="relative flex flex-col flex-auto min-h-0 z-10 w-full @container {history?.currentId ? 'overflow-hidden' : 'overflow-auto'}"
 						style="overflow-anchor: none;"
 					>
 						{#if ($settings?.landingPageMode === 'chat' && !$selectedFolder) || createMessagesList(history, history.currentId).length > 0}
@@ -5864,7 +5792,7 @@
 								class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden"
 								id="messages-container"
 								bind:this={messagesContainerElement}
-								style="overflow-anchor: none; scrollbar-gutter: stable both-edges;"
+							style="overflow-anchor: none; scrollbar-gutter: stable both-edges; clip-path: inset(0 0 0.5rem 0);"
 								on:wheel|nonpassive={preventMessagesBottomWheelJitter}
 								on:pointerdown={beginGenerationSpacerPointerScroll}
 								on:pointerup={endGenerationSpacerPointerScroll}
@@ -5884,8 +5812,9 @@
 									updateScrollStateFromContainer();
 								}}
 							>
-								<div class=" min-h-full w-full flex flex-col" use:observeMessagesContentSize>
+								<div class="min-h-full w-full shrink-0 flex flex-col" style="padding-bottom: var(--chat-composer-height, 7rem);" use:observeMessagesContentSize>
 									<Messages
+										className="h-auto flex pt-8"
 										chatId={$chatId}
 										bind:history
 										bind:autoScroll
@@ -5911,7 +5840,7 @@
 								</div>
 							</div>
 
-							<div class=" pb-2 z-10 w-full flex flex-col items-center">
+							<div class="chat-composer-overlay absolute inset-x-0 bottom-0 pb-2 z-10 w-full flex flex-col items-center">
 								<MessageInput
 									bind:this={messageInput}
 									{history}
@@ -5938,6 +5867,7 @@
 									bind:videoGenerationAspectRatio
 									onNativeIntegrationChange={setNativeIntegration}
 									bind:thinkingEnabled
+									bind:thinkingUnlimitedEnabled
 									bind:thinkingExtendedEnabled
 									bind:atSelectedModel
 									bind:showCommands
@@ -6021,6 +5951,7 @@
 									bind:videoGenerationAspectRatio
 									onNativeIntegrationChange={setNativeIntegration}
 									bind:thinkingEnabled
+									bind:thinkingUnlimitedEnabled
 									bind:thinkingExtendedEnabled
 									bind:atSelectedModel
 									bind:showCommands
@@ -6050,7 +5981,6 @@
 
 				<ModelSettingsSheet
 					bind:params
-					bind:chatFiles
 					selectedModelName={$models.find((m) => m.id === selectedModelIds?.at(0))?.name ??
 						selectedModelIds?.at(0) ??
 						''}
@@ -6094,6 +6024,21 @@
 </div>
 
 <style>
+	.chat-composer-overlay {
+		--composer-mask: 255, 255, 255;
+		isolation: isolate;
+	}
+	:global(.dark) .chat-composer-overlay {
+		--composer-mask: 0, 0, 0;
+	}
+	.chat-composer-overlay::before {
+		content: '';
+		position: absolute;
+		inset: -30px 0 0;
+		z-index: -1;
+		pointer-events: none;
+		background: linear-gradient(to bottom, rgba(var(--composer-mask), 0), rgba(var(--composer-mask), 0.65) 14px, rgba(var(--composer-mask), 1) 30px);
+	}
 	::-webkit-scrollbar {
 		height: 0.5rem;
 		width: 0.5rem;

@@ -6,7 +6,7 @@ const normalizeMmprojName = (filename: string): string => {
 		.toLowerCase();
 
 	return baseName
-		.replace(/(^|[\s._-]+)mmproj([\s._-].*)?$/i, '')
+		.replace(/[\s._-]+mmproj([\s._-].*)?$/i, '')
 		.replace(/^mmproj[\s._-]*/i, '')
 		.replace(/[\s._-]+model$/i, '')
 		.replace(/[\s._-]+(?:u?d?q\d[\w.-]*|q\d[\w.-]*|f\d+|bf\d+|fp\d+)$/i, '')

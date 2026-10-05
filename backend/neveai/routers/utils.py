@@ -1,16 +1,10 @@
 import logging
 import markdown
 
-from neveai.models.chats import ChatTitleMessagesForm
-from neveai.config import DATA_DIR, ENABLE_ADMIN_EXPORT
-from neveai.constants import ERROR_MESSAGES
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-from starlette.responses import FileResponse
 
 
-from neveai.utils.misc import get_gravatar_url
-from neveai.utils.pdf_generator import PDFGenerator
 from neveai.utils.auth import get_admin_user, get_verified_user
 from neveai.utils.code_interpreter import execute_code_jupyter
 
@@ -22,11 +16,6 @@ except ImportError:
     black = None
 
 router = APIRouter()
-
-
-@router.get("/gravatar")
-async def get_gravatar(email: str, user=Depends(get_verified_user)):
-    return get_gravatar_url(email)
 
 
 class CodeForm(BaseModel):
@@ -85,46 +74,3 @@ async def get_html_from_markdown(
     form_data: MarkdownForm, user=Depends(get_verified_user)
 ):
     return {"html": markdown.markdown(form_data.md)}
-
-
-class ChatForm(BaseModel):
-    title: str
-    messages: list[dict]
-
-
-@router.post("/pdf")
-async def download_chat_as_pdf(
-    form_data: ChatTitleMessagesForm, user=Depends(get_verified_user)
-):
-    try:
-        pdf_bytes = PDFGenerator(form_data).generate_chat_pdf()
-
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={"Content-Disposition": "attachment;filename=chat.pdf"},
-        )
-    except Exception as e:
-        log.exception(f"Error generating PDF: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.get("/db/download")
-async def download_db(user=Depends(get_admin_user)):
-    if not ENABLE_ADMIN_EXPORT:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
-        )
-    from neveai.internal.db import engine
-
-    if engine.name != "sqlite":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DB_NOT_SQLITE,
-        )
-    return FileResponse(
-        engine.url.database,
-        media_type="application/octet-stream",
-        filename="neve.db",
-    )

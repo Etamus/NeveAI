@@ -54,7 +54,7 @@
 	import { getNoAuthSession, getSessionUser, userSignOut } from '$lib/apis/auths';
 	import { getAllTags, getChatList } from '$lib/apis/chats';
 
-	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL, NEVEAI_HOSTNAME } from '$lib/constants';
+	import { NEVEAI_BASE_URL } from '$lib/constants';
 	import { displayFileHandler } from '$lib/utils';
 	import { setTextScale } from '$lib/utils/text-scale';
 

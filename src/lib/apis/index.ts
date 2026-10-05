@@ -494,76 +494,6 @@ export const generateEmoji = async (
 	return null;
 };
 
-export const generateQueries = async (
-	token: string = '',
-	model: string,
-	messages: object[],
-	prompt: string,
-	type: string = 'web_search',
-	chat_id?: string
-) => {
-	let error = null;
-
-	const res = await fetch(`${NEVEAI_BASE_URL}/api/v1/tasks/queries/completions`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${token}`
-		},
-		body: JSON.stringify({
-			model: model,
-			messages: messages,
-			prompt: prompt,
-			type: type,
-			...(chat_id && { chat_id: chat_id })
-		})
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			console.error(err);
-			if ('detail' in err) {
-				error = err.detail;
-			}
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	// Step 1: Safely extract the response string
-	const response = res?.choices[0]?.message?.content ?? '';
-
-	try {
-		const jsonStartIndex = response.indexOf('{');
-		const jsonEndIndex = response.lastIndexOf('}');
-
-		if (jsonStartIndex !== -1 && jsonEndIndex !== -1) {
-			const jsonResponse = response.substring(jsonStartIndex, jsonEndIndex + 1);
-
-			// Step 5: Parse the JSON block
-			const parsed = JSON.parse(jsonResponse);
-
-			// Step 6: If there's a "queries" key, return the queries array; otherwise, return an empty array
-			if (parsed && parsed.queries) {
-				return Array.isArray(parsed.queries) ? parsed.queries : [];
-			} else {
-				return [];
-			}
-		}
-
-		// If no valid JSON block found, return response as is
-		return [response];
-	} catch (e) {
-		// Catch and safely return empty array on any parsing errors
-		console.error('Failed to parse response: ', e);
-		return [response];
-	}
-};
 
 export const generateAutoCompletion = async (
 	token: string = '',
@@ -672,33 +602,6 @@ export const generateMoACompletion = async (
 	}
 
 	return [res, controller];
-};
-
-export const getUsage = async (token: string = '') => {
-	let error = null;
-
-	const res = await fetch(`${NEVEAI_BASE_URL}/api/usage`, {
-		method: 'GET',
-		headers: {
-			'Content-Type': 'application/json',
-			...(token && { Authorization: `Bearer ${token}` })
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.catch((err) => {
-			console.error(err);
-			error = err;
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
 };
 
 export const getBackendConfig = async () => {

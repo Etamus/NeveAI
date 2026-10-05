@@ -3,7 +3,7 @@
 	import { hideAll as tippyHideAll } from 'tippy.js';
 
 	import { onMount, onDestroy, getContext, tick } from 'svelte';
-	import { models, tools, user } from '$lib/stores';
+	import { models, tools } from '$lib/stores';
 	import { NEVEAI_BASE_URL, DEFAULT_CAPABILITIES } from '$lib/constants';
 
 	import { getTools } from '$lib/apis/tools';
@@ -11,13 +11,10 @@
 	import AdvancedParams from '$lib/components/chat/Settings/Advanced/AdvancedParams.svelte';
 	import Tags from '$lib/components/common/Tags.svelte';
 	import Textarea from '$lib/components/common/Textarea.svelte';
-	import AccessControl from '../common/AccessControl.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import DefaultFeatures from './DefaultFeatures.svelte';
-	import AccessControlModal from '../common/AccessControlModal.svelte';
 	import LockClosed from '$lib/components/icons/LockClosed.svelte';
-	import { updateModelAccessGrants } from '$lib/apis/models';
 
 	const i18n = getContext('i18n');
 
@@ -36,7 +33,6 @@
 	let inputFiles: FileList | null;
 
 	let showAdvanced = false;
-	let showAccessControlModal = false;
 
 	let loaded = false;
 	let autoSaveTimer: any = null;
@@ -130,6 +126,15 @@
 
 	let system = '';
 	let showSystemPromptField = false;
+	let systemPromptField: HTMLDivElement;
+	async function revealSystemPrompt() {
+		showSystemPromptField = true;
+		await tick();
+		systemPromptField?.scrollIntoView({
+			block: 'nearest',
+			behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+		});
+	}
 	$: if (system !== '') showSystemPromptField = true;
 	const DEFAULT_MODEL_PROFILE_IMAGE_URL = `${NEVEAI_BASE_URL}/static/favicon.png`;
 	let info: any = {
@@ -322,7 +327,7 @@
 
 			if (model.base_model_id) {
 				const base_model = $models
-					.filter((m) => !m?.preset && !(m?.arena ?? false))
+					.filter((m) => !m?.preset)
 					.find((m) => [model.base_model_id, `${model.base_model_id}:latest`].includes(m.id));
 
 				console.log('base_model', base_model);
@@ -402,29 +407,6 @@
 </script>
 
 {#if loaded}
-	<AccessControlModal
-		bind:show={showAccessControlModal}
-		bind:accessGrants
-		accessRoles={preset ? ['read', 'write'] : ['read']}
-		share={$user?.permissions?.sharing?.models || $user?.role === 'admin'}
-		sharePublic={$user?.permissions?.sharing?.public_models || $user?.role === 'admin'}
-		shareUsers={($user?.permissions?.access_grants?.allow_users ?? true) || $user?.role === 'admin'}
-		onChange={async () => {
-			if (edit && model?.id) {
-				try {
-					await updateModelAccessGrants(
-						localStorage.token,
-						model.id,
-						model.name ?? name,
-						accessGrants
-					);
-					toast.success($i18n.t('Saved'));
-				} catch (error) {
-					toast.error(error?.detail ?? `${error}`);
-				}
-			}
-		}}
-	/>
 
 	<!-- Layout wrapper: flex column fills available height (e.g. 28rem in Settings modal) -->
 	<div class="flex flex-col h-full min-h-0">
@@ -538,9 +520,9 @@
 					submitHandler();
 				}}
 			>
-				<div class="w-full pl-8 pr-4" on:scroll={() => tippyHideAll()}>
+				<div class="w-full px-4 sm:pl-8 sm:pr-4" on:scroll={() => tippyHideAll()}>
 					<!-- Profile Image + Name/ID Header -->
-					<div class="flex flex-row gap-4 md:gap-6 w-full">
+					<div class="flex min-w-0 flex-row gap-2 sm:gap-4 md:gap-6 w-full">
 						<div class="self-start flex justify-center my-2 shrink-0">
 							<div class="self-center">
 								<div class="relative inline-flex">
@@ -571,7 +553,7 @@
 											<img
 												src={info.meta.profile_image_url || DEFAULT_MODEL_PROFILE_IMAGE_URL}
 												alt="model profile"
-												class="rounded-lg size-20 md:size-36 object-cover shrink-0 transition-[filter] duration-150 {!isCatalogIconLocked &&
+												class="rounded-lg size-14 sm:size-20 md:size-36 object-cover shrink-0 transition-[filter] duration-150 {!isCatalogIconLocked &&
 												hasCustomModelImage
 													? 'group-hover:blur-[1px] group-hover:brightness-75'
 													: ''}"
@@ -607,7 +589,7 @@
 							</div>
 						</div>
 
-						<div class="flex flex-col w-full flex-1">
+						<div class="flex min-w-0 flex-col w-full flex-1">
 							<div class="relative flex flex-col w-full max-w-full min-w-0 mt-2">
 								<span
 									bind:this={modelNameSizerElement}
@@ -659,7 +641,7 @@
 										<option value={null} class="text-gray-900"
 											>{$i18n.t('Select a base model')}</option
 										>
-										{#each $models.filter((m) => (model ? m.id !== model.id : true) && !m?.preset && m?.owned_by !== 'arena' && !(m?.direct ?? false)) as model}
+										{#each $models.filter((m) => (model ? m.id !== model.id : true) && !m?.preset) as model}
 											<option value={model.id} class="text-gray-900">{model.name}</option>
 										{/each}
 									</select>
@@ -686,10 +668,10 @@
 				</div>
 
 				<!-- Params (scrollable) + Features (static) side by side -->
-				<div class="flex-1 min-h-0 overflow-hidden px-4 pb-4 border-t border-gray-200/30 dark:border-gray-700/20 mt-2 pt-6">
-					<div class="flex gap-0 w-full pl-2 h-full min-h-0">
+				<div class="flex-1 min-h-0 overflow-y-auto sm:overflow-hidden px-4 pb-4 border-t border-gray-200/30 dark:border-gray-700/20 mt-2 pt-6">
+					<div class="flex flex-col sm:flex-row gap-4 sm:gap-0 w-full sm:pl-2 sm:h-full min-h-0">
 						<!-- Left: advanced params + system prompt (only this scrolls) -->
-						<div class="w-[55%] min-w-0 h-full flex flex-col pr-1">
+						<div class="w-full sm:w-[55%] min-w-0 sm:h-full flex flex-col sm:pr-1">
 							<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2 py-0 pl-2 pr-5 shrink-0">
 								{$i18n.t('Par\u00e2metros avan\u00e7ados')}
 							</div>
@@ -715,17 +697,20 @@
 												<button
 													type="button"
 													class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700"
-													on:click={() => { showSystemPromptField = true; }}
+													on:click={revealSystemPrompt}
 												>{$i18n.t('Default')}</button>
 											{/if}
 											</div>
 											{#if showSystemPromptField}
+												<div bind:this={systemPromptField} data-model-system-prompt>
 												<Textarea
 													className="text-xs w-full bg-transparent border border-gray-200/40 dark:border-gray-700/30 rounded-lg px-3 py-2 outline-hidden resize-none overflow-y-auto focus:border-gray-300 dark:focus:border-gray-600 transition min-h-[5rem]"
 													placeholder={$i18n.t('Digite o prompt do sistema')}
 													rows={4}
+													autoResize={false}
 													bind:value={system}
 												/>
+												</div>
 											{/if}
 										</div>
 									</AdvancedParams>
@@ -735,8 +720,8 @@
 						</div>
 
 						<!-- Right: Capacidades (static, does not scroll) -->
-						<div class="border-l border-gray-300/50 dark:border-gray-600/30"></div>
-						<div class="w-[45%] min-w-0 pl-6 h-full overflow-hidden">
+						<div class="hidden sm:block border-l border-gray-300/50 dark:border-gray-600/30"></div>
+						<div class="w-full sm:w-[45%] min-w-0 sm:pl-6 sm:h-full sm:overflow-hidden">
 							<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2">
 								{$i18n.t('Capacidades padrão')}
 							</div>

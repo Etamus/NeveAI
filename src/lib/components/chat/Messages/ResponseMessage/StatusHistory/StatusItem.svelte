@@ -11,6 +11,7 @@
 	import Github from '$lib/components/icons/Github.svelte';
 	import DocumentPage from '$lib/components/icons/DocumentPage.svelte';
 	import { t } from 'i18next';
+	import { getWebSearchDisplayQueries } from '$lib/utils/webSearchDisplayQueries';
 
 	export let status = null;
 	export let done = false;
@@ -29,6 +30,7 @@
 		statusAction.includes('github_repository') || status?.source_type === 'github_repository';
 	$: isFileSourceStatus = status?.source_type === 'file';
 	$: isDeepSearchStatus = Boolean(status?.deep_search) || statusAction.includes('deep_search');
+	$: searchDisplayQueries = getWebSearchDisplayQueries(status?.queries, isDeepSearchStatus);
 	$: searchedCount =
 		status?.searched_count ??
 		(status?.items?.length ? status.items.length : (status?.urls || []).length);
@@ -157,7 +159,7 @@
 				</div>
 
 				<div class="flex flex-wrap gap-1.5 px-3 pb-2.5 pt-1">
-					{#each status.queries as query, idx (query)}
+					{#each searchDisplayQueries as query (query)}
 						<div
 							class="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700/60 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-600 dark:text-gray-300"
 						>
@@ -193,7 +195,7 @@
 				</div>
 
 				<div class="flex flex-wrap gap-1.5 px-3 pb-2.5 pt-1">
-					{#each status.queries as query, idx (query)}
+					{#each searchDisplayQueries as query (query)}
 						<div
 							class="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700/60 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-600 dark:text-gray-300"
 						>

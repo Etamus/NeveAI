@@ -25,7 +25,8 @@
 	import dayjs from 'dayjs';
 	import Spinner from './Spinner.svelte';
 	import PDFViewer from './PDFViewer.svelte';
-	import Reset from '../icons/Reset.svelte';
+	import GeneratedMusicPlayer from '$lib/components/chat/Messages/GeneratedMusicPlayer.svelte';
+	import GeneratedVideoPlayer from '$lib/components/chat/Messages/GeneratedVideoPlayer.svelte';
 
 	import panzoom, { type PanZoom } from 'panzoom';
 
@@ -48,6 +49,8 @@
 	let isPlainText = false;
 
 	let selectedTab = '';
+	$: hasExtractedContent = Boolean((item?.file?.data?.content ?? item?.content ?? '').trim());
+	$: hasDocumentPreview = isPDF || isExcel || isCode || isMarkdown || isDocx || isPptx;
 	let excelWorkbook: WorkBook | null = null;
 	let excelSheetNames: string[] = [];
 	let selectedSheet = '';
@@ -66,20 +69,22 @@
 
 	let pzInstance: PanZoom | null = null;
 
-	const initImagePanzoom = (node: HTMLElement) => {
-		pzInstance = panzoom(node, {
-			bounds: true,
-			boundsPadding: 0.1,
-			zoomSpeed: 0.065
-		});
+	const initImagePanzoom = (node: HTMLImageElement) => {
+		const initialize = () => {
+			pzInstance?.dispose();
+			pzInstance = panzoom(node, {
+				bounds: true,
+				boundsPadding: 1,
+				minZoom: 1,
+				maxZoom: 8,
+				zoomSpeed: 0.065
+			});
+		};
+		if (node.complete && node.naturalWidth) initialize();
+		node.addEventListener('load', initialize);
+		return { destroy() { node.removeEventListener('load', initialize); pzInstance?.dispose(); pzInstance = null; } };
 	};
 
-	const resetImageView = () => {
-		if (pzInstance) {
-			pzInstance.moveTo(0, 0);
-			pzInstance.zoomAbs(0, 0, 1);
-		}
-	};
 
 	$: isPDF =
 		item?.meta?.content_type === 'application/pdf' ||
@@ -265,7 +270,7 @@
 	};
 
 	const loadContent = async () => {
-		selectedTab = item?.generated || isAudio || isVideo ? 'preview' : '';
+		selectedTab = item?.generated || isAudio || isVideo || (hasDocumentPreview && !hasExtractedContent) ? 'preview' : '';
 		expandedContent = false;
 		if (item?.type === 'collection') {
 			loading = true;
@@ -307,6 +312,7 @@
 			loading = false;
 		}
 
+		if (hasDocumentPreview && !(item?.file?.data?.content ?? item?.content ?? '').trim()) selectedTab = 'preview';
 		await tick();
 	};
 
@@ -339,36 +345,23 @@ $: if (show) {
 	<div class="font-primary px-4.5 py-3.5 w-full h-full min-h-0 flex flex-col dark:text-gray-400">
 		<div class="pb-2 shrink-0">
 			<div class="flex items-start justify-between">
-				<div>
+				<div class="min-w-0 flex-1 pr-3">
 					<div class=" font-medium text-lg dark:text-gray-100">
-						<a
-							href="#"
-							class="hover:underline line-clamp-1"
-							on:click|preventDefault={() => {
-								if (!isPDF && item.url) {
-									window.open(
-										item.type === 'file'
-											? item?.url?.startsWith('http')
-												? item.url
-												: `${NEVEAI_API_BASE_URL}/files/${item.url}/content`
-											: item.url,
-										'_blank'
-									);
-								}
-							}}
-						>
+						<div class="line-clamp-1 cursor-default">
 							{item?.name ?? 'File'}
-						</a>
+						</div>
 					</div>
 				</div>
 
 				<div>
 					<button
+						aria-label={$i18n.t('Close')}
+						class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
 						on:click={() => {
 							show = false;
 						}}
 					>
-						<XMark />
+						<XMark className="w-5 h-5" />
 					</button>
 				</div>
 			</div>
@@ -396,7 +389,7 @@ $: if (show) {
 
 						{#if item.size}
 							<div class="capitalize shrink-0">{formatFileSize(item.size)}</div>
-							{#if !(isImage || isAudio || isVideo)}•{/if}
+							{#if !(isImage || isAudio || isVideo) && (hasExtractedContent || item?.knowledge)}•{/if}
 						{/if}
 
 						{#if item?.file?.data?.content && !isAudio}
@@ -455,7 +448,7 @@ $: if (show) {
 
 		<div class="flex-1 min-h-0 flex flex-col overflow-hidden">
 			{#if !loading}
-				{#if !item?.generated && !isAudio && !isVideo && (isPDF || isExcel || isCode || isMarkdown || isDocx || isPptx)}
+				{#if !item?.generated && !isAudio && !isVideo && hasDocumentPreview && hasExtractedContent}
 					<div
 						class="shrink-0 flex mb-2.5 scrollbar-none overflow-x-auto w-full border-b border-gray-50 dark:border-gray-850/30 text-center text-sm font-medium bg-transparent dark:text-gray-200"
 					>
@@ -482,7 +475,7 @@ $: if (show) {
 				{/if}
 
 				<div
-					class="flex-1 min-h-0 {(selectedTab === 'preview' && isPDF) || isVideo
+					class="flex-1 min-h-0 {(selectedTab === 'preview' && isPDF) || isVideo || isImage
 						? 'overflow-hidden'
 						: 'overflow-auto'}"
 				>
@@ -499,23 +492,13 @@ $: if (show) {
 					{/if}
 
 					{#if isImage}
-						<div class="file-image-viewport relative w-full overflow-hidden bg-white dark:bg-gray-900">
-							<div class="absolute top-2 right-2 z-10">
-								<Tooltip content={$i18n.t('Reset view')}>
-									<button
-										class="p-1.5 rounded-lg bg-white/80 dark:bg-gray-850/80 backdrop-blur-sm shadow-sm hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-500 dark:text-gray-400"
-										on:click={resetImageView}
-									>
-										<Reset className="size-4" />
-									</button>
-								</Tooltip>
-							</div>
-							<div class="flex w-full items-center justify-center">
+						<div class="file-image-viewport relative h-full w-full overflow-hidden bg-white dark:bg-gray-900">
+							<div class="flex h-full w-full items-center justify-center">
 								<img
 									use:initImagePanzoom
 									src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
 									alt={item?.name ?? 'Image'}
-									class="file-image-target block w-full object-contain rounded-lg"
+									class="file-image-target block h-full w-full object-contain rounded-lg"
 									loading="lazy"
 									draggable="false"
 								/>
@@ -528,13 +511,7 @@ $: if (show) {
 								? ''
 								: 'justify-center'}"
 						>
-							<audio
-								src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
-								class="w-full shrink-0 border-0 rounded-lg"
-								controls
-								playsinline
-								preload="metadata"
-							/>
+							<GeneratedMusicPlayer src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`} fileId={item.id} name={item.name} />
 							{#if chatAttachment && item?.file?.data?.content}
 								<div class="min-h-0 w-full flex-1 overflow-y-auto text-sm leading-relaxed">
 									<Markdown content={item.file.data.content} id="audio-transcription-preview" />
@@ -543,13 +520,7 @@ $: if (show) {
 						</div>
 					{:else if isVideo}
 						<div class="flex h-full w-full items-center justify-center overflow-hidden">
-							<video
-								src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
-								class="block max-h-full max-w-full rounded-lg object-contain"
-								controls
-								playsinline
-								preload="metadata"
-							></video>
+							<GeneratedVideoPlayer src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`} fileId={item.id} name={item.name} fitContainer />
 						</div>
 					{:else if selectedTab === ''}
 						{#if item?.file?.data}

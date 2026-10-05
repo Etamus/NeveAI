@@ -4,19 +4,7 @@ import sys
 
 from pathlib import Path as _Path
 
-from langchain_community.document_loaders import (
-    BSHTMLLoader,
-    Docx2txtLoader,
-    OutlookMessageLoader,
-    PyPDFLoader,
-    TextLoader,
-    UnstructuredEPubLoader,
-    UnstructuredODTLoader,
-    UnstructuredPowerPointLoader,
-    UnstructuredRSTLoader,
-    UnstructuredXMLLoader,
-    YoutubeLoader,
-)
+from langchain_community.document_loaders import (BSHTMLLoader, Docx2txtLoader, OutlookMessageLoader, PyPDFLoader, TextLoader, UnstructuredEPubLoader, UnstructuredODTLoader, UnstructuredPowerPointLoader, UnstructuredRSTLoader, UnstructuredXMLLoader)
 from langchain_core.documents import Document
 
 
@@ -164,6 +152,23 @@ class Loader:
     ) -> list[Document]:
         loader = self._get_loader(filename, file_content_type, file_path)
         docs = loader.load()
+
+        if filename.lower().endswith('.pdf'):
+            from neveai.retrieval.pdf_layout import has_fragmented_pdf_text
+            if any(has_fragmented_pdf_text(doc.page_content) for doc in docs):
+                # Preserve positioned lines and paragraphs rather than one word per line.
+                try:
+                    from pypdf import PdfReader
+                    pages = PdfReader(file_path).pages
+                    if len(docs) == len(pages):
+                        for doc, page in zip(docs, pages):
+                            if has_fragmented_pdf_text(doc.page_content):
+                                doc.page_content = page.extract_text(extraction_mode='layout') or doc.page_content
+                    elif len(docs) == 1:
+                        doc = docs[0]
+                        doc.page_content = '\n\n'.join(page.extract_text(extraction_mode='layout') for page in pages) or doc.page_content
+                except Exception:
+                    logging.getLogger(__name__).debug('PDF layout fallback', exc_info=True)
 
         return [
             Document(

@@ -120,16 +120,9 @@
 	const eventDispatch = createEventDispatcher();
 
 	import { Fragment, DOMParser, DOMSerializer, Slice } from 'prosemirror-model';
-	import { EditorState, Plugin, PluginKey, TextSelection, Selection } from 'prosemirror-state';
+	import { Plugin, PluginKey, TextSelection, Selection } from 'prosemirror-state';
 	import { Decoration, DecorationSet } from 'prosemirror-view';
-	import {
-		Editor,
-		Extension,
-		getTextBetween,
-		getTextSerializersFromSchema,
-		markInputRule,
-		mergeAttributes
-	} from '@tiptap/core';
+	import { Editor, Extension, getTextBetween, getTextSerializersFromSchema, markInputRule } from '@tiptap/core';
 
 	import { AIAutocompletion } from './RichTextInput/AutoCompletion.js';
 
@@ -146,11 +139,9 @@
 
 	import Image from './RichTextInput/Image/index.js';
 	import GitHubRepository from './RichTextInput/GitHubRepository';
-	// import TiptapImage from '@tiptap/extension-image';
 
 	import FileHandler from '@tiptap/extension-file-handler';
 	import Typography from '@tiptap/extension-typography';
-	import Highlight from '@tiptap/extension-highlight';
 	import Code from '@tiptap/extension-code';
 	import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
 
@@ -178,7 +169,6 @@
 	import { createLowlight } from 'lowlight';
 	import hljs from 'highlight.js';
 
-	import type { SocketIOCollaborationProvider } from './RichTextInput/Collaboration';
 	import { findGitHubRepositoryLinks } from '$lib/utils/github';
 
 	export let oncompositionstart = (e) => {};
@@ -198,11 +188,9 @@
 
 	export let editor: Editor | null = null;
 
-	export let socket = null;
-	export let user = null;
+
 	export let files = [];
 
-	export let documentId = '';
 
 	export let className = 'input-prose min-h-fit h-full';
 	export let placeholder = $i18n.t('Type here...');
@@ -282,7 +270,7 @@
 	export let json = false;
 	export let raw = false;
 	export let editable = true;
-	export let collaboration = false;
+
 
 	export let showFormattingToolbar = true;
 
@@ -312,7 +300,6 @@
 	let jsonValue: any = '';
 	let mdValue = '';
 
-	let provider: SocketIOCollaborationProvider | null = null;
 
 	let floatingMenuElement: HTMLElement | null = null;
 	let bubbleMenuElement: HTMLElement | null = null;
@@ -377,7 +364,6 @@
 		const pos = selection.from;
 
 		// Get the plain text of this document
-		// const docText = state.doc.textBetween(0, state.doc.content.size, '\n', '\n');
 
 		// Find the word boundaries at cursor
 		const { start, end } = getWordBoundsAtPos(state.doc, pos);
@@ -739,10 +725,6 @@
 			}
 		}
 
-		if (collaboration && documentId && socket && user) {
-			const { SocketIOCollaborationProvider } = await import('./RichTextInput/Collaboration');
-			provider = new SocketIOCollaborationProvider(documentId, socket, user, content);
-		}
 		editor = new Editor({
 			element: element,
 			extensions: [
@@ -851,9 +833,8 @@
 							})
 						]
 					: []),
-				...(collaboration && provider ? [provider.getEditorExtension()] : [])
 			],
-			content: collaboration ? undefined : content,
+			content,
 			autofocus: messageInput ? true : false,
 			onTransaction: () => {
 				// force re-render so `editor.isActive` works as expected
@@ -1271,7 +1252,6 @@
 			enablePasteRules: richText
 		});
 
-		provider?.setEditor(editor, () => ({ md: mdValue, html: htmlValue, json: jsonValue }));
 
 		if (messageInput) {
 			selectTemplate();
@@ -1279,16 +1259,13 @@
 	});
 
 	onDestroy(() => {
-		if (provider) {
-			provider.destroy();
-		}
 
 		if (editor) {
 			editor.destroy();
 		}
 	});
 
-	$: if (value !== null && editor && !collaboration) {
+	$: if (value !== null && editor) {
 		onValueChange();
 	}
 

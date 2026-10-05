@@ -733,7 +733,7 @@
 									? 'cursor-default border-transparent'
 									: 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
 						>
-							<div class="grid h-full grid-cols-[auto_auto_minmax(0,1fr)_6rem] items-center gap-3 px-3">
+							<div class="catalog-model-row grid h-full grid-cols-[auto_auto_minmax(0,1fr)_6rem] items-center gap-3 px-3">
 								<button
 								type="button"
 								class="flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors {isDownloadMarked
@@ -891,3 +891,14 @@
 		uninstallTarget = null;
 	}}
 />
+
+<style>
+	@media (max-width: 640px) {
+		.catalog-model-row { grid-template-columns: auto auto minmax(0, 1fr) 3.5rem; gap: 0.25rem; padding-inline: 0.25rem; }
+		.catalog-model-row > img { width: 1.5rem; height: 1.5rem; }
+		.catalog-model-row > div:last-child { width: 100%; }
+		.catalog-model-row > div:last-child :global(button),
+		.catalog-model-row > div:last-child > span { padding-inline: 0; font-size: 10px; }
+		.catalog-model-row > div:nth-child(3) > div:first-child > span { min-width: 0; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	}
+</style>

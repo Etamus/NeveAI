@@ -120,50 +120,6 @@ export const getChatList = async (
 	}));
 };
 
-export const getSharedChatList = async (token: string = '', page: number = 1, filter?: object) => {
-	let error = null;
-
-	const searchParams = new URLSearchParams();
-	searchParams.append('page', `${page}`);
-
-	if (filter) {
-		Object.entries(filter).forEach(([key, value]) => {
-			if (value !== undefined && value !== null) {
-				searchParams.append(key, value.toString());
-			}
-		});
-	}
-
-	const res = await fetch(`${NEVEAI_API_BASE_URL}/chats/shared?${searchParams.toString()}`, {
-		method: 'GET',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.then((json) => {
-			return json;
-		})
-		.catch((err) => {
-			error = err;
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res.map((chat) => ({
-		...chat,
-		time_range: getTimeRange(chat.updated_at)
-	}));
-};
 
 export const getAllChats = async (token: string) => {
 	let error = null;
@@ -369,42 +325,6 @@ export const getPinnedChatList = async (token: string = '') => {
 	}));
 };
 
-export const getChatListByTagName = async (token: string = '', tagName: string) => {
-	let error = null;
-
-	const res = await fetch(`${NEVEAI_API_BASE_URL}/chats/tags`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		},
-		body: JSON.stringify({
-			name: tagName
-		})
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.then((json) => {
-			return json;
-		})
-		.catch((err) => {
-			error = err;
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res.map((chat) => ({
-		...chat,
-		time_range: getTimeRange(chat.updated_at)
-	}));
-};
 
 export const getChatById = async (token: string, id: string) => {
 	let error = null;
@@ -438,37 +358,6 @@ export const getChatById = async (token: string, id: string) => {
 	return res;
 };
 
-export const getChatByShareId = async (token: string, share_id: string) => {
-	let error = null;
-
-	const res = await fetch(`${NEVEAI_API_BASE_URL}/chats/share/${share_id}`, {
-		method: 'GET',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.then((json) => {
-			return json;
-		})
-		.catch((err) => {
-			error = err;
-
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
 
 export const getChatPinnedStatusById = async (token: string, id: string) => {
 	let error = null;
@@ -587,75 +476,7 @@ export const cloneChatById = async (token: string, id: string, title?: string) =
 	return res;
 };
 
-export const cloneSharedChatById = async (token: string, id: string) => {
-	let error = null;
 
-	const res = await fetch(`${NEVEAI_API_BASE_URL}/chats/${id}/clone/shared`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.then((json) => {
-			return json;
-		})
-		.catch((err) => {
-			error = err;
-
-			if ('detail' in err) {
-				error = err.detail;
-			} else {
-				error = err;
-			}
-
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
-
-export const shareChatById = async (token: string, id: string) => {
-	let error = null;
-
-	const res = await fetch(`${NEVEAI_API_BASE_URL}/chats/${id}/share`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.then((json) => {
-			return json;
-		})
-		.catch((err) => {
-			error = err;
-
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
 
 export const updateChatFolderIdById = async (token: string, id: string, folderId?: string) => {
 	let error = null;
@@ -692,37 +513,6 @@ export const updateChatFolderIdById = async (token: string, id: string, folderId
 	return res;
 };
 
-export const deleteSharedChatById = async (token: string, id: string) => {
-	let error = null;
-
-	const res = await fetch(`${NEVEAI_API_BASE_URL}/chats/${id}/share`, {
-		method: 'DELETE',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		}
-	})
-		.then(async (res) => {
-			if (!res.ok) throw await res.json();
-			return res.json();
-		})
-		.then((json) => {
-			return json;
-		})
-		.catch((err) => {
-			error = err;
-
-			console.error(err);
-			return null;
-		});
-
-	if (error) {
-		throw error;
-	}
-
-	return res;
-};
 
 export const updateChatById = async (token: string, id: string, chat: object) => {
 	let error = null;

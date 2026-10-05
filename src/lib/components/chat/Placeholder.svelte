@@ -1,28 +1,16 @@
 <script lang="ts">
-	import { toast } from 'svelte-sonner';
 	import { marked } from 'marked';
 
-	import { onMount, getContext, tick, createEventDispatcher } from 'svelte';
-	import { blur, fade } from 'svelte/transition';
+	import { getContext, createEventDispatcher } from 'svelte';
+	import { fade } from 'svelte/transition';
 
 	const dispatch = createEventDispatcher();
 
 	import { getChatList } from '$lib/apis/chats';
-	import { updateFolderById } from '$lib/apis/folders';
 
-	import {
-		config,
-		user,
-		models as _models,
-		temporaryChatEnabled,
-		selectedFolder,
-		chats,
-		currentChatPage
-	} from '$lib/stores';
+	import { user, models as _models, temporaryChatEnabled, selectedFolder, chats, currentChatPage } from '$lib/stores';
 	import type { Model } from '$lib/stores';
-	import { sanitizeResponseContent, extractCurlyBraceWords } from '$lib/utils';
 	import { getUserFirstName } from '$lib/utils/user';
-	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
 
 	import MessageInput from './MessageInput.svelte';
 	import FolderPlaceholder from './Placeholder/FolderPlaceholder.svelte';
@@ -65,6 +53,7 @@
 	export let onNativeIntegrationChange: Function = () => {};
 	export let thinkingEnabled = true;
 	export let thinkingExtendedEnabled = true;
+	export let thinkingUnlimitedEnabled = false;
 
 	export let onUpload: Function = (e) => {};
 	export let onSelect = (e) => {};
@@ -110,7 +99,7 @@
 			{:else}
 				<div class="flex w-full max-w-full flex-col items-center justify-center px-5 mb-8">
 					<div
-						class="max-w-full overflow-hidden text-ellipsis whitespace-nowrap pb-1 text-3xl leading-[1.25] @sm:text-3xl"
+						class="max-w-full break-words whitespace-normal sm:overflow-hidden sm:text-ellipsis sm:whitespace-nowrap pb-1 {$temporaryChatEnabled ? 'text-3xl' : 'text-[1.75rem]'} leading-[1.25]"
 						in:fade={{ duration: 100 }}
 					>
 						{$temporaryChatEnabled
@@ -152,6 +141,7 @@
 					{onNativeIntegrationChange}
 					bind:thinkingEnabled
 					bind:thinkingExtendedEnabled
+					bind:thinkingUnlimitedEnabled
 					bind:atSelectedModel
 					bind:showCommands
 					bind:dragged

@@ -67,6 +67,8 @@ def _run_officecli(binary: Path, *arguments: str) -> dict:
         payload = {}
     if process.returncode != 0 or payload.get("success") is False:
         details = payload.get("error") or payload.get("message") or process.stderr.strip()
+        if not details and (payload.get("data") or {}).get("errors"):
+            details = json.dumps(payload["data"]["errors"][:3], ensure_ascii=False)[:1500]
         raise OfficeCLIError(details or f"OfficeCLI exited with code {process.returncode}")
     return payload
 
@@ -228,7 +230,9 @@ def _xlsx_commands(content: str) -> list[dict]:
 
     commands: list[dict] = []
     used: set[str] = set()
-    for sheet_index, raw_sheet in enumerate(sheets[:50], start=1):
+    if len(sheets) > 50:
+        raise OfficeCLIError("O arquivo excede 50 planilhas; divida-o antes de gerar.")
+    for sheet_index, raw_sheet in enumerate(sheets, start=1):
         sheet = raw_sheet if isinstance(raw_sheet, dict) else {"rows": raw_sheet}
         name = _safe_sheet_name(sheet.get("name"), sheet_index, used)
         if sheet_index == 1:
@@ -271,7 +275,9 @@ def _pptx_commands(content: str) -> list[dict]:
         slides = [{"title": "", "content": []}]
 
     commands: list[dict] = []
-    for slide_index, raw_slide in enumerate(slides[:100], start=1):
+    if len(slides) > 100:
+        raise OfficeCLIError("O arquivo excede 100 slides; divida-o antes de gerar.")
+    for slide_index, raw_slide in enumerate(slides, start=1):
         slide = raw_slide if isinstance(raw_slide, dict) else {"content": raw_slide}
         title = _strip_inline_markdown(str(slide.get("title") or ""))
         commands.append(

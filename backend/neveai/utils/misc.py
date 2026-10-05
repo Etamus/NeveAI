@@ -5,15 +5,13 @@ import time
 import uuid
 import logging
 from datetime import timedelta
-from pathlib import Path
-from typing import Callable, Optional, Sequence, Union
+from typing import (Optional, Sequence, Union)
 import json
 import aiohttp
 import mimeparse
 
 
 import collections.abc
-from neveai.env import CHAT_STREAM_RESPONSE_CHUNK_MAX_BUFFER_SIZE
 
 log = logging.getLogger(__name__)
 
@@ -300,13 +298,6 @@ def set_last_user_message_content(content: str, messages: list[dict]) -> list[di
     return messages
 
 
-def get_last_assistant_message_item(messages: list[dict]) -> Optional[dict]:
-    for message in reversed(messages):
-        if message["role"] == "assistant":
-            return message
-    return None
-
-
 def get_last_assistant_message(messages: list[dict]) -> Optional[str]:
     for message in reversed(messages):
         if message["role"] == "assistant":
@@ -323,10 +314,6 @@ def get_system_message(messages: list[dict]) -> Optional[dict]:
 
 def remove_system_message(messages: list[dict]) -> list[dict]:
     return [message for message in messages if message["role"] != "system"]
-
-
-def pop_system_message(messages: list[dict]) -> tuple[Optional[dict], list[dict]]:
-    return get_system_message(messages), remove_system_message(messages)
 
 
 def update_message_content(message: dict, content: str, append: bool = True) -> dict:
@@ -403,25 +390,6 @@ def prepend_to_first_user_message_content(
     return messages
 
 
-def append_or_update_assistant_message(content: str, messages: list[dict]):
-    """
-    Adds a new assistant message at the end of the messages list
-    or updates the existing assistant message at the end.
-
-    :param msg: The message to be added or appended.
-    :param messages: The list of message dictionaries.
-    :return: The updated list of message dictionaries.
-    """
-
-    if messages and messages[-1].get("role") == "assistant":
-        messages[-1]["content"] = f"{messages[-1]['content']}\n{content}"
-    else:
-        # Insert at the end
-        messages.append({"role": "assistant", "content": content})
-
-    return messages
-
-
 def openai_chat_message_template(model: str):
     return {
         "id": f"{model}-{str(uuid.uuid4())}",
@@ -429,83 +397,6 @@ def openai_chat_message_template(model: str):
         "model": model,
         "choices": [{"index": 0, "logprobs": None, "finish_reason": None}],
     }
-
-
-def openai_chat_chunk_message_template(
-    model: str,
-    content: Optional[str] = None,
-    reasoning_content: Optional[str] = None,
-    tool_calls: Optional[list[dict]] = None,
-    usage: Optional[dict] = None,
-) -> dict:
-    template = openai_chat_message_template(model)
-    template["object"] = "chat.completion.chunk"
-
-    template["choices"][0]["index"] = 0
-    template["choices"][0]["delta"] = {}
-
-    if content:
-        template["choices"][0]["delta"]["content"] = content
-
-    if reasoning_content:
-        template["choices"][0]["delta"]["reasoning_content"] = reasoning_content
-
-    if tool_calls:
-        template["choices"][0]["delta"]["tool_calls"] = tool_calls
-
-    if not content and not reasoning_content and not tool_calls:
-        template["choices"][0]["finish_reason"] = "stop"
-
-    if usage:
-        template["usage"] = usage
-    return template
-
-
-def openai_chat_completion_message_template(
-    model: str,
-    message: Optional[str] = None,
-    reasoning_content: Optional[str] = None,
-    tool_calls: Optional[list[dict]] = None,
-    usage: Optional[dict] = None,
-) -> dict:
-    template = openai_chat_message_template(model)
-    template["object"] = "chat.completion"
-    if message is not None:
-        template["choices"][0]["message"] = {
-            "role": "assistant",
-            "content": message,
-            **({"reasoning_content": reasoning_content} if reasoning_content else {}),
-            **({"tool_calls": tool_calls} if tool_calls else {}),
-        }
-
-    template["choices"][0]["finish_reason"] = "tool_calls" if tool_calls else "stop"
-
-    if usage:
-        template["usage"] = usage
-    return template
-
-
-def get_gravatar_url(email):
-    # Trim leading and trailing whitespace from
-    # an email address and force all characters
-    # to lower case
-    address = str(email).strip().lower()
-
-    # Create a SHA256 hash of the final string
-    hash_object = hashlib.sha256(address.encode())
-    hash_hex = hash_object.hexdigest()
-
-    # Grab the actual image URL
-    return f"https://www.gravatar.com/avatar/{hash_hex}?d=mp"
-
-
-def calculate_sha256(file_path, chunk_size):
-    # Compute SHA-256 hash of a file efficiently in chunks
-    sha256 = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        while chunk := f.read(chunk_size):
-            sha256.update(chunk)
-    return sha256.hexdigest()
 
 
 def calculate_sha256_string(string):
@@ -516,26 +407,6 @@ def calculate_sha256_string(string):
     # Get the hexadecimal representation of the hash
     hashed_string = sha256_hash.hexdigest()
     return hashed_string
-
-
-def validate_email_format(email: str) -> bool:
-    if email.endswith("@localhost"):
-        return True
-
-    return bool(re.match(r"[^@]+@[^@]+\.[^@]+", email))
-
-
-def sanitize_filename(file_name):
-    # Convert to lowercase
-    lower_case_file_name = file_name.lower()
-
-    # Remove special characters using regular expression
-    sanitized_file_name = re.sub(r"[^\w\s]", "", lower_case_file_name)
-
-    # Replace spaces with dashes
-    final_file_name = re.sub(r"\s+", "-", sanitized_file_name)
-
-    return final_file_name
 
 
 def sanitize_text_for_db(text: str) -> str:
@@ -611,30 +482,6 @@ def sanitize_metadata(metadata: dict) -> dict:
             return False
 
     return _sanitize(metadata)
-
-
-def extract_folders_after_data_docs(path):
-    # Convert the path to a Path object if it's not already
-    path = Path(path)
-
-    # Extract parts of the path
-    parts = path.parts
-
-    # Find the index of '/data/docs' in the path
-    try:
-        index_data_docs = parts.index("data") + 1
-        index_docs = parts.index("docs", index_data_docs) + 1
-    except ValueError:
-        return []
-
-    # Exclude the filename and accumulate folder names
-    tags = []
-
-    folders = parts[index_docs:-1]
-    for idx, _ in enumerate(folders):
-        tags.append("/".join(folders[: idx + 1]))
-
-    return tags
 
 
 def parse_duration(duration: str) -> Optional[timedelta]:
@@ -885,72 +732,3 @@ async def stream_wrapper(response, session, content_handler=None):
             yield chunk
     finally:
         await cleanup_response(response, session)
-
-
-def stream_chunks_handler(stream: aiohttp.StreamReader):
-    """
-    Handle stream response chunks, supporting large data chunks that exceed the original 16kb limit.
-    When a single line exceeds max_buffer_size, returns an empty JSON string {} and skips subsequent data
-    until encountering normally sized data.
-
-    :param stream: The stream reader to handle.
-    :return: An async generator that yields the stream data.
-    """
-
-    max_buffer_size = CHAT_STREAM_RESPONSE_CHUNK_MAX_BUFFER_SIZE
-    if max_buffer_size is None or max_buffer_size <= 0:
-        return stream
-
-    async def yield_safe_stream_chunks():
-        buffer = b""
-        skip_mode = False
-
-        async for data, _ in stream.iter_chunks():
-            if not data:
-                continue
-
-            # In skip_mode, if buffer already exceeds the limit, clear it (it's part of an oversized line)
-            if skip_mode and len(buffer) > max_buffer_size:
-                buffer = b""
-
-            lines = (buffer + data).split(b"\n")
-
-            # Process complete lines (except the last possibly incomplete fragment)
-            for i in range(len(lines) - 1):
-                line = lines[i]
-
-                if skip_mode:
-                    # Skip mode: check if current line is small enough to exit skip mode
-                    if len(line) <= max_buffer_size:
-                        skip_mode = False
-                        yield line
-                    else:
-                        yield b"data: {}"
-                        yield b"\n"
-                else:
-                    # Normal mode: check if line exceeds limit
-                    if len(line) > max_buffer_size:
-                        skip_mode = True
-                        yield b"data: {}"
-                        yield b"\n"
-                        log.info(f"Skip mode triggered, line size: {len(line)}")
-                    else:
-                        yield line
-                        yield b"\n"
-
-            # Save the last incomplete fragment
-            buffer = lines[-1]
-
-            # Check if buffer exceeds limit
-            if not skip_mode and len(buffer) > max_buffer_size:
-                skip_mode = True
-                log.info(f"Skip mode triggered, buffer size: {len(buffer)}")
-                # Clear oversized buffer to prevent unlimited growth
-                buffer = b""
-
-        # Process remaining buffer data
-        if buffer and not skip_mode:
-            yield buffer
-            yield b"\n"
-
-    return yield_safe_stream_chunks()

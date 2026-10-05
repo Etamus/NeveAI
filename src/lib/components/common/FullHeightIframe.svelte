@@ -102,7 +102,6 @@
 		const hasChartJsDirectives = chartJsDirectives.some((dir) => html.includes(dir));
 		if (hasChartJsDirectives) {
 			try {
-				// import chartUrl from 'chart.js/auto?url';
 				const { default: Chart } = await import('chart.js/auto');
 				(window as any).Chart = Chart;
 

@@ -1,4 +1,4 @@
-import { mount, unmount } from 'svelte';
+import { mount } from 'svelte';
 import { createClassComponent } from 'svelte/legacy';
 
 import tippy, { type Instance as TippyInstance } from 'tippy.js';

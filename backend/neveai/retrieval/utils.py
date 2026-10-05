@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Awaitable, Optional, Union
+from typing import (Awaitable, Optional)
 
 import requests
 import aiohttp
@@ -12,7 +12,6 @@ from urllib.parse import quote
 from huggingface_hub import snapshot_download
 from langchain_core.documents import Document
 
-from neveai.config import VECTOR_DB
 from neveai.retrieval.vector.factory import VECTOR_DB_CLIENT
 
 
@@ -24,23 +23,13 @@ from neveai.models.chats import Chats
 from neveai.models.access_grants import AccessGrants
 
 from neveai.retrieval.vector.main import GetResult
-from neveai.utils.headers import include_user_info_headers
 from neveai.utils.misc import get_message_list
 
 from neveai.retrieval.loaders.youtube import YoutubeLoader
 
 
-from neveai.env import (
-    AIOHTTP_CLIENT_TIMEOUT,
-    OFFLINE_MODE,
-    ENABLE_FORWARD_USER_INFO_HEADERS,
-    AIOHTTP_CLIENT_SESSION_SSL,
-)
-from neveai.config import (
-    RAG_EMBEDDING_QUERY_PREFIX,
-    RAG_EMBEDDING_CONTENT_PREFIX,
-    RAG_EMBEDDING_PREFIX_FIELD_NAME,
-)
+from neveai.env import OFFLINE_MODE
+from neveai.config import RAG_EMBEDDING_QUERY_PREFIX, RAG_EMBEDDING_CONTENT_PREFIX
 
 log = logging.getLogger(__name__)
 

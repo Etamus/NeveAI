@@ -2,11 +2,11 @@ import logging
 import time
 from typing import Optional
 
-from sqlalchemy.orm import Session
-from neveai.internal.db import Base, JSONField, get_db, get_db_context
+from sqlalchemy.orm import Session, load_only
+from neveai.internal.db import (Base, get_db_context)
 from neveai.utils.misc import sanitize_metadata
 from pydantic import BaseModel, ConfigDict, model_validator
-from sqlalchemy import BigInteger, Column, String, Text, JSON
+from sqlalchemy import BigInteger, Column, String, Text, JSON, or_
 
 log = logging.getLogger(__name__)
 
@@ -118,12 +118,31 @@ class FileUpdateForm(BaseModel):
     meta: Optional[dict] = None
 
 
-class FileListResponse(BaseModel):
-    items: list[FileModel]
-    total: int
-
-
 class FilesTable:
+    def get_generated_files(self, user_id: str, kind: str = "all", query: str = "", skip: int = 0, limit: int = 50, db: Optional[Session] = None) -> list[dict]:
+        with get_db_context(db) as db:
+            source = File.meta["data"]["source"].as_string()
+            generated = or_(
+                File.meta["data"]["generated"].as_boolean().is_(True),
+                source == "file_generation",
+                source.like("z-image-%"), source.like("qwen-image-%"),
+                source.like("ace-step-%"), source.like("minimax-h3-%"),
+            )
+            files = db.query(File).filter(File.user_id == user_id, generated)
+            mime = File.meta["content_type"].as_string()
+            if kind in {"image", "video", "audio"}:
+                files = files.filter(mime.like(f"{kind}/%"))
+            elif kind == "document":
+                files = files.filter(or_(mime.is_(None), ~or_(mime.like("image/%"), mime.like("video/%"), mime.like("audio/%"))))
+            if query:
+                pattern = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+                files = files.filter(File.filename.ilike(f"%{pattern}%", escape="\\"))
+            files = files.options(load_only(File.id, File.filename, File.meta, File.created_at, File.updated_at))
+            return [
+                {"id": file.id, "filename": file.filename, "meta": file.meta or {}, "created_at": file.created_at, "updated_at": file.updated_at}
+                for file in files.order_by(File.created_at.desc(), File.id.desc()).offset(skip).limit(limit).all()
+            ]
+
     def insert_new_file(
         self, user_id: str, form_data: FileForm, db: Optional[Session] = None
     ) -> Optional[FileModel]:
@@ -183,21 +202,6 @@ class FilesTable:
             except Exception:
                 return None
 
-    def get_file_metadata_by_id(
-        self, id: str, db: Optional[Session] = None
-    ) -> Optional[FileMetadataResponse]:
-        with get_db_context(db) as db:
-            try:
-                file = db.get(File, id)
-                return FileMetadataResponse(
-                    id=file.id,
-                    hash=file.hash,
-                    meta=file.meta,
-                    created_at=file.created_at,
-                    updated_at=file.updated_at,
-                )
-            except Exception:
-                return None
 
     def get_files(self, db: Optional[Session] = None) -> list[FileModel]:
         with get_db_context(db) as db:
@@ -214,37 +218,6 @@ class FilesTable:
         # Implement additional access control logic here as needed
         return False
 
-    def get_files_by_ids(
-        self, ids: list[str], db: Optional[Session] = None
-    ) -> list[FileModel]:
-        with get_db_context(db) as db:
-            return [
-                FileModel.model_validate(file)
-                for file in db.query(File)
-                .filter(File.id.in_(ids))
-                .order_by(File.updated_at.desc())
-                .all()
-            ]
-
-    def get_file_metadatas_by_ids(
-        self, ids: list[str], db: Optional[Session] = None
-    ) -> list[FileMetadataResponse]:
-        with get_db_context(db) as db:
-            return [
-                FileMetadataResponse(
-                    id=file.id,
-                    hash=file.hash,
-                    meta=file.meta,
-                    created_at=file.created_at,
-                    updated_at=file.updated_at,
-                )
-                for file in db.query(
-                    File.id, File.hash, File.meta, File.created_at, File.updated_at
-                )
-                .filter(File.id.in_(ids))
-                .order_by(File.updated_at.desc())
-                .all()
-            ]
 
     def get_files_by_user_id(
         self, user_id: str, db: Optional[Session] = None

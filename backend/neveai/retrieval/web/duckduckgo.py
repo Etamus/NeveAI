@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Optional
 
 from neveai.retrieval.web.main import SearchResult, get_filtered_results
@@ -95,13 +96,18 @@ def search_duckduckgo(
             if candidate and candidate not in candidate_backends:
                 candidate_backends.append(candidate)
 
-        for search_backend in candidate_backends:
+        deadline = time.monotonic() + (timeout or 15) * 2
+        for search_backend in candidate_backends[:3]:
+            if time.monotonic() >= deadline:
+                break
             try:
                 search_results = merge_unique_results(
                     search_results,
                     collect_results(search_backend),
                 )
-                if len(search_results) >= count:
+                filtered = get_filtered_results(search_results, filter_list) if filter_list else search_results
+                if filtered:
+                    search_results = filtered
                     break
             except RatelimitException as e:
                 log.warning(f"DDGS rate limit ({search_backend} backend): {e}")

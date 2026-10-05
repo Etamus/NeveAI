@@ -4,7 +4,7 @@ import uuid
 from typing import Optional
 
 from sqlalchemy.orm import Session
-from neveai.internal.db import Base, JSONField, get_db, get_db_context
+from neveai.internal.db import (Base, get_db_context)
 
 
 from pydantic import BaseModel, ConfigDict
@@ -45,30 +45,7 @@ class TagModel(BaseModel):
 ####################
 
 
-class TagChatIdForm(BaseModel):
-    name: str
-    chat_id: str
-
-
 class TagTable:
-    def insert_new_tag(
-        self, name: str, user_id: str, db: Optional[Session] = None
-    ) -> Optional[TagModel]:
-        with get_db_context(db) as db:
-            id = name.replace(" ", "_").lower()
-            tag = TagModel(**{"id": id, "user_id": user_id, "name": name})
-            try:
-                result = Tag(**tag.model_dump())
-                db.add(result)
-                db.commit()
-                db.refresh(result)
-                if result:
-                    return TagModel.model_validate(result)
-                else:
-                    return None
-            except Exception as e:
-                log.exception(f"Error inserting a new tag: {e}")
-                return None
 
     def get_tag_by_name_and_user_id(
         self, name: str, user_id: str, db: Optional[Session] = None

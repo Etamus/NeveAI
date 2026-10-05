@@ -1,5 +1,5 @@
-from typing import Optional, Set, Union, List, Dict, Any
-from neveai.models.users import Users, UserModel
+from typing import (Optional, Set, List, Dict, Any)
+from neveai.models.users import UserModel
 from neveai.models.groups import Groups
 
 
@@ -117,7 +117,7 @@ def has_access(
     """
     Check if a user has the specified permission using an in-memory access_grants list.
 
-    Used for config-driven resources (arena models, tool servers) that store
+    Used for config-driven tool servers that store
     access control as JSON in PersistentConfig rather than in the access_grant DB table.
 
     Semantics:

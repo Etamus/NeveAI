@@ -9,7 +9,6 @@ from neveai.models.models import Models
 from neveai.models.access_grants import AccessGrants
 from neveai.models.groups import Groups
 from neveai.utils.model_defaults import apply_default_model_metadata, model_has_user_edits
-from neveai.utils.access_control import has_access
 from neveai.config import BYPASS_ADMIN_ACCESS_CONTROL
 from neveai.env import BYPASS_MODEL_ACCESS_CONTROL, GLOBAL_LOG_LEVEL
 from neveai.models.users import UserModel
@@ -98,31 +97,20 @@ async def get_all_models(request, refresh: bool = False, user: UserModel = None)
 
 
 def check_model_access(user, model, db=None):
-    if model.get("arena"):
-        meta = model.get("info", {}).get("meta", {})
-        access_grants = meta.get("access_grants", [])
-        if not has_access(
-            user.id,
+    model_info = Models.get_model_by_id(model.get("id"), db=db)
+    if not model_info:
+        raise Exception("Model not found")
+    elif not (
+        user.id == model_info.user_id
+        or AccessGrants.has_access(
+            user_id=user.id,
+            resource_type="model",
+            resource_id=model_info.id,
             permission="read",
-            access_grants=access_grants,
             db=db,
-        ):
-            raise Exception("Model not found")
-    else:
-        model_info = Models.get_model_by_id(model.get("id"), db=db)
-        if not model_info:
-            raise Exception("Model not found")
-        elif not (
-            user.id == model_info.user_id
-            or AccessGrants.has_access(
-                user_id=user.id,
-                resource_type="model",
-                resource_id=model_info.id,
-                permission="read",
-                db=db,
-            )
-        ):
-            raise Exception("Model not found")
+        )
+    ):
+        raise Exception("Model not found")
 
 
 def get_filtered_models(models, user, db=None):
@@ -133,8 +121,6 @@ def get_filtered_models(models, user, db=None):
     ) and not BYPASS_MODEL_ACCESS_CONTROL:
         model_infos = {}
         for model in models:
-            if model.get("arena"):
-                continue
             info = model.get("info")
             if info:
                 model_infos[model["id"]] = info
@@ -155,17 +141,6 @@ def get_filtered_models(models, user, db=None):
 
         filtered_models = []
         for model in models:
-            if model.get("arena"):
-                meta = model.get("info", {}).get("meta", {})
-                access_grants = meta.get("access_grants", [])
-                if has_access(
-                    user.id,
-                    permission="read",
-                    access_grants=access_grants,
-                    user_group_ids=user_group_ids,
-                ):
-                    filtered_models.append(model)
-                continue
 
             model_info = model_infos.get(model["id"])
             if model_info:

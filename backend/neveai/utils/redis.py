@@ -7,15 +7,7 @@ import logging
 
 import redis
 
-from neveai.env import (
-    REDIS_CLUSTER,
-    REDIS_SOCKET_CONNECT_TIMEOUT,
-    REDIS_SENTINEL_HOSTS,
-    REDIS_SENTINEL_MAX_RETRY_COUNT,
-    REDIS_SENTINEL_PORT,
-    REDIS_URL,
-    REDIS_RECONNECT_DELAY,
-)
+from neveai.env import (REDIS_SOCKET_CONNECT_TIMEOUT, REDIS_SENTINEL_MAX_RETRY_COUNT, REDIS_RECONNECT_DELAY)
 
 log = logging.getLogger(__name__)
 
@@ -154,21 +146,6 @@ def parse_redis_service_url(redis_url):
         "port": parsed_url.port or 6379,
         "db": int(parsed_url.path.lstrip("/") or 0),
     }
-
-
-def get_redis_client(async_mode=False):
-    try:
-        return get_redis_connection(
-            redis_url=REDIS_URL,
-            redis_sentinels=get_sentinels_from_env(
-                REDIS_SENTINEL_HOSTS, REDIS_SENTINEL_PORT
-            ),
-            redis_cluster=REDIS_CLUSTER,
-            async_mode=async_mode,
-        )
-    except Exception as e:
-        log.debug(f"Failed to get Redis client: {e}")
-        return None
 
 
 def get_redis_connection(

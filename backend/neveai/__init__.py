@@ -2,6 +2,7 @@ import base64
 import os
 import random
 from pathlib import Path
+from neveai.internal.legacy_state import import_secret
 
 import typer
 import uvicorn
@@ -11,13 +12,7 @@ from typing_extensions import Annotated
 app = typer.Typer()
 
 KEY_FILE = Path.cwd() / ".neve_secret_key"
-# Legacy compatibility: detect old key file and migrate transparently
-_LEGACY_KEY_FILE = Path.cwd() / ".webui_secret_key"
-if _LEGACY_KEY_FILE.exists() and not KEY_FILE.exists():
-    try:
-        _LEGACY_KEY_FILE.rename(KEY_FILE)
-    except Exception:
-        pass
+import_secret(Path.cwd())
 
 
 def version_callback(value: bool):

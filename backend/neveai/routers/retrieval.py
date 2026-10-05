@@ -14,22 +14,9 @@ from concurrent.futures import (
     as_completed,
 )
 from datetime import datetime
-from pathlib import Path
-from typing import Iterator, List, Optional, Sequence, Union
+from typing import (List, Optional)
 
-from fastapi import (
-    Depends,
-    FastAPI,
-    Query,
-    File,
-    Form,
-    HTTPException,
-    UploadFile,
-    Request,
-    status,
-    APIRouter,
-)
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import (Depends, Query, HTTPException, Request, status, APIRouter)
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 import tiktoken
@@ -78,17 +65,7 @@ from neveai.utils.misc import (
 from neveai.utils.auth import get_admin_user, get_verified_user
 from neveai.utils.access_control import has_permission
 
-from neveai.config import (
-    ENV,
-    RAG_EMBEDDING_MODEL_AUTO_UPDATE,
-    RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE,
-    RAG_RERANKING_MODEL_AUTO_UPDATE,
-    RAG_RERANKING_MODEL_TRUST_REMOTE_CODE,
-    UPLOAD_DIR,
-    DEFAULT_LOCALE,
-    RAG_EMBEDDING_CONTENT_PREFIX,
-    RAG_EMBEDDING_QUERY_PREFIX,
-)
+from neveai.config import (ENV, RAG_EMBEDDING_MODEL_AUTO_UPDATE, RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE, RAG_RERANKING_MODEL_AUTO_UPDATE, RAG_RERANKING_MODEL_TRUST_REMOTE_CODE, UPLOAD_DIR, RAG_EMBEDDING_CONTENT_PREFIX, RAG_EMBEDDING_QUERY_PREFIX)
 from neveai.env import (
     DEVICE_TYPE,
     RAG_EMBEDDING_TIMEOUT,
@@ -121,7 +98,6 @@ SEARXNG_DEEP_TIMEOUT = 7
 DDGS_FAST_TIMEOUT = 8
 DDGS_DEEP_TIMEOUT = 15
 SEARXNG_FAILURE_BACKOFF_SECONDS = 180
-FREE_WEB_SEARCH_QUERY_TIMEOUT = 35
 SEARXNG_UNAVAILABLE_UNTIL: dict[str, float] = {}
 
 ##########################################
@@ -217,6 +193,9 @@ class SearchForm(BaseModel):
     engine: Optional[str] = None
     result_count: Optional[int] = None
     max_loaded_urls: Optional[int] = None
+    urls: List[str] = []
+    search_after_urls: bool = False
+    question: str = ""
 
 
 @router.get("/")
@@ -1133,229 +1112,38 @@ async def process_web_search(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    urls = []
-    result_items = []
+    from neveai.retrieval.web.research import research
 
-    try:
-        search_engine = form_data.engine or request.app.state.config.WEB_SEARCH_ENGINE
-        result_count = form_data.result_count or request.app.state.config.WEB_SEARCH_RESULT_COUNT
-        logging.debug(
-            f"trying to web search with {search_engine, form_data.queries}"
-        )
-        normalized_search_engine = (search_engine or "").lower()
-        free_search_engine = normalized_search_engine in {"searxng", "duckduckgo", "ddgs"}
-        per_query_timeout = (
-            FREE_WEB_SEARCH_QUERY_TIMEOUT
-            if free_search_engine
-            else max(FREE_WEB_SEARCH_QUERY_TIMEOUT, 60)
-        )
+    deep = bool(getattr(request.state, "deep_search_enabled", False))
+    configured_limit = request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS
+    semaphore = asyncio.Semaphore(max(1, min(configured_limit or 3, 3)))
 
-        async def run_search_query(query):
+    async def bounded_search(engine, count):
+        async def query_search(query):
             try:
-                return await asyncio.wait_for(
-                    run_in_threadpool(
-                        search_web,
-                        request,
-                        search_engine,
-                        query,
-                        user,
-                        result_count,
-                    ),
-                    timeout=per_query_timeout,
-                )
-            except asyncio.TimeoutError:
-                log.warning("Web search query timed out: %s", query)
-                return []
-            except Exception as e:
-                log.warning("Web search query failed: %s (%s)", query, e)
-                return []
-
-        # Use semaphore to limit concurrent requests based on WEB_SEARCH_CONCURRENT_REQUESTS
-        # 0 or None = unlimited (previous behavior), positive number = limited concurrency
-        # Set to 1 for sequential execution (rate-limited APIs like Brave free tier)
-        concurrent_limit = request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS
-        if free_search_engine and not concurrent_limit:
-            concurrent_limit = 1
-
-        if concurrent_limit:
-            # Limited concurrency with semaphore
-            semaphore = asyncio.Semaphore(concurrent_limit)
-
-            async def search_query_with_semaphore(query):
                 async with semaphore:
-                    return await run_search_query(query)
-
-            search_tasks = [
-                search_query_with_semaphore(query) for query in form_data.queries
-            ]
-        else:
-            # Unlimited parallel execution (previous behavior)
-            search_tasks = [run_search_query(query) for query in form_data.queries]
-
-        search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
-
-        for result in search_results:
-            if isinstance(result, Exception):
-                log.warning("Web search task failed: %s", result)
-                continue
-            if result:
-                for item in result:
-                    if item and item.link:
-                        result_items.append(item)
-                        urls.append(item.link)
-
-        urls = list(dict.fromkeys(urls))
-        searched_urls = urls[:]
-        searched_result_items = []
-        seen_result_links = set()
-        for item in result_items:
-            if item.link in seen_result_links:
-                continue
-            searched_result_items.append(dict(item))
-            seen_result_links.add(item.link)
-        if form_data.max_loaded_urls:
-            urls = urls[: form_data.max_loaded_urls]
-            result_items = [item for item in result_items if item.link in urls]
-        log.debug(f"urls: {urls}")
-
-    except Exception as e:
-        log.exception(e)
-
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.WEB_SEARCH_ERROR(e),
-        )
-
-    if len(urls) == 0:
-        return {
-            "status": False,
-            "collection_names": [],
-            "filenames": [],
-            "items": [],
-            "loaded_items": [],
-            "searched_count": 0,
-            "loaded_count": 0,
-        }
-
-    try:
-        if request.app.state.config.BYPASS_WEB_SEARCH_WEB_LOADER:
-            search_results = [
-                item for result in search_results for item in result if result
-            ]
-
-            docs = [
-                Document(
-                    page_content=result.snippet,
-                    metadata={
-                        "source": result.link,
-                        "title": result.title,
-                        "snippet": result.snippet,
-                        "link": result.link,
-                    },
-                )
-                for result in search_results
-                if hasattr(result, "snippet") and result.snippet is not None
-            ]
-        else:
-            from neveai.retrieval.web.utils import get_web_loader
-
-            loader = get_web_loader(
-                urls,
-                verify_ssl=request.app.state.config.ENABLE_WEB_LOADER_SSL_VERIFICATION,
-                requests_per_second=request.app.state.config.WEB_LOADER_CONCURRENT_REQUESTS,
-                trust_env=request.app.state.config.WEB_SEARCH_TRUST_ENV,
-            )
-            try:
-                docs = await loader.aload()
-            except Exception as e:
-                log.warning("Web loader failed; using search snippets instead: %s", e)
-                docs = []
-
-            if not docs and searched_result_items:
-                docs = [
-                    Document(
-                        page_content=item.get("snippet") or item.get("title") or "",
-                        metadata={
-                            "source": item.get("link"),
-                            "title": item.get("title"),
-                            "snippet": item.get("snippet"),
-                            "link": item.get("link"),
-                        },
+                    return await asyncio.wait_for(
+                        run_in_threadpool(search_web, request, engine, query, user, count),
+                        timeout=20,
                     )
-                    for item in searched_result_items
-                    if item.get("link") and (item.get("snippet") or item.get("title"))
-                ]
+            except Exception as error:
+                log.warning("Search failed for %s: %s", query, error)
+                return []
 
-        urls = [
-            doc.metadata.get("source") for doc in docs if doc.metadata.get("source")
-        ]  # only keep the urls returned by the loader
-        loaded_result_items = [
-            dict(item) for item in result_items if item.link in urls
-        ]  # only keep the search results that have been loaded
+        tasks = [asyncio.create_task(query_search(query)) for query in form_data.queries[:3]]
+        if not tasks:
+            return []
+        try:
+            # Keep completed evidence even when another query stalls.
+            done, _ = await asyncio.wait(tasks, timeout=22 if deep else 20)
+            return [item for task in tasks if task in done for item in task.result()]
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-        if len(urls) == 0:
-            return {
-                "status": False,
-                "collection_names": [],
-                "filenames": [],
-                "items": searched_result_items,
-                "loaded_items": [],
-                "searched_count": len(searched_urls),
-                "loaded_count": 0,
-            }
-
-        if request.app.state.config.BYPASS_WEB_SEARCH_EMBEDDING_AND_RETRIEVAL:
-            return {
-                "status": True,
-                "collection_name": None,
-                "filenames": urls,
-                "items": searched_result_items,
-                "loaded_items": loaded_result_items,
-                "searched_count": len(searched_urls),
-                "docs": [
-                    {
-                        "content": doc.page_content,
-                        "metadata": doc.metadata,
-                    }
-                    for doc in docs
-                ],
-                "loaded_count": len(docs),
-            }
-        else:
-            # Create a single collection for all documents
-            collection_name = (
-                f"web-search-{calculate_sha256_string('-'.join(form_data.queries))}"[
-                    :63
-                ]
-            )
-
-            try:
-                await run_in_threadpool(
-                    save_docs_to_vector_db,
-                    request,
-                    docs,
-                    collection_name,
-                    overwrite=True,
-                    user=user,
-                )
-            except Exception as e:
-                log.debug(f"error saving docs: {e}")
-
-            return {
-                "status": True,
-                "collection_names": [collection_name],
-                "items": searched_result_items,
-                "loaded_items": loaded_result_items,
-                "filenames": urls,
-                "searched_count": len(searched_urls),
-                "loaded_count": len(docs),
-            }
-    except Exception as e:
-        log.exception(e)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DEFAULT(e),
-        )
+    return await research(request, form_data, user, bounded_search)
 
 
 def _validate_collection_access(collection_names: list[str], user) -> None:

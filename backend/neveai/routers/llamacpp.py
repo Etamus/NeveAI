@@ -25,13 +25,17 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from neveai.env import SRC_LOG_LEVELS, GLOBAL_LOG_LEVEL, BASE_DIR, DATA_DIR
 from neveai.models.models import ModelForm, Models
 from neveai.utils.model_defaults import get_effective_model_params
 from neveai.utils.payload import apply_model_params_to_body_openai, apply_system_prompt_to_body
 from neveai.utils.gpu_selection import preferred_vulkan_device
+from neveai.utils.local_model_context import (
+    AUTO_CONTEXT_CAP, bounded_context, context_memory_margin, is_memory_failure,
+    plan_auto_context, runtime_context,
+)
 
 log = logging.getLogger(__name__)
 log.setLevel(SRC_LOG_LEVELS.get("MODELS", GLOBAL_LOG_LEVEL))
@@ -108,6 +112,7 @@ def _resolve_reasoning_settings(
     control: str,
     mode: str,
     extended: Optional[bool],
+    unlimited: bool = False,
 ) -> tuple[bool, Optional[int], Optional[str]]:
     """Return no_think, token budget and effort for a semantic UI state."""
     quick = mode == "quick"
@@ -118,7 +123,7 @@ def _resolve_reasoning_settings(
 
     if quick:
         return True, None, None
-    budget = None if extended is None else (4096 if extended else 512)
+    budget = None if unlimited or extended is None else (4096 if extended else 512)
     return False, budget, None
 
 # ---------------------------------------------------------------------------
@@ -168,28 +173,24 @@ LLAMACPP_HOST = "127.0.0.1"
 
 
 def _kill_orphan_llama_servers():
-    """Kill any llama-server processes left over from previous backend sessions."""
+    """Clean up dead sessions without terminating another live backend's models."""
     try:
         import psutil
-        for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+        for proc in psutil.process_iter(["pid", "ppid", "name", "cmdline"]):
             try:
                 name = (proc.info.get("name") or "").lower()
                 if "llama-server" in name or "llama_server" in name:
+                    command = " ".join(proc.info.get("cmdline") or []).replace("\\", "/").lower()
+                    own_directory = str(LLAMACPP_SERVER_DIR).replace("\\", "/").lower()
+                    parent_id = proc.info.get("ppid")
+                    if own_directory not in command or (parent_id and psutil.pid_exists(parent_id)):
+                        continue
                     log.info(f"Killing orphan llama-server PID={proc.pid}")
                     proc.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
     except ImportError:
-        # psutil not available — fall back to Windows taskkill
-        if sys.platform == "win32":
-            try:
-                subprocess.run(
-                    ["taskkill", "/F", "/IM", "llama-server.exe"],
-                    capture_output=True,
-                    check=False,
-                )
-            except Exception:
-                pass
+        log.debug("Skipping orphan cleanup: process ownership cannot be verified without psutil.")
 
 
 _kill_orphan_llama_servers()
@@ -371,6 +372,7 @@ class _LoadedModelInfo:
         "loaded_at",
         "n_gpu_layers",
         "n_ctx",
+        "context_auto",
         "file_size",
         "mmproj_filename",
         "cache_type",
@@ -386,6 +388,7 @@ class _LoadedModelInfo:
         self.loaded_at = int(time.time())
         self.n_gpu_layers = n_gpu_layers
         self.n_ctx = n_ctx
+        self.context_auto = False
         self.file_size = file_size
         self.mmproj_filename = mmproj_filename
         self.cache_type = cache_type
@@ -403,26 +406,21 @@ def _normalize_speculative_decoding(value: Optional[str]) -> str:
     value = str(value or "default").strip().lower()
     if value == "default":
         return "off"
-    if value in {"low", "high", "off"}:
+    if value == "low":
+        return "high"
+    if value in {"high", "off"}:
         return value
     return "off"
 
 
 def _speculative_decoding_args(mode: str) -> list[str]:
     mode = _normalize_speculative_decoding(mode)
-    if mode == "low":
-        return [
-            "--spec-type", "ngram-mod",
-            "--spec-ngram-mod-n-match", "16",
-            "--spec-ngram-mod-n-min", "16",
-            "--spec-ngram-mod-n-max", "32",
-        ]
     if mode == "high":
         return [
             "--spec-type", "ngram-mod",
-            "--spec-ngram-mod-n-match", "24",
-            "--spec-ngram-mod-n-min", "48",
-            "--spec-ngram-mod-n-max", "64",
+            "--spec-ngram-mod-n-match", "16",
+            "--spec-ngram-mod-n-min", "8",
+            "--spec-ngram-mod-n-max", "32",
         ]
     return []
 
@@ -444,14 +442,14 @@ def _token_prediction_args(mode: str) -> list[str]:
     if mode == "on":
         return [
             "--spec-type", "draft-mtp",
-            "--spec-draft-n-max", "2",
+            "--spec-draft-n-max", "4",
         ]
     return []
 
 
 MTP_UNSUPPORTED_MESSAGE = (
-    "Este modelo não tem suporte a Predição de tokens. "
-    "Desative a Predição de tokens e tente carregar novamente."
+    "Este modelo não tem suporte à predição de tokens. "
+    "Selecione Normal em Velocidade e tente carregar novamente."
 )
 
 
@@ -553,6 +551,7 @@ class LocalModelManager:
                     "loaded_at": info.loaded_at if is_loaded else None,
                     "n_gpu_layers": info.n_gpu_layers if is_loaded else None,
                     "n_ctx": info.n_ctx if is_loaded else None,
+                    "context_auto": info.context_auto if is_loaded else False,
                     "mmproj_filename": info.mmproj_filename if is_loaded else None,
                     "cache_type": info.cache_type if is_loaded else None,
                     "speculative_decoding": info.speculative_decoding if is_loaded else None,
@@ -734,8 +733,42 @@ class LocalModelManager:
             port = self._next_free_port()
             self._ports[model_id] = port
 
-            # Start new llama-server with the model on this port
-            await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type, speculative_decoding, token_prediction, context_shift)
+            auto_context = n_ctx == 0
+            if auto_context:
+                device = preferred_vulkan_device(LLAMACPP_SERVER_BIN) if sys.platform == "win32" and n_gpu_layers != 0 else None
+                n_ctx, n_gpu_layers = await asyncio.to_thread(
+                    plan_auto_context, LLAMACPP_SERVER_DIR, filepath, n_gpu_layers, cache_type,
+                    mmproj_path, token_prediction != "off" and mmproj_path is None, device,
+                )
+            # Retry smaller contexts only for automatic memory-allocation failures.
+            for attempt in range(6):
+                try:
+                    await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type, speculative_decoding, token_prediction, context_shift, auto_context=auto_context)
+                    if auto_context:
+                        try:
+                            props_response = await _get_http_client(port).get("/props")
+                            props_response.raise_for_status()
+                            properties = props_response.json()
+                        except (httpx.HTTPError, ValueError):
+                            properties = {}
+                        applied_context = runtime_context(properties, self._read_log_tail(model_id))
+                        if applied_context > AUTO_CONTEXT_CAP:
+                            await self._kill_server(model_id)
+                            self._ports[model_id] = port
+                            n_ctx = AUTO_CONTEXT_CAP
+                            continue
+                        n_ctx = applied_context
+                    break
+                except Exception as error:
+                    await self._kill_server(model_id)
+                    if not auto_context or not is_memory_failure(error) or attempt == 5:
+                        raise
+                    n_ctx = bounded_context(n_ctx // 2) if n_ctx > 2048 else 0
+                    if n_ctx == 0:
+                        raise
+                    self._ports[model_id] = port
+            else:
+                raise RuntimeError("Could not find a safe automatic context")
 
             file_size = filepath.stat().st_size
             self._loaded[model_id] = _LoadedModelInfo(
@@ -750,6 +783,7 @@ class LocalModelManager:
                 token_prediction,
                 context_shift,
             )
+            self._loaded[model_id].context_auto = auto_context
 
             log.info(f"Model loaded via llama-server: {model_id} (port={port}, gpu_layers={n_gpu_layers}, ctx={n_ctx}, mmproj={mmproj_filename})")
             return {
@@ -758,6 +792,7 @@ class LocalModelManager:
                 "status": "loaded",
                 "n_gpu_layers": n_gpu_layers,
                 "n_ctx": n_ctx,
+                "context_auto": auto_context,
                 "mmproj_filename": mmproj_filename,
                 "cache_type": cache_type,
                 "speculative_decoding": speculative_decoding,
@@ -818,6 +853,7 @@ class LocalModelManager:
                 "filename": info.filename,
                 "n_gpu_layers": info.n_gpu_layers,
                 "n_ctx": info.n_ctx,
+                "context_auto": info.context_auto,
                 "mmproj_filename": info.mmproj_filename,
                 "cache_type": info.cache_type,
                 "speculative_decoding": info.speculative_decoding,
@@ -854,12 +890,15 @@ class LocalModelManager:
                     token_prediction=m.get("token_prediction", "off"),
                     context_shift=m.get("context_shift", "off"),
                 )
+                model_id = f"local/{Path(m['filename']).stem}"
+                if model_id in self._loaded:
+                    self._loaded[model_id].context_auto = m.get("context_auto", False)
             except Exception as e:
                 log.error(f"resume: failed to reload {m['filename']}: {e}")
 
     # -- subprocess management ------------------------------------------
 
-    async def _start_server(self, model_path: Path, n_gpu_layers: int, n_ctx: int, mmproj_path: Optional[Path], port: int, model_id: str, cache_type: str = "f16", speculative_decoding: str = "default", token_prediction: str = "off", context_shift: str = "off"):
+    async def _start_server(self, model_path: Path, n_gpu_layers: int, n_ctx: int, mmproj_path: Optional[Path], port: int, model_id: str, cache_type: str = "f16", speculative_decoding: str = "default", token_prediction: str = "off", context_shift: str = "off", auto_context: bool = False):
         """Start llama-server.exe with the given model on the given port."""
         if not LLAMACPP_SERVER_BIN.exists():
             raise FileNotFoundError(
@@ -879,6 +918,10 @@ class LocalModelManager:
             "--cache-type-v", cache_type,
             "--no-webui",
         ]
+        if n_ctx == 0:
+            cmd += ["--fit", "on", "--fit-target", str(context_memory_margin(mmproj_path, token_prediction != "off" and mmproj_path is None)), "--fit-ctx", "2048"]
+        if auto_context:
+            cmd += ["--parallel", "1"]
         if sys.platform == "win32" and n_gpu_layers != 0:
             vulkan_device = preferred_vulkan_device(LLAMACPP_SERVER_BIN)
             if vulkan_device:
@@ -950,7 +993,7 @@ class LocalModelManager:
             # Check if process died
             if proc and proc.poll() is not None:
                 log_tail = self._read_log_tail(model_id)
-                error_message = MTP_UNSUPPORTED_MESSAGE if _is_mtp_unsupported_log(log_tail) else (
+                error_message = MTP_UNSUPPORTED_MESSAGE if _is_mtp_unsupported_log(log_tail) and not is_memory_failure(RuntimeError(log_tail)) else (
                     f"llama-server exited with code {proc.returncode}.\n"
                     f"Log: {log_tail}"
                 )
@@ -979,7 +1022,7 @@ class LocalModelManager:
         # Timeout — clean up
         log_tail = self._read_log_tail(model_id)
         await self._kill_server(model_id)
-        if _is_mtp_unsupported_log(log_tail):
+        if _is_mtp_unsupported_log(log_tail) and not is_memory_failure(RuntimeError(log_tail)):
             raise TimeoutError(MTP_UNSUPPORTED_MESSAGE)
         raise TimeoutError(
             f"llama-server on port {port} did not become ready within {timeout}s. "
@@ -1291,10 +1334,10 @@ model_manager = LocalModelManager()
 class LoadModelRequest(BaseModel):
     filename: str
     n_gpu_layers: int = -1  # -1 = all layers on GPU
-    n_ctx: int = 4096
+    n_ctx: int = Field(default=0, ge=0)  # 0 = automatic; positive values are manual
     mmproj_filename: Optional[str] = None
     cache_type: str = "f16"  # f16 | q8_0 | q4_0
-    speculative_decoding: str = "default"  # default/off | high | low
+    speculative_decoding: str = "default"  # default/off | high (legacy low maps to high)
     token_prediction: str = "off"  # on | off
     context_shift: str = "off"  # on | off
 
@@ -1440,6 +1483,7 @@ async def get_llamacpp_status():
         "mmproj_dir": str(MMPROJ_DIR),
         "models_count": len(model_manager.scan_models()),
         "mmproj_count": len(model_manager.scan_mmproj_files()),
+        "automatic_context": True,
     }
 
 
@@ -1578,6 +1622,7 @@ async def get_all_models(request=None, user=None) -> dict:
                     "file_size_human": m["file_size_human"],
                     "n_gpu_layers": m["n_gpu_layers"],
                     "n_ctx": m["n_ctx"],
+                    "context_auto": m["context_auto"],
                     "is_loaded": m["is_loaded"],
                 },
             }
@@ -1632,7 +1677,7 @@ async def generate_chat_completion(
 
     # --- Thinking/Reasoning toggle ---
     reasoning_requested = any(
-        key in form_data for key in ("reasoning_mode", "reasoning_extended", "no_think")
+        key in form_data for key in ("reasoning_mode", "reasoning_extended", "reasoning_unlimited", "no_think")
     )
     requested_no_think = bool(form_data.pop("no_think", False))
     reasoning_mode = str(form_data.pop("reasoning_mode", "") or "").strip().lower()
@@ -1640,6 +1685,8 @@ async def generate_chat_completion(
         reasoning_mode = "quick" if requested_no_think else "reasoning"
     requested_quick = reasoning_mode == "quick"
     reasoning_extended = form_data.pop("reasoning_extended", None)
+    reasoning_unlimited_value = form_data.pop("reasoning_unlimited", False)
+    reasoning_unlimited = reasoning_unlimited_value is True or str(reasoning_unlimited_value).lower() == "true"
     thinking_budget_tokens = None
     reasoning_extended_enabled = False
     if reasoning_extended is not None:
@@ -1727,6 +1774,7 @@ async def generate_chat_completion(
             reasoning_control,
             reasoning_mode,
             reasoning_extended_enabled if reasoning_extended is not None else None,
+            reasoning_unlimited,
         )
 
     # Preserve the legacy marker so the response middleware also removes any
@@ -2183,11 +2231,6 @@ def _apply_catalog_model_defaults(entry: dict, repo_filename: str) -> str:
 
     created_model = Models.insert_new_model(form, NEVE_DOWNLOAD_USER_ID)
     return "created" if created_model else "failed"
-
-
-def _local_filename_for(repo_filename: str, repo_id: str) -> str:
-    """Produce a stable local filename to avoid collisions between repos."""
-    return repo_filename
 
 
 def _is_installed(repo_filename: str) -> bool:

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { DropdownMenu } from 'bits-ui';
-	import { getContext, onMount, tick } from 'svelte';
+	import { getContext, tick, onMount } from 'svelte';
 	import { fly, fade } from 'svelte/transition';
 
-	import { user, tools as _tools, mobile, toolServers } from '$lib/stores';
+	import { user, tools as _tools, toolServers } from '$lib/stores';
 
 	import { getOAuthClientAuthorizationUrl } from '$lib/apis/configs';
 	import { getTools } from '$lib/apis/tools';
@@ -40,6 +40,7 @@
 
 	export let onUpload: Function;
 	export let onClose: Function;
+	export let above = false;
 
 	// Integration props
 	export let selectedToolIds: string[] = [];
@@ -60,6 +61,24 @@
 	export let onShowValves: Function = () => {};
 
 	let show = false;
+	let triggerElement: HTMLDivElement;
+	let menuWidth = 255;
+	let menuAlignOffset = 8;
+	let menuSideOffset = 3;
+	const measureMenu = () => {
+		const composer = triggerElement?.closest('#message-input-container');
+		if (!composer) return;
+		const bounds = composer.getBoundingClientRect();
+		const anchor = triggerElement.getBoundingClientRect();
+		menuWidth = Math.min(bounds.width, window.innerWidth - 16);
+		menuAlignOffset = bounds.left - anchor.left;
+		menuSideOffset = 3 + (above ? anchor.top - bounds.top : bounds.bottom - anchor.bottom);
+	};
+	onMount(() => {
+		const closeOnResize = () => { show = false; };
+		window.addEventListener('resize', closeOnResize);
+		return () => window.removeEventListener('resize', closeOnResize);
+	});
 	let tab = '';
 	let tools = null;
 	$: fileGenerationBlocked =
@@ -70,6 +89,7 @@
 	$: effectiveFileGenerationEnabled = fileGenerationEnabled && !fileGenerationBlocked;
 
 	$: if (show) {
+		measureMenu();
 		initTools();
 	}
 
@@ -245,23 +265,23 @@
 	}}
 >
 	<Tooltip content={$i18n.t('More')}>
-		<slot />
+		<div bind:this={triggerElement}><slot /></div>
 	</Tooltip>
 
 	<div slot="content">
 		<DropdownMenu.Content
-			class="max-h-[calc(100dvh-16px)] overflow-x-hidden overflow-y-auto overscroll-contain rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-md"
-			style="font-family: 'Segoe UI', sans-serif; width: min(255px, calc(100vw - 16px)); max-width: 255px !important;"
+			class="composer-integrations-menu overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl p-2 border bg-clip-padding z-50 bg-white dark:bg-gray-850 text-gray-700 dark:text-gray-200 shadow-md"
+			style="font-family: 'Segoe UI', sans-serif; width: {menuWidth}px; max-width: calc(100vw - 16px); max-height: min(calc(100dvh - 16px), var(--bits-dropdown-menu-content-available-height, calc(100dvh - 16px)));"
 			strategy="fixed"
 			fitViewport={true}
-			sideOffset={4}
-			alignOffset={8}
-			side="bottom"
+			sideOffset={menuSideOffset}
+			alignOffset={menuAlignOffset}
+			side={above ? 'top' : 'bottom'}
 			align="start"
 			transition={(e) => fade(e, { duration: 100 })}
 		>
 			{#if tab === ''}
-				<div in:fly={{ x: -20, duration: 150 }}>
+				<div>
 					<Tooltip
 						content={fileUploadCapableModels.length !== selectedModels.length
 							? $i18n.t('Model(s) do not support file upload')
@@ -288,7 +308,7 @@
 
 
 					{#if showWebSearchButton || showCodeExecutionButton || showFileGenerationButton || showStableDiffusionButton || showMusicGenerationButton || showVideoGenerationButton || (tools && Object.keys(tools).length > 0)}
-						<hr class="my-1 border-gray-200 dark:border-gray-700 mx-auto w-[90%]" />
+				<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[96%]" />
 					{/if}
 
 					{#if tools}
@@ -359,7 +379,7 @@
 					{/if}
 
 					{#if showStableDiffusionButton}
-						<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[90%]" />
+						<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[96%]" />
 					{/if}
 
 					{#if showStableDiffusionButton}
@@ -409,7 +429,7 @@
 					{/if}
 
 					{#if showFileGenerationButton}
-						<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[90%]" />
+						<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[96%]" />
 						<Tooltip content="" placement="top-start">
 							<button
 								type="button"
@@ -514,3 +534,15 @@
 		</DropdownMenu.Content>
 	</div>
 </Dropdown>
+
+<style>
+	:global(.composer-integrations-menu .rounded-sm) {
+		border-radius: 0.375rem;
+	}
+	:global(.composer-integrations-menu) {
+		border: 1px solid rgba(0, 0, 0, 0.18) !important;
+	}
+	:global(.dark .composer-integrations-menu) {
+		border-color: rgba(255, 255, 255, 0.22) !important;
+	}
+</style>

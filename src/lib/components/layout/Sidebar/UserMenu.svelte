@@ -1,21 +1,13 @@
 <script lang="ts">
 	import { DropdownMenu } from 'bits-ui';
-	import { createEventDispatcher, getContext, onMount, tick } from 'svelte';
+	import { createEventDispatcher, getContext, tick } from 'svelte';
+	import { fade } from 'svelte/transition';
 
-	import { flyAndScale } from '$lib/utils/transitions';
-	import { goto } from '$app/navigation';
-	import { fade, slide } from 'svelte/transition';
+	import { getSessionUser } from '$lib/apis/auths';
 
-	import { getUsage } from '$lib/apis';
-	import { getSessionUser, userSignOut } from '$lib/apis/auths';
+	import { showSettings, mobile, showSidebar, sidebarWidth, user } from '$lib/stores';
 
-	import { showSettings, showLocalModelsModal, mobile, showSidebar, user, config } from '$lib/stores';
-
-	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import QuestionMarkCircle from '$lib/components/icons/QuestionMarkCircle.svelte';
-	import Map from '$lib/components/icons/Map.svelte';
 	import Settings from '$lib/components/icons/Settings.svelte';
-	import UserGroup from '$lib/components/icons/UserGroup.svelte';
 	import SignOut from '$lib/components/icons/SignOut.svelte';
 	import { shutdownApp } from '$lib/apis';
 	import EditProfileModal from './EditProfileModal.svelte';
@@ -28,35 +20,16 @@
 
 	export let help = false;
 
-	export let className = 'max-w-[11rem]';
+	export let className = '';
 	export let align = 'end';
 
-	export let showActiveUsers = true;
 
 	let showEditProfileModal = false;
 
 	const dispatch = createEventDispatcher();
 
-	let usage = null;
-	const getUsageInfo = async () => {
-		const res = await getUsage(localStorage.token).catch((error) => {
-			console.error('Error fetching usage info:', error);
-		});
-
-		if (res) {
-			usage = res;
-		} else {
-			usage = null;
-		}
-	};
-
 	const handleDropdownChange = (state: boolean) => {
 		dispatch('change', state);
-
-		// Fetch usage info when dropdown opens, if user has permission
-		if (state && ($config?.features?.enable_public_active_users_count || role === 'admin')) {
-			getUsageInfo();
-		}
 	};
 </script>
 
@@ -78,10 +51,12 @@
 	<slot name="content">
 		<DropdownMenu.Content
 				class="w-full {className} rounded-md px-1 py-0.5 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-md text-sm"
+			style="width: {Math.max(224, $sidebarWidth - 16)}px; max-width: calc(100vw - 16px);"
 			sideOffset={4}
 			side="top"
 			align="start"
-			avoidCollisions={false}
+			avoidCollisions={true}
+			fitViewport={true}
 			transition={(e) => fade(e, { duration: 100 })}
 		>
 

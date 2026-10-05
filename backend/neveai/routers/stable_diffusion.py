@@ -1219,7 +1219,7 @@ class _ZImageTurboPipeline:
                             )
                         )
 
-                    log.info("Baixando/carregando Neve Image 2 Fast Q4_K_M para AMD Vulkan...")
+                    log.info("Baixando/carregando Neve Image 2 Q4_K_M para AMD Vulkan...")
                     return _ZImageResources(
                         sd_cli=sd_cli,
                         diffusion_model=download_qwen(
@@ -1310,7 +1310,7 @@ class _ZImageTurboPipeline:
             self._quality = quality
             self._edit_mode = edit
             runtime_name = (
-                "Neve Image 2 Fast (AMD)" if quality == QWEN_IMAGE_2_FAST_AMD_QUALITY
+                "Neve Image 2 (AMD)" if quality == QWEN_IMAGE_2_FAST_AMD_QUALITY
                 else "Mage-Flow-Edit" if edit else "Z-Image-Turbo"
             )
             log.info("%s pronto via stable-diffusion.cpp", runtime_name)

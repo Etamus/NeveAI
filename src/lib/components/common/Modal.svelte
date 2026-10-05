@@ -135,7 +135,7 @@
 		}}
 	>
 		<div
-			class="m-auto max-w-full {sizeToWidth(size)} {size !== 'full'
+			class="m-auto min-w-0 {size === 'full' ? 'max-w-full' : 'max-w-[calc(100%-1rem)]'} {sizeToWidth(size)} {size !== 'full'
 				? 'mx-2'
 				: ''} shadow-3xl min-h-fit scrollbar-hidden {className} border border-gray-200 dark:border-gray-800"
 			in:flyAndScale={{ start: 1, y: animated ? -8 : 0, duration: animated ? 150 : 0 }}

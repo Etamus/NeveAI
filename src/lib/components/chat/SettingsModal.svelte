@@ -4,7 +4,6 @@
 	import { config, models, settings, user, showSettingsTab } from '$lib/stores';
 	import { updateUserSettings } from '$lib/apis/users';
 	import { getModels as _getModels } from '$lib/apis';
-	import { goto } from '$app/navigation';
 
 	import Modal from '../common/Modal.svelte';
 	import General from './Settings/General.svelte';
@@ -268,11 +267,11 @@
 			</button>
 		</div>
 
-		<div class="flex flex-col md:flex-row w-full">
+		<div class="flex min-w-0 flex-col md:flex-row w-full">
 			<div
 				role="tablist"
 				id="settings-tabs-container"
-				class="tabs flex flex-row overflow-x-auto gap-1 px-3 py-3 md:px-3 md:gap-0.5 md:flex-col flex-1 md:flex-none md:w-44 md:min-h-[22rem] md:max-h-[22rem] dark:text-gray-200 text-sm text-left md:border-r border-gray-200/30 dark:border-gray-700/20"
+				class="tabs flex min-w-0 shrink-0 flex-row overflow-x-auto gap-1 px-3 py-3 md:px-3 md:gap-0.5 md:flex-col md:flex-none md:w-44 md:min-h-[22rem] md:max-h-[22rem] dark:text-gray-200 text-sm text-left md:border-r border-gray-200/30 dark:border-gray-700/20"
 			>
 
 				{#if filteredSettings.length > 0}
@@ -349,7 +348,7 @@
 					</div>
 				{/if}
 			</div>
-			<div class="flex-1 px-4 py-3 md:min-h-[22rem] max-h-[22rem] overflow-y-auto">
+			<div class="settings-content min-w-0 flex-1 px-4 py-3 md:min-h-[22rem] max-h-[22rem] overflow-y-auto">
 				{#if selectedTab === 'general'}
 					<General
 						{getModels}
@@ -377,12 +376,13 @@
 </Modal>
 
 <style>
-	input::-webkit-outer-spin-button,
-	input::-webkit-inner-spin-button {
-		/* display: none; <- Crashes Chrome on hover */
-		-webkit-appearance: none;
-		margin: 0; /* <-- Apparently some margin are still there even though it's hidden */
+	@media (max-width: 767px) {
+		.settings-content { max-height: min(22rem, calc(100dvh - 12rem)); }
+		.settings-content :global(.flex.w-full.justify-between) { gap: 0.75rem; }
+		.settings-content :global(.flex.w-full.justify-between > :first-child) { min-width: 0; overflow-wrap: anywhere; }
+		.settings-content :global(.flex.w-full.justify-between > :last-child) { flex-shrink: 0; }
 	}
+
 
 	.tabs::-webkit-scrollbar {
 		display: none; /* for Chrome, Safari and Opera */
@@ -393,8 +393,5 @@
 		scrollbar-width: none; /* Firefox */
 	}
 
-	input[type='number'] {
-		appearance: textfield;
-		-moz-appearance: textfield; /* Firefox */
-	}
+
 </style>

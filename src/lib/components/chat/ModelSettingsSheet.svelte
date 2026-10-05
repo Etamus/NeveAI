@@ -3,24 +3,12 @@
 	import { getContext } from 'svelte';
 	import { showModelSettings, user } from '$lib/stores';
 	import AdvancedParams from '$lib/components/chat/Settings/Advanced/AdvancedParams.svelte';
-	import FileItem from '$lib/components/common/FileItem.svelte';
-	import Collapsible from '$lib/components/common/Collapsible.svelte';
 
 	const i18n = getContext('i18n');
 
 	export let params: Record<string, any> = {};
-	export let chatFiles: any[] = [];
 	export let selectedModelName = '';
 
-	const getOpen = (key: string, fallback = true): boolean => {
-		const v = localStorage.getItem(`chatControls.${key}`);
-		return v !== null ? v === 'true' : fallback;
-	};
-	const setOpen = (key: string) => (open: boolean) => {
-		localStorage.setItem(`chatControls.${key}`, String(open));
-	};
-
-	let showFiles = getOpen('files');
 	let showSystemPromptField = false;
 	$: if ((params?.system ?? '') !== '') showSystemPromptField = true;
 
@@ -40,7 +28,7 @@
 	<!-- Sheet panel -->
 	<div
 		class="fixed top-0 right-0 bottom-0 z-50 flex flex-col bg-white dark:bg-gray-850 shadow-2xl overflow-hidden"
-		style="width: 360px"
+		style="width: min(360px, 100vw)"
 		transition:fly={{ x: 360, duration: 220, opacity: 1 }}
 	>
 		<!-- Header — Jan-style -->
@@ -76,43 +64,14 @@
 		</div>
 
 		<!-- Content -->
-		<div class="flex-1 overflow-y-auto px-4 py-3 scrollbar-hidden">
+		<div id="model-settings-content" class="flex-1 overflow-y-auto px-4 py-3 scrollbar-hidden">
 			{#if $user?.role === 'admin' || ($user?.permissions?.chat?.controls ?? true)}
 				<div class="text-sm text-gray-700 dark:text-gray-300">
-
-					{#if chatFiles.length > 0}
-						<Collapsible
-							title={$i18n.t('Files')}
-							bind:open={showFiles}
-							onChange={setOpen('files')}
-							buttonClassName="w-full font-semibold"
-						>
-							<div class="flex flex-col gap-1 mt-1.5" slot="content">
-								{#each chatFiles as file, fileIdx}
-									<FileItem
-										className="w-full"
-										item={file}
-										edit={true}
-										url={file?.url ?? null}
-										name={file.name}
-										type={file.type}
-										size={file?.size}
-										dismissible={true}
-										small={true}
-										on:dismiss={() => {
-											chatFiles.splice(fileIdx, 1);
-											chatFiles = chatFiles;
-										}}
-										on:click={() => {}}
-									/>
-								{/each}
-							</div>
-						</Collapsible>
-					{/if}
-
 					{#if $user?.role === 'admin' || ($user?.permissions?.chat?.params ?? true)}
-					<div class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5 mt-4">{$i18n.t('Par\u00e2metros avan\u00e7ados')}</div>
-						<div class="mt-1.5">
+						<div class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 mt-4">
+							{$i18n.t('Par\u00e2metros avan\u00e7ados')}
+						</div>
+						<div class="mt-3">
 							<AdvancedParams
 								admin={$user?.role === 'admin'}
 								custom={true}
@@ -124,36 +83,46 @@
 							>
 								<div
 									slot="janFooter"
-									hidden={!($user?.role === 'admin' || ($user?.permissions?.chat?.system_prompt ?? true))}
+									hidden={!(
+										$user?.role === 'admin' ||
+										($user?.permissions?.chat?.system_prompt ?? true)
+									)}
 								>
-										<div class="flex h-[34px] w-full items-center justify-between py-0">
-											{#if showSystemPromptField}
-												<button
-													type="button"
-													class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition"
-													on:click={() => { params.system = ''; showSystemPromptField = false; }}
-												>{$i18n.t('Prompt do sistema')}</button>
-											{:else}
-												<div class="text-xs text-gray-700 dark:text-gray-300">{$i18n.t('Prompt do sistema')}</div>
-											{/if}
-											{#if !showSystemPromptField}
-												<button
-													type="button"
-													class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700"
-													on:click={() => { showSystemPromptField = true; }}
-												>{$i18n.t('Default')}</button>
-											{/if}
-										</div>
+									<div class="flex h-[34px] w-full items-center justify-between py-0">
 										{#if showSystemPromptField}
-											<div class="pt-1">
-												<textarea
-													bind:value={params.system}
-													class="w-full text-xs border border-gray-200/40 dark:border-gray-700/30 rounded-lg px-3 py-2 outline-hidden resize-none overflow-y-auto focus:border-gray-300 dark:focus:border-gray-600 transition min-h-[5rem] outline-none resize-vertical bg-transparent py-1.5"
-													rows="4"
-													placeholder={$i18n.t('Enter system prompt')}
-												/>
+											<button
+												type="button"
+												class="text-xs text-gray-700 dark:text-gray-300 underline decoration-dotted cursor-pointer hover:text-gray-500 dark:hover:text-gray-400 transition"
+												on:click={() => {
+													params.system = '';
+													showSystemPromptField = false;
+												}}>{$i18n.t('Prompt do sistema')}</button
+											>
+										{:else}
+											<div class="text-xs text-gray-700 dark:text-gray-300">
+												{$i18n.t('Prompt do sistema')}
 											</div>
 										{/if}
+										{#if !showSystemPromptField}
+											<button
+												type="button"
+												class="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition px-2 py-0.5 rounded-md border border-gray-200 dark:border-gray-700"
+												on:click={() => {
+													showSystemPromptField = true;
+												}}>{$i18n.t('Default')}</button
+											>
+										{/if}
+									</div>
+									{#if showSystemPromptField}
+										<div class="pt-1">
+											<textarea
+												bind:value={params.system}
+												class="w-full text-xs border border-gray-200/40 dark:border-gray-700/30 rounded-lg px-3 py-2 outline-hidden resize-none overflow-y-auto focus:border-gray-300 dark:focus:border-gray-600 transition min-h-[5rem] outline-none resize-vertical bg-transparent py-1.5"
+												rows="4"
+												placeholder={$i18n.t('Enter system prompt')}
+											/>
+										</div>
+									{/if}
 								</div>
 							</AdvancedParams>
 						</div>

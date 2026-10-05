@@ -35,10 +35,10 @@ from neveai.models.files import (
     FileModelResponse,
     Files,
 )
-from neveai.models.chats import Chats
+import neveai.models.chats
 from neveai.models.knowledge import Knowledges
-from neveai.models.groups import Groups
-from neveai.models.access_grants import AccessGrants
+import neveai.models.groups
+import neveai.models.access_grants
 
 
 from neveai.routers.retrieval import ProcessFileForm, process_file
@@ -364,6 +364,18 @@ async def list_files(
 ############################
 
 
+@router.get("/generated")
+def list_generated_files(
+    kind: str = Query("all", pattern="^(all|image|video|audio|document)$"),
+    query: str = Query("", max_length=200),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    return Files.get_generated_files(user.id, kind, query, skip, limit, db=db)
+
+
 @router.get("/search", response_model=list[FileModelResponse])
 async def search_files(
     filename: str = Query(
@@ -462,6 +474,14 @@ async def get_file_by_id(
         or user.role == "admin"
         or has_access_to_file(id, "read", user, db=db)
     ):
+        if file.filename.lower().endswith('.pdf') and file.path and file.data:
+            from neveai.retrieval.pdf_layout import repair_pdf_content
+            content = file.data.get('content', '')
+            if isinstance(content, str):
+                from starlette.concurrency import run_in_threadpool
+                repaired = await run_in_threadpool(repair_pdf_content, file.path, content)
+                if repaired != content:
+                    file = file.model_copy(update={'data': {**file.data, 'content': repaired}})
         return file
     else:
         raise HTTPException(

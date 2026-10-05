@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { getContext, afterUpdate } from 'svelte';
-	import { tick } from 'svelte';
 	import Folder from '../../icons/Folder.svelte';
 	import NewFolderAlt from '../../icons/NewFolderAlt.svelte';
 	import FilePlusAlt from '../../icons/FilePlusAlt.svelte';

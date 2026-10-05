@@ -1,12 +1,10 @@
 <script lang="ts">
-	import { models, showSettings, settings, user, mobile, config, showModelSettings } from '$lib/stores';
-	import { onMount, tick, getContext } from 'svelte';
-	import { toast } from 'svelte-sonner';
+	import { models, settings } from '$lib/stores';
+	import { getContext } from 'svelte';
 	import Selector from './ModelSelector/Selector.svelte';
-	import LocalModelLoadPreferences from './ModelSelector/LocalModelLoadPreferences.svelte';
-	import Tooltip from '../common/Tooltip.svelte';
 
-	import { updateUserSettings } from '$lib/apis/users';
+	import { toggleModelFavorite } from '$lib/utils/modelFavoriteActions';
+	import { toast } from 'svelte-sonner';
 	const i18n = getContext('i18n');
 
 	export let selectedModels = [''];
@@ -14,18 +12,8 @@
 
 
 
-	const pinModelHandler = async (modelId) => {
-		let pinnedModels = $settings?.pinnedModels ?? [];
-
-		if (pinnedModels.includes(modelId)) {
-			pinnedModels = pinnedModels.filter((id) => id !== modelId);
-		} else {
-			pinnedModels = [...new Set([...pinnedModels, modelId])];
-		}
-
-		settings.set({ ...$settings, pinnedModels: pinnedModels });
-		await updateUserSettings(localStorage.token, { ui: $settings });
-	};
+	const favoriteModelHandler = (modelId: string) => toggleModelFavorite(modelId)
+		.catch(() => toast.error($i18n.t('Failed to save favorites')));
 
 	$: if (selectedModels.length > 0 && $models.length > 0) {
 		const _selectedModels = selectedModels.map((model) =>
@@ -37,9 +25,6 @@
 		}
 	}
 
-	$: hasLocalFolderModels = $models.some(
-		(model) => model?.owned_by === 'llamacpp' && model?.connection_type === 'local' && model?.llamacpp
-	);
 </script>
 
 <div class="flex flex-col w-full items-start">
@@ -55,17 +40,11 @@
 							label: model.name,
 							model: model
 						}))}
-						{pinModelHandler}
-						onGearClick={selectedModelIdx === 0 && selectedModel && !disabled ? () => showModelSettings.set(true) : null}
+						{favoriteModelHandler}
 						bind:value={selectedModel}
 					/>
 				</div>
 			</div>
-			{#if selectedModelIdx === 0 && selectedModel && !disabled && hasLocalFolderModels}
-				<div class="relative z-20 -ml-1.5 flex shrink-0">
-					<LocalModelLoadPreferences />
-				</div>
-			{/if}
 		</div>
 	{/each}
 </div>

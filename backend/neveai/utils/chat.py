@@ -3,14 +3,13 @@ import logging
 import sys
 import json
 
-from aiocache import cached
-from typing import Any, Optional
+from typing import Any
 
 import uuid
 import asyncio
 
 from fastapi import HTTPException, Request, status
-from starlette.responses import Response, StreamingResponse, JSONResponse
+from starlette.responses import StreamingResponse
 
 
 from neveai.socket.main import (

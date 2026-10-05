@@ -121,10 +121,3 @@ export const getKnowledgeById = async (token: string, id: string) => {
 
 	return res;
 };
-
-type KnowledgeUpdateForm = {
-	name?: string;
-	description?: string;
-	data?: object;
-	access_grants?: object[];
-};

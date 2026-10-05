@@ -50,6 +50,7 @@ export interface LocalModel {
 	loaded_at: number | null;
 	n_gpu_layers: number | null;
 	n_ctx: number | null;
+	context_auto?: boolean;
 	mmproj_filename: string | null;
 	cache_type: string | null;
 	speculative_decoding: string | null;
@@ -82,6 +83,7 @@ export interface LocalVramInfo {
 }
 
 export interface LlamaCppStatus {
+	automatic_context?: boolean;
 	server_binary_exists: boolean;
 	server_binary_path: string;
 	models_dir: string;
@@ -106,7 +108,7 @@ export const normalizeLlamaCppErrorMessage = (
 		lower.includes('context type mtp') ||
 		lower.includes('draft-mtp')
 	) {
-		return 'Este modelo não tem suporte a Predição de tokens. Desative e tente carregar novamente.';
+		return 'Este modelo não tem suporte à predição de tokens. Selecione Normal em Velocidade e tente carregar novamente.';
 	}
 	if (
 		lower.includes('exceed_context_size_error') ||
@@ -252,6 +254,9 @@ export const loadLocalModel = async (
 	token_prediction: string = 'off',
 	context_shift: string = 'off'
 ): Promise<any> => {
+	if (n_ctx === 0 && !(await getLlamaCppStatus(token)).automatic_context) {
+		throw new Error('Reinicie a interface para ativar o contexto automático atualizado.');
+	}
 	const operationId = createLocalModelOperationId();
 	emitLocalModelRuntimeEvent({ operationId, action: 'load', phase: 'start', filename });
 

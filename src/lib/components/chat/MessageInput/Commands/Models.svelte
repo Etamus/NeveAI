@@ -1,11 +1,10 @@
 <script lang="ts">
 	import Fuse from 'fuse.js';
 
-	import { createEventDispatcher, onDestroy, onMount } from 'svelte';
-	import { tick, getContext } from 'svelte';
+	import { getContext } from 'svelte';
 
 	import { models } from '$lib/stores';
-	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
+	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
 	const i18n = getContext('i18n');

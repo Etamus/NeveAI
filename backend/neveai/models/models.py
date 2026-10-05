@@ -3,7 +3,7 @@ import time
 from typing import Optional
 
 from sqlalchemy.orm import Session
-from neveai.internal.db import Base, JSONField, get_db, get_db_context
+from neveai.internal.db import (Base, JSONField, get_db_context)
 
 from neveai.models.groups import Groups
 from neveai.models.users import User, UserModel, Users, UserResponse
@@ -12,10 +12,8 @@ from neveai.models.access_grants import AccessGrantModel, AccessGrants
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from sqlalchemy import String, cast, or_, and_, func
-from sqlalchemy.dialects import postgresql, sqlite
+from sqlalchemy import (String, cast, or_, func)
 
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import BigInteger, Column, Text, Boolean
 
 log = logging.getLogger(__name__)

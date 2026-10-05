@@ -9,46 +9,73 @@
 	dayjs.extend(relativeTime);
 
 	import Spinner from '$lib/components/common/Spinner.svelte';
-	import { flyAndScale } from '$lib/utils/transitions';
-	import { createEventDispatcher, onDestroy, onMount, getContext, tick } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { fly } from 'svelte/transition';
+	import { cubicOut } from 'svelte/easing';
+	import { createEventDispatcher, onDestroy, getContext, tick } from 'svelte';
 
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
-	import {
-		user,
-		models,
-		mobile,
-		temporaryChatEnabled,
-		settings,
-		config,
-		showLocalModelsModal
-	} from '$lib/stores';
+	import { user, models, mobile, settings, config } from '$lib/stores';
 	import type { Model } from '$lib/stores';
 	import { toast } from 'svelte-sonner';
-	import { capitalizeFirstLetter, sanitizeResponseContent } from '$lib/utils';
 	import { getModels } from '$lib/apis';
 	import { getModelsConfig, setModelsConfig } from '$lib/apis/configs';
 
-	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
+	import ChevronDown from '$lib/components/icons/ChevronDownCompact.svelte';
+	import SettingsIcon from '$lib/components/icons/Settings.svelte';
+	import LocalModelLoadSettings from './LocalModelLoadSettings.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import ChatBubbleOval from '$lib/components/icons/ChatBubbleOval.svelte';
-	import Pin from '$lib/components/icons/Pin.svelte';
-	import PinSlash from '$lib/components/icons/PinSlash.svelte';
+	import Home2 from '$lib/components/icons/Home2.svelte';
+	import Bookmark from '$lib/components/icons/Bookmark.svelte';
 
 	import ModelItem from './ModelItem.svelte';
 
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
 	const dispatch = createEventDispatcher();
+	const modelMenuTransition = (node: Element) => fly(node, { y: -8, duration: 200, easing: cubicOut });
+	let modelChevronSize = 12;
+	const alignModelChevron = (node: HTMLElement, _label: string) => {
+		let correction = 0;
+		let frame = 0;
+		let alive = true;
+		const align = () => {
+			if (!alive) return;
+			const icon = node.querySelector<SVGElement>('svg');
+			const size = Math.max(2, Math.round(parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.75 / 2) * 2);
+			modelChevronSize = size;
+			if (icon) { icon.style.width = `${size}px`; icon.style.height = `${size}px`; }
+			const left = node.getBoundingClientRect().left - correction;
+			correction = Math.round(left) - left;
+			node.style.translate = `${correction}px 0`;
+		};
+		const schedule = () => {
+			if (!alive) return;
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(align);
+			for (const animation of node.closest('[data-sidebar-pane]')?.getAnimations() ?? []) {
+				void animation.finished.then(align, () => {});
+			}
+		};
+		const observer = new ResizeObserver(schedule);
+		observer.observe(node.parentElement ?? node);
+		window.addEventListener('resize', schedule);
+		void document.fonts.ready.then(schedule);
+		schedule();
+		return {
+			update: schedule,
+			destroy() { alive = false; cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener('resize', schedule); }
+		};
+	};
 
 	export let id = '';
 	export let value = '';
 	export let placeholder = $i18n.t('Select a model');
 	export let searchEnabled = true;
-	export let searchPlaceholder = $i18n.t('Search a model');
+	export let searchPlaceholder = $i18n.t('Search...');
 
 	export let items: {
 		label: string;
@@ -58,15 +85,16 @@
 		[key: string]: any;
 	}[] = [];
 
-	export let className = 'w-[19rem]';
+	export let className = 'w-[20rem]';
 	export let triggerClassName = 'text-base';
 
-	export let pinModelHandler: (modelId: string) => void = () => {};
-	export let onGearClick: (() => void) | null = null;
+	export let favoriteModelHandler: (modelId: string) => void = () => {};
 
 	let tagsContainerElement;
 
 	let show = false;
+	let showLoadSettings = false;
+	$: if (!show) showLoadSettings = false;
 	let tags = [];
 
 	let selectedModel: (typeof items)[number] | '' = '';
@@ -114,9 +142,16 @@
 	let searchValue = '';
 
 	let selectedTag = '';
-	let selectedConnectionType = '';
+	let modelFilter: 'all' | 'favorites' = 'all';
+	$: hasFavorites = items.some((item) => ($settings?.favoriteModels ?? []).includes(item.value));
+	$: if (!hasFavorites) modelFilter = 'all';
+	$: modelFilters = [
+		{ id: 'all', label: 'All models', icon: Home2 },
+		{ id: 'favorites', label: 'Favorites', icon: Bookmark }
+	] as const;
 
 	let selectedModelIdx = 0;
+	let keyboardNavigation = false;
 
 	const fuse = new Fuse(
 		items.map((item) => {
@@ -192,7 +227,8 @@
 			.map((result) => result.item);
 	};
 
-	const passesModelFilters = (item: any) => {
+	const passesModelFilters = (item: any, filter: typeof modelFilter, favorites: string[]) => {
+		if (filter === 'favorites' && !favorites.includes(item.value)) return false;
 		if (
 			selectedTag !== '' &&
 			!(item.model?.tags ?? [])
@@ -202,10 +238,6 @@
 			return false;
 		}
 
-		if (selectedConnectionType === '') return true;
-		if (selectedConnectionType === 'local') return item.model?.connection_type === 'local';
-		if (selectedConnectionType === 'external') return item.model?.connection_type === 'external';
-		if (selectedConnectionType === 'direct') return item.model?.direct;
 		return true;
 	};
 
@@ -223,7 +255,7 @@
 	}
 
 	$: filteredItems = (searchValue ? getSearchedItems(searchValue) : items)
-		.filter(passesModelFilters)
+		.filter((item) => passesModelFilters(item, modelFilter, $settings?.favoriteModels ?? []))
 		.filter((item) => !(item.model?.info?.meta?.hidden ?? false));
 
 	$: if (show && filteredItems) {
@@ -232,7 +264,8 @@
 
 	$: if (
 		selectedTag !== undefined ||
-		selectedConnectionType !== undefined ||
+		modelFilter !== undefined ||
+		$settings?.favoriteModels !== undefined ||
 		searchValue !== undefined
 	) {
 		resetView();
@@ -240,50 +273,72 @@
 
 	const resetView = async () => {
 		await tick();
-
-		const selectedInFiltered = filteredItems.findIndex((item) => item.value === value);
-
-		if (selectedInFiltered >= 0) {
-			// The selected model is visible in the current filter
-			selectedModelIdx = selectedInFiltered;
-		} else {
-			// The selected model is not visible, default to first item in filtered list
-			selectedModelIdx = 0;
-		}
-
-		// Set the virtual scroll position so the selected item is rendered and centered
-		const targetScrollTop = Math.max(
-			0,
-			selectedModelIdx * ITEM_HEIGHT - LIST_VIEWPORT_HEIGHT / 2 + ITEM_HEIGHT / 2
-		);
-		listScrollTop = targetScrollTop;
-
-		await tick();
-
-		if (listContainer) {
-			listContainer.scrollTop = targetScrollTop;
-		}
-
-		await tick();
-		const item = document.querySelector(`[data-arrow-selected="true"]`);
-		item?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+		const selectedIndex = filteredItems.findIndex((item) => item.value === value);
+		selectedModelIdx = Math.max(0, selectedIndex);
+		keyboardNavigation = false;
+		if (listContainer) listContainer.scrollTop = 0;
 	};
 
-	const ITEM_HEIGHT = 46;
-	const LIST_VIEWPORT_HEIGHT = 273;
+	const fitLoadSettings = (node: HTMLElement) => {
+		let frame = 0;
+		const update = () => {
+			frame = 0;
+			const viewport = window.visualViewport;
+			const bottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
+			const limit = 14.75 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+			const height = Math.max(34, Math.min(limit, bottom - node.getBoundingClientRect().top - 16));
+			node.style.maxHeight = `${height}px`;
+		};
+		const schedule = () => {
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(update);
+		};
+		const observer = new ResizeObserver(schedule);
+		observer.observe(node);
+		window.addEventListener('resize', schedule);
+		window.visualViewport?.addEventListener('resize', schedule);
+		schedule();
+		return { destroy() {
+			cancelAnimationFrame(frame);
+			observer.disconnect();
+			window.removeEventListener('resize', schedule);
+			window.visualViewport?.removeEventListener('resize', schedule);
+		} };
+	};
 
-	let listScrollTop = 0;
+	const fitModelRows = (node: HTMLElement) => {
+		const update = () => {
+			const row = node.querySelector<HTMLElement>('[data-model-selector-row]');
+			if (!row) return;
+			const rowHeight = parseFloat(getComputedStyle(row).height);
+			const gap = parseFloat(getComputedStyle(node).rowGap) || 0;
+			const available = parseFloat(getComputedStyle(node).getPropertyValue('--bits-dropdown-menu-content-available-height'));
+			const root = node.closest('[data-model-selector-content]');
+			const headerHeight = root ? node.getBoundingClientRect().top - root.getBoundingClientRect().top + 8 : node.offsetTop + 8;
+			const budget = Number.isFinite(available) ? available - headerHeight : window.innerHeight - node.getBoundingClientRect().top - 8;
+			const rows = Math.max(1, Math.min(4, Math.floor((budget + gap) / (rowHeight + gap))));
+			node.style.maxHeight = `${rows * rowHeight + (rows - 1) * gap}px`;
+		};
+		const observer = new ResizeObserver(update);
+		observer.observe(node);
+		update();
+		window.addEventListener('resize', update);
+		return { destroy() { observer.disconnect(); window.removeEventListener('resize', update); } };
+	};
+
 	let listContainer;
 	let sortable: Sortable | null = null;
 	let sortableElement: HTMLElement | null = null;
 	let sortableSignature = '';
+	let sortableSyncVersion = 0;
+	let sortableDomOrder: ChildNode[] = [];
 	let suppressNextModelClick = false;
 
 	$: canReorderModels =
 		$user?.role === 'admin' &&
 		searchValue === '' &&
 		selectedTag === '' &&
-		selectedConnectionType === '' &&
+		modelFilter === 'all' &&
 		filteredItems.length > 1;
 
 	const destroySortable = () => {
@@ -322,7 +377,7 @@
 			const currentConfig = await getModelsConfig(localStorage.token);
 			const res = await setModelsConfig(localStorage.token, {
 				DEFAULT_MODELS: currentConfig?.DEFAULT_MODELS ?? null,
-				DEFAULT_PINNED_MODELS: currentConfig?.DEFAULT_PINNED_MODELS ?? null,
+				DEFAULT_PINNED_MODELS: null,
 				MODEL_ORDER_LIST: orderedIds,
 				DEFAULT_MODEL_METADATA: currentConfig?.DEFAULT_MODEL_METADATA ?? null,
 				DEFAULT_MODEL_PARAMS: currentConfig?.DEFAULT_MODEL_PARAMS ?? null
@@ -344,7 +399,10 @@
 	};
 
 	const reorderModelHandler = async (event: any) => {
-		if (!listContainer || event.oldIndex === event.newIndex) return;
+		if (!listContainer || event.oldIndex === event.newIndex) {
+			sortableDomOrder = [];
+			return;
+		}
 
 		const orderedIds = Array.from(
 			listContainer.querySelectorAll('[data-model-selector-row="true"]')
@@ -353,12 +411,11 @@
 			.filter(Boolean) as string[];
 
 		const normalizedOrder = getNormalizedModelOrder(orderedIds);
-		const previousOrder = items.map((item) => item.value);
-
-		sortable?.sort(previousOrder, false);
+		// Restore Svelte's keyed-block anchors before its store-driven reorder.
+		for (const node of sortableDomOrder) listContainer.appendChild(node);
+		sortableDomOrder = [];
 		applyModelOrderToStore(normalizedOrder);
 		await tick();
-		sortable?.sort(normalizedOrder, false);
 		await saveModelOrder(normalizedOrder);
 	};
 
@@ -369,11 +426,11 @@
 
 		if (nextSignature === sortableSignature && sortable && sortableElement === listContainer) return;
 		sortableSignature = nextSignature;
-		const requestedSignature = nextSignature;
+		const requestedVersion = ++sortableSyncVersion;
 		destroySortable();
 
 		await tick();
-		if (requestedSignature !== sortableSignature) return;
+		if (requestedVersion !== sortableSyncVersion) return;
 		if (!show || !canReorderModels || !listContainer) return;
 
 		sortableElement = listContainer;
@@ -390,6 +447,9 @@
 			ghostClass: 'model-selector-drag-ghost',
 			chosenClass: 'model-selector-drag-chosen',
 			dragClass: 'model-selector-drag-active',
+			onChoose: () => {
+				sortableDomOrder = Array.from(listContainer.childNodes);
+			},
 			onEnd: async (event) => {
 				suppressNextModelClick = true;
 				await reorderModelHandler(event);
@@ -400,18 +460,19 @@
 		});
 	};
 
-	$: show, canReorderModels, filteredItems, syncSortable();
+	$: show, canReorderModels, filteredItems, listContainer, syncSortable();
 
 	onDestroy(() => {
+		sortableSyncVersion += 1;
 		destroySortable();
 	});
 </script>
 
 <DropdownMenu.Root
 	bind:open={show}
-	onOpenChange={async () => {
+	onOpenChange={async (open) => {
+		if (!open) return;
 		searchValue = '';
-		listScrollTop = 0;
 		preloadModelProfileImages(items, $i18n.language);
 		window.setTimeout(() => document.getElementById('model-search-input')?.focus(), 0);
 
@@ -444,91 +505,43 @@
 		>
 			<span class="flex min-w-0 flex-1 items-center gap-1.5 truncate">
 				{#if selectedModel}
-					<div class="relative size-5 shrink-0 group/pin">
-						<img
-							src={modelProfileImageUrls.get(selectedModel.value) ??
-								getModelProfileImageUrl(selectedModel.model, $i18n.language)}
-							alt=""
-							class="rounded-full size-5 group-hover/pin:opacity-0 transition-opacity"
-							loading="eager"
-							decoding="async"
-							fetchpriority="high"
-						/>
-						<button
-							class="absolute inset-0 size-5 rounded-full flex items-center justify-center opacity-0 group-hover/pin:opacity-100 transition-opacity text-gray-500 dark:text-gray-400"
-							type="button"
-							on:click|stopPropagation|preventDefault={() => pinModelHandler(selectedModel.value)}
-							title={($settings?.pinnedModels ?? []).includes(selectedModel.value) ? 'Desfixar' : 'Fixar'}
-						>
-							{#if ($settings?.pinnedModels ?? []).includes(selectedModel.value)}
-								<PinSlash className="size-3.5" />
-							{:else}
-								<Pin className="size-3.5" />
-							{/if}
-						</button>
-					</div>
 					<span class="min-w-0 -translate-y-px truncate">{selectedModel.label}</span>
 				{:else}
 					<span class="min-w-0 -translate-y-px truncate">{placeholder}</span>
 				{/if}
 			</span>
+			{#if selectedModel}
+				<span aria-hidden="true" use:alignModelChevron={selectedModel.label} class="pointer-events-none flex shrink-0 items-center text-gray-500 dark:text-gray-400 transition-[rotate,transform] duration-200 {show ? 'rotate-180' : ''}">
+					<ChevronDown className="size-3" pixelSize={modelChevronSize} />
+				</span>
+			{/if}
 		</DropdownMenu.Trigger>
-		{#if selectedModel && onGearClick}
-			<Tooltip content={$i18n.t('Settings')} placement="top" className="relative z-20 -mr-2 flex shrink-0 self-center">
-				<button
-					class="shrink-0 p-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
-					type="button"
-					aria-label={$i18n.t('Settings')}
-					on:pointerdown|stopPropagation|preventDefault
-					on:click|stopPropagation|preventDefault={() => { show = false; onGearClick(); }}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="1.5"
-						class="size-4"
-					>
-						<path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.43l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
-						<path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-					</svg>
-				</button>
-			</Tooltip>
-		{:else if selectedModel}
-			<div class="pointer-events-none flex shrink-0 self-center" aria-hidden="true">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					class="size-4 shrink-0 self-center text-gray-400 dark:text-gray-500"
-					aria-hidden="true"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-				</svg>
-			</div>
-		{/if}
 	</div>
 
 	<DropdownMenu.Content
+		data-model-selector-content="true"
 		class="z-40 {$mobile
 			? `w-full`
 			: `${className}`} max-w-[calc(100vw-1rem)] justify-start rounded-lg backdrop-blur-2xl bg-white/95 dark:bg-gray-850/95 dark:text-white border border-gray-200/50 dark:border-gray-700/50 shadow-xl outline-hidden"
-		transition={flyAndScale}
+		transition={modelMenuTransition}
 		side="bottom"
 		align={$mobile ? 'center' : 'start'}
 		sideOffset={6}
-		alignOffset={$mobile ? -1 : 0}
+		alignOffset={$mobile ? -1 : -7}
 	>
 		<slot>
+			<div class="flex min-w-0">
+				<div class="flex min-w-0 flex-1 flex-col">
 			{#if searchEnabled}
-				<div class="relative px-3 py-2 border-b border-gray-100 dark:border-gray-700/60">
+				<div class="relative flex items-center gap-3 px-3 py-2 border-b border-gray-100 dark:border-gray-700/60">
+					{#if showLoadSettings}
+						<span class="min-w-0 flex-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{$i18n.t('Predefinições')}</span>
+					{:else}
+					<Search className="size-4 shrink-0 text-gray-500 dark:text-gray-400" />
 					<input
 						id="model-search-input"
 						bind:value={searchValue}
-						class="w-full text-sm bg-transparent outline-hidden placeholder-gray-400 dark:placeholder-gray-500"
+						class="min-w-0 flex-1 text-sm bg-transparent outline-hidden placeholder-gray-400 dark:placeholder-gray-500"
 						placeholder={searchPlaceholder}
 						autocomplete="off"
 						aria-label={$i18n.t('Search In Models')}
@@ -539,9 +552,11 @@
 								return; // dont need to scroll on selection
 							} else if (e.code === 'ArrowDown') {
 								e.stopPropagation();
+								keyboardNavigation = true;
 								selectedModelIdx = Math.min(selectedModelIdx + 1, filteredItems.length - 1);
 							} else if (e.code === 'ArrowUp') {
 								e.stopPropagation();
+								keyboardNavigation = true;
 								selectedModelIdx = Math.max(selectedModelIdx - 1, 0);
 							} else {
 								// if the user types something, reset to the top selection.
@@ -552,47 +567,59 @@
 							item?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
 						}}
 					/>
+					{/if}
+					<div class="ml-auto flex shrink-0 items-center gap-1" data-model-selector-tools>
+						{#if hasFavorites && !showLoadSettings}
+							{#each modelFilters as filter}
+								<Tooltip content={$i18n.t(filter.label)}>
+									<button type="button" aria-label={$i18n.t(filter.label)} aria-pressed={modelFilter === filter.id}
+										class="flex size-7 items-center justify-center rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 {modelFilter === filter.id ? 'bg-gray-100 dark:bg-gray-700/60 text-gray-900 dark:text-white' : ''}"
+										on:click|stopPropagation={() => { modelFilter = filter.id; }}>
+										<svelte:component this={filter.icon} className="size-4" />
+									</button>
+								</Tooltip>
+							{/each}
+						{/if}
+							<Tooltip content={$i18n.t('Predefinições')}>
+								<button type="button" aria-label={$i18n.t('Predefinições')} aria-pressed={showLoadSettings} class="flex size-7 items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" on:click|stopPropagation={() => { showLoadSettings = !showLoadSettings; }}>
+									<SettingsIcon className="size-4" />
+								</button>
+							</Tooltip>
+					</div>
 				</div>
 			{/if}
 
-			<div class="px-1.5 group relative py-1">
+			{#if showLoadSettings}
+				<div data-model-load-settings use:fitLoadSettings class="max-h-[14.75rem] overflow-y-auto py-1">
+					<LocalModelLoadSettings />
+				</div>
+			{:else}
+			<div class="flex min-h-0 flex-1 flex-col px-1.5 group relative py-1">
 				{#if filteredItems.length === 0}
-					{#if items.length === 0}
-						<div class="flex flex-col items-start justify-center py-6 px-4 text-start">
-							<div class="text-sm font-medium text-gray-900 dark:text-gray-100 mb-1">
-								{$i18n.t('No models available')}
-							</div>
-							<div class="text-xs text-gray-500 dark:text-gray-400">
-								{$i18n.t('Load a model to start chatting')}
-							</div>
-						</div>
-					{:else}
-						<div class="">
-							<div class="block px-3 py-2 text-sm text-gray-700 dark:text-gray-100">
-								{$i18n.t('No results found')}
-							</div>
-						</div>
-					{/if}
+					<div class="flex flex-1 items-center justify-center px-3 py-2 text-center text-sm text-gray-700 dark:text-gray-100" role="status">
+						{$i18n.t(searchValue.trim() ? 'No models found' : modelFilter === 'favorites' ? 'No favorites yet' : 'No models available')}
+					</div>
 				{:else}
 					<!-- svelte-ignore a11y-no-static-element-interactions -->
 					<div
-						class="max-h-[277px] overflow-y-auto pr-2"
+						class="flex flex-col gap-1 max-h-[14.75rem] overflow-y-auto pr-2"
 						role="listbox"
+						tabindex="-1"
 						aria-label={$i18n.t('Available models')}
 						bind:this={listContainer}
-						on:scroll={() => {
-							listScrollTop = listContainer.scrollTop;
-						}}
+						use:fitModelRows
+						on:mousemove={() => { keyboardNavigation = false; }}
 					>
 						{#each filteredItems as item, index (item.value)}
 							<ModelItem
 								{selectedModelIdx}
+								{keyboardNavigation}
 								{item}
 								{index}
 								{value}
 								profileImageUrl={modelProfileImageUrls.get(item.value) ?? ''}
 								reorderEnabled={canReorderModels}
-								{pinModelHandler}
+								{favoriteModelHandler}
 								onClick={() => {
 									if (suppressNextModelClick) return;
 									value = item.value;
@@ -608,9 +635,12 @@
 			</div>
 
 			<div class="mb-1"></div>
+			{/if}
+				</div>
+			</div>
 
 			<div class="hidden w-[38rem]" />
-			<div class="hidden w-[19rem]" />
+			<div class="hidden w-[21rem]" />
 		</slot>
 	</DropdownMenu.Content>
 </DropdownMenu.Root>

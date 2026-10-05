@@ -1,10 +1,4 @@
-from fastapi import (
-    APIRouter,
-    Depends,
-    HTTPException,
-    Request,
-    UploadFile,
-)
+from fastapi import (Request, UploadFile)
 from typing import Optional
 from pathlib import Path
 
@@ -195,26 +189,3 @@ def get_file_url_from_base64(request, base64_file_string, metadata, user):
     elif "data:audio/wav;base64" in base64_file_string:
         return get_audio_url_from_base64(request, base64_file_string, metadata, user)
     return None
-
-
-def get_image_base64_from_file_id(id: str) -> Optional[str]:
-    file = Files.get_file_by_id(id)
-    if not file:
-        return None
-
-    try:
-        file_path = Storage.get_file(file.path)
-        file_path = Path(file_path)
-
-        # Check if the file already exists in the cache
-        if file_path.is_file():
-            import base64
-
-            with open(file_path, "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
-                content_type, _ = mimetypes.guess_type(file_path.name)
-                return f"data:{content_type};base64,{encoded_string}"
-        else:
-            return None
-    except Exception as e:
-        return None

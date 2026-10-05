@@ -1,8 +1,7 @@
 <script lang="ts">
-	import { decode } from 'html-entities';
 	import { v4 as uuidv4 } from 'uuid';
 
-	import { getContext, tick, onDestroy } from 'svelte';
+	import { getContext, onDestroy } from 'svelte';
 	const i18n = getContext('i18n');
 
 	import dayjs from '$lib/dayjs';
@@ -53,15 +52,19 @@
 	$: isDone = isReasoning && reasoningDoneValue === 'true';
 	$: isStreaming = isReasoning && !isDone;
 	$: isCodeInterpreterRunning = isCodeInterpreter && attributes?.done !== 'true';
-	$: showReasoningContent = isReasoning && !hide && (open || isStreaming);
+	$: showReasoningContent = isReasoning && !hide && open;
 	$: showActivityChrome = isReasoning ? showReasoningContent : isCodeInterpreter && open && !hide;
-	$: reasoningPreviewMode = isReasoning && isStreaming && !open;
+	let activityElement: HTMLDivElement;
+	function notifyReasoningLayout() {
+		if (isReasoning) activityElement?.dispatchEvent(new CustomEvent('neve:reasoning-layout', { bubbles: true }));
+	}
 
 	let wasStreamingReasoning = false;
 	$: if (isReasoning) {
 		if (isStreaming) {
 			wasStreamingReasoning = true;
 		} else if (isDone && wasStreamingReasoning) {
+			if (open) notifyReasoningLayout();
 			open = false;
 			wasStreamingReasoning = false;
 		}
@@ -156,6 +159,7 @@
 
 	onDestroy(() => {
 		stopObserving();
+		clearTimeout(copyTimeout);
 	});
 </script>
 
@@ -163,6 +167,7 @@
 	<!-- LM Studio-inspired reasoning block -->
 	<div
 		{id}
+		bind:this={activityElement}
 		class="reasoning-block mb-4 w-full overflow-hidden rounded-xl border transition-colors duration-150 {showActivityChrome
 			? 'border-gray-200/80 bg-gray-50/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-white/[0.035] dark:shadow-none'
 			: 'border-transparent'} {className}"
@@ -174,6 +179,7 @@
 			class="flex select-none items-center justify-between gap-3 px-3 py-2 {disabled ? '' : 'cursor-pointer'}"
 			on:pointerup={() => {
 				if (!disabled) {
+					notifyReasoningLayout();
 					open = !open;
 				}
 			}}
@@ -284,6 +290,7 @@
 					? 'grid-rows-[1fr]'
 					: 'grid-rows-[0fr]'}"
 				aria-hidden={!showReasoningContent}
+				inert={!showReasoningContent}
 			>
 				<div class="min-h-0 overflow-hidden">
 					<div
@@ -299,9 +306,7 @@
 							id="reasoning-content-{collapsibleId}"
 							bind:this={reasoningScrollEl}
 							on:scroll={handleReasoningScroll}
-							class="reasoning-text relative z-0 overflow-y-auto px-3 py-2.5 leading-relaxed text-gray-600 dark:text-gray-300 {reasoningPreviewMode
-								? 'h-24'
-								: isStreaming
+							class="reasoning-text relative z-0 overflow-y-auto px-3 py-2.5 leading-relaxed text-gray-600 dark:text-gray-300 {isStreaming
 									? 'h-40'
 									: 'max-h-72'}"
 						>

@@ -5,10 +5,6 @@
 
 	import { mobile, models, settings } from '$lib/stores';
 
-	import { generateMoACompletion } from '$lib/apis';
-	import { updateChatById } from '$lib/apis/chats';
-	import { createOpenAITextStream } from '$lib/apis/streaming';
-
 	import ResponseMessage from './ResponseMessage.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Merge from '$lib/components/icons/Merge.svelte';
@@ -18,7 +14,6 @@
 	import Skeleton from './Skeleton.svelte';
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
 	import ProfileImage from './ProfileImage.svelte';
-	import { NEVEAI_BASE_URL } from '$lib/constants';
 	const i18n = getContext('i18n');
 	dayjs.extend(localizedFormat);
 

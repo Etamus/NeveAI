@@ -61,12 +61,12 @@
 		importModels
 	} from '$lib/apis/models';
 	import { getModels } from '$lib/apis';
-	import { updateUserSettings } from '$lib/apis/users';
+	import { toggleModelFavorite } from '$lib/utils/modelFavoriteActions';
 	import { toast } from 'svelte-sonner';
 	import { DropdownMenu } from 'bits-ui';
 	import { flyAndScale } from '$lib/utils/transitions';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
-	import { getLocalModelLoadPreferences, LOCAL_MODEL_CONTEXT_OPTIONS } from '$lib/utils/llamacppLoadPreferences';
+	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
 	import {
 		buildUnifiedAdminModels,
 		type UnifiedModelsPreload
@@ -75,18 +75,15 @@
 	import ModelSettingsModal from '$lib/components/admin/Settings/Models/ModelSettingsModal.svelte';
 	import DownloadNeveModelsModal from '$lib/components/chat/DownloadNeveModelsModal.svelte';
 	import ModelEditor from '$lib/components/workspace/Models/ModelEditor.svelte';
-	import ModelMenu from '$lib/components/admin/Settings/Models/ModelMenu.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
-	import XMark from '$lib/components/icons/XMark.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import EllipsisHorizontal from '$lib/components/icons/EllipsisHorizontal.svelte';
-	import Pin from '$lib/components/icons/Pin.svelte';
-	import PinSlash from '$lib/components/icons/PinSlash.svelte';
+	import Bookmark from '$lib/components/icons/Bookmark.svelte';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import Minus from '$lib/components/icons/Minus.svelte';
 
@@ -116,18 +113,11 @@
 		localModelActions = state.actions;
 	});
 
-	let loadModalMmprojFile: string = '';
 
-	// ─── Unified load modal state ────────────────────────────────────────────
-	let loadModalModel: LocalModel | null = null;
-	let loadModalStep: 'context' | 'vision' = 'context';
-	let loadModalFromContext = false;
 
 	let gpuLayers: number = -1;
 	let contextSize: number = 8192;
 
-	let contextModalModel: LocalModel | null = null;
-	let contextModalSize: number = 8192;
 
 	const getCacheTypeForLoad = () => {
 		const { cache } = getLocalModelLoadPreferences();
@@ -144,8 +134,7 @@
 	};
 
 	const getTokenPredictionForLoad = () => {
-		const { tokenPrediction, contextShift } = getLocalModelLoadPreferences();
-		if (contextShift === 'on') return 'off';
+		const { tokenPrediction } = getLocalModelLoadPreferences();
 		return tokenPrediction;
 	};
 
@@ -248,6 +237,8 @@
 	let showDownloadModal = false;
 	let viewOption = '';
 	let preloadApplied = false;
+	let appliedPreload: UnifiedModelsPreload | null = null;
+	let localModelsSnapshotAt = 0;
 	let preloadVramSignature = '';
 	let highlightedLoadedModelId: string | null = null;
 	let modelsBelowLoadedCollapsed = false;
@@ -734,7 +725,21 @@
 		);
 	};
 	const applyPreload = (data: UnifiedModelsPreload) => {
-		localModels = data.localModels ?? [];
+		const snapshotAt = data.runtimeUpdatedAt ?? 0;
+		if (!preloadApplied || snapshotAt > localModelsSnapshotAt) {
+			localModels = data.localModels ?? [];
+			localModelsSnapshotAt = snapshotAt;
+			const runtimeEvent = getLatestLocalModelRuntimeEvent();
+			if (runtimeEvent?.phase === 'success' && runtimeEvent.timestamp > snapshotAt) {
+				if (runtimeEvent.action === 'load') {
+					const loaded = localModels.find((model) => model.filename === runtimeEvent.filename || model.id === runtimeEvent.modelId);
+					if (loaded) markLocalModelLoaded(loaded, runtimeEvent.result);
+				} else {
+					markLocalModelUnloaded(runtimeEvent.filename ?? '', runtimeEvent.modelId);
+				}
+				localModelsSnapshotAt = runtimeEvent.timestamp;
+			}
+		}
 		mmProjFiles = data.mmProjFiles ?? [];
 		adminModels = data.adminModels ?? [];
 		workspaceModels = data.workspaceModels ?? [];
@@ -743,8 +748,9 @@
 		localLoading = false;
 	};
 
-	$: if (preload?.loaded && !preloadApplied) {
+	$: if (preload?.loaded && preload !== appliedPreload && (!preloadApplied || (!show && !localModelActionInProgress))) {
 		applyPreload(preload);
+		appliedPreload = preload;
 		preloadApplied = true;
 	}
 	$: if (preload?.vramInfo) {
@@ -954,6 +960,7 @@
 						loaded_at: Date.now(),
 						n_gpu_layers: result?.n_gpu_layers ?? gpuLayers,
 						n_ctx: result?.n_ctx ?? contextSize,
+						context_auto: result?.context_auto ?? false,
 						mmproj_filename: result?.mmproj_filename ?? mmprojFilename,
 						cache_type: result?.cache_type ?? getCacheTypeForLoad(),
 						speculative_decoding:
@@ -1057,6 +1064,7 @@
 
 	const handleLocalModelRuntimeEvent = (detail: LocalModelRuntimeEventDetail | null) => {
 		if (!detail || destroyed) return;
+		localModelsSnapshotAt = Math.max(localModelsSnapshotAt, detail.timestamp);
 		const filename =
 			detail.filename ??
 			detail.result?.filename ??
@@ -1139,77 +1147,26 @@
 		}
 	}
 
-	function startLoadWithContextModal(model: LocalModel) {
+	function startLoadWithPreferences(model: LocalModel) {
 		if (localModelActionInProgress) return;
 		const preferences = getLocalModelLoadPreferences();
-		if (preferences.context !== 'ask') {
-			contextSize = preferences.context;
-			continueAfterContextSelection(model);
-			return;
-		}
-
-		loadModalModel = model;
-		loadModalStep = 'context';
-		loadModalFromContext = true;
-		contextModalModel = model;
-		contextModalSize = 8192;
+		contextSize = preferences.context === 'auto' ? 0 : preferences.context;
+		loadWithVisionPreference(model);
 	}
 
-	function continueAfterContextSelection(model: LocalModel) {
+	function loadWithVisionPreference(model: LocalModel) {
 		const preferences = getLocalModelLoadPreferences();
 		const matchingMmproj = findMatchingMmproj(model.filename, mmProjFiles);
 
-		if (matchingMmproj) {
-			if (preferences.vision === 'ask') {
-				loadModalModel = model;
-				loadModalMmprojFile = matchingMmproj;
-				loadModalStep = 'vision';
-				loadModalFromContext = true;
-				return;
-			}
-
-			if (preferences.vision === 'yes') {
-				loadModalModel = null;
-				loadModalMmprojFile = '';
-				handleLoadWithMmproj(model, matchingMmproj);
-				return;
-			}
+		if (matchingMmproj && preferences.vision === 'yes') {
+			handleLoadWithMmproj(model, matchingMmproj);
+		} else {
+			handleLoad(model);
 		}
-
-		loadModalModel = null;
-		loadModalMmprojFile = '';
-		handleLoad(model);
-	}
-
-	function confirmContextAndProceed() {
-		const model = contextModalModel ?? loadModalModel;
-		if (!model) return;
-		contextSize = contextModalSize;
-		contextModalModel = null;
-		continueAfterContextSelection(model);
-	}
-
-	function handleVisionNo() {
-		const model = loadModalModel;
-		const fromContext = loadModalFromContext;
-		loadModalModel = null;
-		loadModalMmprojFile = '';
-		loadModalFromContext = false;
-		if (fromContext && model) handleLoad(model);
-	}
-
-	function handleVisionYes() {
-		const model = loadModalModel;
-		const mmprojFile = loadModalMmprojFile;
-		if (!model || !mmprojFile) return;
-		handleLoadWithMmproj(model, mmprojFile);
 	}
 
 	async function handleLoadWithMmproj(model: LocalModel, mmprojFile: string) {
 		if (localModelActionInProgress) return;
-		loadModalModel = null;
-		loadModalMmprojFile = '';
-		loadModalFromContext = false;
 		setLocalModelAction(model.filename, 'load');
 		localError = '';
 		localSuccess = '';
@@ -1291,6 +1248,7 @@
 	};
 
 	async function performUnifiedModelRefresh(initial: boolean): Promise<LocalModel[] | null> {
+		const runtimeUpdatedAt = Date.now();
 		if (initial) localLoading = true;
 		try {
 			const [newLocalModels, newMmProjFiles, newLlamaCppStatus] = await Promise.all([
@@ -1309,6 +1267,7 @@
 			if (destroyed) return null;
 			localError = '';
 			if (JSON.stringify(newLocalModels) !== JSON.stringify(localModels)) localModels = newLocalModels;
+			localModelsSnapshotAt = Math.max(localModelsSnapshotAt, runtimeUpdatedAt);
 			if (JSON.stringify(newMmProjFiles) !== JSON.stringify(mmProjFiles)) mmProjFiles = newMmProjFiles;
 			llamacppStatus = newLlamaCppStatus;
 			clearSettledLocalModelActions(newLocalModels);
@@ -1477,16 +1436,8 @@
 		saveAs(blob, `${model.id}-${Date.now()}.json`);
 	};
 
-	const pinModelHandler = async (modelId: string) => {
-		let pinnedModels = $settings?.pinnedModels ?? [];
-		if (pinnedModels.includes(modelId)) {
-			pinnedModels = pinnedModels.filter((id) => id !== modelId);
-		} else {
-			pinnedModels = [...new Set([...pinnedModels, modelId])];
-		}
-		settings.set({ ...$settings, pinnedModels });
-		await updateUserSettings(localStorage.token, { ui: $settings });
-	};
+	const favoriteModelHandler = (modelId: string) => toggleModelFavorite(modelId)
+		.catch(() => toast.error($i18n.t('Failed to save favorites')));
 
 	onMount(() => {
 		destroyed = false;
@@ -1567,57 +1518,6 @@
 	};
 </script>
 
-<!-- ─── Unified load modal ──────────────────────────────────────────────── -->
-{#if loadModalModel}
-	<div class="fixed inset-0 z-[10001] flex items-center justify-center bg-black/40" in:fade={{ duration: 80 }} out:fade={{ duration: 60 }}>
-		<div class="bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-xl mx-4 w-80 flex flex-col gap-3">
-
-			{#if loadModalStep === 'context'}
-				<p class="text-sm font-semibold text-gray-900 dark:text-white">{$i18n.t('Context size')}</p>
-				<div class="flex flex-col gap-1.5 max-h-80 overflow-y-auto scrollbar-none">
-					{#each LOCAL_MODEL_CONTEXT_OPTIONS as sz}
-						<button
-							class="flex items-center justify-between px-3 py-2 rounded-lg text-xs text-left transition {contextModalSize === sz ? 'bg-black text-white dark:bg-white dark:text-black' : 'text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'}"
-							on:click={() => (contextModalSize = sz)}
-						>
-							<span>{sz.toLocaleString()} tokens</span>
-							{#if sz === 8192}
-								<span class="text-[11px] opacity-60">{$i18n.t('Default')}</span>
-							{/if}
-						</button>
-					{/each}
-				</div>
-				<div class="flex justify-end gap-2 mt-1">
-					<button
-						class="px-4 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
-						on:click={() => (loadModalModel = null)}
-					>{$i18n.t('Cancel')}</button>
-					<button
-						class="px-4 py-1.5 text-xs rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium"
-						on:click={confirmContextAndProceed}
-					>{$i18n.t('Confirm')}</button>
-				</div>
-
-			{:else if loadModalStep === 'vision'}
-				<p class="text-sm font-semibold text-gray-900 dark:text-white">{$i18n.t('Load vision?')}</p>
-				<p class="text-xs text-gray-500 dark:text-gray-400">{$i18n.t('The model will load with image analysis support.')}</p>
-				<div class="flex justify-end gap-2 mt-1">
-					<button
-						class="px-4 py-1.5 text-xs rounded-lg bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition font-medium"
-						on:click={handleVisionNo}
-					>{$i18n.t('No')}</button>
-					<button
-						class="px-4 py-1.5 text-xs rounded-lg bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition font-medium"
-						on:click={handleVisionYes}
-					>{$i18n.t('Yes')}</button>
-				</div>
-
-			{/if}
-
-		</div>
-	</div>
-{/if}
-
 <ModelSettingsModal bind:show={showConfigModal} initHandler={initAdmin} />
 <DownloadNeveModelsModal
 	bind:show={showDownloadModal}
@@ -1635,16 +1535,6 @@
 				bind:value={searchValue}
 				placeholder={$i18n.t('Search Models')}
 			/>
-			{#if searchValue}
-				<div class="self-center pl-1.5 translate-y-[0.5px]">
-					<button
-						class="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
-						on:click={() => (searchValue = '')}
-					>
-						<XMark className="size-3" strokeWidth="2" />
-					</button>
-				</div>
-			{/if}
 		</div>
 	</div>
 {/snippet}
@@ -1712,12 +1602,12 @@
 	{@const isProcessing = gm && (isLoadProcessing || isUnloadVisualProcessing)}
 	{@const rowHeight = HIGHLIGHTED_MODEL_ROW_HEIGHT_PX}
 	<div
-		class="flex w-full snap-start shrink-0 overflow-hidden px-3 py-1 {(am?.meta?.hidden || (am && !(am?.is_active ?? true))) ? 'opacity-50' : ''}"
+		class="flex w-full snap-start shrink-0 overflow-hidden px-1 sm:px-3 py-1 {(am?.meta?.hidden || (am && !(am?.is_active ?? true))) ? 'opacity-50' : ''}"
 		style={`height: ${rowHeight}px; min-height: ${rowHeight}px; max-height: ${rowHeight}px;`}
 		id={am ? `model-item-${am.id}` : undefined}
 	>
 		<div
-			class="flex h-full min-w-0 gap-3 w-full overflow-hidden px-2 py-2 rounded-lg transition-colors cursor-pointer {(gm?.is_loaded || isProcessing) ? 'border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30' : 'hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
+			class="flex h-full min-w-0 gap-1.5 sm:gap-3 w-full overflow-hidden px-1 sm:px-2 py-2 rounded-lg transition-colors cursor-pointer {(gm?.is_loaded || isProcessing) ? 'border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30' : 'hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
 			on:click={(e) => {
 				if (am && (am?.is_active ?? true) && !(e.target as HTMLElement).closest('button') && !(e.target as HTMLElement).closest('[data-melt-dropdown-menu]')) {
 					selectedModelId = am.id;
@@ -1739,14 +1629,11 @@
 						<button
 							class="absolute inset-0 w-9 h-9 rounded-full flex items-center justify-center opacity-0 group-hover/avatar:opacity-100 transition-opacity bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
 							type="button"
-							on:click|stopPropagation={() => pinModelHandler(am.id)}
-							title={($settings?.pinnedModels ?? []).includes(am.id) ? 'Desfixar' : 'Fixar'}
+							on:click|stopPropagation={() => favoriteModelHandler(am.id)}
+							title={$i18n.t(($settings?.favoriteModels ?? []).includes(am.id) ? 'Remove from favorites' : 'Add to favorites')}
+							aria-label={$i18n.t(($settings?.favoriteModels ?? []).includes(am.id) ? 'Remove from favorites' : 'Add to favorites')}
 						>
-							{#if ($settings?.pinnedModels ?? []).includes(am.id)}
-								<PinSlash />
-							{:else}
-								<Pin />
-							{/if}
+							<Bookmark className="size-4 {($settings?.favoriteModels ?? []).includes(am.id) ? 'fill-current' : ''}" />
 						</button>
 					{/if}
 				{:else}
@@ -1760,12 +1647,12 @@
 
 			<div class="flex-1 min-w-0 self-center">
 				<div class="w-full text-left">
-					<div class="flex items-center gap-1.5 flex-wrap">
-						<span class="font-medium text-sm line-clamp-1">
+					<div class="flex items-center gap-1.5 min-w-0">
+						<span class="min-w-0 truncate font-medium text-sm">
 							{am?.name ?? gm?.filename?.replace('.gguf', '') ?? ''}
 						</span>
 					</div>
-					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex flex-wrap items-center gap-1.5">
+					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible scrollbar-none items-center gap-1.5 [&>span]:shrink-0">
 						{#if gm}
 							{#if gm.is_loaded}
 								{#if gm.n_ctx !== null}
@@ -1775,7 +1662,7 @@
 								{#if isContextShiftActive(gm.context_shift)}
 									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">DC: Ligado</span>
 								{:else if isTokenPredictionActive(gm.token_prediction)}
-									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">PT: {getTokenPredictionChipLabel(gm.token_prediction)}</span>
+									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">MTP: {getTokenPredictionChipLabel(gm.token_prediction)}</span>
 								{:else if isSpeculativeDecodingActive(gm.speculative_decoding)}
 									<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[11px] font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">DE: {getSpeculativeChipLabel(gm.speculative_decoding)}</span>
 								{/if}
@@ -1796,7 +1683,7 @@
 				</div>
 			</div>
 
-			<div class="flex w-32 flex-shrink-0 items-center justify-end gap-0.5 self-center">
+			<div class="flex w-auto sm:w-32 flex-shrink-0 items-center justify-end gap-0.5 self-center">
 				{#if gm && (am?.is_active ?? true)}
 					{#if isProcessing}
 						<div class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500">
@@ -1833,7 +1720,7 @@
 								on:click={() => {
 									if (localModelActionInProgress) return;
 									clearVramPreview(gm);
-									startLoadWithContextModal(gm);
+									startLoadWithPreferences(gm);
 								}}
 							>
 								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-5">
@@ -1844,7 +1731,7 @@
 					{/if}
 				{/if}
 
-				{#if gm && am}<div class="w-2 flex-shrink-0"></div>{/if}
+				{#if gm && am}<div class="hidden sm:block w-2 flex-shrink-0"></div>{/if}
 				{#if am}
 					{#if !(gm && (gm.is_loaded || isProcessing))}
 						<div class="ml-1">
@@ -1878,7 +1765,7 @@
 		<div class="flex max-h-[90vh] min-h-0 w-full flex-col overflow-hidden">
 
 			<!-- Header -->
-			<div class="flex items-center justify-between px-4 pt-4 pb-2 shrink-0">
+			<div class="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 pb-2 shrink-0">
 				<div class="flex items-center gap-2 text-xl font-medium px-0.5">
 					<span>{$i18n.t('Models')}</span>
 				</div>
@@ -1973,7 +1860,7 @@
 
 	{:else}
 		<!-- ─── Model Editor ──────────────────────────────────────────────── -->
-		<div style="height: 600px; min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
+		<div style="height: min(600px, calc(100dvh - 3rem)); min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
 			<ModelEditor
 				edit
 				model={adminModels?.find((m) => m.id === selectedModelId)}

@@ -1,4 +1,4 @@
-import { loadPyodide, type PyodideInterface } from 'pyodide';
+import type { PyodideInterface } from 'pyodide';
 
 declare global {
 	interface Window {
@@ -24,6 +24,9 @@ async function loadPyodideAndPackages(packages: string[] = []) {
 	self.stderr = null;
 	self.result = null;
 
+	// Keep the loader paired with the local runtime, not the npm package version.
+	const loaderURL = new URL('/pyodide/pyodide.mjs', self.location.origin).href;
+	const { loadPyodide } = await import(/* @vite-ignore */ loaderURL);
 	self.pyodide = await loadPyodide({
 		indexURL: '/pyodide/',
 		stdout: (text) => {
@@ -81,7 +84,12 @@ async function ensurePyodide(packages: string[] = []) {
 	if (!pyodideReady) {
 		pyodideReady = loadPyodideAndPackages(packages);
 	}
-	await pyodideReady;
+	try {
+		await pyodideReady;
+	} catch (error) {
+		pyodideReady = null;
+		throw error;
+	}
 
 	// Install any additional packages not loaded on init
 	if (packages.length > 0 && self.pyodide) {
@@ -254,8 +262,12 @@ self.onmessage = async (event) => {
 			}
 		}
 
-		await ensurePyodide(self.packages);
-		await executeCode(id, code, files);
+		try {
+			await ensurePyodide(self.packages);
+			await executeCode(id, code, files);
+		} catch (error) {
+			self.postMessage({ id, result: null, stdout: null, stderr: error instanceof Error ? error.message : String(error) });
+		}
 		return;
 	}
 

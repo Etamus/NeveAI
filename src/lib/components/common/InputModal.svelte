@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, getContext } from 'svelte';
+	import { getContext } from 'svelte';
 	import { settings } from '$lib/stores';
 
 	import Drawer from './Drawer.svelte';

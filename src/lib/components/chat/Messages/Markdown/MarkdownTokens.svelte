@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { decode } from 'html-entities';
-	import { onMount, getContext } from 'svelte';
+	import { getContext } from 'svelte';
 	const i18n = getContext('i18n');
 
 	import fileSaver from 'file-saver';
@@ -169,13 +169,14 @@
 		{/if}
 	{:else if token.type === 'table'}
 		<div class="relative w-full group mb-2">
-			<div class="scrollbar-hidden relative overflow-x-auto max-w-full">
+			<div class="markdown-table scrollbar-hidden relative overflow-x-auto max-w-full rounded-xl border border-gray-200 dark:border-gray-800">
 				<table
-					class=" w-full text-sm text-start text-gray-500 dark:text-gray-400 max-w-full rounded-xl"
+					class="w-full text-sm text-start text-gray-500 dark:text-gray-400 max-w-full !my-0"
+					style="table-layout: fixed;"
 					dir="auto"
 				>
 					<thead
-						class="text-xs text-gray-700 uppercase bg-white dark:bg-gray-950 dark:text-gray-400 border-none"
+						class="text-xs font-semibold text-gray-700 bg-gray-100 dark:bg-gray-900 dark:text-gray-300 border-none"
 					>
 						<tr class="">
 							{#each token.header as header, headerIdx}
@@ -185,7 +186,7 @@
 									style={token.align[headerIdx] ? `text-align: ${token.align[headerIdx]}` : ''}
 								>
 									<div class="gap-1.5 text-start">
-										<div class="shrink-0 break-normal">
+										<div class="shrink-0 break-normal [overflow-wrap:anywhere]">
 											<MarkdownInlineTokens
 												id={`${id}-${tokenIdx}-header-${headerIdx}`}
 												tokens={header.tokens}
@@ -201,17 +202,17 @@
 					</thead>
 					<tbody>
 						{#each token.rows as row, rowIdx}
-							<tr class="bg-white dark:bg-gray-950 text-xs">
+							<tr class="bg-white dark:bg-gray-950 text-sm hover:bg-gray-50 dark:hover:bg-gray-900/60 transition-colors">
 								{#each row ?? [] as cell, cellIdx}
 									<td
-										class="px-3! py-2! text-gray-900 dark:text-white w-max {token.rows.length -
+										class="px-3! py-2! align-top text-gray-900 dark:text-white w-max {token.rows.length -
 											1 ===
 										rowIdx
 											? ''
 											: 'border-b border-gray-50! dark:border-gray-850!'}"
 										style={token.align[cellIdx] ? `text-align: ${token.align[cellIdx]}` : ''}
 									>
-										<div class="break-normal">
+									<div class="break-normal [overflow-wrap:anywhere]">
 											<MarkdownInlineTokens
 												id={`${id}-${tokenIdx}-row-${rowIdx}-${cellIdx}`}
 												tokens={cell.tokens}
@@ -231,7 +232,7 @@
 			<div class=" absolute top-1 right-1.5 z-20 invisible group-hover:visible flex gap-0.5">
 				<Tooltip content={$i18n.t('Copy')}>
 					<button
-						class="p-1 rounded-lg bg-transparent transition"
+						class="p-1 rounded-lg bg-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
 						on:click={(e) => {
 							e.stopPropagation();
 							copyToClipboard(token.raw.trim(), null, $settings?.copyFormatted ?? false);
@@ -243,7 +244,7 @@
 
 				<Tooltip content={$i18n.t('Export to CSV')}>
 					<button
-						class="p-1 rounded-lg bg-transparent transition"
+						class="p-1 rounded-lg bg-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition"
 						on:click={(e) => {
 							e.stopPropagation();
 							exportTableToCSVHandler(token, tokenIdx);

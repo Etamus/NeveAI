@@ -2,14 +2,7 @@
 	import fileSaver from 'file-saver';
 	const { saveAs } = fileSaver;
 
-	import {
-		chats,
-		user,
-		settings,
-		scrollPaginationEnabled,
-		currentChatPage,
-		pinnedChats
-	} from '$lib/stores';
+	import { chats, user, scrollPaginationEnabled, currentChatPage, pinnedChats } from '$lib/stores';
 
 	import {
 		deleteAllChats,
@@ -20,10 +13,9 @@
 	} from '$lib/apis/chats';
 	import { deleteAllFiles } from '$lib/apis/files';
 	import { getImportOrigin, convertOpenAIChats } from '$lib/utils';
-	import { onMount, getContext } from 'svelte';
+	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import SharedChatsModal from '$lib/components/layout/SharedChatsModal.svelte';
 	import FilesModal from '$lib/components/layout/FilesModal.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 
@@ -36,7 +28,6 @@
 
 	let showDeleteConfirmDialog = false;
 	let showDeleteFilesConfirmDialog = false;
-	let showSharedChatsModal = false;
 	let showFilesModal = false;
 	let filesModal: any = null;
 
@@ -132,7 +123,6 @@
 	};
 </script>
 
-<SharedChatsModal bind:show={showSharedChatsModal} />
 <FilesModal bind:this={filesModal} bind:show={showFilesModal} />
 
 <ConfirmDialog
@@ -175,7 +165,7 @@
 				<div class="py-0.5 flex w-full justify-between">
 					<div class="self-center text-sm">{$i18n.t('Import Chats')}</div>
 					<button
-						class="p-1 px-3 text-sm flex rounded-sm transition"
+						class="py-0.75 px-3 text-sm flex rounded-sm transition"
 						on:click={() => {
 							chatImportInputElement.click();
 						}}
@@ -191,7 +181,7 @@
 					<div class="py-0.5 flex w-full justify-between">
 						<div class="self-center text-sm">{$i18n.t('Export Chats')}</div>
 						<button
-						class="p-1 px-3 text-sm flex rounded-sm transition"
+						class="py-0.75 px-3 text-sm flex rounded-sm transition"
 							on:click={() => {
 								exportChats();
 							}}
@@ -207,7 +197,7 @@
 				<div class="py-0.5 flex w-full justify-between">
 					<div class="self-center text-sm">{$i18n.t('Delete All Chats')}</div>
 					<button
-						class="p-1 px-3 text-sm flex rounded-sm transition"
+						class="py-0.75 px-3 text-sm flex rounded-sm transition"
 						on:click={() => {
 							showDeleteConfirmDialog = true;
 						}}
@@ -227,7 +217,7 @@
 				<div class="py-0.5 flex w-full justify-between">
 					<div class="self-center text-sm">{$i18n.t('Manage Files')}</div>
 					<button
-						class="p-1 px-3 text-sm flex rounded-sm transition"
+						class="py-0.75 px-3 text-sm flex rounded-sm transition"
 						on:click={() => {
 							showFilesModal = true;
 						}}
@@ -242,7 +232,7 @@
 				<div class="py-0.5 flex w-full justify-between">
 					<div class="self-center text-sm">{$i18n.t('Delete All Files')}</div>
 					<button
-						class="p-1 px-3 text-sm flex rounded-sm transition"
+						class="py-0.75 px-3 text-sm flex rounded-sm transition"
 						on:click={() => {
 							showDeleteFilesConfirmDialog = true;
 						}}

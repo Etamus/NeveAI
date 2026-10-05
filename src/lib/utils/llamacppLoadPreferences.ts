@@ -1,39 +1,61 @@
-export type LocalModelContextPreference = 'ask' | number;
-export type LocalModelVisionPreference = 'ask' | 'yes' | 'no';
+export type LocalModelContextPreference = 'auto' | number;
+export type LocalModelVisionPreference = 'yes' | 'no';
 export type LocalModelCachePreference = 'default' | 'f16' | 'q8_0' | 'q4_0';
-export type LocalModelSpeculativePreference = 'default' | 'high' | 'low' | 'off';
+export type LocalModelSpeculativePreference = 'default' | 'high' | 'off';
+export type LocalModelAccelerationMode = 'normal' | 'de' | 'mtp';
 export type LocalModelTokenPredictionPreference = 'default' | 'on' | 'off';
 export type LocalModelContextShiftPreference = 'default' | 'on' | 'off';
 
-export const LOCAL_MODEL_CONTEXT_OPTIONS = [
-	2048,
-	4096,
-	8192,
-	16384,
-	32768,
-	65536,
-	131072,
-	262144
-];
+export const LOCAL_MODEL_CONTEXT_OPTIONS = [2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144];
 
 const CONTEXT_KEY = 'llamacpp_load_context';
 const VISION_KEY = 'llamacpp_load_vision';
 const CACHE_KEY = 'llamacpp_cache_type';
 const SPECULATIVE_KEY = 'llamacpp_speculative_decoding';
-const TOKEN_PREDICTION_KEY = 'llamacpp_token_prediction';
+const RESPONSE_SPEED_KEY = 'neveai.responseSpeed';
+export const RESPONSE_SPEED_CHANGED = 'neve:response-speed-changed';
+
+export function getResponseSpeed(): 'normal' | 'fast' {
+	return hasStorage() &&
+		localStorage.getItem(CONTEXT_SHIFT_KEY) !== 'on' &&
+		localStorage.getItem(RESPONSE_SPEED_KEY) === 'fast'
+		? 'fast'
+		: 'normal';
+}
+
+export function setResponseSpeed(speed: 'normal' | 'fast') {
+	if (!hasStorage()) return;
+	if (localStorage.getItem(CONTEXT_SHIFT_KEY) === 'on') return;
+	localStorage.setItem(RESPONSE_SPEED_KEY, speed);
+	if (speed === 'fast') localStorage.setItem(SPECULATIVE_KEY, 'off');
+	window.dispatchEvent(new Event(RESPONSE_SPEED_CHANGED));
+}
+
+export function setLocalModelTokenPredictionPreference(
+	preference: LocalModelTokenPredictionPreference
+) {
+	if (!hasStorage()) return;
+	if (preference !== 'default' || localStorage.getItem(CONTEXT_SHIFT_KEY) === 'on') {
+		setResponseSpeed(preference === 'on' ? 'fast' : 'normal');
+		return;
+	}
+	localStorage.setItem(RESPONSE_SPEED_KEY, 'default');
+	window.dispatchEvent(new Event(RESPONSE_SPEED_CHANGED));
+}
+
 const CONTEXT_SHIFT_KEY = 'llamacpp_context_shift';
 
 const hasStorage = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 
 const parseContextPreference = (value: string | null): LocalModelContextPreference => {
-	if (!value || value === 'ask') return 'ask';
+	if (!value || value === 'ask' || value === 'auto') return 'auto';
 
 	const parsed = Number(value);
-	return LOCAL_MODEL_CONTEXT_OPTIONS.includes(parsed) ? parsed : 'ask';
+	return LOCAL_MODEL_CONTEXT_OPTIONS.includes(parsed) ? parsed : 'auto';
 };
 
 const parseVisionPreference = (value: string | null): LocalModelVisionPreference => {
-	return value === 'yes' || value === 'no' ? value : 'ask';
+	return value === 'no' ? 'no' : 'yes';
 };
 
 const parseCachePreference = (value: string | null): LocalModelCachePreference => {
@@ -41,15 +63,24 @@ const parseCachePreference = (value: string | null): LocalModelCachePreference =
 };
 
 const parseSpeculativePreference = (value: string | null): LocalModelSpeculativePreference => {
-	return value === 'low' || value === 'high' || value === 'off' ? value : 'default';
+	if (value === 'low') return 'high';
+	return value === 'high' || value === 'off' ? value : 'default';
 };
 
-const parseTokenPredictionPreference = (
-	value: string | null
-): LocalModelTokenPredictionPreference => {
-	if (!value || value === 'default') return 'default';
-	return value === 'on' || value === 'stable' || value === 'aggressive' ? 'on' : 'off';
-};
+export function getLocalModelAccelerationMode(): LocalModelAccelerationMode {
+	const preferences = getLocalModelLoadPreferences();
+	if (preferences.tokenPrediction === 'on') return 'mtp';
+	return preferences.speculative === 'high' ? 'de' : 'normal';
+}
+
+export function setLocalModelAccelerationMode(mode: LocalModelAccelerationMode) {
+	if (!hasStorage()) return;
+	if (localStorage.getItem(CONTEXT_SHIFT_KEY) === 'on') return;
+	// Commit both settings before notifying mounted controls and load planners.
+	localStorage.setItem(RESPONSE_SPEED_KEY, mode === 'mtp' ? 'fast' : 'normal');
+	localStorage.setItem(SPECULATIVE_KEY, mode === 'de' ? 'high' : 'off');
+	window.dispatchEvent(new Event(RESPONSE_SPEED_CHANGED));
+}
 
 const parseContextShiftPreference = (value: string | null): LocalModelContextShiftPreference => {
 	if (!value || value === 'default') return 'default';
@@ -59,11 +90,11 @@ const parseContextShiftPreference = (value: string | null): LocalModelContextShi
 export const getLocalModelLoadPreferences = () => {
 	if (!hasStorage()) {
 		return {
-			context: 'ask' as LocalModelContextPreference,
-			vision: 'ask' as LocalModelVisionPreference,
+			context: 'auto' as LocalModelContextPreference,
+			vision: 'yes' as LocalModelVisionPreference,
 			cache: 'default' as LocalModelCachePreference,
 			speculative: 'default' as LocalModelSpeculativePreference,
-			tokenPrediction: 'default' as LocalModelTokenPredictionPreference,
+			tokenPrediction: 'off' as LocalModelTokenPredictionPreference,
 			contextShift: 'default' as LocalModelContextShiftPreference
 		};
 	}
@@ -72,8 +103,17 @@ export const getLocalModelLoadPreferences = () => {
 		context: parseContextPreference(localStorage.getItem(CONTEXT_KEY)),
 		vision: parseVisionPreference(localStorage.getItem(VISION_KEY)),
 		cache: parseCachePreference(localStorage.getItem(CACHE_KEY)),
-		speculative: parseSpeculativePreference(localStorage.getItem(SPECULATIVE_KEY)),
-		tokenPrediction: parseTokenPredictionPreference(localStorage.getItem(TOKEN_PREDICTION_KEY)),
+		speculative:
+			localStorage.getItem(CONTEXT_SHIFT_KEY) === 'on' || getResponseSpeed() === 'fast'
+				? ('off' as LocalModelSpeculativePreference)
+				: parseSpeculativePreference(localStorage.getItem(SPECULATIVE_KEY)),
+		tokenPrediction:
+			getResponseSpeed() === 'fast'
+				? ('on' as LocalModelTokenPredictionPreference)
+				: ((localStorage.getItem(CONTEXT_SHIFT_KEY) !== 'on' &&
+					localStorage.getItem(RESPONSE_SPEED_KEY) === 'default'
+						? 'default'
+						: 'off') as LocalModelTokenPredictionPreference),
 		contextShift: parseContextShiftPreference(localStorage.getItem(CONTEXT_SHIFT_KEY))
 	};
 };
@@ -100,24 +140,14 @@ export const setLocalModelCachePreference = (preference: LocalModelCachePreferen
 
 export const setLocalModelSpeculativePreference = (preference: LocalModelSpeculativePreference) => {
 	if (!hasStorage()) return;
+	if (localStorage.getItem(CONTEXT_SHIFT_KEY) === 'on') return;
+	if (getResponseSpeed() === 'fast') preference = 'off';
 	if (preference === 'default') {
 		localStorage.removeItem(SPECULATIVE_KEY);
-		return;
+	} else {
+		localStorage.setItem(SPECULATIVE_KEY, preference);
 	}
-
-	localStorage.setItem(SPECULATIVE_KEY, preference);
-};
-
-export const setLocalModelTokenPredictionPreference = (
-	preference: LocalModelTokenPredictionPreference
-) => {
-	if (!hasStorage()) return;
-	if (preference === 'default') {
-		localStorage.removeItem(TOKEN_PREDICTION_KEY);
-		return;
-	}
-
-	localStorage.setItem(TOKEN_PREDICTION_KEY, preference);
+	window.dispatchEvent(new Event(RESPONSE_SPEED_CHANGED));
 };
 
 export const setLocalModelContextShiftPreference = (
@@ -126,16 +156,15 @@ export const setLocalModelContextShiftPreference = (
 	if (!hasStorage()) return;
 	if (preference === 'default') {
 		localStorage.removeItem(CONTEXT_SHIFT_KEY);
-		return;
+	} else {
+		localStorage.setItem(CONTEXT_SHIFT_KEY, preference);
 	}
-
-	localStorage.setItem(CONTEXT_SHIFT_KEY, preference);
+	// Readers mask acceleration while shifting context; retain the user's saved mode.
+	window.dispatchEvent(new Event(RESPONSE_SPEED_CHANGED));
 };
 
 export const getVisionPreferenceLabel = (preference: LocalModelVisionPreference) => {
-	if (preference === 'yes') return 'Sim';
-	if (preference === 'no') return 'Não';
-	return 'Perguntar';
+	return preference === 'no' ? 'Não' : 'Sim';
 };
 
 export const getCachePreferenceLabel = (preference: LocalModelCachePreference) => {
@@ -146,23 +175,12 @@ export const getCachePreferenceLabel = (preference: LocalModelCachePreference) =
 };
 
 export const getSpeculativePreferenceLabel = (preference: LocalModelSpeculativePreference) => {
-	if (preference === 'low') return 'Baixo';
 	if (preference === 'high') return 'Alto';
 	if (preference === 'off') return 'Desligado';
 	return 'Padrão';
 };
 
-export const getTokenPredictionPreferenceLabel = (
-	preference: LocalModelTokenPredictionPreference
-) => {
-	if (preference === 'on') return 'Ligado';
-	if (preference === 'off') return 'Desligado';
-	return 'Padrão';
-};
-
-export const getContextShiftPreferenceLabel = (
-	preference: LocalModelContextShiftPreference
-) => {
+export const getContextShiftPreferenceLabel = (preference: LocalModelContextShiftPreference) => {
 	if (preference === 'on') return 'Ligado';
 	if (preference === 'off') return 'Desligado';
 	return 'Padrão';

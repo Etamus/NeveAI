@@ -54,7 +54,7 @@
 		onChange(params);
 	}
 </script>
-<div class="{fixedJanRows ? 'space-y-1.5' : 'space-y-1'} text-xs {safeBottomPadding ? 'pb-safe-bottom' : ''}">
+<div class="advanced-params {fixedJanRows ? 'space-y-1.5' : 'space-y-1'} text-xs {safeBottomPadding ? 'pb-safe-bottom' : ''}">
 	{#if janStyle}
 		<div class="flex w-full items-center justify-between {fixedJanRows ? 'h-[34px] py-0' : 'py-1.5'} {disabledRowClass('temperature')}">
 			<Tooltip
@@ -883,3 +883,11 @@
 		{/if}
 	{/if}
 </div>
+
+<style>
+	@media (max-width: 640px) {
+		.advanced-params > .flex { gap: 0.5rem; min-height: 34px; height: auto; }
+		.advanced-params > .flex > :global(button) { flex-shrink: 0; white-space: nowrap; }
+		.advanced-params :global(.inline-tooltip) { min-width: 0; overflow-wrap: anywhere; }
+	}
+</style>

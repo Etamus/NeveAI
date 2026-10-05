@@ -15,9 +15,9 @@
 		<div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{$i18n.t('Version')} {version.replace(/^v(?=\d)/i, '')}</div>
 	</div>
 	<div class="grid -translate-y-0.5 justify-items-end gap-1 self-center">
-		<button type="button" class="grid size-6 place-items-center rounded-md text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white" aria-label={$i18n.t('Close notification')} on:click={onClose}>
+		<button type="button" class="grid size-6 -translate-y-0.5 place-items-center rounded-md text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white" aria-label={$i18n.t('Close notification')} on:click={onClose}>
 			<XMark className="size-4" />
 		</button>
-		<button type="button" class="mr-1 whitespace-nowrap text-xs font-medium text-gray-700 transition hover:text-gray-950 dark:text-gray-200 dark:hover:text-white" on:click={onOpen}>{$i18n.t('Details')}</button>
+		<button type="button" class="mr-1 whitespace-nowrap text-xs font-medium text-gray-500 transition hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100" on:click={onOpen}>{$i18n.t('Details')}</button>
 	</div>
 </div>

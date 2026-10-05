@@ -87,9 +87,22 @@ def _sanitize_filename(filename: str, requested_format: str) -> tuple[str, str]:
     return f"{stem}.{file_format}", file_format
 
 
+def _unique_json_fields(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise GeneratedFileError("O JSON possui uma chave duplicada: " + str(key)[:80] + ". Nenhum valor sera descartado silenciosamente.")
+        result[key] = value
+    return result
+
+
+def _invalid_json_constant(value):
+    raise GeneratedFileError("O JSON possui um numero nao permitido: " + value)
+
+
 def _load_json(content: str, expected: str) -> Any:
     try:
-        return json.loads(content)
+        return json.loads(content, object_pairs_hook=_unique_json_fields, parse_constant=_invalid_json_constant)
     except json.JSONDecodeError as exc:
         raise GeneratedFileError(
             f"O conteúdo de {expected} deve ser JSON válido: {exc.msg}."
@@ -201,6 +214,40 @@ def _find_unicode_font() -> str | None:
     return str(next((path for path in candidates if path.is_file()), "")) or None
 
 
+def configure_pdf_fonts(pdf, text):
+    font_path = _find_unicode_font()
+    if not font_path:
+        if any(ord(char) > 255 for char in text):
+            raise GeneratedFileError("Uma fonte Unicode precisa estar disponivel para gerar este PDF sem perder caracteres.")
+        return "Helvetica"
+    pdf.add_font("NeveUnicode", fname=font_path)
+    pdf.set_font("NeveUnicode", size=11)
+    missing = {ord(char) for char in text if not char.isspace()} - set(pdf.current_font.cmap)
+    fallback = []
+    candidates = (Path("C:/Windows/Fonts/seguisym.ttf"), Path("C:/Windows/Fonts/seguiemj.ttf"), Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"), Path("/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf"), Path("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"))
+    for path in candidates:
+        if not missing:
+            break
+        if not path.is_file() or str(path) == font_path:
+            continue
+        from fontTools.ttLib import TTFont
+
+        with TTFont(str(path), lazy=True) as font:
+            covered = missing.intersection(font.getBestCmap() or {})
+        if not covered:
+            continue
+        family = f"NeveFallback{len(fallback)}"
+        pdf.add_font(family, fname=str(path))
+        fallback.append(family)
+        missing.difference_update(covered)
+    if missing:
+        codes = ", ".join(f"U+{code:04X}" for code in sorted(missing)[:8])
+        raise GeneratedFileError("As fontes instaladas nao cobrem estes caracteres: " + codes + ". Instale uma fonte compativel ou use DOCX; o texto nao sera descartado.")
+    if fallback:
+        pdf.set_fallback_fonts(fallback, exact_match=False)
+    return "NeveUnicode"
+
+
 def _build_pdf(content: str) -> bytes:
     from fpdf import FPDF
     from fpdf.enums import XPos, YPos
@@ -209,14 +256,7 @@ def _build_pdf(content: str) -> bytes:
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
 
-    font_path = _find_unicode_font()
-    if font_path:
-        pdf.add_font("NeveUnicode", fname=font_path)
-        family = "NeveUnicode"
-        safe_text = lambda value: value
-    else:
-        family = "Helvetica"
-        safe_text = lambda value: value.encode("latin-1", "replace").decode("latin-1")
+    family = configure_pdf_fonts(pdf, content)
 
     in_code = False
     for line in content.splitlines() or [""]:
@@ -241,7 +281,7 @@ def _build_pdf(content: str) -> bytes:
         pdf.multi_cell(
             0,
             line_height,
-            safe_text(text or " "),
+            text or " ",
             new_x=XPos.LMARGIN,
             new_y=YPos.NEXT,
         )
@@ -280,7 +320,9 @@ def _build_xlsx(content: str) -> bytes:
     workbook.remove(workbook.active)
     used_names: set[str] = set()
 
-    for sheet_index, sheet in enumerate(sheets[:50], start=1):
+    if len(sheets) > 50:
+        raise GeneratedFileError("O arquivo excede 50 planilhas; divida-o antes de gerar.")
+    for sheet_index, sheet in enumerate(sheets, start=1):
         sheet = sheet if isinstance(sheet, dict) else {"rows": sheet}
         base_name = re.sub(r"[\\/*?:\[\]]", "_", str(sheet.get("name") or f"Planilha {sheet_index}"))[:31]
         base_name = base_name or f"Planilha {sheet_index}"
@@ -326,7 +368,9 @@ def _build_pptx(content: str) -> bytes:
         raise GeneratedFileError("A apresentação deve conter uma lista em 'slides'.")
 
     presentation = Presentation()
-    for slide_data in slides[:100]:
+    if len(slides) > 100:
+        raise GeneratedFileError("O arquivo excede 100 slides; divida-o antes de gerar.")
+    for slide_data in slides:
         slide_data = slide_data if isinstance(slide_data, dict) else {"content": slide_data}
         slide = presentation.slides.add_slide(presentation.slide_layouts[1])
         slide.shapes.title.text = str(slide_data.get("title", ""))
@@ -364,6 +408,37 @@ def _build_zip(content: str) -> bytes:
                 raise GeneratedFileError(f"Caminho inválido no ZIP: {path}.")
             archive.writestr(str(path), str(item.get("content", "")).encode("utf-8"))
     return output.getvalue()
+
+
+def read_rtf_text(content: str) -> str:
+    from striprtf.striprtf import rtf_to_text
+    text = rtf_to_text(content)
+    return text.encode("utf-16", errors="surrogatepass").decode("utf-16", errors="replace")
+
+
+def _build_rtf(content: str) -> bytes:
+    if content.lstrip().startswith("{\\rtf"):
+        try:
+            return content.strip().encode("ascii")
+        except UnicodeEncodeError as error:
+            raise GeneratedFileError("RTF estruturado deve codificar Unicode com sequencias de escape.") from error
+    # Unicode RTF uses signed UTF-16 code units, not raw UTF-8 bytes.
+    escaped = []
+    for char in content.replace("\r\n", "\n").replace("\r", "\n"):
+        if char in "\\{}":
+            escaped.append("\\" + char)
+        elif char == "\n":
+            escaped.append("\\par\n")
+        elif char == "\t":
+            escaped.append("\\tab ")
+        elif 32 <= ord(char) < 127:
+            escaped.append(char)
+        else:
+            units = char.encode("utf-16-le")
+            for index in range(0, len(units), 2):
+                value = int.from_bytes(units[index:index + 2], "little")
+                escaped.append(f"\\u{value if value < 32768 else value - 65536}?")
+    return ("{\\rtf1\\ansi\\ansicpg1252\\uc1\\deff0{\\fonttbl{\\f0 Arial;}}\\f0\\fs22 " + "".join(escaped) + "}").encode("ascii")
 
 
 def build_generated_file(
@@ -418,6 +493,8 @@ def build_generated_file(
         data = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
     elif file_format == "csv":
         data = content.encode("utf-8-sig")
+    elif file_format == "rtf":
+        data = _build_rtf(content)
     else:
         data = content.encode("utf-8")
 

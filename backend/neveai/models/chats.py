@@ -5,8 +5,8 @@ import uuid
 from typing import Optional
 
 from sqlalchemy.orm import Session
-from neveai.internal.db import Base, JSONField, get_db, get_db_context
-from neveai.models.tags import TagModel, Tag, Tags
+from neveai.internal.db import (Base, get_db_context)
+from neveai.models.tags import Tags
 from neveai.models.folders import Folders
 from neveai.models.chat_messages import ChatMessage, ChatMessages
 from neveai.utils.misc import sanitize_data_for_db, sanitize_text_for_db
@@ -139,15 +139,6 @@ class ChatsImportForm(BaseModel):
     chats: list[ChatImportForm]
 
 
-class ChatTitleMessagesForm(BaseModel):
-    title: str
-    messages: list[dict]
-
-
-class ChatTitleForm(BaseModel):
-    title: str
-
-
 class ChatResponse(BaseModel):
     id: str
     user_id: str
@@ -169,97 +160,9 @@ class ChatTitleIdResponse(BaseModel):
     created_at: int
 
 
-class SharedChatResponse(BaseModel):
-    id: str
-    title: str
-    share_id: Optional[str] = None
-    updated_at: int
-    created_at: int
-
-
 class ChatListResponse(BaseModel):
     items: list[ChatModel]
     total: int
-
-
-class ChatUsageStatsResponse(BaseModel):
-    id: str  # chat id
-
-    models: dict = {}  # models used in the chat with their usage counts
-    message_count: int  # number of messages in the chat
-
-    history_models: dict = {}  # models used in the chat history with their usage counts
-    history_message_count: int  # number of messages in the chat history
-    history_user_message_count: int  # number of user messages in the chat history
-    history_assistant_message_count: (
-        int  # number of assistant messages in the chat history
-    )
-
-    average_response_time: (
-        float  # average response time of assistant messages in seconds
-    )
-    average_user_message_content_length: (
-        float  # average length of user message contents
-    )
-    average_assistant_message_content_length: (
-        float  # average length of assistant message contents
-    )
-
-    tags: list[str] = []  # tags associated with the chat
-
-    last_message_at: int  # timestamp of the last message
-    updated_at: int
-    created_at: int
-
-    model_config = ConfigDict(extra="allow")
-
-
-class ChatUsageStatsListResponse(BaseModel):
-    items: list[ChatUsageStatsResponse]
-    total: int
-    model_config = ConfigDict(extra="allow")
-
-
-class MessageStats(BaseModel):
-    id: str
-    role: str
-    model: Optional[str] = None
-    content_length: int
-    token_count: Optional[int] = None
-    timestamp: Optional[int] = None
-    rating: Optional[int] = None  # Derived from message.annotation.rating
-    tags: Optional[list[str]] = None  # Derived from message.annotation.tags
-
-
-class ChatHistoryStats(BaseModel):
-    messages: dict[str, MessageStats]
-    currentId: Optional[str] = None
-
-
-class ChatBody(BaseModel):
-    history: ChatHistoryStats
-
-
-class AggregateChatStats(BaseModel):
-    average_response_time: float
-    average_user_message_content_length: float
-    average_assistant_message_content_length: float
-    models: dict[str, int]
-    message_count: int
-    history_models: dict[str, int]
-    history_message_count: int
-    history_user_message_count: int
-    history_assistant_message_count: int
-
-
-class ChatStatsExport(BaseModel):
-    id: str
-    user_id: str
-    created_at: int
-    updated_at: int
-    tags: list[str] = []
-    stats: AggregateChatStats
-    chat: ChatBody
 
 
 class ChatTable:
@@ -428,32 +331,6 @@ class ChatTable:
 
         return self.update_chat_by_id(id, chat)
 
-    def update_chat_tags_by_id(
-        self, id: str, tags: list[str], user
-    ) -> Optional[ChatModel]:
-        with get_db_context() as db:
-            chat = db.get(Chat, id)
-            if chat is None:
-                return None
-
-            old_tags = chat.meta.get("tags", [])
-            new_tags = [t for t in tags if t.replace(" ", "_").lower() != "none"]
-            new_tag_ids = [t.replace(" ", "_").lower() for t in new_tags]
-
-            # Single meta update
-            chat.meta = {**chat.meta, "tags": new_tag_ids}
-            db.commit()
-            db.refresh(chat)
-
-            # Batch-create any missing tag rows
-            Tags.ensure_tags_exist(new_tags, user.id, db=db)
-
-            # Clean up orphaned old tags in one query
-            removed = set(old_tags) - set(new_tag_ids)
-            if removed:
-                self.delete_orphan_tags_for_user(list(removed), user.id, db=db)
-
-            return ChatModel.model_validate(chat)
 
     def get_chat_title_by_id(self, id: str) -> Optional[str]:
         with get_db_context() as db:
@@ -558,71 +435,6 @@ class ChatTable:
             self.update_chat_by_id(id, chat, db=db)
             return message_files
 
-    def insert_shared_chat_by_chat_id(
-        self, chat_id: str, db: Optional[Session] = None
-    ) -> Optional[ChatModel]:
-        with get_db_context(db) as db:
-            # Get the existing chat to share
-            chat = db.get(Chat, chat_id)
-            # Check if chat exists
-            if not chat:
-                return None
-            # Check if the chat is already shared
-            if chat.share_id:
-                return self.get_chat_by_id_and_user_id(chat.share_id, "shared", db=db)
-            # Create a new chat with the same data, but with a new ID
-            shared_chat = ChatModel(
-                **{
-                    "id": str(uuid.uuid4()),
-                    "user_id": f"shared-{chat_id}",
-                    "title": chat.title,
-                    "chat": chat.chat,
-                    "meta": chat.meta,
-                    "pinned": chat.pinned,
-                    "folder_id": chat.folder_id,
-                    "created_at": chat.created_at,
-                    "updated_at": int(time.time()),
-                }
-            )
-            shared_result = Chat(**shared_chat.model_dump())
-            db.add(shared_result)
-            db.commit()
-            db.refresh(shared_result)
-
-            # Update the original chat with the share_id
-            result = (
-                db.query(Chat)
-                .filter_by(id=chat_id)
-                .update({"share_id": shared_chat.id})
-            )
-            db.commit()
-            return shared_chat if (shared_result and result) else None
-
-    def update_shared_chat_by_chat_id(
-        self, chat_id: str, db: Optional[Session] = None
-    ) -> Optional[ChatModel]:
-        try:
-            with get_db_context(db) as db:
-                chat = db.get(Chat, chat_id)
-                shared_chat = (
-                    db.query(Chat).filter_by(user_id=f"shared-{chat_id}").first()
-                )
-
-                if shared_chat is None:
-                    return self.insert_shared_chat_by_chat_id(chat_id, db=db)
-
-                shared_chat.title = chat.title
-                shared_chat.chat = chat.chat
-                shared_chat.meta = chat.meta
-                shared_chat.pinned = chat.pinned
-                shared_chat.folder_id = chat.folder_id
-                shared_chat.updated_at = int(time.time())
-                db.commit()
-                db.refresh(shared_chat)
-
-                return ChatModel.model_validate(shared_chat)
-        except Exception:
-            return None
 
     def delete_shared_chat_by_chat_id(
         self, chat_id: str, db: Optional[Session] = None
@@ -656,18 +468,6 @@ class ChatTable:
         except Exception:
             return False
 
-    def update_chat_share_id_by_id(
-        self, id: str, share_id: Optional[str], db: Optional[Session] = None
-    ) -> Optional[ChatModel]:
-        try:
-            with get_db_context(db) as db:
-                chat = db.get(Chat, id)
-                chat.share_id = share_id
-                db.commit()
-                db.refresh(chat)
-                return ChatModel.model_validate(chat)
-        except Exception:
-            return None
 
     def toggle_chat_pinned_by_id(
         self, id: str, db: Optional[Session] = None
@@ -764,71 +564,6 @@ class ChatTable:
                 for chat in all_chats
             ]
 
-    def get_shared_chat_list_by_user_id(
-        self,
-        user_id: str,
-        filter: Optional[dict] = None,
-        skip: int = 0,
-        limit: int = 50,
-        db: Optional[Session] = None,
-    ) -> list[SharedChatResponse]:
-
-        with get_db_context(db) as db:
-            query = (
-                db.query(Chat)
-                .filter_by(user_id=user_id)
-                .filter(Chat.share_id.isnot(None))
-            )
-
-            if filter:
-                query_key = filter.get("query")
-                if query_key:
-                    query = query.filter(Chat.title.ilike(f"%{query_key}%"))
-
-                order_by = filter.get("order_by")
-                direction = filter.get("direction")
-
-                if order_by and direction:
-                    if not getattr(Chat, order_by, None):
-                        raise ValueError("Invalid order_by field")
-
-                    if direction.lower() == "asc":
-                        query = query.order_by(getattr(Chat, order_by).asc(), Chat.id)
-                    elif direction.lower() == "desc":
-                        query = query.order_by(getattr(Chat, order_by).desc(), Chat.id)
-                    else:
-                        raise ValueError("Invalid direction for ordering")
-            else:
-                query = query.order_by(Chat.updated_at.desc(), Chat.id)
-
-            # Select only the columns needed for SharedChatResponse
-            # to avoid loading the heavy chat JSON blob
-            query = query.with_entities(
-                Chat.id,
-                Chat.title,
-                Chat.share_id,
-                Chat.updated_at,
-                Chat.created_at,
-            )
-
-            if skip:
-                query = query.offset(skip)
-            if limit:
-                query = query.limit(limit)
-
-            all_chats = query.all()
-            return [
-                SharedChatResponse.model_validate(
-                    {
-                        "id": chat[0],
-                        "title": chat[1],
-                        "share_id": chat[2],
-                        "updated_at": chat[3],
-                        "created_at": chat[4],
-                    }
-                )
-                for chat in all_chats
-            ]
 
     def get_chat_list_by_user_id(
         self,
@@ -916,22 +651,6 @@ class ChatTable:
                 for chat in all_chats
             ]
 
-    def get_chat_list_by_chat_ids(
-        self,
-        chat_ids: list[str],
-        skip: int = 0,
-        limit: int = 50,
-        db: Optional[Session] = None,
-    ) -> list[ChatModel]:
-        with get_db_context(db) as db:
-            all_chats = (
-                db.query(Chat)
-                .filter(Chat.id.in_(chat_ids))
-                .filter_by(archived=False)
-                .order_by(Chat.updated_at.desc())
-                .all()
-            )
-            return [ChatModel.model_validate(chat) for chat in all_chats]
 
     def get_chat_by_id(
         self, id: str, db: Optional[Session] = None
@@ -950,21 +669,6 @@ class ChatTable:
         except Exception:
             return None
 
-    def get_chat_by_share_id(
-        self, id: str, db: Optional[Session] = None
-    ) -> Optional[ChatModel]:
-        try:
-            with get_db_context(db) as db:
-                # it is possible that the shared link was deleted. hence,
-                # we check if the chat is still shared by checking if a chat with the share_id exists
-                chat = db.query(Chat).filter_by(share_id=id).first()
-
-                if chat:
-                    return self.get_chat_by_id(id, db=db)
-                else:
-                    return None
-        except Exception:
-            return None
 
     def get_chat_by_id_and_user_id(
         self, id: str, user_id: str, db: Optional[Session] = None
@@ -1353,13 +1057,6 @@ class ChatTable:
         except Exception:
             return None
 
-    def get_chat_tags_by_id_and_user_id(
-        self, id: str, user_id: str, db: Optional[Session] = None
-    ) -> list[TagModel]:
-        with get_db_context(db) as db:
-            chat = db.get(Chat, id)
-            tag_ids = chat.meta.get("tags", [])
-            return Tags.get_tags_by_ids_and_user_id(tag_ids, user_id, db=db)
 
     def get_chat_list_by_user_id_and_tag_name(
         self,
@@ -1691,31 +1388,6 @@ class ChatTable:
             return [
                 ChatFileModel.model_validate(chat_file) for chat_file in all_chat_files
             ]
-
-    def delete_chat_file(
-        self, chat_id: str, file_id: str, db: Optional[Session] = None
-    ) -> bool:
-        try:
-            with get_db_context(db) as db:
-                db.query(ChatFile).filter_by(chat_id=chat_id, file_id=file_id).delete()
-                db.commit()
-                return True
-        except Exception:
-            return False
-
-    def get_shared_chats_by_file_id(
-        self, file_id: str, db: Optional[Session] = None
-    ) -> list[ChatModel]:
-        with get_db_context(db) as db:
-            # Join Chat and ChatFile tables to get shared chats associated with the file_id
-            all_chats = (
-                db.query(Chat)
-                .join(ChatFile, Chat.id == ChatFile.chat_id)
-                .filter(ChatFile.file_id == file_id, Chat.share_id.isnot(None))
-                .all()
-            )
-
-            return [ChatModel.model_validate(chat) for chat in all_chats]
 
 
 Chats = ChatTable()

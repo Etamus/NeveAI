@@ -8,7 +8,6 @@ from neveai.internal.db import Base, get_db_context
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import BigInteger, Column, Text, UniqueConstraint, or_, and_
-from sqlalchemy.dialects.postgresql import JSONB
 
 log = logging.getLogger(__name__)
 
@@ -64,15 +63,6 @@ class AccessGrantResponse(BaseModel):
     principal_type: str
     principal_id: str
     permission: str
-
-    @classmethod
-    def from_grant(cls, grant: "AccessGrantModel") -> "AccessGrantResponse":
-        return cls(
-            id=grant.id,
-            principal_type=grant.principal_type,
-            principal_id=grant.principal_id,
-            permission=grant.permission,
-        )
 
 
 ####################
@@ -296,70 +286,7 @@ def grants_to_access_control(grants: list) -> Optional[dict]:
 
 
 class AccessGrantsTable:
-    def grant_access(
-        self,
-        resource_type: str,
-        resource_id: str,
-        principal_type: str,
-        principal_id: str,
-        permission: str,
-        db: Optional[Session] = None,
-    ) -> Optional[AccessGrantModel]:
-        """Add a single access grant. Idempotent (ignores duplicates)."""
-        with get_db_context(db) as db:
-            # Check for existing grant
-            existing = (
-                db.query(AccessGrant)
-                .filter_by(
-                    resource_type=resource_type,
-                    resource_id=resource_id,
-                    principal_type=principal_type,
-                    principal_id=principal_id,
-                    permission=permission,
-                )
-                .first()
-            )
-            if existing:
-                return AccessGrantModel.model_validate(existing)
 
-            grant = AccessGrant(
-                id=str(uuid.uuid4()),
-                resource_type=resource_type,
-                resource_id=resource_id,
-                principal_type=principal_type,
-                principal_id=principal_id,
-                permission=permission,
-                created_at=int(time.time()),
-            )
-            db.add(grant)
-            db.commit()
-            db.refresh(grant)
-            return AccessGrantModel.model_validate(grant)
-
-    def revoke_access(
-        self,
-        resource_type: str,
-        resource_id: str,
-        principal_type: str,
-        principal_id: str,
-        permission: str,
-        db: Optional[Session] = None,
-    ) -> bool:
-        """Remove a single access grant."""
-        with get_db_context(db) as db:
-            deleted = (
-                db.query(AccessGrant)
-                .filter_by(
-                    resource_type=resource_type,
-                    resource_id=resource_id,
-                    principal_type=principal_type,
-                    principal_id=principal_id,
-                    permission=permission,
-                )
-                .delete()
-            )
-            db.commit()
-            return deleted > 0
 
     def revoke_all_access(
         self,
@@ -380,43 +307,6 @@ class AccessGrantsTable:
             db.commit()
             return deleted
 
-    def set_access_control(
-        self,
-        resource_type: str,
-        resource_id: str,
-        access_control: Optional[dict],
-        db: Optional[Session] = None,
-    ) -> list[AccessGrantModel]:
-        """
-        Replace all grants for a resource from an access_control JSON dict.
-        This is the primary bridge for backward compat with the frontend.
-        """
-        with get_db_context(db) as db:
-            # Delete all existing grants for this resource
-            db.query(AccessGrant).filter_by(
-                resource_type=resource_type,
-                resource_id=resource_id,
-            ).delete()
-
-            # Convert JSON to grant dicts
-            grant_dicts = access_control_to_grants(
-                resource_type, resource_id, access_control
-            )
-
-            # Insert new grants
-            results = []
-            for grant_dict in grant_dicts:
-                grant = AccessGrant(
-                    id=str(uuid.uuid4()),
-                    **grant_dict,
-                    created_at=int(time.time()),
-                )
-                db.add(grant)
-                results.append(grant)
-
-            db.commit()
-
-            return [AccessGrantModel.model_validate(g) for g in results]
 
     def set_access_grants(
         self,
@@ -453,27 +343,6 @@ class AccessGrantsTable:
             db.commit()
             return [AccessGrantModel.model_validate(g) for g in results]
 
-    def get_access_control(
-        self,
-        resource_type: str,
-        resource_id: str,
-        db: Optional[Session] = None,
-    ) -> Optional[dict]:
-        """
-        Reconstruct the old-style access_control JSON dict from grants.
-        For backward compat with the frontend.
-        """
-        with get_db_context(db) as db:
-            grants = (
-                db.query(AccessGrant)
-                .filter_by(
-                    resource_type=resource_type,
-                    resource_id=resource_id,
-                )
-                .all()
-            )
-            grant_models = [AccessGrantModel.model_validate(g) for g in grants]
-            return grants_to_access_control(grant_models)
 
     def get_grants_by_resource(
         self,
@@ -633,53 +502,6 @@ class AccessGrantsTable:
             )
             return {row[0] for row in rows}
 
-    def get_users_with_access(
-        self,
-        resource_type: str,
-        resource_id: str,
-        permission: str = "read",
-        db: Optional[Session] = None,
-    ) -> list:
-        """
-        Get all users who have the specified permission on a resource.
-        Returns a list of UserModel instances.
-        """
-        from neveai.models.users import Users, UserModel
-        from neveai.models.groups import Groups
-
-        with get_db_context(db) as db:
-            grants = (
-                db.query(AccessGrant)
-                .filter_by(
-                    resource_type=resource_type,
-                    resource_id=resource_id,
-                    permission=permission,
-                )
-                .all()
-            )
-
-            # Check for public access
-            for grant in grants:
-                if grant.principal_type == "user" and grant.principal_id == "*":
-                    result = Users.get_users(filter={"roles": ["!pending"]}, db=db)
-                    return result.get("users", [])
-
-            user_ids_with_access = set()
-
-            for grant in grants:
-                if grant.principal_type == "user":
-                    user_ids_with_access.add(grant.principal_id)
-                elif grant.principal_type == "group":
-                    group_user_ids = Groups.get_group_user_ids_by_id(
-                        grant.principal_id, db=db
-                    )
-                    if group_user_ids:
-                        user_ids_with_access.update(group_user_ids)
-
-            if not user_ids_with_access:
-                return []
-
-            return Users.get_users_by_user_ids(list(user_ids_with_access), db=db)
 
     def has_permission_filter(
         self,

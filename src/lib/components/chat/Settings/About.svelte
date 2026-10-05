@@ -153,7 +153,7 @@
 	});
 </script>
 
-<div id="tab-about" class="flex flex-col gap-5 pt-2 text-sm text-gray-700 dark:text-gray-100">
+<div id="tab-about" class="flex flex-col gap-3 pt-2 text-sm text-gray-700 dark:text-gray-100">
 	<section class="space-y-1.5">
 		<div class="text-sm font-medium">{$i18n.t('Version')}</div>
 		<div class="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">

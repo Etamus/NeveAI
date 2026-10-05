@@ -32,6 +32,8 @@ _HWND_TOPMOST = -1
 _HWND_NOTOPMOST = -2
 _SWP_NOSIZE = 0x0001
 _SWP_NOMOVE = 0x0002
+_SWP_NOZORDER = 0x0004
+_SWP_NOACTIVATE = 0x0010
 _SWP_FRAMECHANGED = 0x0020
 _SWP_SHOWWINDOW = 0x0040
 _GWL_EXSTYLE = -20
@@ -40,7 +42,6 @@ _WM_GETICON = 0x007F
 _WM_SETICON = 0x0080
 _ICON_SMALL = 0
 _ICON_BIG = 1
-_ICON_SMALL2 = 2
 _IMAGE_ICON = 1
 _LR_LOADFROMFILE = 0x0010
 _LR_DEFAULTSIZE = 0x0040
@@ -120,6 +121,9 @@ class _WindowPlacement(ctypes.Structure):
 
 
 _user32 = ctypes.WinDLL("user32", use_last_error=True)
+_dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
+_dwmapi.DwmSetWindowAttribute.argtypes = [wintypes.HWND, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD]
+_dwmapi.DwmSetWindowAttribute.restype = ctypes.c_long
 _EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 _user32.EnumWindows.argtypes = [_EnumWindowsProc, wintypes.LPARAM]
 _user32.EnumWindows.restype = wintypes.BOOL
@@ -458,11 +462,11 @@ def _apply_window_state(hwnd: int, state: dict | None) -> None:
     )
 
 
-def _hide_caption_icon(hwnd: int) -> None:
+def _hide_caption_icon(hwnd: int, *, configure_frame: bool = False) -> None:
     global _taskbar_icon
 
     extended_style = _get_window_long_ptr(hwnd, _GWL_EXSTYLE)
-    if not extended_style & _WS_EX_DLGMODALFRAME:
+    if configure_frame and not extended_style & _WS_EX_DLGMODALFRAME:
         _set_window_long_ptr(
             hwnd,
             _GWL_EXSTYLE,
@@ -475,7 +479,7 @@ def _hide_caption_icon(hwnd: int) -> None:
             0,
             0,
             0,
-            _SWP_NOMOVE | _SWP_NOSIZE | _SWP_FRAMECHANGED,
+            _SWP_NOMOVE | _SWP_NOSIZE | _SWP_NOZORDER | _SWP_NOACTIVATE | _SWP_FRAMECHANGED,
         )
 
     if _taskbar_icon is None and os.path.exists(_TASKBAR_ICON_PATH):
@@ -490,14 +494,15 @@ def _hide_caption_icon(hwnd: int) -> None:
 
     if _taskbar_icon:
         icon_handle = int(_taskbar_icon)
-        for icon_kind in (_ICON_BIG, _ICON_SMALL, _ICON_SMALL2):
+        for icon_kind in (_ICON_BIG, _ICON_SMALL):
             current_icon = int(_user32.SendMessageW(hwnd, _WM_GETICON, icon_kind, 0) or 0)
             if current_icon != icon_handle:
                 _user32.SendMessageW(hwnd, _WM_SETICON, icon_kind, icon_handle)
 
 
 def _clear_caption_text(hwnd: int) -> None:
-    if _window_title(hwnd):
+    title = _window_title(hwnd)
+    if title and title != _WINDOW_READY_TITLE:
         _user32.SetWindowTextW(hwnd, "")
 
 
@@ -520,6 +525,22 @@ def _activate_window(hwnd: int) -> None:
     _user32.SetWindowPos(hwnd, _HWND_NOTOPMOST, 0, 0, 0, 0, flags)
 
 
+def _prepare_frame_theme(hwnd: int) -> None:
+    # Solid native colors avoid activation-dependent accent/backdrop transitions.
+    # Unsupported attributes are ignored by DWM on older Windows versions.
+    for attribute, value in (
+        (20, 1),          # DWMWA_USE_IMMERSIVE_DARK_MODE
+        (34, 0x383838),   # DWMWA_BORDER_COLOR (COLORREF)
+        (35, 0x231F1F),   # DWMWA_CAPTION_COLOR (COLORREF: RGB 31, 31, 35)
+        (36, 0xCCCCCC),   # DWMWA_TEXT_COLOR
+        (38, 1),          # DWMWA_SYSTEMBACKDROP_TYPE: DWMSBT_NONE
+    ):
+        setting = wintypes.DWORD(value)
+        _dwmapi.DwmSetWindowAttribute(
+            hwnd, attribute, ctypes.byref(setting), ctypes.sizeof(setting)
+        )
+
+
 def _bring_app_to_front(
     process: subprocess.Popen | None = None,
     state: dict | None = None,
@@ -532,6 +553,9 @@ def _bring_app_to_front(
         hwnd = _find_app_window(process_id)
         if hwnd:
             _user32.ShowWindow(hwnd, _SW_HIDE)
+            # Configure the native frame only while hidden, never on a focus change.
+            _prepare_frame_theme(hwnd)
+            _hide_caption_icon(hwnd, configure_frame=True)
             settle_deadline = time.time() + 4.0
             page_ready_at: float | None = None
             while time.time() < settle_deadline and _user32.IsWindow(hwnd):
@@ -576,8 +600,6 @@ def _remember_window_state(
             time.sleep(_STATE_POLL_INTERVAL)
             continue
 
-        _hide_caption_icon(hwnd)
-        _clear_caption_text(hwnd)
         current_state = _capture_window_state(hwnd)
         if current_state is None or current_state == last_saved_state:
             pending_state = None
@@ -620,8 +642,10 @@ def main():
         "--disable-notifications",
         "--disable-translate",
         "--disable-background-mode",
+        # Preserve the compositor surface while another window covers the app.
+        "--disable-backgrounding-occluded-windows",
         "--disable-extensions",
-        "--disable-features=WebAppIconInTitlebar,Translate,TranslateUI,BraveDayZeroExperiment",
+        "--disable-features=WebAppIconInTitlebar,Translate,TranslateUI,BraveDayZeroExperiment,CalculateNativeWinOcclusion,ApplyNativeOcclusionToCompositor",
         f"--user-data-dir={_PROFILE}",
     ])
     hwnd = _bring_app_to_front(process, saved_state)

@@ -1,10 +1,9 @@
 <script lang="ts">
-	import { getContext, onMount } from 'svelte';
+	import { getContext } from 'svelte';
 	import type { Writable } from 'svelte/store';
 
 	const i18n: Writable<any> = getContext('i18n');
 
-	import { fade } from 'svelte/transition';
 
 	import ChatList from './ChatList.svelte';
 	import FolderKnowledge from './FolderKnowledge.svelte';

@@ -63,6 +63,7 @@
 	let wasShown = false;
 
 	let selectedIdx = null;
+	let keyboardSelection = false;
 	let selectedChat = null;
 
 	let selectedModels = [''];
@@ -202,6 +203,8 @@
 
 	$: if (show && !wasShown) {
 		wasShown = true;
+		keyboardSelection = false;
+		selectedIdx = null;
 		searchHandler();
 	} else if (!show && wasShown) {
 		wasShown = false;
@@ -212,6 +215,7 @@
 		if (searchOptions || !show) {
 			return;
 		}
+		if (e.code === 'ArrowDown' || e.code === 'ArrowUp') keyboardSelection = true;
 
 		if (e.code === 'Escape') {
 			show = false;
@@ -270,10 +274,10 @@
 	});
 </script>
 
-<Modal size="xl" bind:show containerClassName="p-2 sm:p-3" keepMounted>
+<Modal size="w-[60rem]" bind:show containerClassName="p-2 sm:p-3" keepMounted>
 	<div
 		class="py-3 dark:text-gray-300 text-gray-700 flex flex-col"
-		style="height: min(42rem, calc(100dvh - 1.5rem));"
+		style="height: min(39rem, calc(100dvh - 1.5rem));"
 	>
 		<div class="px-4 pb-1.5 flex items-center gap-2">
 			<div class="min-w-0 flex-1">
@@ -281,13 +285,14 @@
 					bind:value={query}
 					on:input={searchHandler}
 					placeholder={$i18n.t('Search')}
-					showClearButton={true}
+					showClearButton={false}
 					onFocus={() => {
 						selectedIdx = null;
+						keyboardSelection = false;
 						messages = null;
 					}}
 					onKeydown={(e) => {
-						console.log('e', e);
+						if (e.code === 'ArrowDown' || e.code === 'ArrowUp') keyboardSelection = true;
 
 						if (e.code === 'Enter' && (chatList ?? []).length > 0) {
 							const item = document.querySelector(`[data-arrow-selected="true"]`);
@@ -334,13 +339,14 @@
 
 				{#each actions as action, idx (action.label)}
 					<button
-						class=" w-full flex items-center rounded-xl text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 {selectedIdx ===
+						class=" w-full flex items-center rounded-xl text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 {keyboardSelection && selectedIdx ===
 						idx
 							? 'bg-gray-50 dark:bg-gray-850'
 							: ''}"
 						data-arrow-selected={selectedIdx === idx ? 'true' : undefined}
 						draggable="false"
 						on:mouseenter={() => {
+							keyboardSelection = false;
 							selectedIdx = idx;
 						}}
 						on:click={async () => {
@@ -397,7 +403,7 @@
 						{/if}
 
 						<a
-							class=" w-full flex justify-between items-center rounded-xl text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 {selectedIdx ===
+							class=" w-full flex justify-between items-center rounded-xl text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 {keyboardSelection && selectedIdx ===
 							idx + actions.length
 								? 'bg-gray-50 dark:bg-gray-850'
 								: ''}"
@@ -405,6 +411,7 @@
 							draggable="false"
 							data-arrow-selected={selectedIdx === idx + actions.length ? 'true' : undefined}
 							on:mouseenter={() => {
+								keyboardSelection = false;
 								selectedIdx = idx + actions.length;
 							}}
 							on:click={async () => {

@@ -7,7 +7,6 @@
 	import { html as htmlLang } from '@codemirror/lang-html';
 	import { oneDark } from '@codemirror/theme-one-dark';
 	import { indentUnit } from '@codemirror/language';
-	import { toast } from 'svelte-sonner';
 	import { onMount, getContext, createEventDispatcher } from 'svelte';
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
@@ -21,7 +20,7 @@
 		showControls,
 		artifactContents
 	} from '$lib/stores';
-	import { copyToClipboard, createMessagesList } from '$lib/utils';
+	import { copyToClipboard } from '$lib/utils';
 
 	import XMark from '../icons/XMark.svelte';
 	import ArrowsPointingOut from '../icons/ArrowsPointingOut.svelte';

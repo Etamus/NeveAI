@@ -2,31 +2,20 @@ import time
 from typing import Optional
 
 from sqlalchemy.orm import Session, defer
-from neveai.internal.db import Base, JSONField, get_db, get_db_context
+from neveai.internal.db import (Base, get_db_context)
 
 
 from neveai.env import DATABASE_USER_ACTIVE_STATUS_UPDATE_INTERVAL
 
-from neveai.models.chats import Chats
-from neveai.models.groups import Groups, GroupMember
+import neveai.models.chats
+from neveai.models.groups import GroupMember
 
 from neveai.utils.misc import throttle
 from neveai.utils.validate import validate_profile_image_url
 
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
-from sqlalchemy import (
-    BigInteger,
-    JSON,
-    Column,
-    String,
-    Boolean,
-    Text,
-    Date,
-    exists,
-    select,
-    cast,
-)
+from sqlalchemy import (BigInteger, JSON, Column, String, Boolean, Text, Date, exists, select)
 from sqlalchemy import or_, case, func
 
 import datetime
@@ -149,16 +138,6 @@ class UserModelResponse(UserModel):
     model_config = ConfigDict(extra="allow")
 
 
-class UserListResponse(BaseModel):
-    users: list[UserModelResponse]
-    total: int
-
-
-class UserGroupIdsListResponse(BaseModel):
-    users: list[UserGroupIdsModel]
-    total: int
-
-
 class UserStatus(BaseModel):
     status_emoji: Optional[str] = None
     status_message: Optional[str] = None
@@ -175,24 +154,8 @@ class UserInfoResponse(UserStatus):
     is_active: bool = False
 
 
-class UserIdNameResponse(BaseModel):
-    id: str
-    name: str
-
-
-class UserIdNameStatusResponse(UserStatus):
-    id: str
-    name: str
-    is_active: Optional[bool] = None
-
-
 class UserInfoListResponse(BaseModel):
     users: list[UserInfoResponse]
-    total: int
-
-
-class UserIdNameListResponse(BaseModel):
-    users: list[UserIdNameResponse]
     total: int
 
 
@@ -398,18 +361,6 @@ class UsersTable:
                 "total": total,
             }
 
-    def get_users_by_group_id(
-        self, group_id: str, db: Optional[Session] = None
-    ) -> list[UserModel]:
-        with get_db_context(db) as db:
-            users = (
-                db.query(User)
-                .options(defer(User.profile_image_url))
-                .join(GroupMember, User.id == GroupMember.user_id)
-                .filter(GroupMember.group_id == group_id)
-                .all()
-            )
-            return [UserModel.model_validate(user) for user in users]
 
     def get_users_by_user_ids(
         self, user_ids: list[str], db: Optional[Session] = None
@@ -427,26 +378,6 @@ class UsersTable:
         with get_db_context(db) as db:
             return db.query(User).count()
 
-    def has_users(self, db: Optional[Session] = None) -> bool:
-        with get_db_context(db) as db:
-            return db.query(db.query(User).exists()).scalar()
-
-    def get_first_user(self, db: Optional[Session] = None) -> UserModel:
-        try:
-            with get_db_context(db) as db:
-                user = db.query(User).order_by(User.created_at).first()
-                return UserModel.model_validate(user)
-        except Exception:
-            return None
-
-    def get_num_users_active_today(self, db: Optional[Session] = None) -> Optional[int]:
-        with get_db_context(db) as db:
-            current_timestamp = int(datetime.datetime.now().timestamp())
-            today_midnight_timestamp = current_timestamp - (current_timestamp % 86400)
-            query = db.query(User).filter(
-                User.last_active_at > today_midnight_timestamp
-            )
-            return query.count()
 
     def update_user_role_by_id(
         self, id: str, role: str, db: Optional[Session] = None
@@ -463,36 +394,6 @@ class UsersTable:
         except Exception:
             return None
 
-    def update_user_status_by_id(
-        self, id: str, form_data: UserStatus, db: Optional[Session] = None
-    ) -> Optional[UserModel]:
-        try:
-            with get_db_context(db) as db:
-                user = db.query(User).filter_by(id=id).first()
-                if not user:
-                    return None
-                for key, value in form_data.model_dump(exclude_none=True).items():
-                    setattr(user, key, value)
-                db.commit()
-                db.refresh(user)
-                return UserModel.model_validate(user)
-        except Exception:
-            return None
-
-    def update_user_profile_image_url_by_id(
-        self, id: str, profile_image_url: str, db: Optional[Session] = None
-    ) -> Optional[UserModel]:
-        try:
-            with get_db_context(db) as db:
-                user = db.query(User).filter_by(id=id).first()
-                if not user:
-                    return None
-                user.profile_image_url = profile_image_url
-                db.commit()
-                db.refresh(user)
-                return UserModel.model_validate(user)
-        except Exception:
-            return None
 
     @throttle(DATABASE_USER_ACTIVE_STATUS_UPDATE_INTERVAL)
     def update_last_active_by_id(
@@ -551,48 +452,7 @@ class UsersTable:
         except Exception:
             return None
 
-    def delete_user_by_id(self, id: str, db: Optional[Session] = None) -> bool:
-        try:
-            # Remove User from Groups
-            Groups.remove_user_from_all_groups(id)
 
-            # Delete User Chats
-            result = Chats.delete_chats_by_user_id(id, db=db)
-            if result:
-                with get_db_context(db) as db:
-                    # Delete User
-                    db.query(User).filter_by(id=id).delete()
-                    db.commit()
-
-                return True
-            else:
-                return False
-        except Exception:
-            return False
-
-    def get_valid_user_ids(
-        self, user_ids: list[str], db: Optional[Session] = None
-    ) -> list[str]:
-        with get_db_context(db) as db:
-            users = db.query(User).filter(User.id.in_(user_ids)).all()
-            return [user.id for user in users]
-
-    def get_super_admin_user(self, db: Optional[Session] = None) -> Optional[UserModel]:
-        with get_db_context(db) as db:
-            user = db.query(User).filter_by(role="admin").first()
-            if user:
-                return UserModel.model_validate(user)
-            else:
-                return None
-
-    def get_active_user_count(self, db: Optional[Session] = None) -> int:
-        with get_db_context(db) as db:
-            # Consider user active if last_active_at within the last 3 minutes
-            three_minutes_ago = int(time.time()) - 180
-            count = (
-                db.query(User).filter(User.last_active_at >= three_minutes_ago).count()
-            )
-            return count
 
     @staticmethod
     def is_active(user: UserModel) -> bool:

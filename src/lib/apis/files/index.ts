@@ -1,6 +1,15 @@
 import { NEVEAI_API_BASE_URL } from '$lib/constants';
 import { splitStream } from '$lib/utils';
 
+export const getGeneratedFiles = async (token: string, kind = 'all', query = '', skip = 0) => {
+	const params = new URLSearchParams({ kind, query, skip: String(skip), limit: '50' });
+	const response = await fetch(`${NEVEAI_API_BASE_URL}/files/generated?${params}`, {
+		cache: 'no-store', headers: { authorization: `Bearer ${token}` }
+	});
+	if (!response.ok) throw (await response.json().catch(() => null))?.detail ?? String(response.status);
+	return response.json();
+};
+
 export const getFileProcessStatus = async (token: string, id: string) => {
 	const queryParams = new URLSearchParams({ stream: 'true' });
 	const res = await fetch(
@@ -241,6 +250,7 @@ export const deleteFileById = async (token: string, id: string) => {
 		throw error;
 	}
 
+	if (res !== null && typeof window !== 'undefined') window.dispatchEvent(new Event('neve:files-changed'));
 	return res;
 };
 
@@ -272,5 +282,6 @@ export const deleteAllFiles = async (token: string) => {
 		throw error;
 	}
 
+	if (res !== null && typeof window !== 'undefined') window.dispatchEvent(new Event('neve:files-changed'));
 	return res;
 };

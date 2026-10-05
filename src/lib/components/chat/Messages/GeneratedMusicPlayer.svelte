@@ -2,6 +2,7 @@
 	import { getContext } from 'svelte';
 	import { getFileContentById } from '$lib/apis/files';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
+	import { mediaDuration } from '$lib/utils/mediaDuration';
 
 	export let src = '';
 	export let fileId: string | null = null;
@@ -63,14 +64,16 @@
 	};
 </script>
 
-<div class="music-player flex h-14 w-full min-w-[18rem] max-w-[30rem] items-center gap-2.5 rounded-lg bg-gray-100/70 px-2.5 text-gray-700 dark:bg-gray-800/55 dark:text-gray-200">
+<div class="music-player mx-auto self-center flex h-14 w-full min-w-0 max-w-[30rem] items-center gap-2.5 rounded-lg bg-gray-100/70 px-2.5 text-gray-700 dark:bg-gray-800/55 dark:text-gray-200">
 	<audio
 		bind:this={audioElement}
 		src={resolvedSrc}
 		preload="metadata"
 		playsinline
-		on:loadedmetadata={() => (duration = audioElement.duration || 0)}
-		on:durationchange={() => (duration = audioElement.duration || 0)}
+		on:loadedmetadata={() => (duration = mediaDuration(audioElement))}
+		on:durationchange={() => (duration = mediaDuration(audioElement))}
+		on:loadeddata={() => (duration = mediaDuration(audioElement))}
+		on:progress={() => (duration = mediaDuration(audioElement))}
 		on:timeupdate={() => (currentTime = audioElement.currentTime || 0)}
 		on:play={() => (playing = true)}
 		on:pause={() => (playing = false)}
@@ -123,6 +126,11 @@
 </div>
 
 <style>
+	@media (max-width: 640px) {
+		.music-player { gap: 0.25rem; padding-inline: 0.5rem; }
+		.music-player > span { width: 2rem; }
+		.music-player button { width: 1.75rem; height: 1.75rem; }
+	}
 	.music-player audio { display: none; }
 	.music-progress { height: 0.875rem; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; }
 	.music-progress::-webkit-slider-runnable-track {

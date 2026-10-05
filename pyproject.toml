@@ -4,7 +4,7 @@ description = "Neve"
 authors = [
     { name = "Etamus", email = "" }
 ]
-license = { file = "LICENSE" }
+license = { file = "LICENSE.txt" }
 dependencies = [
     "fastapi==0.142.2",
     "uvicorn[standard]==0.54.0",
@@ -32,7 +32,6 @@ dependencies = [
     "peewee==3.19.0",
     "peewee-migrate==1.14.3",
 
-    "pycrdt==0.12.47",
     "redis",
 
     "pytz==2026.4",
@@ -61,6 +60,9 @@ dependencies = [
     "ftfy==6.3.1",
     "chardet==5.2.0",
     "pypdf==6.19.0",
+    "pypdfium2==5.13.0",
+    "lxml==6.1.3",
+    "striprtf==0.0.33",
     "fpdf2==2.8.9",
     "pymdown-extensions==12.1",
     "docx2txt==0.9",
@@ -71,6 +73,7 @@ dependencies = [
     "nltk==3.10.3",
     "Markdown==3.11",
     "pypandoc==1.17",
+    "trafilatura==2.3.0",
     "pandas==3.0.6",
     "openpyxl==3.1.5",
     "pyxlsb==1.0.10",
@@ -128,24 +131,21 @@ allow-direct-references = true
 path = "package.json"
 pattern = '"version":\s*"(?P<version>[^"]+)"'
 
-[tool.hatch.build.hooks.custom]  # keep this for reading hooks from `hatch_build.py`
-
 [tool.hatch.build.targets.wheel]
+packages = ["backend/neveai"]
 sources = ["backend"]
 exclude = [
     ".dockerignore",
     ".gitignore",
-    ".neve_secret_key",
-    ".webui_secret_key",
+    ".*secret_key",
     "dev.sh",
     "requirements.txt",
     "start.sh",
     "start_windows.bat",
-    "neve.db",
-    "webui.db",
+    "*.db",
     "chroma.sqlite3",
 ]
-force-include = { "CHANGELOG.md" = "neveai/CHANGELOG.md", build = "neveai/frontend" }
+force-include = { build = "neveai/frontend" }
 [tool.codespell]
 # Ref: https://github.com/codespell-project/codespell#using-a-config-file
 skip = '.git*,*.svg,package-lock.json,i18n,*.lock,*.css,*-bundle.js,locales,example-doc.txt,emoji-shortcodes.json'

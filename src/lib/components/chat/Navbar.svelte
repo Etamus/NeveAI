@@ -1,26 +1,11 @@
 <script lang="ts">
 	import { getContext, onMount } from 'svelte';
-	import { toast } from 'svelte-sonner';
 
-	import {
-		NEVEAI_NAME,
-		banners,
-		chatId,
-		config,
-		mobile,
-		models as globalModels,
-		settings,
-		showLocalModelsModal,
-		showSidebar,
-		temporaryChatEnabled,
-		user
-	} from '$lib/stores';
+	import { banners, chatId, config, mobile, models as globalModels, settings, showLocalModelsModal, showSidebar, temporaryChatEnabled, user } from '$lib/stores';
 
-	import { slide } from 'svelte/transition';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 
-	import ShareChatModal from '../chat/ShareChatModal.svelte';
 	import ModelSelector from '../chat/ModelSelector.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
 	import Menu from '$lib/components/layout/Navbar/Menu.svelte';
@@ -37,6 +22,8 @@
 	import ChatPlus from '../icons/ChatPlus.svelte';
 	import ChatCheck from '../icons/ChatCheck.svelte';
 	import Knobs from '../icons/Knobs.svelte';
+	import Category from '../icons/Category.svelte';
+	import { showModelSettings } from '$lib/stores';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import UnifiedModels from '$lib/components/chat/UnifiedModels.svelte';
 	import { getLocalModels, getMmProjFiles, getLocalVramInfo, type LocalVramInfo } from '$lib/apis/llamacpp';
@@ -51,7 +38,7 @@
 	const i18n = getContext('i18n');
 
 	export let initNewChat: Function;
-	export let shareEnabled: boolean = false;
+	export let menuEnabled: boolean = false;
 	export let scrollTop = 0;
 
 	export let chat;
@@ -64,7 +51,6 @@
 
 	let closedBannerIds = [];
 
-	let showShareChatModal = false;
 	let showDownloadChatModal = false;
 	let unifiedModelsPreload: UnifiedModelsPreload | null = null;
 	let unifiedModelsPreloadPromise: Promise<void> | null = null;
@@ -102,7 +88,8 @@
 			const cached = JSON.parse(localStorage.getItem(unifiedModelsPreloadCacheKey) ?? 'null');
 			if (!cached?.data || !cached?.timestamp) return null;
 			if (Date.now() - cached.timestamp > 5 * 60 * 1000) return null;
-			return cached.data as UnifiedModelsPreload;
+			// Persisted catalog data is useful, but cannot confirm a running model.
+			return { ...cached.data, loaded: false } as UnifiedModelsPreload;
 		} catch {
 			return null;
 		}
@@ -168,6 +155,7 @@
 		refreshUnifiedModelsVram();
 
 		unifiedModelsPreloadPromise = (async () => {
+			const runtimeUpdatedAt = Date.now();
 			const localModelsPromise = getLocalModels(localStorage.token).catch(() => []);
 			const mmProjFilesPromise = getMmProjFiles(localStorage.token).catch(() => []);
 			const workspaceModelsPromise = getBaseModels(localStorage.token).catch(() => []);
@@ -194,6 +182,7 @@
 			preloadUnifiedModelImages(currentAdminModels);
 			unifiedModelsPreload = {
 				loaded: true,
+				runtimeUpdatedAt,
 				localModels,
 				mmProjFiles,
 				workspaceModels: currentWorkspaceModels,
@@ -215,6 +204,7 @@
 
 			unifiedModelsPreload = {
 				loaded: true,
+				runtimeUpdatedAt,
 				localModels,
 				mmProjFiles,
 				workspaceModels,
@@ -243,7 +233,6 @@
 	});
 </script>
 
-<ShareChatModal bind:show={showShareChatModal} chatId={$chatId} />
 
 {#if unifiedModelsPreload?.loaded}
 	<Modal
@@ -327,13 +316,9 @@
 						</Tooltip>
 					{/if}
 
-					{#if shareEnabled && chat && (chat.id || $temporaryChatEnabled)}
+					{#if menuEnabled && chat && (chat.id || $temporaryChatEnabled)}
 						<Menu
 							{chat}
-							{shareEnabled}
-							shareHandler={() => {
-								showShareChatModal = !showShareChatModal;
-							}}
 							{moveChatHandler}
 						>
 							<button
@@ -409,18 +394,18 @@
 								aria-label="Models"
 							>
 								<div class=" m-auto self-center">
-									<svg xmlns="http://www.w3.org/2000/svg" class="size-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-										<rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/>
-										<rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/>
-										<rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/>
-										<rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/>
-									</svg>
+									<Category squaresOnly={true} />
 								</div>
 							</button>
 						</Tooltip>
 					{/if}
-
-
+					{#if selectedModels?.some((id) => $globalModels.some((model) => model.id === id)) && ($user?.role === 'admin' || ($user?.permissions?.chat?.controls ?? true))}
+						<Tooltip content={$i18n.t('Parâmetros')}>
+							<button id="chat-parameters-button" type="button" aria-label={$i18n.t('Parâmetros')} aria-expanded={$showModelSettings} class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition" on:click={() => showModelSettings.set(!$showModelSettings)}>
+								<Sidebar className="size-5 -scale-x-100" />
+							</button>
+						</Tooltip>
+					{/if}
 				</div>
 			</div>
 		</div>
@@ -433,37 +418,9 @@
 	{/if}
 
 	<div class="absolute top-[100%] left-0 right-0 h-fit">
-		{#if !history.currentId && !$chatId && ($banners.length > 0 || ($config?.license_metadata?.type ?? null) === 'trial' || (($config?.license_metadata?.seats ?? null) !== null && $config?.user_count > $config?.license_metadata?.seats))}
+		{#if !history.currentId && !$chatId && $banners.length > 0}
 			<div class=" w-full z-30">
 				<div class=" flex flex-col gap-1 w-full">
-					{#if ($config?.license_metadata?.type ?? null) === 'trial'}
-						<Banner
-							banner={{
-								id: 'trial-license',
-								type: 'info',
-								title: 'Trial License',
-								content: $i18n.t(
-									'You are currently using a trial license. Please contact support to upgrade your license.'
-								),
-								timestamp: 0
-							}}
-						/>
-					{/if}
-
-					{#if ($config?.license_metadata?.seats ?? null) !== null && $config?.user_count > $config?.license_metadata?.seats}
-						<Banner
-							banner={{
-								id: 'license-seats',
-								type: 'error',
-								title: 'License Error',
-								content: $i18n.t(
-									'Exceeded the number of seats in your license. Please contact support to increase the number of seats.'
-								),
-								timestamp: 0
-							}}
-						/>
-					{/if}
-
 					{#each $banners.filter((b) => ![...JSON.parse(localStorage.getItem('dismissedBannerIds') ?? '[]'), ...closedBannerIds].includes(b.id)) as banner (banner.id)}
 						<Banner
 							{banner}

@@ -3,7 +3,7 @@ import time
 from typing import Optional
 
 from sqlalchemy.orm import Session
-from neveai.internal.db import Base, get_db, get_db_context
+from neveai.internal.db import (Base, get_db_context)
 from neveai.models.users import Users, UserResponse
 from neveai.models.groups import Groups
 from neveai.models.access_grants import AccessGrantModel, AccessGrants
@@ -126,35 +126,6 @@ class SkillsTable:
         )
         return SkillModel.model_validate(skill_data)
 
-    def insert_new_skill(
-        self,
-        user_id: str,
-        form_data: SkillForm,
-        db: Optional[Session] = None,
-    ) -> Optional[SkillModel]:
-        with get_db_context(db) as db:
-            try:
-                result = Skill(
-                    **{
-                        **form_data.model_dump(exclude={"access_grants"}),
-                        "user_id": user_id,
-                        "updated_at": int(time.time()),
-                        "created_at": int(time.time()),
-                    }
-                )
-                db.add(result)
-                db.commit()
-                db.refresh(result)
-                AccessGrants.set_access_grants(
-                    "skill", result.id, form_data.access_grants, db=db
-                )
-                if result:
-                    return self._to_skill_model(result, db=db)
-                else:
-                    return None
-            except Exception as e:
-                log.exception(f"Error creating a new skill: {e}")
-                return None
 
     def get_skill_by_id(
         self, id: str, db: Optional[Session] = None
@@ -310,54 +281,6 @@ class SkillsTable:
         except Exception as e:
             log.exception(f"Error searching skills: {e}")
             return SkillListResponse(items=[], total=0)
-
-    def update_skill_by_id(
-        self, id: str, updated: dict, db: Optional[Session] = None
-    ) -> Optional[SkillModel]:
-        try:
-            with get_db_context(db) as db:
-                access_grants = updated.pop("access_grants", None)
-                db.query(Skill).filter_by(id=id).update(
-                    {**updated, "updated_at": int(time.time())}
-                )
-                db.commit()
-                if access_grants is not None:
-                    AccessGrants.set_access_grants("skill", id, access_grants, db=db)
-
-                skill = db.query(Skill).get(id)
-                db.refresh(skill)
-                return self._to_skill_model(skill, db=db)
-        except Exception:
-            return None
-
-    def toggle_skill_by_id(
-        self, id: str, db: Optional[Session] = None
-    ) -> Optional[SkillModel]:
-        with get_db_context(db) as db:
-            try:
-                skill = db.query(Skill).filter_by(id=id).first()
-                if not skill:
-                    return None
-
-                skill.is_active = not skill.is_active
-                skill.updated_at = int(time.time())
-                db.commit()
-                db.refresh(skill)
-
-                return self._to_skill_model(skill, db=db)
-            except Exception:
-                return None
-
-    def delete_skill_by_id(self, id: str, db: Optional[Session] = None) -> bool:
-        try:
-            with get_db_context(db) as db:
-                AccessGrants.revoke_all_access("skill", id, db=db)
-                db.query(Skill).filter_by(id=id).delete()
-                db.commit()
-
-                return True
-        except Exception:
-            return False
 
 
 Skills = SkillsTable()

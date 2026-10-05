@@ -5,8 +5,6 @@ import socketio
 import logging
 import sys
 import time
-from typing import Dict, Set
-from redis import asyncio as aioredis
 
 from neveai.models.users import Users
 from neveai.models.chats import Chats
@@ -19,23 +17,7 @@ from neveai.config import (
     CORS_ALLOW_ORIGIN,
 )
 
-from neveai.env import (
-    VERSION,
-    ENABLE_WEBSOCKET_SUPPORT,
-    WEBSOCKET_MANAGER,
-    WEBSOCKET_REDIS_URL,
-    WEBSOCKET_REDIS_CLUSTER,
-    WEBSOCKET_REDIS_LOCK_TIMEOUT,
-    WEBSOCKET_SENTINEL_PORT,
-    WEBSOCKET_SENTINEL_HOSTS,
-    REDIS_KEY_PREFIX,
-    WEBSOCKET_REDIS_OPTIONS,
-    WEBSOCKET_SERVER_PING_TIMEOUT,
-    WEBSOCKET_SERVER_PING_INTERVAL,
-    WEBSOCKET_SERVER_LOGGING,
-    WEBSOCKET_SERVER_ENGINEIO_LOGGING,
-    WEBSOCKET_EVENT_CALLER_TIMEOUT,
-)
+from neveai.env import (ENABLE_WEBSOCKET_SUPPORT, WEBSOCKET_MANAGER, WEBSOCKET_REDIS_URL, WEBSOCKET_REDIS_CLUSTER, WEBSOCKET_REDIS_LOCK_TIMEOUT, WEBSOCKET_SENTINEL_PORT, WEBSOCKET_SENTINEL_HOSTS, REDIS_KEY_PREFIX, WEBSOCKET_REDIS_OPTIONS, WEBSOCKET_SERVER_PING_TIMEOUT, WEBSOCKET_SERVER_PING_INTERVAL, WEBSOCKET_SERVER_LOGGING, WEBSOCKET_SERVER_ENGINEIO_LOGGING, WEBSOCKET_EVENT_CALLER_TIMEOUT)
 from neveai.utils.auth import decode_token
 from neveai.socket.utils import RedisDict, RedisLock
 from neveai.utils.redis import get_redis_connection
@@ -247,17 +229,6 @@ app = socketio.ASGIApp(
 )
 
 
-def get_models_in_use():
-    # List models that are currently in use
-    models_in_use = list(USAGE_POOL.keys())
-    return models_in_use
-
-
-def get_user_id_from_session_pool(sid):
-    user = SESSION_POOL.get(sid)
-    if user:
-        return user["id"]
-    return None
 
 
 def get_session_ids_from_room(room):
@@ -267,53 +238,6 @@ def get_session_ids_from_room(room):
         room=room,
     )
     return [session_id[0] for session_id in active_session_ids]
-
-
-def get_user_ids_from_room(room):
-    active_session_ids = get_session_ids_from_room(room)
-
-    active_user_ids = list(
-        set(
-            [
-                SESSION_POOL.get(session_id)["id"]
-                for session_id in active_session_ids
-                if SESSION_POOL.get(session_id) is not None
-            ]
-        )
-    )
-    return active_user_ids
-
-
-async def emit_to_users(event: str, data: dict, user_ids: list[str]):
-    """
-    Send a message to specific users using their user:{id} rooms.
-
-    Args:
-        event (str): The event name to emit.
-        data (dict): The payload/data to send.
-        user_ids (list[str]): The target users' IDs.
-    """
-    try:
-        for user_id in user_ids:
-            await sio.emit(event, data, room=f"user:{user_id}")
-    except Exception as e:
-        log.debug(f"Failed to emit event {event} to users {user_ids}: {e}")
-
-
-async def enter_room_for_users(room: str, user_ids: list[str]):
-    """
-    Make all sessions of a user join a specific room.
-    Args:
-        room (str): The room to join.
-        user_ids (list[str]): The target user's IDs.
-    """
-    try:
-        for user_id in user_ids:
-            session_ids = get_session_ids_from_room(f"user:{user_id}")
-            for sid in session_ids:
-                await sio.enter_room(sid, room)
-    except Exception as e:
-        log.debug(f"Failed to make users {user_ids} join room {room}: {e}")
 
 
 @sio.on("usage")
@@ -414,7 +338,6 @@ async def disconnect(sid):
 
     else:
         pass
-        # print(f"Unknown session ID {sid} disconnected")
 
 
 def get_event_emitter(request_info, update_db=True):

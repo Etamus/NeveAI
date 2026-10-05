@@ -3,7 +3,7 @@ import uuid
 from typing import Optional
 
 from sqlalchemy.orm import Session
-from neveai.internal.db import Base, get_db, get_db_context
+from neveai.internal.db import (Base, get_db_context)
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import BigInteger, Column, String, Text
 
@@ -105,15 +105,6 @@ class MemoriesTable:
             except Exception:
                 return None
 
-    def get_memory_by_id(
-        self, id: str, db: Optional[Session] = None
-    ) -> Optional[MemoryModel]:
-        with get_db_context(db) as db:
-            try:
-                memory = db.get(Memory, id)
-                return MemoryModel.model_validate(memory)
-            except Exception:
-                return None
 
     def delete_memory_by_id(self, id: str, db: Optional[Session] = None) -> bool:
         with get_db_context(db) as db:

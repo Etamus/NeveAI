@@ -30,7 +30,6 @@
 
 	let defaultModelIds = [];
 
-	let defaultPinnedModelIds = [];
 
 	let modelIds = [];
 
@@ -61,7 +60,7 @@
 
 	const getModelsConfigPayload = () => ({
 		DEFAULT_MODELS: defaultModelIds.join(','),
-		DEFAULT_PINNED_MODELS: defaultPinnedModelIds.join(','),
+		DEFAULT_PINNED_MODELS: null,
 		MODEL_ORDER_LIST: modelIds,
 		DEFAULT_MODEL_METADATA: {
 			capabilities: { ...defaultCapabilities, toggle_reasoning: true },
@@ -103,11 +102,6 @@
 			defaultModelIds = [];
 		}
 
-		if (config?.DEFAULT_PINNED_MODELS) {
-			defaultPinnedModelIds = config.DEFAULT_PINNED_MODELS.split(',').filter((id) => id);
-		} else {
-			defaultPinnedModelIds = [];
-		}
 
 		const modelOrderList = config.MODEL_ORDER_LIST || [];
 		const allModelIds = $models.map((model) => model.id);
@@ -251,7 +245,7 @@
 		await saveSettings({ close: true, silent: true, force: false, refreshModels: true });
 	};
 
-	$: defaultModelIds, defaultPinnedModelIds, defaultCapabilities, defaultFeatureIds, defaultParams, builtinTools, promptSuggestions, scheduleAutoSave();
+	$: defaultModelIds, defaultCapabilities, defaultFeatureIds, defaultParams, builtinTools, promptSuggestions, scheduleAutoSave();
 
 	$: if (!show && initializedForOpen) {
 		initializedForOpen = false;
@@ -283,7 +277,7 @@
 	}}
 />
 
-<Modal size="md" animated={false} className="bg-white dark:bg-gray-900 rounded-xl w-[36rem]! h-[32rem]! max-h-[calc(100dvh-2rem)]! max-w-[calc(100vw-2rem)]! flex flex-col" bind:show>
+<Modal size="md" animated={false} className="bg-white dark:bg-gray-900 rounded-xl w-[36rem]! h-[34rem]! max-h-[calc(100dvh-2rem)]! max-w-[calc(100vw-2rem)]! flex flex-col" containerClassName="px-3 pt-1 pb-5" bind:show>
 	<div class="flex h-full min-h-0 flex-col">
 		<div class="flex justify-between items-center dark:text-gray-100 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20 shrink-0">
 			<div class="text-lg font-semibold font-primary">
@@ -309,9 +303,9 @@
 						<div class="flex flex-col w-full h-full min-h-0">
 							<div class="flex-1 mt-0 flex flex-col min-w-0 min-h-0">
 								<div class="w-full h-full overflow-y-auto overflow-x-hidden scrollbar-hidden pl-2 pr-4 py-3">
-									<div class="h-full min-h-0 overflow-hidden">
-										<div class="flex gap-0 w-full h-full min-h-0 pl-1">
-											<div class="w-[56%] min-w-0 h-full flex flex-col pr-3">
+									<div class="h-auto sm:h-full min-h-0 sm:overflow-hidden">
+										<div class="flex flex-col sm:flex-row gap-4 sm:gap-0 w-full sm:h-full min-h-0 pl-1">
+											<div class="w-full sm:w-[56%] min-w-0 sm:h-full flex flex-col sm:pr-3">
 											<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2 py-1 pl-2 pr-5 shrink-0 whitespace-nowrap">
 													{$i18n.t('Par\u00e2metros avan\u00e7ados')}
 												</div>
@@ -322,8 +316,8 @@
 												</div>
 											</div>
 
-											<div class="border-l border-gray-300/50 dark:border-gray-600/30"></div>
-											<div class="w-[48%] min-w-0 pl-5 h-full overflow-hidden">
+											<div class="hidden sm:block border-l border-gray-300/50 dark:border-gray-600/30"></div>
+											<div class="w-full sm:w-[44%] min-w-0 sm:pl-5 sm:h-full sm:overflow-hidden">
 											<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2 py-1 shrink-0 whitespace-nowrap">
 												{$i18n.t('Capacidades padrão')}
 												</div>

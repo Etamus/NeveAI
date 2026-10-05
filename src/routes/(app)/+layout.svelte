@@ -7,38 +7,20 @@
 
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
-	import { fade } from 'svelte/transition';
 
 	import { getModels, getToolServersData, getVersionUpdates } from '$lib/apis';
 	import { getTools } from '$lib/apis/tools';
 	import { getBanners } from '$lib/apis/configs';
 	import { getTerminalServers } from '$lib/apis/terminal';
 	import { getUserSettings } from '$lib/apis/users';
+	import { normalizeModelFavorites } from '$lib/utils/modelFavorites';
+	import { animateSidebarPane } from '$lib/utils/animateSidebarPane';
+	import { saveModelFavorites } from '$lib/utils/modelFavoriteActions';
 
 	import { NEVEAI_VERSION, NEVEAI_API_BASE_URL } from '$lib/constants';
 	import { compareVersion } from '$lib/utils';
 
-	import {
-		config,
-		user,
-		settings,
-		models,
-		knowledge,
-		tools,
-		tags,
-		banners,
-		showSettings,
-		showSettingsTab,
-		temporaryChatEnabled,
-		toolServers,
-		terminalServers,
-		showSearch,
-		showSidebar,
-		showControls,
-		mobile,
-		neveDownloadToast,
-		loadShortCodesToEmojis
-	} from '$lib/stores';
+	import { config, user, settings, models, tools, banners, showSettings, showSettingsTab, temporaryChatEnabled, toolServers, terminalServers, showSearch, showSidebar, showControls, mobile, neveDownloadToast, loadShortCodesToEmojis } from '$lib/stores';
 
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
@@ -155,7 +137,10 @@
 		}
 
 		if (userSettings?.ui) {
-			settings.set(userSettings.ui);
+			settings.set(normalizeModelFavorites(userSettings.ui));
+			if ('pinnedModels' in userSettings.ui) {
+				void saveModelFavorites().catch((error) => console.error('Failed to migrate model favorites', error));
+			}
 		}
 
 		if (cb) {
@@ -528,15 +513,17 @@
 
 			{#if loaded}
 					<div
-						class="h-full overflow-hidden transition-[margin-left,width] duration-300"
-						style={$showSidebar && !$mobile ? 'margin-left: var(--sidebar-width, 260px); width: calc(100% - var(--sidebar-width, 260px))' : 'width: 100%'}
+						class="h-full min-w-0 overflow-hidden"
+						data-sidebar-pane
+						use:animateSidebarPane={$showSidebar && !$mobile}
 					>
 						<slot />
 					</div>
 				{:else}
 					<div
-						class="h-full flex items-center justify-center transition-[margin-left,width] duration-300"
-						style={$showSidebar && !$mobile ? 'margin-left: var(--sidebar-width, 260px); width: calc(100% - var(--sidebar-width, 260px))' : 'width: 100%'}
+						class="h-full min-w-0 flex items-center justify-center"
+						data-sidebar-pane
+						use:animateSidebarPane={$showSidebar && !$mobile}
 					>
 						<Spinner className="size-5" />
 					</div>
@@ -546,12 +533,7 @@
 {/if}
 
 <style>
-	.loading {
-		display: inline-block;
-		clip-path: inset(0 1ch 0 0);
-		animation: l 1s steps(3) infinite;
-		letter-spacing: -0.5px;
-	}
+
 
 	@keyframes l {
 		to {
@@ -559,32 +541,9 @@
 		}
 	}
 
-	pre[class*='language-'] {
-		position: relative;
-		overflow: auto;
 
-		/* make space  */
-		margin: 5px 0;
-		padding: 1.75rem 0 1.75rem 1rem;
-		border-radius: 10px;
-	}
 
-	pre[class*='language-'] button {
-		position: absolute;
-		top: 5px;
-		right: 5px;
 
-		font-size: 0.9rem;
-		padding: 0.15rem;
-		background-color: #828282;
 
-		border: ridge 1px #7b7b7c;
-		border-radius: 5px;
-		text-shadow: #c4c4c4 0 0 2px;
-	}
 
-	pre[class*='language-'] button:hover {
-		cursor: pointer;
-		background-color: #bcbabb;
-	}
 </style>

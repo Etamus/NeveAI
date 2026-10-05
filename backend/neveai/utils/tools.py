@@ -8,21 +8,7 @@ import yaml
 import json
 
 from pydantic import BaseModel
-from pydantic.fields import FieldInfo
-from typing import (
-    Any,
-    Awaitable,
-    Callable,
-    get_type_hints,
-    get_args,
-    get_origin,
-    Dict,
-    List,
-    Tuple,
-    Union,
-    Optional,
-    Type,
-)
+from typing import (Any, Awaitable, Callable, get_type_hints, Dict, List, Tuple, Optional)
 from functools import update_wrapper, partial
 
 
@@ -55,6 +41,7 @@ from neveai.tools.builtin import (
     search_web,
     fetch_url,
     create_downloadable_file,
+    inspect_document_file,
     execute_code,
     search_memories,
     add_memory,
@@ -474,7 +461,7 @@ def get_builtin_tools(
         builtin_functions.extend([search_web, fetch_url])
 
     if features.get("file_generation"):
-        builtin_functions.append(create_downloadable_file)
+        builtin_functions.extend([create_downloadable_file, inspect_document_file])
 
     # Add code interpreter tool if builtin category enabled AND enabled globally AND model has code_interpreter capability
     if (

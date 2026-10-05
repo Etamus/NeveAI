@@ -5,7 +5,7 @@ from typing import Optional
 import uuid
 
 from sqlalchemy.orm import Session
-from neveai.internal.db import Base, JSONField, get_db, get_db_context
+from neveai.internal.db import (Base, get_db_context)
 
 from neveai.models.files import (
     File,
@@ -159,35 +159,6 @@ class KnowledgeTable:
         )
         return KnowledgeModel.model_validate(knowledge_data)
 
-    def insert_new_knowledge(
-        self, user_id: str, form_data: KnowledgeForm, db: Optional[Session] = None
-    ) -> Optional[KnowledgeModel]:
-        with get_db_context(db) as db:
-            knowledge = KnowledgeModel(
-                **{
-                    **form_data.model_dump(exclude={"access_grants"}),
-                    "id": str(uuid.uuid4()),
-                    "user_id": user_id,
-                    "created_at": int(time.time()),
-                    "updated_at": int(time.time()),
-                    "access_grants": [],
-                }
-            )
-
-            try:
-                result = Knowledge(**knowledge.model_dump(exclude={"access_grants"}))
-                db.add(result)
-                db.commit()
-                db.refresh(result)
-                AccessGrants.set_access_grants(
-                    "knowledge", result.id, form_data.access_grants, db=db
-                )
-                if result:
-                    return self._to_knowledge_model(result, db=db)
-                else:
-                    return None
-            except Exception:
-                return None
 
     def get_knowledge_bases(
         self, skip: int = 0, limit: int = 30, db: Optional[Session] = None
@@ -425,29 +396,6 @@ class KnowledgeTable:
         except Exception:
             return None
 
-    def get_knowledge_by_id_and_user_id(
-        self, id: str, user_id: str, db: Optional[Session] = None
-    ) -> Optional[KnowledgeModel]:
-        knowledge = self.get_knowledge_by_id(id, db=db)
-        if not knowledge:
-            return None
-
-        if knowledge.user_id == user_id:
-            return knowledge
-
-        user_group_ids = {
-            group.id for group in Groups.get_groups_by_member_id(user_id, db=db)
-        }
-        if AccessGrants.has_access(
-            user_id=user_id,
-            resource_type="knowledge",
-            resource_id=knowledge.id,
-            permission="write",
-            user_group_ids=user_group_ids,
-            db=db,
-        ):
-            return knowledge
-        return None
 
     def get_knowledges_by_file_id(
         self, file_id: str, db: Optional[Session] = None
@@ -572,61 +520,6 @@ class KnowledgeTable:
         except Exception:
             return []
 
-    def get_file_metadatas_by_id(
-        self, knowledge_id: str, db: Optional[Session] = None
-    ) -> list[FileMetadataResponse]:
-        try:
-            with get_db_context(db) as db:
-                files = self.get_files_by_id(knowledge_id, db=db)
-                return [FileMetadataResponse(**file.model_dump()) for file in files]
-        except Exception:
-            return []
-
-    def add_file_to_knowledge_by_id(
-        self,
-        knowledge_id: str,
-        file_id: str,
-        user_id: str,
-        db: Optional[Session] = None,
-    ) -> Optional[KnowledgeFileModel]:
-        with get_db_context(db) as db:
-            knowledge_file = KnowledgeFileModel(
-                **{
-                    "id": str(uuid.uuid4()),
-                    "knowledge_id": knowledge_id,
-                    "file_id": file_id,
-                    "user_id": user_id,
-                    "created_at": int(time.time()),
-                    "updated_at": int(time.time()),
-                }
-            )
-
-            try:
-                result = KnowledgeFile(**knowledge_file.model_dump())
-                db.add(result)
-                db.commit()
-                db.refresh(result)
-                if result:
-                    return KnowledgeFileModel.model_validate(result)
-                else:
-                    return None
-            except Exception:
-                return None
-
-    def has_file(
-        self, knowledge_id: str, file_id: str, db: Optional[Session] = None
-    ) -> bool:
-        """Check whether a file belongs to a knowledge base."""
-        try:
-            with get_db_context(db) as db:
-                return (
-                    db.query(KnowledgeFile)
-                    .filter_by(knowledge_id=knowledge_id, file_id=file_id)
-                    .first()
-                    is not None
-                )
-        except Exception:
-            return False
 
     def remove_file_from_knowledge_by_id(
         self, knowledge_id: str, file_id: str, db: Optional[Session] = None
@@ -641,81 +534,6 @@ class KnowledgeTable:
         except Exception:
             return False
 
-    def reset_knowledge_by_id(
-        self, id: str, db: Optional[Session] = None
-    ) -> Optional[KnowledgeModel]:
-        try:
-            with get_db_context(db) as db:
-                # Delete all knowledge_file entries for this knowledge_id
-                db.query(KnowledgeFile).filter_by(knowledge_id=id).delete()
-                db.commit()
-
-                # Update the knowledge entry's updated_at timestamp
-                db.query(Knowledge).filter_by(id=id).update(
-                    {
-                        "updated_at": int(time.time()),
-                    }
-                )
-                db.commit()
-
-                return self.get_knowledge_by_id(id=id, db=db)
-        except Exception as e:
-            log.exception(e)
-            return None
-
-    def update_knowledge_by_id(
-        self,
-        id: str,
-        form_data: KnowledgeForm,
-        overwrite: bool = False,
-        db: Optional[Session] = None,
-    ) -> Optional[KnowledgeModel]:
-        try:
-            with get_db_context(db) as db:
-                knowledge = self.get_knowledge_by_id(id=id, db=db)
-                db.query(Knowledge).filter_by(id=id).update(
-                    {
-                        **form_data.model_dump(exclude={"access_grants"}),
-                        "updated_at": int(time.time()),
-                    }
-                )
-                db.commit()
-                if form_data.access_grants is not None:
-                    AccessGrants.set_access_grants(
-                        "knowledge", id, form_data.access_grants, db=db
-                    )
-                return self.get_knowledge_by_id(id=id, db=db)
-        except Exception as e:
-            log.exception(e)
-            return None
-
-    def update_knowledge_data_by_id(
-        self, id: str, data: dict, db: Optional[Session] = None
-    ) -> Optional[KnowledgeModel]:
-        try:
-            with get_db_context(db) as db:
-                knowledge = self.get_knowledge_by_id(id=id, db=db)
-                db.query(Knowledge).filter_by(id=id).update(
-                    {
-                        "data": data,
-                        "updated_at": int(time.time()),
-                    }
-                )
-                db.commit()
-                return self.get_knowledge_by_id(id=id, db=db)
-        except Exception as e:
-            log.exception(e)
-            return None
-
-    def delete_knowledge_by_id(self, id: str, db: Optional[Session] = None) -> bool:
-        try:
-            with get_db_context(db) as db:
-                AccessGrants.revoke_all_access("knowledge", id, db=db)
-                db.query(Knowledge).filter_by(id=id).delete()
-                db.commit()
-                return True
-        except Exception:
-            return False
 
     def delete_all_knowledge(self, db: Optional[Session] = None) -> bool:
         with get_db_context(db) as db:

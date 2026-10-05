@@ -3,9 +3,9 @@ import time
 from typing import Optional
 
 from sqlalchemy.orm import Session, defer
-from neveai.internal.db import Base, JSONField, get_db, get_db_context
+from neveai.internal.db import (Base, JSONField, get_db_context)
 from neveai.models.users import Users, UserResponse
-from neveai.models.groups import Groups
+import neveai.models.groups
 from neveai.models.access_grants import AccessGrantModel, AccessGrants
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -114,37 +114,6 @@ class ToolsTable:
         )
         return ToolModel.model_validate(tool_data)
 
-    def insert_new_tool(
-        self,
-        user_id: str,
-        form_data: ToolForm,
-        specs: list[dict],
-        db: Optional[Session] = None,
-    ) -> Optional[ToolModel]:
-        with get_db_context(db) as db:
-            try:
-                result = Tool(
-                    **{
-                        **form_data.model_dump(exclude={"access_grants"}),
-                        "specs": specs,
-                        "user_id": user_id,
-                        "updated_at": int(time.time()),
-                        "created_at": int(time.time()),
-                    }
-                )
-                db.add(result)
-                db.commit()
-                db.refresh(result)
-                AccessGrants.set_access_grants(
-                    "tool", result.id, form_data.access_grants, db=db
-                )
-                if result:
-                    return self._to_tool_model(result, db=db)
-                else:
-                    return None
-            except Exception as e:
-                log.exception(f"Error creating a new tool: {e}")
-                return None
 
     def get_tool_by_id(
         self, id: str, db: Optional[Session] = None
@@ -189,31 +158,6 @@ class ToolsTable:
                 )
             return tools
 
-    def get_tools_by_user_id(
-        self,
-        user_id: str,
-        permission: str = "write",
-        defer_content: bool = False,
-        db: Optional[Session] = None,
-    ) -> list[ToolUserModel]:
-        tools = self.get_tools(defer_content=defer_content, db=db)
-        user_group_ids = {
-            group.id for group in Groups.get_groups_by_member_id(user_id, db=db)
-        }
-
-        return [
-            tool
-            for tool in tools
-            if tool.user_id == user_id
-            or AccessGrants.has_access(
-                user_id=user_id,
-                resource_type="tool",
-                resource_id=tool.id,
-                permission=permission,
-                user_group_ids=user_group_ids,
-                db=db,
-            )
-        ]
 
     def get_tool_valves_by_id(
         self, id: str, db: Optional[Session] = None
@@ -302,17 +246,6 @@ class ToolsTable:
                 return self._to_tool_model(tool, db=db)
         except Exception:
             return None
-
-    def delete_tool_by_id(self, id: str, db: Optional[Session] = None) -> bool:
-        try:
-            with get_db_context(db) as db:
-                AccessGrants.revoke_all_access("tool", id, db=db)
-                db.query(Tool).filter_by(id=id).delete()
-                db.commit()
-
-                return True
-        except Exception:
-            return False
 
 
 Tools = ToolsTable()
