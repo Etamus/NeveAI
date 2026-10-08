@@ -3,20 +3,25 @@ import { tick } from 'svelte';
 export interface ComposerLayout {
 	key: string;
 	context: string;
+	conversation?: string;
 }
 
 export function animateComposerHeight(node: HTMLElement, layout: ComposerLayout) {
 	let previousHeight = node.getBoundingClientRect().height;
+	const measureRadius = (height: number) => typeof getComputedStyle === 'undefined' ? 0 : Math.min(height / 2, parseFloat(getComputedStyle(node).borderTopLeftRadius) || 0);
+	let previousRadius = measureRadius(previousHeight);
 	let animation: Animation | null = null;
 	let revision = 0;
 	let destroyed = false;
 	let key = layout.key;
 	let context = layout.context;
+	let conversation = layout.conversation ?? layout.context;
 	let interacted = false;
 	const motionSelectors = ['#chat-input', '#input-menu-button', '#send-message-button', '#thinking-dropdown-container > button', '[data-token-usage-trigger]'];
 	let motionRects = new Map<string, DOMRect>();
 	let partAnimations: Animation[] = [];
 	const captureMotionRects = () => {
+		previousRadius = measureRadius(node.getBoundingClientRect().height);
 		motionRects = new Map(motionSelectors.flatMap((selector) => {
 			const part = node.querySelector?.<HTMLElement>(selector);
 			return part ? [[selector, part.getBoundingClientRect()] as const] : [];
@@ -39,7 +44,7 @@ export function animateComposerHeight(node: HTMLElement, layout: ComposerLayout)
 	};
 	const noteInteraction = (event: Event) => {
 		const target = event.target as Element | null;
-		if (target && (node.contains(target) || target.closest('.composer-integrations-menu'))) {
+		if (target && (node.contains(target) || target.closest('.composer-integrations-menu, [data-model-selector-content], [id^="model-selector-"]'))) {
 			interacted = true;
 			if (event.type === 'pointerdown' || !target.closest?.('#chat-input')) captureMotionRects();
 		}
@@ -71,13 +76,16 @@ export function animateComposerHeight(node: HTMLElement, layout: ComposerLayout)
 
 	return {
 		async update(next: ComposerLayout) {
-			if (next.key === key && next.context === context) return;
+			if (next.key === key && next.context === context && (next.conversation ?? next.context) === conversation) return;
 			const sameContext = next.context === context;
-			if (!sameContext) interacted = false;
+			const sameConversation = (next.conversation ?? next.context) === conversation;
+			if (!sameConversation) interacted = false;
 			key = next.key;
 			context = next.context;
+			conversation = next.conversation ?? next.context;
 			const currentRevision = ++revision;
 			const from = animation ? node.getBoundingClientRect().height : previousHeight;
+			const fromRadius = animation ? measureRadius(from) : previousRadius;
 			const fromRects = motionRects;
 			const messages = pane?.querySelector<HTMLElement>('#messages-container');
 			const wasAtBottom = messages && messages.scrollHeight - messages.clientHeight - messages.scrollTop <= 2;
@@ -88,7 +96,8 @@ export function animateComposerHeight(node: HTMLElement, layout: ComposerLayout)
 			if (destroyed || currentRevision !== revision) return;
 			const to = node.getBoundingClientRect().height;
 			previousHeight = to;
-			if (sameContext && interacted && to < from && Number.isFinite(reserved) && root) {
+			const preserveReadingPosition = sameConversation && (interacted || !sameContext);
+			if (preserveReadingPosition && to <= from && Number.isFinite(reserved) && root) {
 				// Removing a chip must not shrink the scroll range and clamp the reading position.
 				reservationCeiling = {
 					height: reserved,
@@ -97,7 +106,7 @@ export function animateComposerHeight(node: HTMLElement, layout: ComposerLayout)
 					preserve: true
 				};
 			}
-			if (sameContext && interacted && wasAtBottom && to > from && Number.isFinite(reserved) && root && messages) {
+			if (preserveReadingPosition && wasAtBottom && to > from && Number.isFinite(reserved) && root && messages) {
 				const lastMessage = Array.from(messages.querySelectorAll<HTMLElement>('[id^="message-"]')).at(-1);
 				if (lastMessage) {
 					// Reuse the existing breathing room instead of adding an empty scroll range.
@@ -126,21 +135,26 @@ export function animateComposerHeight(node: HTMLElement, layout: ComposerLayout)
 				const part = node.querySelector?.<HTMLElement>(selector);
 				return part ? [[selector, part.getBoundingClientRect()] as const] : [];
 			}));
-			animation = node.animate([{ height: `${from}px` }, { height: `${to}px` }], options);
-			if (to < from) {
-				// Keep controls at their previous screen position while switching to the compact row.
+			const toRadius = measureRadius(to);
+			animation = node.animate([
+				{ height: `${from}px`, ...(fromRadius && toRadius ? { borderRadius: `${fromRadius}px` } : {}) },
+				{ height: `${to}px`, ...(fromRadius && toRadius ? { borderRadius: `${toRadius}px` } : {}) }
+			], options);
+			{
+				// Follow the same geometry in both directions, including the editor's width.
 				for (const selector of motionSelectors) {
 					const part = node.querySelector?.<HTMLElement>(selector);
 					const before = fromRects.get(selector);
 					if (!part?.animate || !before) continue;
-					const after = root?.dataset.ongoing === 'true' && selector !== '#chat-input'
+					const after = to < from && root?.dataset.ongoing === 'true' && selector !== '#chat-input'
 						? finalRects.get(selector)! : part.getBoundingClientRect();
 					const x = before.left - after.left;
 					const y = before.top - after.top;
-					if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) continue;
+					const resizeEditor = selector === '#chat-input' && Number.isFinite(before.width) && Number.isFinite(after.width) && Math.abs(before.width - after.width) > 1;
+					if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5 && !resizeEditor) continue;
 					partAnimations.push(part.animate([
-						{ transform: `translate(${x}px, ${y}px)` },
-						{ transform: 'translate(0px, 0px)' }
+						{ transform: `translate(${x}px, ${y}px)`, ...(resizeEditor ? { width: `${before.width}px` } : {}) },
+						{ transform: 'translate(0px, 0px)', ...(resizeEditor ? { width: `${after.width}px` } : {}) }
 					], options));
 				}
 			}

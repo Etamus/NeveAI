@@ -242,7 +242,7 @@
 		keepMounted
 		onOutsideClick={() => unifiedModels?.handleOutsideClick() ?? false}
 	>
-		<UnifiedModels bind:this={unifiedModels} preload={unifiedModelsPreload} show={$showLocalModelsModal} />
+		<UnifiedModels bind:this={unifiedModels} preload={unifiedModelsPreload} show={$showLocalModelsModal} onClose={() => showLocalModelsModal.set(false)} />
 	</Modal>
 {/if}
 
@@ -255,7 +255,7 @@
 	aria-label="New Chat"
 />
 
-<nav class="sticky top-0 z-30 w-full pt-0.5 pb-1 flex flex-col items-center drag-region">
+<nav class="chat-navbar sticky top-0 z-30 w-full pt-0.5 pb-1 flex flex-col items-center drag-region">
 	<div class="flex items-center w-full pl-1.5 pr-0">
 		<div
 			id="navbar-bg-gradient-to-b"
@@ -268,7 +268,7 @@
 			<div class="flex items-center w-full max-w-full">
 				{#if $mobile && !$showSidebar}
 					<div
-						class="-translate-x-0.5 mr-1 mt-1 self-start flex flex-none items-center text-gray-600 dark:text-gray-400"
+						class="chat-navbar-sidebar -translate-x-0.5 mr-1 mt-1 self-start flex flex-none items-center text-gray-600 dark:text-gray-400"
 					>
 						<Tooltip content={$showSidebar ? $i18n.t('Close Sidebar') : $i18n.t('Open Sidebar')}>
 							<button
@@ -286,7 +286,7 @@
 				{/if}
 
 				<div
-					class="flex-1 overflow-hidden max-w-full mt-0.5 py-0.5
+					class="chat-navbar-model flex-1 overflow-hidden max-w-full mt-0.5 py-0.5
 			{$showSidebar ? '-ml-1' : '-ml-2'}
 			"
 				>
@@ -295,7 +295,7 @@
 					{/if}
 				</div>
 
-				<div class="self-start flex flex-none items-center text-gray-600 dark:text-gray-400">
+				<div class="chat-navbar-actions self-start flex flex-none items-center text-gray-600 dark:text-gray-400">
 					<!-- <div class="md:hidden flex self-center w-[1px] h-5 mx-2 bg-gray-300 dark:bg-stone-700" /> -->
 
 					{#if $mobile && !$temporaryChatEnabled && chat && chat.id}
@@ -448,3 +448,20 @@
 		{/if}
 	</div>
 </nav>
+
+<style>
+	@media (max-width: 767px) {
+		.chat-navbar { padding-top: env(safe-area-inset-top, 0px); padding-bottom: 0; }
+		.chat-navbar-model { min-width: 0; margin: 0; padding: 0; }
+		.chat-navbar-actions { align-self: center; gap: 0; }
+		.chat-navbar-sidebar { align-self: center; margin: 0; transform: none; }
+		.chat-navbar-sidebar :global(button) { width: 40px; height: 40px; justify-content: center; align-items: center; }
+		.chat-navbar :global(button) { min-height: 40px; }
+		.chat-navbar :global(button[id^='model-selector-']) { padding-inline: 0.375rem; font-size: 14px; }
+		.chat-navbar :global(button[aria-label='New Chat']) { display: none; }
+		.chat-navbar :global(#chat-context-menu-button),
+		.chat-navbar :global(button[aria-label='Models']),
+		.chat-navbar :global(#chat-parameters-button) { width: 40px; height: 40px; padding: 0; justify-content: center; align-items: center; }
+		.chat-navbar :global(button svg) { flex-shrink: 0; }
+	}
+</style>

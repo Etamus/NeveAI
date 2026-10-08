@@ -11,6 +11,23 @@ from neveai.routers.llamacpp import (
 
 
 class LlamaCppReasoningModeTests(unittest.TestCase):
+    def test_neve_sense_uses_effort_even_without_runtime_properties(self):
+        for filename in ("Neve-Sense-2-20B-Q4.gguf", "Neve-Sense2-20B.gguf"):
+            self.assertEqual(_detect_reasoning_control(filename), "effort")
+
+    def test_effort_slider_levels(self):
+        for mode, extended, unlimited, effort in (
+            ("quick", False, False, "low"),
+            ("reasoning", False, False, "medium"),
+            ("reasoning", True, False, "high"),
+            ("reasoning", True, True, "high"),
+        ):
+            with self.subTest(effort=effort, unlimited=unlimited):
+                self.assertEqual(
+                    _resolve_reasoning_settings("effort", mode, extended, unlimited),
+                    (False, None, effort),
+                )
+
     def test_maximum_reasoning_has_no_fixed_budget(self):
         for control in ("toggle", "budget", "unknown"):
             self.assertEqual(

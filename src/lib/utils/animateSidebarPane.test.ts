@@ -44,7 +44,7 @@ describe('Sidebar pane animation', () => {
 			offsetWidth: { get: () => f.node.style.width === '100%' ? 1200 : 940 }
 		});
 		f.action.update(true);
-		expect(f.node.style.width).toBe('calc(100% - var(--sidebar-width, 260px))');
+		expect(f.node.style.width).toBe('calc(100% - var(--sidebar-width, 276px))');
 		expect(f.animate.mock.calls[0][0][0]).toEqual({ transform: 'translateX(-130px)' });
 		f.action.destroy();
 	});

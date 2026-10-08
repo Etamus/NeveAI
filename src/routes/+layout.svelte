@@ -780,6 +780,11 @@
 />
 
 <style>
+	:global(body:has(#model-settings-content) [data-sonner-toaster]),
+	:global(body:has(#model-settings-content) [data-neve-toast]) {
+		z-index: 30;
+	}
+
 	:global([data-sonner-toaster][data-y-position='top'][data-x-position='right']) {
 		top: calc(max(var(--offset), env(safe-area-inset-top)) + 20px + var(--neve-update-toast-offset, 0px) + var(--neve-download-toast-offset, 0px));
 	}

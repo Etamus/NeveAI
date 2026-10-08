@@ -1,5 +1,12 @@
 export const REASONING_LEVELS = ['Instantâneo', 'Médio', 'Alto', 'Extra alto'] as const;
 export type ReasoningLevel = 0 | 1 | 2 | 3;
+export function usesReasoningEffort(model: any): boolean {
+	if (!model) return false;
+	const meta = model.info?.meta ?? {};
+	if (meta.neve_catalog_id === 'neve-sense' || model.llamacpp?.reasoning_control === 'effort') return true;
+	const identity = [model.id, model.name, model.llamacpp?.filename, meta.base_model_id].join(' ');
+	return /gpt[\s._-]*oss|\bneve[\s._-]*sense(?:\d+)?\b/i.test(identity);
+}
 const LEVEL_KEY = 'neveai.reasoningLevel';
 
 export function getReasoningLevel(): ReasoningLevel {

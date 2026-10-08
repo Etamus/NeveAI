@@ -378,7 +378,7 @@
 		isResizing = true;
 
 		startClientX = e.clientX;
-		startWidth = $sidebarWidth ?? 260;
+		startWidth = $sidebarWidth ?? 276;
 
 		document.body.style.userSelect = 'none';
 	};
@@ -406,7 +406,7 @@
 		try {
 			const width = Number(localStorage.getItem('sidebarWidth'));
 			if (!Number.isNaN(width) && width >= MIN_WIDTH && width <= MAX_WIDTH) {
-				sidebarWidth.set(width);
+				sidebarWidth.set(width === 260 ? 276 : width);
 			}
 		} catch {}
 
@@ -1058,7 +1058,7 @@
 									name={$i18n.t('Pinned')}
 								>
 									<div
-										class="ml-3 pl-1 mt-[1px] flex flex-col overflow-y-auto scrollbar-hidden border-s border-gray-100 dark:border-gray-900 text-gray-900 dark:text-gray-200"
+										class="ml-3 pl-1 mt-[1px] flex flex-col overflow-y-auto scrollbar-hidden border-s border-gray-100 dark:border-gray-700 text-gray-900 dark:text-gray-200"
 									>
 										{#each $pinnedChats as chat, idx (`pinned-chat-${chat?.id ?? idx}`)}
 											<ChatItem

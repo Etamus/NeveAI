@@ -61,6 +61,7 @@
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
 	import { getMessageScrollAnchor } from '$lib/utils/messageScrollAnchor';
 	import { getMessagesContentHeight } from '$lib/utils/messageScrollGeometry';
+	import { getAccordionScrollPosition } from '$lib/utils/accordionScrollPosition';
 	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
 	import { getFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
 	import { updateFolderById } from '$lib/apis/folders';
@@ -2747,7 +2748,8 @@
 			activeGenerationSpacerHeightLimit = Math.max(activeGenerationSpacerHeightLimit, nextSpacerHeight);
 		}
 
-		const spacerHeightChanged = Math.abs(nextSpacerHeight - generationBottomSpacerHeight) > 1;
+		const spacerHeightChanged =
+			Math.abs(nextSpacerHeight - generationBottomSpacerHeight) > (preserveExistingPosition ? 0.5 : 1);
 		if (spacerHeightChanged) {
 			generationBottomSpacerHeight = nextSpacerHeight;
 			await tick();
@@ -3326,17 +3328,45 @@
 		}
 	};
 
+	let reasoningScrollbarSuppressed = false;
+	let accordionNavigationActive = false;
 	const observeMessagesContentSize = (node: HTMLElement) => {
 		if (typeof ResizeObserver === 'undefined') {
 			return {};
 		}
 
 		let resizeFrame: ReturnType<typeof requestAnimationFrame> | null = null;
-		let reasoningLayout: { scrollTop: number } | null = null;
+		let reasoningLayout: { scrollTop: number; reclaimSpacer: boolean } | null = null;
 		let reasoningLayoutTimer: ReturnType<typeof setTimeout> | null = null;
+		let accordionFrame: ReturnType<typeof requestAnimationFrame> | null = null;
+		let accordionLayout: {
+			startTop: number; startMax: number; targetTop: number | null;
+			followBottom: boolean; revealLimit: number; started: number; duration: number;
+		} | null = null;
+		const expandedPositions = new WeakMap<Element, number>();
+		const applyAccordionLayout = () => {
+			if (!accordionLayout || !messagesContainerElement) return false;
+			if (generating || anchoredGeneratingMessageId) return false;
+			const layout = accordionLayout;
+			const naturalMax = getMaxScrollWithoutGenerationSpacer();
+			const progress = Math.min(1, (performance.now() - layout.started) / layout.duration);
+			const { top, spacer } = getAccordionScrollPosition(layout, naturalMax, progress);
+			if (generationBottomSpacerHeight !== spacer) {
+				generationBottomSpacerHeight = spacer;
+				flushSync();
+			}
+			messagesContainerElement.scrollTop = top;
+			lastMessagesScrollTop = messagesContainerElement.scrollTop;
+			updateScrollStateFromContainer({ updateAutoScroll: false });
+			return true;
+		};
 		const applyReasoningLayout = () => {
+			if (applyAccordionLayout()) return true;
 			if (!reasoningLayout || !messagesContainerElement) return false;
-			if (getMessagesMaxScrollTop() < reasoningLayout.scrollTop) {
+			if (
+				getMessagesMaxScrollTop() < reasoningLayout.scrollTop ||
+				(reasoningLayout.reclaimSpacer && generationBottomSpacerHeight > 0)
+			) {
 				void fitGenerationSpacerToViewport(reasoningLayout.scrollTop, true);
 				flushSync();
 			}
@@ -3346,11 +3376,60 @@
 			updateScrollStateFromContainer({ updateAutoScroll: false });
 			return true;
 		};
-		const handleReasoningLayout = () => {
+		const handleReasoningLayout = (event: Event) => {
 			if (!messagesContainerElement) return;
+			const detail = (event as CustomEvent).detail;
+			if (!generating && !anchoredGeneratingMessageId && !detail?.automatic) {
+				cancelReasoningLayout();
+				const element = event.target as Element;
+				const top = messagesContainerElement.scrollTop;
+				const naturalMax = getMaxScrollWithoutGenerationSpacer();
+				const followBottom = getMessagesMaxScrollTop() - top <= 24;
+				const opening = detail?.opening !== false;
+				const previousTop = opening ? null : expandedPositions.get(element) ?? null;
+				if (opening && followBottom) expandedPositions.set(element, Math.min(top, Math.ceil(naturalMax)));
+				else expandedPositions.delete(element);
+				accordionLayout = {
+					startTop: top, startMax: naturalMax,
+					targetTop: previousTop !== null && top >= previousTop - 24 ? previousTop : null,
+					followBottom: opening && followBottom,
+					revealLimit: Math.max(0, element.getBoundingClientRect().top - messagesContainerElement.getBoundingClientRect().top - 24),
+					started: performance.now(), duration: Math.max(220, Number(detail?.duration || 0) + 50)
+				};
+				accordionNavigationActive = true;
+				reasoningScrollbarSuppressed = getMessagesMaxScrollTop() <= 1;
+				generationSpacerScrollLimit = null;
+				generationSpacerScrollAllowance = null;
+				cancelMessagesBottomWheelLock();
+				if (generationSpacerRAF) cancelAnimationFrame(generationSpacerRAF);
+				generationSpacerRAF = null;
+				const animate = () => {
+					if (!accordionLayout) return;
+					if (!applyAccordionLayout()) {
+						accordionLayout = null;
+						accordionFrame = null;
+						accordionNavigationActive = false;
+						reasoningScrollbarSuppressed = false;
+						return;
+					}
+					if (performance.now() - accordionLayout.started >= accordionLayout.duration) {
+						accordionLayout.started = performance.now() - accordionLayout.duration;
+						applyAccordionLayout();
+						accordionLayout = null;
+						accordionFrame = null;
+						accordionNavigationActive = false;
+						reasoningScrollbarSuppressed = false;
+						updateScrollStateFromContainer();
+					} else accordionFrame = requestAnimationFrame(animate);
+				};
+				accordionFrame = requestAnimationFrame(animate);
+				return;
+			}
+			reasoningScrollbarSuppressed = getMessagesMaxScrollTop() <= 1;
 			// Accordion changes preserve the reading position; they never navigate to the bottom.
 			reasoningLayout = {
-				scrollTop: messagesContainerElement.scrollTop
+				scrollTop: messagesContainerElement.scrollTop,
+				reclaimSpacer: !generating && !anchoredGeneratingMessageId
 			};
 			cancelMessagesBottomWheelLock();
 			cancelGenerationAnchorRAF();
@@ -3363,17 +3442,30 @@
 				applyReasoningLayout();
 				reasoningLayout = null;
 				reasoningLayoutTimer = null;
+				reasoningScrollbarSuppressed = false;
 				updateScrollStateFromContainer();
-			}, 220);
+			}, Math.max(220, Number((event as CustomEvent).detail?.duration || 0) + 50));
 		};
 		const cancelReasoningLayout = () => {
+			if (accordionFrame) cancelAnimationFrame(accordionFrame);
+			accordionFrame = null;
+			if (accordionLayout) {
+				accordionLayout = null;
+				generationBottomSpacerHeight = 0;
+				generationSpacerScrollLimit = null;
+				generationSpacerScrollAllowance = null;
+			}
+			accordionNavigationActive = false;
 			reasoningLayout = null;
+			reasoningScrollbarSuppressed = false;
 			if (reasoningLayoutTimer) clearTimeout(reasoningLayoutTimer);
 			reasoningLayoutTimer = null;
 		};
 		node.addEventListener('neve:reasoning-layout', handleReasoningLayout);
+		node.addEventListener('neve:chat-layout', handleReasoningLayout);
 		node.addEventListener('wheel', cancelReasoningLayout, { passive: true });
 		node.addEventListener('pointerdown', cancelReasoningLayout);
+		node.addEventListener('keydown', cancelReasoningLayout);
 		const preserveGenerationPosition = () => {
 			if (applyReasoningLayout()) return;
 			if (!anchoredGeneratingMessageId || visualMediaGenerationAnchorId === anchoredGeneratingMessageId || textGenerationAnchorScrollTop === null || !messagesContainerElement || cancelBottomNavigation) return;
@@ -3392,7 +3484,16 @@
 			attributeFilter: ['style', 'open'],
 			subtree: true
 		});
+		const updateScrollbarGutter = () => {
+			if (!messagesContainerElement) return;
+			const gutter = (messagesContainerElement.offsetWidth - messagesContainerElement.clientWidth) / 2;
+			messagesContainerElement.closest<HTMLElement>('#chat-pane')?.style.setProperty(
+				'--chat-scrollbar-gutter', `${Math.max(0, gutter)}px`
+			);
+		};
+		updateScrollbarGutter();
 		const observer = new ResizeObserver(() => {
+			updateScrollbarGutter();
 			preserveGenerationPosition();
 			if (resizeFrame) {
 				cancelAnimationFrame(resizeFrame);
@@ -3424,10 +3525,14 @@
 
 		return {
 			destroy() {
+				cancelReasoningLayout();
 				node.removeEventListener('neve:reasoning-layout', handleReasoningLayout);
+				node.removeEventListener('neve:chat-layout', handleReasoningLayout);
 				node.removeEventListener('wheel', cancelReasoningLayout);
 				node.removeEventListener('pointerdown', cancelReasoningLayout);
+				node.removeEventListener('keydown', cancelReasoningLayout);
 				if (reasoningLayoutTimer) clearTimeout(reasoningLayoutTimer);
+				reasoningScrollbarSuppressed = false;
 				observer.disconnect();
 				contentObserver.disconnect();
 				if (resizeFrame) {
@@ -5791,6 +5896,7 @@
 							<div
 								class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden"
 								id="messages-container"
+								class:reasoning-layout-no-scroll={reasoningScrollbarSuppressed}
 								bind:this={messagesContainerElement}
 							style="overflow-anchor: none; scrollbar-gutter: stable both-edges; clip-path: inset(0 0 0.5rem 0);"
 								on:wheel|nonpassive={preventMessagesBottomWheelJitter}
@@ -5799,6 +5905,10 @@
 								on:pointercancel={endGenerationSpacerPointerScroll}
 								on:pointerleave={endGenerationSpacerPointerScroll}
 								on:scroll={(e) => {
+									if (accordionNavigationActive) {
+										updateScrollStateFromContainer({ updateAutoScroll: false });
+										return;
+									}
 									consumeGenerationSpacerFromUpwardScroll();
 									if (clampMessagesBottomWheelJitter()) {
 										return;
@@ -6024,6 +6134,14 @@
 </div>
 
 <style>
+	@supports not selector(::-webkit-scrollbar) {
+		#messages-container.reasoning-layout-no-scroll {
+			scrollbar-color: transparent transparent;
+		}
+	}
+	#messages-container.reasoning-layout-no-scroll::-webkit-scrollbar-thumb {
+		visibility: hidden;
+	}
 	.chat-composer-overlay {
 		--composer-mask: 255, 255, 255;
 		isolation: isolate;
@@ -6034,7 +6152,7 @@
 	.chat-composer-overlay::before {
 		content: '';
 		position: absolute;
-		inset: -30px 0 0;
+		inset: -30px var(--chat-scrollbar-gutter, 0.5rem) 0 0;
 		z-index: -1;
 		pointer-events: none;
 		background: linear-gradient(to bottom, rgba(var(--composer-mask), 0), rgba(var(--composer-mask), 0.65) 14px, rgba(var(--composer-mask), 1) 30px);

@@ -58,7 +58,7 @@
 	import RichTextInput from '../common/RichTextInput.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
 	import ReasoningDropdown from './MessageInput/ReasoningDropdown.svelte';
-	import { getReasoningLevel, getReasoningState, setReasoningLevel, type ReasoningLevel } from '$lib/utils/reasoningModes';
+	import { getReasoningLevel, getReasoningState, setReasoningLevel, usesReasoningEffort, type ReasoningLevel } from '$lib/utils/reasoningModes';
 	import FileItem from '../common/FileItem.svelte';
 	import Image from '../common/Image.svelte';
 	import Spinner from '../common/Spinner.svelte';
@@ -109,6 +109,8 @@
 
 	let selectedModelIds: string[] = [];
 	$: selectedModelIds = atSelectedModel !== undefined ? [atSelectedModel.id] : selectedModels;
+	$: effortBased = usesReasoningEffort(atSelectedModel ?? $models.find((model) => model.id === selectedModelIds[0]));
+	$: responseInProgress = generating || !!(history?.currentId && history?.messages[history.currentId]?.done !== true);
 
 	export let history: any;
 	export let taskIds = null;
@@ -500,9 +502,7 @@
 
 	$: isCompact =
 		atSelectedModel === undefined &&
-		!generating &&
 		!uploadPending &&
-		!(history?.currentId && history?.messages[history.currentId]?.done !== true) &&
 		files.length === 0 &&
 		!webSearchEnabled &&
 		!deepSearchEnabled &&
@@ -1918,8 +1918,14 @@
 		class="relative flex items-center self-center"
 		style="margin-left: -2px; margin-right: 3px;"
 		data-token-usage-trigger
-		on:mouseenter={() => (showTokenPopup = true)}
-		on:mouseleave={() => (showTokenPopup = false)}
+		role={$mobile ? 'button' : undefined}
+		tabindex={$mobile ? 0 : undefined}
+		aria-label={$mobile ? $i18n.t('Uso de tokens') : undefined}
+		aria-expanded={$mobile ? showTokenPopup : undefined}
+		on:mouseenter={() => { if (!$mobile) showTokenPopup = true; }}
+		on:mouseleave={() => { if (!$mobile) showTokenPopup = false; }}
+		on:click={(event) => { if ($mobile && !(event.target as Element).closest('[data-token-usage-popup]')) showTokenPopup = !showTokenPopup; }}
+		on:keydown={(event) => { if ($mobile && ['Enter', ' '].includes(event.key)) { event.preventDefault(); showTokenPopup = !showTokenPopup; } }}
 	>
 		<div class="flex items-center gap-1 px-1 cursor-default select-none">
 			<svg width="24" height="24" viewBox="0 0 22 22" class="shrink-0">
@@ -2049,7 +2055,9 @@
 
 <svelte:window
 	on:resize={closeComposerDropdowns}
+	on:keydown={(event) => { if ($mobile && event.key === 'Escape') showTokenPopup = false; }}
 	on:click={(e) => {
+		if ($mobile && showTokenPopup && !(e.target as Element).closest('[data-token-usage-trigger], [data-token-usage-popup]')) showTokenPopup = false;
 		if (
 			showImageQualityDropdown &&
 			!(e.target as HTMLElement).closest(
@@ -2249,7 +2257,7 @@
 
 						<div
 							id="message-input-container"
-							use:animateComposerHeight={{ key: `${isCompact}:${stableDiffusionQuality}:${webSearchEnabled}:${deepSearchEnabled}:${codeExecutionEnabled}:${stableDiffusionEnabled}:${musicGenerationEnabled}:${videoGenerationEnabled}:${selectedToolIds.length}`, context: `${$chatId}:${selectedModels.join(',')}` }}
+							use:animateComposerHeight={{ key: `${isCompact}:${stableDiffusionQuality}:${webSearchEnabled}:${deepSearchEnabled}:${codeExecutionEnabled}:${stableDiffusionEnabled}:${musicGenerationEnabled}:${videoGenerationEnabled}:${selectedToolIds.length}`, context: `${$chatId}:${selectedModels.join(',')}`, conversation: $chatId }}
 							class="min-h-0 flex-none flex {isCompact
 								? 'flex-row items-center rounded-full'
 								: 'flex-col rounded-3xl'} relative z-40 w-full shadow-lg border {chatDragged
@@ -2626,19 +2634,24 @@
 							{#if isCompact}
 								<div class="composer-compact-controls self-center flex items-center gap-1.5 shrink-0 pr-1">
 									{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
-										<ReasoningDropdown ongoing={!!history?.currentId} level={reasoningLevel} bind:show={showThinkingDropdown} onLevelChange={changeReasoningLevel} position={viewportDropdown} />
+										<ReasoningDropdown {effortBased} ongoing={!!history?.currentId} level={reasoningLevel} bind:show={showThinkingDropdown} onLevelChange={changeReasoningLevel} position={viewportDropdown} />
 									{/if}
 
 									{@render usageIndicator()}
-									<Tooltip content={$i18n.t('Send message')}>
+									<Tooltip content={$i18n.t(responseInProgress ? 'Stop' : 'Send message')}>
 										<button
 											id="send-message-button"
-											class="{!sendDisabled && canSubmitMessage
+										class="grid size-8 shrink-0 place-items-center {responseInProgress || (!sendDisabled && canSubmitMessage)
 												? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 '
-												: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full p-1.5 self-center"
-											type="submit"
-											disabled={sendDisabled || !canSubmitMessage}
+											: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full p-0 self-center"
+										type={responseInProgress ? 'button' : 'submit'}
+										disabled={!responseInProgress && (sendDisabled || !canSubmitMessage)}
+										aria-label={$i18n.t(responseInProgress ? 'Stop' : 'Send message')}
+										on:click={() => { if (responseInProgress) stopResponse(); }}
 										>
+										{#if responseInProgress}
+												<svg viewBox="0 0 24 24" fill="currentColor" class="size-5" aria-hidden="true"><circle cx="12" cy="12" r="9.75" /><rect x="8.25" y="8.25" width="7.5" height="7.5" rx="1.15" class="text-black dark:text-white" /></svg>
+										{:else}
 											<svg
 												xmlns="http://www.w3.org/2000/svg"
 												viewBox="0 0 16 16"
@@ -2651,6 +2664,7 @@
 													clip-rule="evenodd"
 												/>
 											</svg>
+										{/if}
 										</button>
 									</Tooltip>
 								</div>
@@ -3235,9 +3249,18 @@
 									<div
 										class="message-input-actions-secondary self-end flex mr-1 shrink-0 {history?.currentId ? 'gap-[calc(0.375rem+0.5px)]' : 'space-x-1 gap-[0.5px]'}"
 									>
-										{#if generating || (history?.currentId && history?.messages[history.currentId]?.done !== true) || uploadPending}
+										{#if (selectedToolIds ?? []).length > 0 || ($terminalServers ?? []).some((s) => s.url)}
+											<TerminalMenu bind:show={showTools} />
+										{/if}
+										{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
+											<ReasoningDropdown {effortBased} ongoing={!!history?.currentId} spacious={!history?.currentId} level={reasoningLevel} bind:show={showThinkingDropdown} onLevelChange={changeReasoningLevel} position={viewportDropdown} />
+										{/if}
+										{@render usageIndicator()}
+										{#if responseInProgress}
 											<Tooltip content={$i18n.t('Stop')}>
 												<button
+													id="send-message-button"
+													aria-label={$i18n.t('Stop')}
 													class="grid size-8 shrink-0 place-items-center rounded-full bg-white p-0 text-gray-800 transition hover:bg-gray-100 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-800"
 													type="button"
 													on:click={() => {
@@ -3264,16 +3287,6 @@
 												</button>
 											</Tooltip>
 										{:else}
-											{#if (selectedToolIds ?? []).length > 0 || ($terminalServers ?? []).some((s) => s.url)}
-												<TerminalMenu bind:show={showTools} />
-											{/if}
-
-											{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
-												<ReasoningDropdown ongoing={!!history?.currentId} spacious={!history?.currentId} level={reasoningLevel} bind:show={showThinkingDropdown} onLevelChange={changeReasoningLevel} position={viewportDropdown} />
-											{/if}
-
-											{@render usageIndicator()}
-
 											<div class=" flex items-center">
 												<Tooltip
 													content={uploadPending
@@ -3440,6 +3453,9 @@
 	:global(#message-input-container.composer-height-transition) {
 		overflow: clip;
 	}
+	:global(#message-input-container.composer-height-transition .chat-input-scroll) {
+		overflow: hidden;
+	}
 	:global(#message-input-container.composer-height-transition.flex-col) {
 		justify-content: flex-end;
 	}
@@ -3487,86 +3503,85 @@
 		.stable-image-actions .image-style-control > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 		.stable-image-actions .image-style-control svg { flex-shrink: 0; }
 	}
-	@media (max-width: 480px) {
-		.composer-compact-controls { gap: 0.375rem; }
-		:global(#thinking-dropdown-container > button > span) { display: none; }
-	}
-	@media (max-width: 640px) {
+	@media (max-width: 767px) {
+		:global(#message-input-container) { padding-inline: 0.5rem; border-radius: 1.5rem; }
+		:global(#message-input-container > .composer-editor) { padding-inline: 0.375rem; }
+		:global(#input-menu-button) { width: 36px; height: 36px; }
 		:global(.composer-add-icon) { translate: none; transform: none; }
-		.message-input-active-controls { flex-wrap: wrap; max-width: 100%; }
-		.image-quality-control button, .image-style-control button,
-		.image-resolution-control button { white-space: nowrap; }
-		:global(#thinking-dropdown-container > button) { white-space: nowrap; padding-inline: 0.375rem; }
-		.thinking-enhanced-label {
-			display: none;
-		}
-		.message-input-active-controls .chip-label {
-			display: none !important;
-		}
-
-		.message-input-actions.stable-image-actions {
-			align-items: end;
-		}
-
-		.stable-image-actions .message-input-actions-primary {
+		:global(#message-input-container.flex-row) {
 			display: grid;
-			grid-template-columns: 2rem minmax(0, 1fr) max-content minmax(0, 0.7fr);
-			max-width: calc(100% - 2.75rem);
-			column-gap: 0.125rem;
-			row-gap: 0.25rem;
+			grid-template-columns: 2.25rem minmax(0, 1fr);
+			align-items: center;
+			align-content: end;
+			border-radius: 1.5rem;
 		}
-
-		.stable-image-actions .message-input-add-control {
+		:global(#message-input-container.flex-row > .composer-editor) {
+			grid-column: 1 / -1;
+			grid-row: 1;
+			padding: 0.5rem 0.625rem 0.25rem;
+		}
+		:global(#message-input-container.flex-row > :has(#input-menu-button)) {
 			grid-column: 1;
 			grid-row: 2;
 		}
-
-		.stable-image-actions .message-input-active-controls {
-			display: contents;
-		}
-
-		.stable-image-actions .image-quality-control {
-			min-width: 0;
-			grid-column: 1 / 3;
-			grid-row: 1;
-		}
-
-		.stable-image-actions .image-style-control {
-			min-width: 0;
-			grid-column: 4;
-			grid-row: 1;
-		}
-
-		.stable-image-actions .image-resolution-control {
-			grid-column: 3;
-			grid-row: 1;
-		}
-
-		.stable-image-actions-no-style .message-input-actions-primary {
-			grid-template-columns: 2rem minmax(0, 1fr) max-content;
-		}
-		.stable-image-actions .image-quality-control > button,
-		.stable-image-actions .image-style-control > button { width: 100%; min-width: 0; padding-inline: 0.25rem; }
-		.stable-image-actions .image-quality-control > button > span,
-		.stable-image-actions .image-style-control > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-		.stable-image-actions .image-quality-control svg,
-		.stable-image-actions .image-style-control svg { flex-shrink: 0; }
-
-		.stable-image-actions-no-style .image-resolution-control {
-			grid-column: 3;
-		}
-
-		.stable-image-actions .stable-image-toggle {
+		.composer-compact-controls {
 			grid-column: 2;
 			grid-row: 2;
-			justify-self: start;
-			padding-left: 0.5rem;
-			padding-right: 0.5rem;
+			justify-content: flex-end;
+			min-width: 0;
+			gap: 0.375rem;
+			padding-right: 0.25rem;
+			align-items: center;
 		}
-
-		.stable-image-actions .stable-image-toggle > span:last-child {
-			display: none;
+		:global(#thinking-dropdown-container > button) {
+			min-height: 2.25rem;
+			font-size: 0.75rem;
+			white-space: nowrap;
+			padding-inline: 0.375rem;
 		}
+		:global(#chat-input) { font-size: 16px; }
+		.chat-input-scroll { max-height: min(12rem, 35dvh); }
+		.message-input-actions {
+			display: grid;
+			grid-template-columns: 2.25rem minmax(0, 1fr);
+			row-gap: 0.375rem;
+			align-items: center;
+			margin-inline: 0;
+		}
+		.message-input-actions .message-input-actions-primary,
+		.stable-image-actions .message-input-actions-primary { display: contents; }
+		.message-input-actions .message-input-active-controls,
+		.stable-image-actions .message-input-active-controls {
+			display: flex;
+			grid-column: 1 / -1;
+			grid-row: 1;
+			margin-left: 0;
+			gap: 0.25rem;
+			flex-wrap: wrap;
+			align-items: center;
+		}
+		.message-input-actions .message-input-add-control { grid-column: 1; grid-row: 2; align-self: center; }
+		.message-input-actions-secondary { grid-column: 2; grid-row: 2; justify-self: end; align-self: center; margin-right: 0.25rem; align-items: center; }
+		:global(#send-message-button) { align-self: center; }
+		:global(.chat-composer-overlay) { padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px)); }
+		.message-input-actions:not(.stable-image-actions) .message-input-active-controls .chip-label { display: inline !important; }
+		.message-input-active-controls button { min-height: 36px; white-space: nowrap; }
+		:global([data-composer-root] button.invisible) { visibility: visible; }
+		.stable-image-actions .image-quality-control { flex: 1 1 8rem; }
+		.stable-image-actions .image-style-control { flex: 1 1 6rem; }
+		.stable-image-actions .image-resolution-control { flex: 0 0 auto; }
+		.stable-image-actions .stable-image-toggle .chip-label { display: none; }
+		.image-quality-control, .image-style-control { min-width: 0; }
+		.image-quality-control > button, .image-style-control > button { max-width: 100%; }
+		.image-quality-control > button > span, .image-style-control > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+		.image-quality-control svg, .image-style-control svg { flex-shrink: 0; }
+		:global([data-token-usage-trigger]) { flex-shrink: 0; white-space: nowrap; min-height: 40px; }
+		:global([data-token-usage-trigger] > div:first-child) { align-items: center; }
+		:global([data-token-usage-trigger] > div:first-child > svg) { width: 20px; height: 20px; }
+		:global([data-token-usage-trigger] > div:first-child > span) { font-size: 12px; }
+	}
+	@media (max-width: 380px) {
+		:global(#message-input-container:has([data-token-usage-trigger]) .reasoning-mode-name) { display: none; }
 	}
 
 	.chat-input-scroll::-webkit-scrollbar-track {

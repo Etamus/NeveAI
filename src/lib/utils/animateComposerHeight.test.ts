@@ -26,6 +26,55 @@ function setup(reduced = false) {
 const layout = (key: string, context = 'chat-1') => ({ key, context });
 
 describe('composer height animation', () => {
+	it.each([true, false])('preserves reading space across model changes in the same chat (immediate %s)', async (immediate) => {
+		const { node, resize, interact } = setup();
+		resize(108);
+		let reservation = '132px';
+		let observeResize: () => void;
+		vi.stubGlobal('ResizeObserver', class {
+			constructor(callback: () => void) { observeResize = callback; }
+			observe() {}
+			disconnect() {}
+		});
+		const root = { dataset: { ongoing: 'true' }, getBoundingClientRect: () => node.getBoundingClientRect() };
+		const pane = {
+			querySelector: () => ({ scrollHeight: 1000, clientHeight: 500, scrollTop: 500 }),
+			style: { getPropertyValue: () => reservation, setProperty: (_key: string, value: string) => { reservation = value; } }
+		};
+		vi.spyOn(node, 'closest').mockImplementation((selector) => (selector === '#chat-pane' ? pane : root) as unknown as HTMLElement);
+		const action = animateComposerHeight(node, { key: 'expanded', context: 'chat-1:model-a', conversation: 'chat-1' });
+		await tick();
+		interact();
+		if (immediate) resize(52);
+		await action.update({ key: immediate ? 'compact' : 'expanded', context: 'chat-1:model-b', conversation: 'chat-1' });
+		expect(reservation).toBe('132px');
+		resize(52);
+		await action.update({ key: 'compact', context: 'chat-1:model-b', conversation: 'chat-1' });
+		expect(reservation).toBe('132px');
+		observeResize!();
+		expect(reservation).toBe('132px');
+		await action.update({ key: 'compact', context: 'chat-2:model-b', conversation: 'chat-2' });
+		expect(reservation).toBe('60px');
+		action.destroy();
+	});
+	it.each([true, false])('interpolates editor width without scaling its text (expanding %s)', async (expanding) => {
+		const { node, resize, interact } = setup();
+		resize(expanding ? 52 : 108);
+		let width = expanding ? 400 : 600;
+		const part = { getBoundingClientRect: () => ({ left: 40, top: 100, width }), animate: vi.fn(() => ({ cancel: vi.fn() })) };
+		Object.assign(node, { querySelector: (selector: string) => selector === '#chat-input' ? part : null });
+		const action = animateComposerHeight(node, layout('initial'));
+		await tick();
+		interact();
+		width = expanding ? 600 : 400;
+		resize(expanding ? 108 : 52);
+		await action.update(layout('next'));
+		expect(part.animate).toHaveBeenCalledWith([
+			{ transform: 'translate(0px, 0px)', width: expanding ? '400px' : '600px' },
+			{ transform: 'translate(0px, 0px)', width: expanding ? '600px' : '400px' }
+		], expect.anything());
+		action.destroy();
+	});
 	it.each([true, false])('reserves additional reading space only for expanded ongoing composers (expanded %s)', async (expanded) => {
 		const { node } = setup();
 		let observeResize: () => void;

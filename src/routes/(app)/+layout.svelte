@@ -425,13 +425,14 @@
 <SettingsModal bind:show={$showSettings} />
 
 {#if updateToastShownVersion}
-	<div role="status" aria-live="polite" class="fixed right-[9px] top-7 z-[1000000000] max-[600px]:left-[19px] max-[600px]:right-auto max-[600px]:top-4" bind:clientHeight={updateToastHeight}>
+	<div data-neve-toast role="status" aria-live="polite" class="fixed right-[9px] top-7 z-[1000000000] max-[600px]:left-[19px] max-[600px]:right-auto max-[600px]:top-4" bind:clientHeight={updateToastHeight}>
 		<NeveUpdateToast version={updateToastShownVersion} onClose={closeUpdateToast} onOpen={openUpdateSettings} />
 	</div>
 {/if}
 
 {#if $neveDownloadToast}
 	<div
+		data-neve-toast
 		role="status"
 		aria-live="polite"
 		class="fixed right-[9px] top-[calc(1.75rem+var(--neve-update-toast-offset,0px))] z-[1000000000] max-[600px]:left-[19px] max-[600px]:right-auto max-[600px]:top-[calc(1rem+var(--neve-update-toast-offset,0px))]"

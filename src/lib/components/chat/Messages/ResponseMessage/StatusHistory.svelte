@@ -1,4 +1,7 @@
 <script>
+	import { slide } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
+	import { notifyChatLayout } from '$lib/utils/notifyChatLayout';
 	import { getContext } from 'svelte';
 	const i18n = getContext('i18n');
 
@@ -72,8 +75,11 @@
 				aria-label={$i18n.t('Toggle status history')}
 				aria-expanded={isCompletedVisualStatus ? false : showHistory}
 				disabled={isCompletedVisualStatus}
-				on:click={() => {
-					if (!isCompletedVisualStatus) showHistory = !showHistory;
+				on:click={(event) => {
+					if (!isCompletedVisualStatus) {
+						notifyChatLayout(event.currentTarget, 200, !showHistory);
+						showHistory = !showHistory;
+					}
 				}}
 			>
 				<div class="flex items-start gap-2">
@@ -82,7 +88,7 @@
 			</button>
 
 			{#if showHistory && !isCompletedVisualStatus}
-				<div class="flex flex-row">
+				<div class="flex flex-row" transition:slide={{ duration: 200, easing: quintOut }}>
 					{#if visibleHistory.length > 1}
 						<div class="w-full">
 							{#each visibleHistory as status, idx}

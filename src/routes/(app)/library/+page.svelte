@@ -6,6 +6,8 @@
 	import Document from '$lib/components/icons/Document.svelte';
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 	import DocumentThumbnail from '$lib/components/common/DocumentThumbnail.svelte';
+	import Sidebar from '$lib/components/icons/Sidebar.svelte';
+	import { mobile, showSidebar } from '$lib/stores';
 	const i18n = getContext('i18n');
 	const tabs = [
 		{ id: 'all', label: 'All' },
@@ -33,20 +35,27 @@
 				? !['image', 'video', 'audio'].includes(mediaKind(file))
 				: mediaKind(file) === kind)
 	);
-	const load = async (more = false) => {
+	const load = async (more = false, preservePages = false) => {
 		const id = ++requestId;
+		const requestedKind = kind;
+		const pageCount = preservePages ? Math.max(1, Math.ceil(files.length / 50)) : 1;
+		const start = more ? files.length : 0;
 		loading = true;
 		error = '';
 		try {
-			const results = await getGeneratedFiles(
-				localStorage.token,
-				kind,
-				'',
-				more ? files.length : 0
-			);
-			if (id !== requestId) return;
-			files = more ? [...files, ...results] : results;
-			hasMore = results.length === 50;
+			const results: any[] = [];
+			let lastPage: any[] = [];
+			for (let page = 0; page < pageCount; page++) {
+				lastPage = await getGeneratedFiles(localStorage.token, requestedKind, '', start + page * 50);
+				if (id !== requestId) return;
+				results.push(...lastPage);
+				if (lastPage.length < 50) break;
+			}
+			// Commit the refreshed window together so later pages never disappear between requests.
+			files = [
+				...new Map((more ? [...files, ...results] : results).map((file) => [file.id, file])).values()
+			];
+			hasMore = lastPage.length === 50;
 		} catch (cause) {
 			if (id === requestId) error = String(cause);
 		} finally {
@@ -69,13 +78,13 @@
 		showViewer = true;
 	};
 	const refresh = () => {
-		if (!document.hidden && !showViewer && !loading) void load();
+		if (!document.hidden && !showViewer && !loading) void load(false, true);
 	};
 	onMount(() => {
 		mounted = true;
 		window.addEventListener('focus', refresh);
 		const filesChanged = () => {
-			void load();
+			void load(false, true);
 		};
 		window.addEventListener('neve:files-changed', filesChanged);
 		document.addEventListener('visibilitychange', refresh);
@@ -95,6 +104,9 @@
 
 <div class="h-full flex flex-col bg-white dark:bg-black text-gray-900 dark:text-gray-100">
 	<header class="flex flex-wrap items-center gap-3 px-5 py-4 shrink-0">
+		{#if $mobile}
+			<button type="button" class="grid size-9 place-items-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={$i18n.t('Open Sidebar')} on:click={() => showSidebar.set(true)}><Sidebar className="size-5" /></button>
+		{/if}
 		<h1 class="text-xl font-semibold whitespace-nowrap shrink-0">{$i18n.t('Library')}</h1>
 	</header>
 	<nav class="flex gap-1 px-5 pb-4 overflow-x-auto shrink-0" aria-label={$i18n.t('Library')}>
@@ -114,7 +126,7 @@
 	</nav>
 	<main class="flex-1 min-h-0 overflow-y-auto px-5 pb-6">
 		{#if error}<div role="alert" class="py-8 text-sm text-gray-500">
-				{error} <button class="underline" on:click={() => load()}>{$i18n.t('Retry')}</button>
+				{error} <button class="underline" on:click={() => load(false, true)}>{$i18n.t('Retry')}</button>
 			</div>{/if}
 		{#if visibleFiles.length === 0 && !error && !loading}<p
 				class="py-12 text-center text-sm text-gray-500"
@@ -172,6 +184,13 @@
 {#if showViewer}<FileItemModal item={selectedFile} bind:show={showViewer} />{/if}
 
 <style>
+	@media (max-width: 767px) {
+		header { padding-inline: 0.875rem; }
+		nav { padding-inline: 0.875rem; flex-wrap: wrap; }
+		nav button { padding-inline: 0.5rem; font-size: 0.75rem; min-height: 36px; }
+		main { padding-inline: 0.875rem; padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px)); }
+		main .library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+	}
 	.library-grid {
 		display: grid;
 		grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr));

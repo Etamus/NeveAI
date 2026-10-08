@@ -3,6 +3,7 @@
 	import { getContext } from 'svelte';
 	import { showModelSettings, user } from '$lib/stores';
 	import AdvancedParams from '$lib/components/chat/Settings/Advanced/AdvancedParams.svelte';
+	import Sidebar from '$lib/components/icons/Sidebar.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -13,7 +14,16 @@
 	$: if ((params?.system ?? '') !== '') showSystemPromptField = true;
 
 	const close = () => showModelSettings.set(false);
+	const handleKeyDown = (event: KeyboardEvent) => {
+		if (!$showModelSettings || event.key !== 'Escape' || event.isComposing || document.querySelector('.modal[aria-hidden="false"], [role="menu"][data-state="open"], [role="dialog"][data-state="open"]')) return;
+		event.preventDefault();
+		event.stopPropagation();
+		close();
+		document.getElementById('chat-parameters-button')?.focus({ preventScroll: true });
+	};
 </script>
+
+<svelte:window on:keydown|capture={handleKeyDown} />
 
 {#if $showModelSettings}
 	<!-- Backdrop -->
@@ -33,7 +43,7 @@
 	>
 		<!-- Header — Jan-style -->
 		<div
-			class="flex items-start justify-between px-5 pt-5 pb-4 border-b border-gray-200/30 dark:border-gray-700/15 shrink-0"
+			class="relative flex items-start justify-between pl-5 pr-12 pt-5 pb-4 border-b border-gray-200/30 dark:border-gray-700/15 shrink-0"
 		>
 			<div class="min-w-0 flex-1">
 				<h2 class="text-sm font-semibold text-gray-900 dark:text-white truncate leading-snug">
@@ -45,21 +55,13 @@
 			</div>
 
 			<button
-				class="ml-3 mt-0.5 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-500 dark:text-gray-400 shrink-0"
+				id="close-chat-parameters-button"
+				class="absolute top-1 right-[calc(0.5rem+1px)] max-md:right-1.5 flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition text-gray-600 dark:text-gray-400"
 				on:click={close}
 				aria-label={$i18n.t('Close')}
 				type="button"
 			>
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="1.5"
-					class="size-4"
-				>
-					<path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
-				</svg>
+				<Sidebar className="size-5 -scale-x-100" />
 			</button>
 		</div>
 

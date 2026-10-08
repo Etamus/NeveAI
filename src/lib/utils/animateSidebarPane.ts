@@ -1,8 +1,8 @@
 // Reflow once, then move the pane on the compositor instead of resizing text every frame.
 export function animateSidebarPane(node: HTMLElement, expanded: boolean) {
 	const setLayout = (open: boolean) => {
-		node.style.marginLeft = open ? 'var(--sidebar-width, 260px)' : '0';
-		node.style.width = open ? 'calc(100% - var(--sidebar-width, 260px))' : '100%';
+		node.style.marginLeft = open ? 'var(--sidebar-width, 276px)' : '0';
+		node.style.width = open ? 'calc(100% - var(--sidebar-width, 276px))' : '100%';
 	};
 	setLayout(expanded);
 	let state = expanded;

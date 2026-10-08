@@ -21,6 +21,7 @@
 	import Spinner from './Spinner.svelte';
 
 	import { copyToClipboard } from '$lib/utils';
+	import { notifyChatLayout } from '$lib/utils/notifyChatLayout';
 
 	export let open = false;
 
@@ -55,8 +56,11 @@
 	$: showReasoningContent = isReasoning && !hide && open;
 	$: showActivityChrome = isReasoning ? showReasoningContent : isCodeInterpreter && open && !hide;
 	let activityElement: HTMLDivElement;
-	function notifyReasoningLayout() {
-		if (isReasoning) activityElement?.dispatchEvent(new CustomEvent('neve:reasoning-layout', { bubbles: true }));
+	function notifyReasoningLayout(automatic = false) {
+		if (isReasoning) activityElement?.dispatchEvent(new CustomEvent('neve:reasoning-layout', {
+			bubbles: true, detail: { opening: !open, automatic }
+		}));
+		else notifyChatLayout(activityElement, isCodeInterpreter ? 200 : grow ? 300 : 100, !open);
 	}
 
 	let wasStreamingReasoning = false;
@@ -64,7 +68,7 @@
 		if (isStreaming) {
 			wasStreamingReasoning = true;
 		} else if (isDone && wasStreamingReasoning) {
-			if (open) notifyReasoningLayout();
+			if (open) notifyReasoningLayout(true);
 			open = false;
 			wasStreamingReasoning = false;
 		}
@@ -306,7 +310,7 @@
 							id="reasoning-content-{collapsibleId}"
 							bind:this={reasoningScrollEl}
 							on:scroll={handleReasoningScroll}
-							class="reasoning-text relative z-0 overflow-y-auto px-3 py-2.5 leading-relaxed text-gray-600 dark:text-gray-300 {isStreaming
+							class="reasoning-text scrollbar-hidden relative z-0 overflow-y-auto px-3 py-2.5 leading-relaxed text-gray-600 dark:text-gray-300 {isStreaming
 									? 'h-40'
 									: 'max-h-72'}"
 						>
@@ -332,7 +336,7 @@
 	</div>
 {:else}
 	<!-- Original non-reasoning collapsible -->
-	<div {id} class={className}>
+	<div {id} class={className} bind:this={activityElement}>
 		{#if title !== null}
 			<!-- svelte-ignore a11y-no-static-element-interactions -->
 			<!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -340,6 +344,7 @@
 				class="{buttonClassName} {disabled ? '' : 'cursor-pointer'}"
 				on:pointerup={() => {
 					if (!disabled) {
+						notifyReasoningLayout();
 						open = !open;
 					}
 				}}
@@ -390,6 +395,7 @@
 				}}
 				on:pointerup={(e) => {
 					if (!disabled) {
+						notifyReasoningLayout();
 						open = !open;
 					}
 				}}

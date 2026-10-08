@@ -274,7 +274,7 @@
 	});
 </script>
 
-<Modal size="w-[60rem]" bind:show containerClassName="p-2 sm:p-3" keepMounted>
+<Modal size="w-[60rem]" bind:show containerClassName="p-2 sm:p-3 outline-none" initialFocus="#search-input" keepMounted>
 	<div
 		class="py-3 dark:text-gray-300 text-gray-700 flex flex-col"
 		style="height: min(39rem, calc(100dvh - 1.5rem));"

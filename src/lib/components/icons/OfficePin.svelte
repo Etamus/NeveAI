@@ -1,6 +1,6 @@
 <script lang="ts">
 	export let className = 'size-4';
-	export let slashed = false;
+	export let filled = false;
 </script>
 
 <svg
@@ -14,6 +14,8 @@
 	stroke-linejoin="round"
 	aria-hidden="true"
 >
-	<path d="m16 3 5 5-3 1-4 4v4l-7-7h4l4-4 1-3ZM9 15l-6 6" />
-	{#if slashed}<path d="m3 3 18 18" />{/if}
+	<g transform="rotate(45 12 12)">
+		<path d="M9 3h6v5l3 3v3H6v-3l3-3V3Z" fill={filled ? 'currentColor' : 'none'} />
+		<path d="M8 3h8M12 14v7" />
+	</g>
 </svg>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { notifyChatLayout } from '$lib/utils/notifyChatLayout';
 	import { getContext } from 'svelte';
 	const i18n = getContext('i18n');
 
@@ -58,7 +59,8 @@
 	<!-- Trigger -->
 	<div
 		class="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer group/ws-trigger"
-		on:pointerup|stopPropagation={() => {
+		on:pointerup|stopPropagation={(event) => {
+			notifyChatLayout(event.currentTarget, 200, !open);
 			open = !open;
 		}}
 		on:click|stopPropagation
@@ -119,7 +121,7 @@
 							alt=""
 							class="size-3 shrink-0 rounded-sm"
 							on:error={(e) => {
-								(e.currentTarget as HTMLImageElement).style.display = 'none';
+								(e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
 							}}
 						/>
 						<span class="max-w-[150px] truncate">{item.title}</span>
@@ -129,7 +131,8 @@
 				{#if !expanded && hiddenCount > 0}
 					<button
 						class="inline-flex items-center rounded-md border border-gray-200 dark:border-gray-700/60 px-2 py-1 text-xs text-gray-500 dark:text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-						on:pointerup|stopPropagation={() => {
+						on:pointerup|stopPropagation={(event) => {
+							notifyChatLayout(event.currentTarget, 0, true);
 							expanded = true;
 						}}
 					>
@@ -140,7 +143,8 @@
 				{#if expanded && hiddenCount > 0}
 					<button
 						class="inline-flex items-center rounded-md border border-gray-200 dark:border-gray-700/60 px-2 py-1 text-xs text-gray-500 dark:text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-						on:pointerup|stopPropagation={() => {
+						on:pointerup|stopPropagation={(event) => {
+							notifyChatLayout(event.currentTarget, 0, false);
 							expanded = false;
 						}}
 					>

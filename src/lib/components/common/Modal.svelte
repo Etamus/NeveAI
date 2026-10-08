@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy, onMount, tick } from 'svelte';
 	import { fade } from 'svelte/transition';
 
 	import { flyAndScale } from '$lib/utils/transitions';
@@ -10,6 +10,7 @@
 	export let className = 'bg-white dark:bg-gray-900 rounded-xl';
 	export let keepMounted = false;
 	export let animated = true;
+	export let initialFocus: string | undefined = undefined;
 	export let onOutsideClick: (() => boolean | void) | null = null;
 
 	let modalElement = null;
@@ -83,6 +84,8 @@
 	$: if (show && modalElement) {
 		appendModalElement();
 		focusTrap = FocusTrap.createFocusTrap(modalElement, {
+			initialFocus,
+			checkCanFocusTrap: initialFocus ? () => tick() : undefined,
 			allowOutsideClick: (e) => {
 				const target = e.target as Element;
 				return (
@@ -149,6 +152,14 @@
 {/if}
 
 <style>
+	@media (max-width: 767px) {
+		.modal {
+			height: 100dvh;
+			padding-top: env(safe-area-inset-top, 0px);
+			padding-bottom: env(safe-area-inset-bottom, 0px);
+			scrollbar-gutter: auto !important;
+		}
+	}
 	.modal-content {
 		animation: scaleUp 0.1s ease-out forwards;
 	}

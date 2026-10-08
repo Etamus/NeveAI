@@ -342,7 +342,7 @@ $: if (show) {
 	size="md"
 	className="h-[min(30rem,calc(100dvh-2rem))] overflow-hidden bg-white dark:bg-gray-900 rounded-xl"
 >
-	<div class="font-primary px-4.5 py-3.5 w-full h-full min-h-0 flex flex-col dark:text-gray-400">
+	<div class="file-viewer-content font-primary px-4.5 py-3.5 w-full h-full min-h-0 flex flex-col dark:text-gray-400">
 		<div class="pb-2 shrink-0">
 			<div class="flex items-start justify-between">
 				<div class="min-w-0 flex-1 pr-3">
@@ -726,6 +726,11 @@ $: if (show) {
 </Modal>
 
 <style>
+	@media (max-width: 767px) {
+		.file-viewer-content { padding: 0.75rem; }
+		.file-viewer-content button[aria-label] { min-height: 36px; }
+		.file-viewer-content button[aria-label]:has(> :global(svg)) { min-width: 36px; }
+	}
 	.file-image-viewport {
 		contain: paint;
 		isolation: isolate;

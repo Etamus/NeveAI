@@ -377,6 +377,11 @@
 
 <style>
 	@media (max-width: 767px) {
+		.tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0.5rem; gap: 0.25rem; }
+		.tabs :global(button) { min-width: 0; min-height: 40px; padding: 0.5rem 0.375rem; font-size: 12px; gap: 6px; }
+		.tabs :global(button svg) { flex-shrink: 0; width: 16px; height: 16px; }
+		.tabs :global(button span) { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+		.settings-content { padding-inline: 0.875rem; }
 		.settings-content { max-height: min(22rem, calc(100dvh - 12rem)); }
 		.settings-content :global(.flex.w-full.justify-between) { gap: 0.75rem; }
 		.settings-content :global(.flex.w-full.justify-between > :first-child) { min-width: 0; overflow-wrap: anywhere; }

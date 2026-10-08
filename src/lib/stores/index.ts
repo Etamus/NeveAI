@@ -92,7 +92,7 @@ export const settings: Writable<Settings> = writable({});
 
 export const audioQueue = writable<AudioQueue | null>(null);
 
-export const sidebarWidth = writable(260);
+export const sidebarWidth = writable(276);
 
 export const showSidebar = writable(false);
 export const showSearch = writable(false);

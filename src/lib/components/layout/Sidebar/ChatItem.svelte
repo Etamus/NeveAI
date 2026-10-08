@@ -27,6 +27,19 @@
 	import DragGhost from '$lib/components/common/DragGhost.svelte';
 	import Document from '$lib/components/icons/Document.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import OfficePin from '$lib/components/icons/OfficePin.svelte';
+	import { pendingChatPins, toggleChatPinOptimistically } from '$lib/utils/chatPinActions';
+	$: pinPending = $pendingChatPins.includes(id);
+	$: isPinned = $pinnedChats.some((item) => item.id === id);
+	const togglePin = async () => {
+		if (pinPending) return;
+		try {
+			await toggleChatPinOptimistically(localStorage.token, { id, title, created_at: createdAt });
+			dispatch('change');
+		} catch (error) {
+			toast.error(`${error}`);
+		}
+	};
 
 	export let className = '';
 
@@ -384,7 +397,7 @@
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<div
 		id="sidebar-chat-item-menu"
-		class="
+		class="sidebar-chat-actions
         {isCurrentChat
 			? 'from-gray-100 dark:from-gray-800 selected'
 			: selected
@@ -425,7 +438,7 @@
 					<Spinner className="size-3" />
 				</div>
 			{:else}
-			<div class="flex self-center z-10 items-end">
+			<div class="flex self-center z-10 items-center gap-1">
 				<ChatMenu
 					bind:show={chatMenuOpen}
 					chatId={id}
@@ -458,7 +471,7 @@
 							xmlns="http://www.w3.org/2000/svg"
 							viewBox="0 0 16 16"
 							fill="currentColor"
-							class="w-4 h-4"
+							class="size-[0.84375rem]"
 						>
 							<path
 								d="M2 8a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0ZM6.5 8a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0ZM12.5 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"
@@ -466,6 +479,11 @@
 						</svg>
 					</button>
 				</ChatMenu>
+				<Tooltip content={$i18n.t(isPinned ? 'Unpin' : 'Pin')}>
+					<button type="button" aria-label={$i18n.t(isPinned ? 'Unpin' : 'Pin')} aria-pressed={isPinned} disabled={pinPending} class="grid size-5 place-items-center dark:hover:text-white transition" on:click={togglePin}>
+						<OfficePin className="size-[0.84375rem]" filled={isPinned} />
+					</button>
+				</Tooltip>
 
 				{#if id === $chatId}
 					<!-- Shortcut support using "delete-chat-button" id -->
@@ -496,6 +514,30 @@
 </div>
 
 <style>
+	@media (max-width: 767px) {
+		:global(#sidebar) .sidebar-chat-actions {
+			background: transparent;
+			background-image: none;
+			opacity: 1;
+			visibility: visible;
+			pointer-events: auto;
+			padding: 0;
+			margin: 0;
+			right: 0.375rem;
+			color: var(--color-gray-500);
+		}
+		:global(#sidebar-chat-item) { padding-right: 4.75rem; min-height: 44px; align-items: center; }
+		.sidebar-chat-actions :global(button:not(.hidden)) { width: 32px; height: 40px; display: grid; place-items: center; }
+		.sidebar-chat-title-fade { mask-image: none; -webkit-mask-image: none; }
+		:global(.dark #sidebar) .sidebar-chat-actions { color: var(--color-gray-400); }
+	}
+	@media (max-width: 767px) and (hover: none) {
+		:global(#sidebar) .sidebar-chat-actions { opacity: 1; pointer-events: auto; }
+		.sidebar-chat-actions :global(button:not(.hidden)) { min-width: 28px; min-height: 36px; }
+	}
+	.sidebar-chat-actions { visibility: visible; opacity: 0; pointer-events: none; }
+	:global(#sidebar-chat-group:hover) .sidebar-chat-actions { opacity: 1; pointer-events: auto; }
+	.sidebar-chat-actions:has(:global(.size-3)) { opacity: 1; }
 	.sidebar-chat-title-fade {
 		-webkit-mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent calc(100% - 1rem));
 		mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent calc(100% - 1rem));

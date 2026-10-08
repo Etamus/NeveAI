@@ -86,9 +86,11 @@
 	import Bookmark from '$lib/components/icons/Bookmark.svelte';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import Minus from '$lib/components/icons/Minus.svelte';
+	import XMark from '$lib/components/icons/XMark.svelte';
 
 	export let preload: UnifiedModelsPreload | null = null;
 	export let show = false;
+	export let onClose: () => void = () => {};
 
 	// ─── LOCAL MODEL STATE ───────────────────────────────────────────────────
 	let localModels: LocalModel[] = [];
@@ -1614,7 +1616,7 @@
 				}
 			}}
 		>
-			<div class="self-center flex-shrink-0 group/avatar relative">
+			<div class="model-avatar self-center flex-shrink-0 group/avatar relative">
 				{#if am}
 					<div class="w-9 h-9 rounded-full overflow-hidden {(am?.is_active ?? true) ? '' : 'opacity-50'}">
 						<img
@@ -1769,8 +1771,9 @@
 				<div class="flex items-center gap-2 text-xl font-medium px-0.5">
 					<span>{$i18n.t('Models')}</span>
 				</div>
+				<button type="button" class="mobile-model-close hidden" aria-label={$i18n.t('Close')} on:click={onClose}><XMark className="size-5" /></button>
 
-				<div class="flex items-center gap-1.5">
+				<div class="unified-model-actions flex items-center gap-1.5">
 					<button
 						class="flex text-xs items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 dark:bg-gray-850 dark:hover:bg-gray-800 dark:text-gray-200 transition font-medium"
 						type="button"
@@ -1882,3 +1885,13 @@
 		<button class="sr-only" tabindex="0" aria-hidden="true"> </button>
 	</div>
 {/if}
+
+<style>
+	@media (max-width: 767px) {
+		.mobile-model-close { display: grid; place-items: center; width: 36px; height: 36px; margin-left: auto; color: var(--color-gray-400); }
+		.unified-model-actions { flex-wrap: wrap; }
+		.unified-model-actions button { min-height: 36px; padding-inline: 0.5rem; }
+		.model-avatar { width: 2.25rem; height: 2.25rem; overflow: hidden; }
+		.model-avatar img { font-size: 0; }
+	}
+</style>

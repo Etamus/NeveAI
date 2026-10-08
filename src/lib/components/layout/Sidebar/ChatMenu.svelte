@@ -14,12 +14,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Tags from '$lib/components/chat/Tags.svelte';
 	import DocumentDuplicate from '$lib/components/icons/DocumentDuplicate.svelte';
-	import OfficePin from '$lib/components/icons/OfficePin.svelte';
-	import {
-		getChatById,
-		getChatPinnedStatusById,
-		toggleChatPinnedStatusById
-	} from '$lib/apis/chats';
+	import { getChatById } from '$lib/apis/chats';
 	import { chats, folders, settings, user } from '$lib/stores';
 	import { createMessagesList } from '$lib/utils';
 	import Download from '$lib/components/icons/Download.svelte';
@@ -38,19 +33,10 @@
 	export let chatId = '';
 
 	export let show = false;
-	let pinned = false;
 
 	let chat = null;
 	let showFullMessages = false;
 
-	const pinHandler = async () => {
-		await toggleChatPinnedStatusById(localStorage.token, chatId);
-		dispatch('change');
-	};
-
-	const checkPinned = async () => {
-		pinned = await getChatPinnedStatusById(localStorage.token, chatId);
-	};
 
 	const getChatAsText = async (chat) => {
 		const history = chat.chat.history;
@@ -248,9 +234,6 @@
 		}
 	};
 
-	$: if (show) {
-		checkPinned();
-	}
 </script>
 
 {#if chat && showFullMessages}
@@ -306,22 +289,6 @@
 			</DropdownMenu.Item>
 
 			<hr class="border-gray-50/30 dark:border-gray-800/30 my-1" />
-
-			<DropdownMenu.Item
-				draggable="false"
-				class="flex gap-2 items-center px-3 py-1.5 text-sm  cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 rounded-sm"
-				on:click={() => {
-					pinHandler();
-				}}
-			>
-				{#if pinned}
-						<OfficePin slashed />
-					<div class="flex items-center">{$i18n.t('Unpin')}</div>
-				{:else}
-						<OfficePin />
-					<div class="flex items-center">{$i18n.t('Pin')}</div>
-				{/if}
-			</DropdownMenu.Item>
 
 			<DropdownMenu.Item
 				draggable="false"

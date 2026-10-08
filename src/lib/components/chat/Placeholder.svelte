@@ -77,7 +77,7 @@
 		: $i18n.t('What would you like to explore today?');
 </script>
 
-<div class="m-auto w-full max-w-6xl px-2 @2xl:px-20 -translate-y-20 py-24 text-center">
+<div class="chat-placeholder m-auto w-full max-w-6xl px-2 @2xl:px-20 -translate-y-20 py-24 text-center">
 	<div
 		class="w-full text-3xl text-gray-800 dark:text-gray-100 text-center flex items-center gap-4"
 	>
@@ -168,3 +168,15 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	@media (max-width: 767px) {
+		.chat-placeholder { transform: none; translate: none; padding-block: 2rem; }
+		.chat-placeholder :global(.text-\[1\.75rem\]),
+		.chat-placeholder :global(.text-3xl) { font-size: 1.375rem; }
+	}
+	@media (max-width: 767px) and (max-height: 500px) {
+		.chat-placeholder { padding-block: 0.75rem; }
+		.chat-placeholder :global(.mb-8) { margin-bottom: 1rem; }
+	}
+</style>

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getReasoningLevel, getReasoningState, setReasoningLevel } from './reasoningModes';
+import { getReasoningLevel, getReasoningState, setReasoningLevel, usesReasoningEffort } from './reasoningModes';
 import {
 	getLocalModelLoadPreferences,
 	getResponseSpeed,
@@ -48,5 +48,25 @@ describe('Reasoning and independent speed', () => {
 		localStorage.setItem('neveai.reasoningLevel', 'invalid');
 		localStorage.setItem('neveai.thinkingExtendedEnabled', 'true');
 		expect(getReasoningLevel()).toBe(2);
+	});
+});
+
+describe('reasoning effort models', () => {
+	it.each([
+		{ id: 'gpt-oss:20b' },
+		{ name: 'Custom', llamacpp: { filename: 'GPT_OSS-120B-Q4.gguf' } },
+		{ name: 'Neve Sense' },
+		{ llamacpp: { filename: 'Neve-Sense2-20B-Q4.gguf' } },
+		{ info: { meta: { neve_catalog_id: 'neve-sense' } } },
+		{ llamacpp: { reasoning_control: 'effort' } }
+	])('recognizes effort-based identity %j', (model) => {
+		expect(usesReasoningEffort(model)).toBe(true);
+	});
+	it.each([undefined, {}, { name: 'Qwen3.5' }, { name: 'Neve Strata S' }])('preserves instantaneous mode for %j', (model) => {
+		expect(usesReasoningEffort(model)).toBe(false);
+	});
+	it('keeps both upper levels extended, with only the last level unlimited', () => {
+		expect(getReasoningState(2)).toEqual({ enabled: true, extended: true, unlimited: false });
+		expect(getReasoningState(3)).toEqual({ enabled: true, extended: true, unlimited: true });
 	});
 });

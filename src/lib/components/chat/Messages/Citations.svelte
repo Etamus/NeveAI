@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { slide } from 'svelte/transition';
+	import { quintOut } from 'svelte/easing';
+	import { notifyChatLayout } from '$lib/utils/notifyChatLayout';
 	import { getContext } from 'svelte';
 	import { embed, showControls, showEmbeds } from '$lib/stores';
 
@@ -167,7 +170,8 @@
 				? $i18n.t('Toggle 1 source')
 				: $i18n.t('Toggle {{COUNT}} sources', { COUNT: citations.length })}
 			aria-expanded={showCitations}
-			on:click={() => {
+			on:click={(event) => {
+				notifyChatLayout(event.currentTarget, 200, !showCitations);
 				showCitations = !showCitations;
 			}}
 		>
@@ -199,7 +203,7 @@
 {/if}
 
 {#if showCitations}
-	<div class="py-1.5">
+	<div class="py-1.5" transition:slide={{ duration: 200, easing: quintOut }}>
 		<div class="text-xs gap-2 flex flex-col">
 			{#each citations as citation, idx}
 				<button

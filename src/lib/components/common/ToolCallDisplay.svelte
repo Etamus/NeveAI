@@ -17,6 +17,7 @@
 	import Image from './Image.svelte';
 	import FullHeightIframe from './FullHeightIframe.svelte';
 	import { settings } from '$lib/stores';
+	import { notifyChatLayout } from '$lib/utils/notifyChatLayout';
 
 	export let id: string = '';
 	export let attributes: {
@@ -111,7 +112,8 @@
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<div
 			class="{buttonClassName} cursor-pointer"
-			on:pointerup={() => {
+			on:pointerup={(event) => {
+				notifyChatLayout(event.currentTarget, 300, !open);
 				open = !open;
 			}}
 		>
@@ -230,7 +232,8 @@
 									{#if isTruncated}
 										<button
 											class="mt-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition"
-											on:click|stopPropagation={() => {
+											on:click|stopPropagation={(event) => {
+													notifyChatLayout(event.currentTarget, 0, true);
 												expandedResult = true;
 											}}
 										>

@@ -15,10 +15,12 @@
 	export let show = false;
 	export let spacious = false;
 	export let ongoing = false;
+	export let effortBased = false;
 	export let onLevelChange: (level: ReasoningLevel) => void;
 	export let position: (node: HTMLElement) => { destroy?: () => void } | void;
 	const i18n = getContext<I18nStore>('i18n');
-	$: levelLabel = level === 0 ? $i18n.t(REASONING_LEVELS[level]) : `${$i18n.t('Raciocínio')} ${$i18n.t(REASONING_LEVELS[level])}`;
+	$: firstLevelLabel = effortBased ? `${$i18n.t('Raciocínio')} ${$i18n.t('Leve')}` : $i18n.t(REASONING_LEVELS[0]);
+	$: levelLabel = level === 0 ? firstLevelLabel : `${$i18n.t('Raciocínio')} ${$i18n.t(REASONING_LEVELS[level])}`;
 	let accelerationMode: LocalModelAccelerationMode = 'normal';
 	const accelerationModes: LocalModelAccelerationMode[] = ['normal', 'de', 'mtp'];
 	$: accelerationLabel = accelerationMode === 'normal' ? $i18n.t('Normal') : accelerationMode === 'de' ? $i18n.t('Rápido') : 'MTP';
@@ -64,8 +66,8 @@
 		}}
 	>
 		<span class="text-gray-700 dark:text-gray-200">
-			{#if level === 0}{$i18n.t(REASONING_LEVELS[level])}{:else}
-				{$i18n.t('Raciocínio')} <span class="text-gray-500 dark:text-gray-400">{$i18n.t(REASONING_LEVELS[level])}</span>
+			{#if level === 0 && !effortBased}{firstLevelLabel}{:else}
+				<span class="reasoning-mode-name">{$i18n.t('Raciocínio')}{' '}</span><span class="text-gray-500 dark:text-gray-400">{$i18n.t(level === 0 ? 'Leve' : REASONING_LEVELS[level])}</span>
 			{/if}
 		</span>
 		<svg
@@ -107,8 +109,8 @@
 					class="mb-2 text-center text-sm leading-5 text-gray-800 dark:text-gray-100"
 					data-reasoning-level-label
 				>
-					{#if level === 0}{$i18n.t(REASONING_LEVELS[level])}{:else}
-						{$i18n.t('Raciocínio')} <span class="text-gray-500 dark:text-gray-400">{$i18n.t(REASONING_LEVELS[level])}</span>
+					{#if level === 0 && !effortBased}{firstLevelLabel}{:else}
+						{$i18n.t('Raciocínio')} <span class="text-gray-500 dark:text-gray-400">{$i18n.t(level === 0 ? 'Leve' : REASONING_LEVELS[level])}</span>
 					{/if}
 				</div>
 				<div class="effort-track" style="--effort-progress: {(level / 3) * 100}%">
@@ -136,7 +138,7 @@
 				<button
 					id="reasoning-speed-control"
 					type="button"
-					class="w-[4.625rem] shrink-0 whitespace-nowrap rounded-full px-0 py-[0.1875rem] border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition disabled:cursor-not-allowed disabled:text-gray-400 disabled:dark:text-gray-500 disabled:hover:bg-transparent disabled:dark:hover:bg-transparent"
+					class="w-[5rem] shrink-0 whitespace-nowrap rounded-full px-0 py-1 border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition disabled:cursor-not-allowed disabled:text-gray-400 disabled:dark:text-gray-500 disabled:hover:bg-transparent disabled:dark:hover:bg-transparent"
 					disabled={predictionLocked}
 					aria-label={`${$i18n.t('Velocidade')}: ${accelerationLabel}`}
 					on:click={() => setLocalModelAccelerationMode(accelerationModes[(accelerationModes.indexOf(accelerationMode) + 1) % accelerationModes.length])}

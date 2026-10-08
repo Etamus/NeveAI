@@ -99,7 +99,7 @@ def _detect_reasoning_control(
             props_text,
         )
     )
-    if re.search(r"gpt[\s._-]*oss", combined) or harmony_tokens or harmony_format:
+    if re.search(r"gpt[\s._-]*oss|\bneve[\s._-]*sense(?:\d+)?\b", combined) or harmony_tokens or harmony_format:
         return "effort"
     if "enable_thinking" in combined:
         return "toggle"
