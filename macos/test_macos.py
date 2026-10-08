@@ -3,6 +3,8 @@ import importlib.util
 import io
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -14,6 +16,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import adapt
 import manage
+import package_launchers
 from package_launchers import package
 
 
@@ -178,6 +181,60 @@ class MacIsolationTests(unittest.TestCase):
                     self.assertEqual(
                         archive.getinfo(name).external_attr >> 16 & 0o777, 0o755
                     )
+
+    def test_archive_normalizes_windows_line_endings(self):
+        (self.here / "instalar.command").write_bytes(b"#!/bin/bash\r\necho ready\r\n")
+        with patch.object(
+            package_launchers, "__file__", str(self.here / "package_launchers.py")
+        ):
+            target = package(self.here / "normalized.zip")
+        with zipfile.ZipFile(target) as archive:
+            self.assertNotIn(b"\r\n", archive.read("macos/instalar.command"))
+
+    def test_launcher_logs_bootstrap_failure_and_preserves_exit_code(self):
+        bash = shutil.which("bash") or shutil.which("bash.exe")
+        if os.name == "nt":
+            candidate = Path("C:/Program Files/Git/bin/bash.exe")
+            bash = str(candidate) if candidate.exists() else None
+        if not bash:
+            self.skipTest("Bash unavailable")
+        root = Path(__file__).resolve().parent
+        (self.here / "launch.sh").write_bytes((root / "launch.sh").read_bytes())
+        (self.here / "bootstrap.sh").write_text(
+            '#!/bin/bash\nprintf "fixture startup failure\\n" >&2\nexit 37\n',
+            newline="\n",
+        )
+        mockbin = self.here / "mockbin"
+        mockbin.mkdir()
+        uname = mockbin / "uname"
+        uname.write_text('#!/bin/sh\nprintf "Darwin\\n"\n', newline="\n")
+        uname.chmod(0o755)
+        env = os.environ.copy()
+        # Git Bash expects POSIX paths in PATH; convert Windows fixture paths explicitly.
+        directory = str(mockbin)
+        if os.name == "nt":
+            directory = "/" + directory[0].lower() + directory[2:].replace("\\", "/")
+        env["PATH"] = directory + ":" + "/usr/bin:/bin"
+        env["NEVE_TEST_BIN"] = directory
+        env["NEVE_MACOS_NO_ALERT"] = "1"
+        result = subprocess.run(
+            [
+                bash,
+                "-c",
+                'export PATH="$NEVE_TEST_BIN:/usr/bin:/bin"; exec /bin/bash "$1" install',
+                "--",
+                str(self.here / "launch.sh"),
+            ],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        self.assertEqual(result.returncode, 37, result.stderr)
+        self.assertIn("fixture startup failure", result.stdout)
+        self.assertIn("nao iniciou", result.stderr)
+        log = self.here / ".runtime/logs/bootstrap-install.log"
+        self.assertIn("fixture startup failure", log.read_text())
 
 
 if __name__ == "__main__":

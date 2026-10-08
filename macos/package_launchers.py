@@ -20,7 +20,10 @@ def package(destination=None):
             entry.create_system = 3
             executable = path.suffix in (".command", ".sh") or path.name == "NeveLaunch"
             entry.external_attr = (0o100755 if executable else 0o100644) << 16
-            archive.writestr(entry, path.read_bytes())
+            content = path.read_bytes()
+            if executable:
+                content = content.replace(b"\r\n", b"\n")
+            archive.writestr(entry, content)
     return target
 
 

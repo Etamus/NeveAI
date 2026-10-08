@@ -95,6 +95,15 @@ HTTP e a encerra. Nao testa inferencia de modelos ou todas as geracoes.
 Teste nativo completo de inicializacao: `bash macos/test-native.sh`.
 
 Logs: `.runtime/logs/install.log` e `.runtime/logs/backend.log`.
+Preparacao inicial: `.runtime/logs/bootstrap-install.log`; inicializador:
+`.runtime/logs/bootstrap-start.log`. Em falhas, aparece um alerta com as ultimas
+linhas e a opcao de abrir o log. No Terminal, o erro permanece ate pressionar Enter.
+
+Se apos autorizar no Gatekeeper nenhuma janela aparecer, abra o Terminal, digite
+`/bin/bash ` (com espaco), arraste `instalar.command` para ele e pressione Enter.
+Na primeira execucao e necessario baixar Python e a ponte Cocoa antes da janela.
+Envie as ultimas linhas de `bootstrap-install.log` para diagnosticar; nao remova
+protecoes do sistema nem use comandos de exclusao global de quarentena.
 Versoes instaladas: `.runtime/installation.json` e `.runtime/requirements-installed.lock`.
 
 **Estado de validacao:** scripts e testes de isolamento podem ser validados em

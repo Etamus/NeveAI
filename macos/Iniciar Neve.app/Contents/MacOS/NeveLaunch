@@ -1,8 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/../../.." && pwd -P)"
-mkdir -p "$HERE/.runtime/logs"
-if ! /bin/bash "$HERE/bootstrap.sh" start >>"$HERE/.runtime/logs/launcher.log" 2>&1; then
-    /usr/bin/osascript -e 'display alert "Nao foi possivel iniciar a Neve" message "Execute Instalar Neve.app e consulte macos/.runtime/logs/launcher.log." as critical'
+if [ ! -f "$HERE/launch.sh" ]; then
+    HERE="$(/usr/bin/osascript -e 'POSIX path of (choose folder with prompt "Selecione a pasta macos do projeto Neve")')" || exit 1
+fi
+if [ ! -f "$HERE/launch.sh" ]; then
+    /usr/bin/osascript -e 'display alert "Pasta incorreta" message "Selecione a pasta macos que contem iniciar.command e launch.sh." as critical'
     exit 1
 fi
+export NEVE_MACOS_NO_TERMINAL=1
+exec /bin/bash "$HERE/launch.sh" start

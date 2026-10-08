@@ -37,13 +37,14 @@ shift || true
 mkdir -p "$HERE/.runtime/logs" "$TMPDIR"
 if [ "$MODE" = install ]; then
     if [ ! -x "$UV" ]; then
+        printf '[1/4] Baixando UV nativo e verificando checksum...\n'
         UV_VERSION=0.12.23
         ASSET="uv-$UV_ARCH-apple-darwin.tar.gz"
         STAGE="$(mktemp -d "$HERE/.runtime/uv-stage.XXXXXX")"
         trap 'rm -rf "$STAGE"' EXIT
         BASE="https://github.com/astral-sh/uv/releases/download/$UV_VERSION"
-        curl --proto '=https' --tlsv1.2 -fL --retry 3 "$BASE/$ASSET" -o "$STAGE/$ASSET"
-        curl --proto '=https' --tlsv1.2 -fL --retry 3 "$BASE/$ASSET.sha256" -o "$STAGE/checksum"
+        curl --proto '=https' --tlsv1.2 --connect-timeout 20 --max-time 300 -fL --retry 3 "$BASE/$ASSET" -o "$STAGE/$ASSET"
+        curl --proto '=https' --tlsv1.2 --connect-timeout 20 --max-time 60 -fL --retry 3 "$BASE/$ASSET.sha256" -o "$STAGE/checksum"
         EXPECTED="$(awk '{print $1}' "$STAGE/checksum")"
         ACTUAL="$(shasum -a 256 "$STAGE/$ASSET" | awk '{print $1}')"
         if [ "$EXPECTED" != "$ACTUAL" ]; then printf 'Checksum UV incorreto.\n' >&2; exit 1; fi
@@ -52,9 +53,12 @@ if [ "$MODE" = install ]; then
         cp "$STAGE/uv-$UV_ARCH-apple-darwin/uv" "$UV"
         chmod 755 "$UV"
     fi
+    printf '[2/4] Preparando Python 3.11 nativo...\n'
     "$UV" python install 3.11
     if [ ! -x "$PY" ]; then "$UV" venv "$HERE/.runtime/venv" --python 3.11; fi
+    printf '[3/4] Preparando a janela Cocoa...\n'
     "$UV" pip install --python "$PY" 'pywebview>=5,<7' pyobjc-framework-Cocoa pyobjc-framework-WebKit packaging
+    printf '[4/4] Abrindo instalador...\n'
 fi
 if [ ! -x "$PY" ]; then
     printf 'Execute instalar.command primeiro.\n' >&2
