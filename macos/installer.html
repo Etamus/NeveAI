@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Instalar Neve</title>
+<style>
+*{box-sizing:border-box}body{margin:0;padding:24px;background:#171717;color:#eee;font:14px -apple-system,BlinkMacSystemFont,sans-serif}header{display:flex;align-items:center;gap:12px;margin-bottom:24px}h1{font-size:22px;margin:0}p{color:#aaa;line-height:1.5}label{display:flex;align-items:center;gap:10px;margin:12px 0}input{accent-color:#3b82f6}button{font:inherit;border:1px solid #555;border-radius:6px;padding:10px 16px;background:#eee;color:#171717;cursor:pointer}button:disabled{opacity:.5;cursor:default}pre{height:220px;overflow:auto;background:#101010;border:1px solid #333;border-radius:6px;padding:12px;color:#bbb;font:12px monospace;white-space:pre-wrap;overflow-wrap:anywhere}#status{min-height:24px;margin:16px 0 8px}progress{width:100%;accent-color:#3b82f6}footer{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:16px}
+</style>
+<header><h1>Neve para macOS</h1></header>
+<p>Ambiente independente nesta pasta. Conversas, modelos e configuracoes do Windows nao serao alterados.</p>
+<label><input id="images" type="checkbox" checked>Preparar imagens com Metal (requer Command Line Tools)</label>
+<label><input id="music" type="checkbox" checked>Habilitar musica com ACE-Step</label>
+<div id="status" role="status">Pronto para instalar.</div>
+<progress id="progress" hidden></progress>
+<pre id="log" aria-label="Log de instalacao"></pre>
+<footer><span>Apple Silicon nativo / macOS 14+</span><button id="install" disabled>Instalar / Reparar</button></footer>
+<script>
+const button=document.querySelector('#install');
+window.addEventListener('pywebviewready',()=>{
+ button.disabled=false;
+ button.onclick=async()=>{button.disabled=true;await window.pywebview.api.begin(document.querySelector('#images').checked,document.querySelector('#music').checked);};
+ const poll=async()=>{
+  try{const state=await window.pywebview.api.status();button.disabled=state.running;document.querySelector('#progress').hidden=!state.running;
+   document.querySelector('#images').disabled=state.running;document.querySelector('#music').disabled=state.running;
+   document.querySelector('#status').textContent=state.error?state.error:state.done?'Concluido. Abra iniciar.command.':state.running?'Instalando...':'Pronto para instalar.';
+   const log=document.querySelector('#log');const text=state.lines.join('\n');if(log.textContent!==text){log.textContent=text;log.scrollTop=log.scrollHeight;}
+  }finally{setTimeout(poll,500);}
+ };poll();
+});
+</script>
+</html>

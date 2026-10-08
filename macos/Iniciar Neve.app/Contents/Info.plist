@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>NeveLaunch</string>
+<key>CFBundleIdentifier</key><string>local.neve.launcher</string>
+<key>CFBundleName</key><string>Neve</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>NSHighResolutionCapable</key><true/>
+</dict></plist>

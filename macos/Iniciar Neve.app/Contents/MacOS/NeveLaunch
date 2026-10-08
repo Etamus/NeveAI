@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")/../../.." && pwd -P)"
+mkdir -p "$HERE/.runtime/logs"
+if ! /bin/bash "$HERE/bootstrap.sh" start >>"$HERE/.runtime/logs/launcher.log" 2>&1; then
+    /usr/bin/osascript -e 'display alert "Nao foi possivel iniciar a Neve" message "Execute Instalar Neve.app e consulte macos/.runtime/logs/launcher.log." as critical'
+    exit 1
+fi

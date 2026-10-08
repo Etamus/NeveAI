@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+HERE="$(cd "$(dirname "$0")/../../.." && pwd -P)"
+mkdir -p "$HERE/.runtime/logs"
+if ! /bin/bash "$HERE/bootstrap.sh" install >>"$HERE/.runtime/logs/bootstrap.log" 2>&1; then
+    /usr/bin/osascript -e 'display alert "Instalacao da Neve interrompida" message "Consulte macos/.runtime/logs/bootstrap.log. Nenhum arquivo do Windows foi modificado." as critical'
+    exit 1
+fi
