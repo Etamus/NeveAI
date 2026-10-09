@@ -518,8 +518,22 @@ def install(images=True, music=True, emit=print):
         _install(images, music, emit)
 
 
+def developer_tools_available():
+    result = subprocess.run(
+        ["/usr/bin/xcode-select", "-p"], capture_output=True, text=True
+    )
+    return result.returncode == 0 and (
+        Path(result.stdout.strip()) / "usr/bin/clang"
+    ).is_file()
+
+
 def _install(images=True, music=True, emit=print):
     arch = native_arch()
+    if images and not developer_tools_available():
+        raise RuntimeError(
+            "Para preparar imagens, instale os Command Line Tools da Apple "
+            "(xcode-select --install), ou desmarque imagens / use --no-images."
+        )
     STATE.unlink(missing_ok=True)
     LOGS.mkdir(parents=True, exist_ok=True)
     snapshot()
@@ -572,7 +586,7 @@ def _install(images=True, music=True, emit=print):
         [
             PYTHON,
             "-c",
-            'import nltk; nltk.download("punkt_tab", raise_on_error=True); nltk.download("averaged_perceptron_tagger_eng", raise_on_error=True)',
+            'import nltk, os; [nltk.download(name, download_dir=os.environ["NLTK_DATA"], raise_on_error=True) for name in ("punkt_tab", "averaged_perceptron_tagger_eng")]',
         ],
         emit=emit,
         env=env,
@@ -728,6 +742,9 @@ class InstallerAPI:
         self.error = ""
         self.lock = threading.Lock()
 
+    def capabilities(self):
+        return {"images": developer_tools_available()}
+
     def emit(self, line):
         with self.lock:
             self.lines.append(line)
@@ -791,7 +808,13 @@ def main():
         window.events.closing += lambda: not api.running
         webview.start(gui="cocoa")
     elif args.mode == "install":
-        install(not args.no_images, not args.no_music)
+        api = InstallerAPI()
+
+        def emit(line):
+            print(line, flush=True)
+            api.emit(line)
+
+        install(not args.no_images, not args.no_music, emit)
     elif args.mode == "start":
         start(args.browser)
     else:

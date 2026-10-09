@@ -3342,13 +3342,16 @@
 		let accordionLayout: {
 			startTop: number; startMax: number; targetTop: number | null;
 			followBottom: boolean; revealLimit: number; started: number; duration: number;
+			reservedSpacer: number;
 		} | null = null;
-		const expandedPositions = new WeakMap<Element, number>();
+		const expandedPositions = new WeakMap<Element, { top: number; spacer: number }>();
 		const applyAccordionLayout = () => {
 			if (!accordionLayout || !messagesContainerElement) return false;
 			if (generating || anchoredGeneratingMessageId) return false;
 			const layout = accordionLayout;
-			const naturalMax = getMaxScrollWithoutGenerationSpacer();
+			const naturalMax = layout.reservedSpacer > 0
+				? getMessagesContentHeight(messagesContainerElement, generationBottomSpacerHeight) - messagesContainerElement.clientHeight
+				: getMaxScrollWithoutGenerationSpacer();
 			const progress = Math.min(1, (performance.now() - layout.started) / layout.duration);
 			const { top, spacer } = getAccordionScrollPosition(layout, naturalMax, progress);
 			if (generationBottomSpacerHeight !== spacer) {
@@ -3386,11 +3389,18 @@
 				const naturalMax = getMaxScrollWithoutGenerationSpacer();
 				const followBottom = getMessagesMaxScrollTop() - top <= 24;
 				const opening = detail?.opening !== false;
-				const previousTop = opening ? null : expandedPositions.get(element) ?? null;
-				if (opening && followBottom) expandedPositions.set(element, Math.min(top, Math.ceil(naturalMax)));
+				const previous = opening ? null : expandedPositions.get(element) ?? null;
+				const reservedSpacer = previous?.spacer ?? (
+					top > Math.ceil(naturalMax) + 1 ? generationBottomSpacerHeight : 0
+				);
+				const previousTop = previous?.top ?? null;
+				if (opening && (followBottom || reservedSpacer > 0)) expandedPositions.set(element, { top, spacer: reservedSpacer });
 				else expandedPositions.delete(element);
 				accordionLayout = {
-					startTop: top, startMax: naturalMax,
+					startTop: top, startMax: reservedSpacer > 0
+						? getMessagesContentHeight(messagesContainerElement, generationBottomSpacerHeight) - messagesContainerElement.clientHeight
+						: naturalMax,
+					reservedSpacer,
 					targetTop: previousTop !== null && top >= previousTop - 24 ? previousTop : null,
 					followBottom: opening && followBottom,
 					revealLimit: Math.max(0, element.getBoundingClientRect().top - messagesContainerElement.getBoundingClientRect().top - 24),
@@ -3419,6 +3429,7 @@
 						accordionFrame = null;
 						accordionNavigationActive = false;
 						reasoningScrollbarSuppressed = false;
+						if (generationBottomSpacerHeight > 0) setGenerationSpacerScrollLimit(messagesContainerElement.scrollTop);
 						updateScrollStateFromContainer();
 					} else accordionFrame = requestAnimationFrame(animate);
 				};
@@ -3450,10 +3461,12 @@
 			if (accordionFrame) cancelAnimationFrame(accordionFrame);
 			accordionFrame = null;
 			if (accordionLayout) {
+				const reserved = accordionLayout.reservedSpacer;
 				accordionLayout = null;
-				generationBottomSpacerHeight = 0;
+				if (!reserved) generationBottomSpacerHeight = 0;
 				generationSpacerScrollLimit = null;
 				generationSpacerScrollAllowance = null;
+				if (reserved && messagesContainerElement) setGenerationSpacerScrollLimit(messagesContainerElement.scrollTop);
 			}
 			accordionNavigationActive = false;
 			reasoningLayout = null;

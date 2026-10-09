@@ -4,9 +4,20 @@ export interface AccordionScrollState {
 	targetTop: number | null;
 	followBottom: boolean;
 	revealLimit: number;
+	reservedSpacer?: number;
 }
 
 export function getAccordionScrollPosition(state: AccordionScrollState, naturalMax: number, progress: number) {
+	const reservedSpacer = state.reservedSpacer ?? 0;
+	if (reservedSpacer > 0) {
+		// A short generated turn may be positioned using existing breathing room.
+		// Expanding consumes that room; it must not clamp the reader back to zero.
+		const maximum = Math.max(0, Math.ceil(naturalMax + reservedSpacer));
+		const destination = Math.min(state.targetTop ?? state.startTop, maximum);
+		const top = state.targetTop === null ? destination
+			: Math.max(destination, Math.min(state.startTop, state.startTop + naturalMax - state.startMax));
+		return { top, spacer: Math.min(reservedSpacer, Math.max(0, Math.ceil(top - naturalMax))) };
+	}
 	// Native scrollHeight is rounded; retain fractional growth for anchor tracking.
 	const physicalMax = Math.ceil(naturalMax);
 	const destination = state.targetTop !== null

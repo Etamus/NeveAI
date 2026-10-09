@@ -23,6 +23,7 @@ fi
 export UV_CACHE_DIR="$HERE/.runtime/cache/uv"
 export UV_PYTHON_INSTALL_DIR="$HERE/.runtime/python"
 export UV_TOOL_DIR="$HERE/.runtime/tools/uv-tools"
+export UV_PYTHON_BIN_DIR="$HERE/.runtime/tools/python-bin"
 export HF_HOME="$HERE/.runtime/cache/huggingface"
 export XDG_CACHE_HOME="$HERE/.runtime/cache"
 export PYTHONNOUSERSITE=1
@@ -54,8 +55,8 @@ if [ "$MODE" = install ]; then
         chmod 755 "$UV"
     fi
     printf '[2/4] Preparando Python 3.11 nativo...\n'
-    "$UV" python install 3.11
-    if [ ! -x "$PY" ]; then "$UV" venv "$HERE/.runtime/venv" --python 3.11; fi
+    "$UV" python install --no-bin 3.11
+    if [ ! -x "$PY" ]; then "$UV" venv "$HERE/.runtime/venv" --python 3.11 --managed-python; fi
     printf '[3/4] Preparando a janela Cocoa...\n'
     "$UV" pip install --python "$PY" 'pywebview>=5,<7' pyobjc-framework-Cocoa pyobjc-framework-WebKit packaging
     printf '[4/4] Abrindo instalador...\n'

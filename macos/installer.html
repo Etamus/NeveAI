@@ -8,7 +8,8 @@
 </style>
 <header><h1>Neve para macOS</h1></header>
 <p>Ambiente independente nesta pasta. Conversas, modelos e configuracoes do Windows nao serao alterados.</p>
-<label><input id="images" type="checkbox" checked>Preparar imagens com Metal (requer Command Line Tools)</label>
+<label><input id="images" type="checkbox">Preparar imagens com Metal (requer Command Line Tools)</label>
+<p id="tools-note" hidden>Command Line Tools ausentes. Voce pode instalar a Neve agora e preparar imagens depois de instalar as ferramentas da Apple com <code>xcode-select --install</code>.</p>
 <label><input id="music" type="checkbox" checked>Habilitar musica com ACE-Step</label>
 <div id="status" role="status">Pronto para instalar.</div>
 <progress id="progress" hidden></progress>
@@ -16,7 +17,10 @@
 <footer><span>Apple Silicon nativo / macOS 14+</span><button id="install" disabled>Instalar / Reparar</button></footer>
 <script>
 const button=document.querySelector('#install');
-window.addEventListener('pywebviewready',()=>{
+window.addEventListener('pywebviewready',async()=>{
+ const capabilities=await window.pywebview.api.capabilities();
+ document.querySelector('#images').checked=capabilities.images;
+ document.querySelector('#tools-note').hidden=capabilities.images;
  button.disabled=false;
  button.onclick=async()=>{button.disabled=true;await window.pywebview.api.begin(document.querySelector('#images').checked,document.querySelector('#music').checked);};
  const poll=async()=>{

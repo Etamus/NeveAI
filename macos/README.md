@@ -14,16 +14,27 @@ dependencias e modelos escolhidos. Nao use Terminal/Python sob Rosetta.
 4. Abra `iniciar.command`. Fechar a janela encerra somente o backend e os
    subprocessos iniciados por essa instancia.
 
+Sem Command Line Tools, imagens ficam desmarcadas inicialmente: a instalacao
+principal funciona sem essas ferramentas. Para preparar imagens depois, instale
+as ferramentas da Apple e execute novamente o instalador com imagens marcadas.
+
 Para abrir sem Terminal, use **Instalar Neve.app** e **Iniciar Neve.app**. O ZIP
 `Inicializadores-macOS.zip` preserva permissoes dos executaveis; extraia-o na raiz
 do projeto (ele contem apenas esta pasta, nao o projeto completo). Se o Gatekeeper
 bloquear um app nao assinado, use o fluxo de **Abrir** / **Privacidade e Seguranca**
 do macOS. Nao e necessario desativar o Gatekeeper globalmente.
 
+Os apps podem ser reconstruidos localmente, sem Xcode, com
+`macos/.runtime/venv/bin/python macos/build_launchers.py`. Esse comando usa
+`osacompile` e assinatura local do macOS, preservando os apps anteriores em
+`.runtime/original-launchers/`. A assinatura local nao substitui notarizacao
+Apple: a primeira abertura pode exigir autorizacao do macOS. Se ela nao concluir,
+use `bash macos/iniciar.command`.
+
 Se o transporte dos arquivos perder permissao de execucao:
 
 ```bash
-chmod +x macos/*.command macos/bootstrap.sh
+chmod +x macos/*.command macos/*.sh macos/*.app/Contents/MacOS/*
 ```
 
 Alternativa sem depender da permissao Finder:
@@ -106,9 +117,10 @@ Envie as ultimas linhas de `bootstrap-install.log` para diagnosticar; nao remova
 protecoes do sistema nem use comandos de exclusao global de quarentena.
 Versoes instaladas: `.runtime/installation.json` e `.runtime/requirements-installed.lock`.
 
-**Estado de validacao:** scripts e testes de isolamento podem ser validados em
-Windows. A execucao Cocoa/Metal, resolucao final de wheels e inferencia exigem
-Mac real; nao se deve afirmar que foram testadas em macOS sem esse teste.
+Os testes automatizados incluem isolamento, deteccao das ferramentas de imagem
+e precedencia da rota de identificacao do backend sobre a interface. `test-native.sh`
+valida a instalacao no Mac real. Inferencia depende de um modelo baixado e deve
+ser testada separadamente; o teste HTTP nao comprova geracao de imagens ou musica.
 
 Referencias oficiais:
 - https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md

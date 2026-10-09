@@ -29,6 +29,16 @@ class MacComfy(ast.NodeTransformer):
 
 
 def adapt_snapshot(app: Path):
+    # A downloaded project has no Git metadata. Apple's git stub opens an
+    # installation dialog on Macs without developer tools, even for a web build.
+    config = app / "svelte.config.js"
+    if config.is_file():
+        content = config.read_text(encoding="utf-8")
+        content = content.replace(
+            "child_process.execSync('git rev-parse HEAD').toString().trim()",
+            "JSON.parse(fs.readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version",
+        )
+        config.write_text(content, encoding="utf-8")
     for name in ("image_fast_generation.py", "image_quality_generation.py"):
         path = app / "backend/neveai/routers" / name
         tree = MacComfy().visit(ast.parse(path.read_text(encoding="utf-8-sig")))

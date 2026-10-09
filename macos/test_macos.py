@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import types
 import unittest
 import zipfile
 from pathlib import Path
@@ -51,6 +52,54 @@ class MacIsolationTests(unittest.TestCase):
         with patch.object(manage.sys, "platform", "win32"):
             with self.assertRaisesRegex(RuntimeError, "Exclusivo"):
                 manage.native_arch()
+
+    def test_images_preflight_preserves_existing_installation(self):
+        state = self.here / ".runtime/installation.json"
+        state.parent.mkdir()
+        state.write_text('{"verified_http": true}')
+        with (
+            patch.object(manage, "STATE", state),
+            patch.object(manage, "native_arch", return_value="arm64"),
+            patch.object(manage, "developer_tools_available", return_value=False),
+            patch.object(manage, "snapshot") as snapshot,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Command Line Tools"):
+                manage._install(images=True)
+            snapshot.assert_not_called()
+        self.assertTrue(json.loads(state.read_text())["verified_http"])
+
+    def test_installer_detects_optional_image_tools(self):
+        with patch.object(manage, "developer_tools_available", return_value=False):
+            self.assertEqual(manage.InstallerAPI().capabilities(), {"images": False})
+
+    def test_identity_route_precedes_frontend(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from starlette.responses import HTMLResponse
+
+        backend = types.ModuleType("neveai.main")
+        backend.app = FastAPI()
+        frontend = FastAPI()
+
+        @frontend.get("/{path:path}")
+        def index(path):
+            return HTMLResponse("<html>frontend</html>")
+
+        backend.app.mount("/", frontend)
+        spec = importlib.util.spec_from_file_location(
+            "test_runtime_app", Path(__file__).parent / "runtime_app.py"
+        )
+        module = importlib.util.module_from_spec(spec)
+        with (
+            patch.dict(sys.modules, {"neveai.main": backend}),
+            patch.dict(os.environ, {"NEVE_MACOS_INSTANCE": "test-instance"}),
+        ):
+            spec.loader.exec_module(module)
+            with TestClient(module.app) as client:
+                self.assertEqual(
+                    client.get("/health/macos").json(), {"instance": "test-instance"}
+                )
+                self.assertIn("<html>", client.get("/").text)
 
     def test_windows_data_is_not_used(self):
         env = manage.environment()
@@ -177,7 +226,7 @@ class MacIsolationTests(unittest.TestCase):
             names = archive.namelist()
             self.assertFalse(any("/.runtime/" in name for name in names))
             for name in names:
-                if name.endswith((".command", ".sh", "/NeveLaunch")):
+                if name.endswith((".command", ".sh", "/NeveLaunch", "/applet")):
                     self.assertEqual(
                         archive.getinfo(name).external_attr >> 16 & 0o777, 0o755
                     )
@@ -190,6 +239,20 @@ class MacIsolationTests(unittest.TestCase):
             target = package(self.here / "normalized.zip")
         with zipfile.ZipFile(target) as archive:
             self.assertNotIn(b"\r\n", archive.read("macos/instalar.command"))
+
+    def test_archive_preserves_native_launcher_bytes(self):
+        binary = self.here / "Iniciar Neve.app/Contents/MacOS/applet"
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"\xcf\xfa\xed\xfe\r\n\x00\x01")
+        with patch.object(
+            package_launchers, "__file__", str(self.here / "package_launchers.py")
+        ):
+            target = package(self.here / "native.zip")
+        with zipfile.ZipFile(target) as archive:
+            self.assertEqual(
+                archive.read("macos/Iniciar Neve.app/Contents/MacOS/applet"),
+                binary.read_bytes(),
+            )
 
     def test_launcher_logs_bootstrap_failure_and_preserves_exit_code(self):
         bash = shutil.which("bash") or shutil.which("bash.exe")

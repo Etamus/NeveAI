@@ -18,10 +18,10 @@ def package(destination=None):
                 continue
             entry = zipfile.ZipInfo("macos/" + relative.as_posix())
             entry.create_system = 3
-            executable = path.suffix in (".command", ".sh") or path.name == "NeveLaunch"
+            executable = path.suffix in (".command", ".sh") or path.name in ("NeveLaunch", "applet")
             entry.external_attr = (0o100755 if executable else 0o100644) << 16
             content = path.read_bytes()
-            if executable:
+            if executable and content.startswith(b"#!"):
                 content = content.replace(b"\r\n", b"\n")
             archive.writestr(entry, content)
     return target

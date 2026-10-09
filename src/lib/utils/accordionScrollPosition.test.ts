@@ -6,6 +6,24 @@ const state: AccordionScrollState = {
 };
 
 describe('accordion scroll position', () => {
+	it('preserves the anchor while expanding into a short turn\'s existing breathing room', () => {
+		const opening = { ...state, startTop: 107, startMax: -443, reservedSpacer: 550 };
+		for (const extent of [-443, -400, -300, -100, 0, 100, 400]) {
+			expect(getAccordionScrollPosition(opening, extent, .5).top).toBe(107);
+		}
+		expect(getAccordionScrollPosition(opening, -300, 1)).toEqual({ top: 107, spacer: 407 });
+		expect(getAccordionScrollPosition(opening, 400, 1)).toEqual({ top: 107, spacer: 0 });
+	});
+	it('restores only the original reserved gap when closing, with no new allowance', () => {
+		const closing = { ...state, startTop: 300, startMax: 100, targetTop: 107, reservedSpacer: 550 };
+		expect(getAccordionScrollPosition(closing, -443, 1)).toEqual({ top: 107, spacer: 550 });
+	});
+	it('never creates a reserve larger than the existing budget if content shrinks further', () => {
+		const reserved = { ...state, startTop: 107, startMax: -443, reservedSpacer: 550 };
+		const position = getAccordionScrollPosition(reserved, -600, 1);
+		expect(position.spacer).toBe(550);
+		expect(position.top).toBe(0);
+	});
 	it('reveals a short block at the bottom', () => {
 		expect(getAccordionScrollPosition(state, 615, 1)).toEqual({ top: 615, spacer: 0 });
 	});
