@@ -73,9 +73,12 @@ export function getLocalModelAccelerationMode(): LocalModelAccelerationMode {
 	return preferences.speculative === 'high' ? 'de' : 'normal';
 }
 
-export function setLocalModelAccelerationMode(mode: LocalModelAccelerationMode) {
+export function setLocalModelAccelerationMode(
+	mode: LocalModelAccelerationMode,
+	{ reset = false }: { reset?: boolean } = {}
+) {
 	if (!hasStorage()) return;
-	if (localStorage.getItem(CONTEXT_SHIFT_KEY) === 'on') return;
+	if (localStorage.getItem(CONTEXT_SHIFT_KEY) === 'on' && !(reset && mode === 'normal')) return;
 	// Commit both settings before notifying mounted controls and load planners.
 	localStorage.setItem(RESPONSE_SPEED_KEY, mode === 'mtp' ? 'fast' : 'normal');
 	localStorage.setItem(SPECULATIVE_KEY, mode === 'de' ? 'high' : 'off');

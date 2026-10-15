@@ -4,253 +4,128 @@ import { animateComposerHeight } from './animateComposerHeight';
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
-function setup(reduced = false) {
-	vi.stubGlobal('window', { matchMedia: () => ({ matches: reduced }) });
+function setup(ongoing = false, expanded = false, distance = 250) {
 	const listeners = new Map<string, (event: unknown) => void>();
+	const removeEventListener = vi.fn();
 	vi.stubGlobal('document', {
 		addEventListener: (type: string, callback: (event: unknown) => void) => listeners.set(type, callback),
-		removeEventListener: vi.fn()
+		removeEventListener
 	});
 	let height = 52;
-	const animation = { cancel: vi.fn(), onfinish: null };
+	let reservation = '60px';
+	let observeResize: () => void = () => {};
+	vi.stubGlobal('ResizeObserver', class {
+		constructor(callback: () => void) { observeResize = callback; }
+		observe() {}
+		disconnect = vi.fn();
+	});
+	const leaf = { animate: vi.fn() };
+	const root = { dataset: { ongoing: String(ongoing) }, getBoundingClientRect: () => ({ height }) };
+	const messages = {
+		scrollHeight: 1000, clientHeight: 500, scrollTop: 500 - distance,
+		querySelectorAll: () => [{ getBoundingClientRect: () => ({ bottom: 300 }) }]
+	};
+	const pane = {
+		querySelector: () => messages,
+		style: { getPropertyValue: () => reservation, setProperty: (_key: string, value: string) => { reservation = value; } }
+	};
 	const node = {
-		getBoundingClientRect: () => ({ height }),
-		animate: vi.fn(() => animation),
-		closest: () => null,
+		getBoundingClientRect: () => ({ height, top: 400 }),
+		animate: vi.fn(),
+		querySelector: () => leaf,
+		closest: (selector: string) => selector === '#chat-pane' ? pane : root,
 		contains: () => true,
-		classList: { add: vi.fn(), remove: vi.fn() }
+		classList: { add: vi.fn(), remove: vi.fn(), contains: () => expanded }
 	} as unknown as HTMLElement;
-	return { node, animation, resize: (value: number) => { height = value; }, interact: () => listeners.get('pointerdown')?.({ target: {} }) };
+	return {
+		node, leaf, removeEventListener,
+		resize: (value: number) => { height = value; },
+		interact: (type = 'pointerdown') => listeners.get(type)?.({ target: {} }),
+		observe: () => observeResize(),
+		reservation: () => reservation
+	};
 }
 
-const layout = (key: string, context = 'chat-1') => ({ key, context });
+const layout = (key: string, context = 'chat-1', conversation = context) => ({ key, context, conversation });
 
-describe('composer height animation', () => {
-	it.each([true, false])('preserves reading space across model changes in the same chat (immediate %s)', async (immediate) => {
-		const { node, resize, interact } = setup();
-		resize(108);
-		let reservation = '132px';
-		let observeResize: () => void;
-		vi.stubGlobal('ResizeObserver', class {
-			constructor(callback: () => void) { observeResize = callback; }
-			observe() {}
-			disconnect() {}
-		});
-		const root = { dataset: { ongoing: 'true' }, getBoundingClientRect: () => node.getBoundingClientRect() };
-		const pane = {
-			querySelector: () => ({ scrollHeight: 1000, clientHeight: 500, scrollTop: 500 }),
-			style: { getPropertyValue: () => reservation, setProperty: (_key: string, value: string) => { reservation = value; } }
-		};
-		vi.spyOn(node, 'closest').mockImplementation((selector) => (selector === '#chat-pane' ? pane : root) as unknown as HTMLElement);
-		const action = animateComposerHeight(node, { key: 'expanded', context: 'chat-1:model-a', conversation: 'chat-1' });
+describe('immediate composer layout', () => {
+	it.each(['pointerdown', 'keydown', 'paste', 'beforeinput'])('never animates the composer, text or controls after %s', async (event) => {
+		const s = setup();
+		const action = animateComposerHeight(s.node, layout('compact'));
 		await tick();
-		interact();
-		if (immediate) resize(52);
-		await action.update({ key: immediate ? 'compact' : 'expanded', context: 'chat-1:model-b', conversation: 'chat-1' });
-		expect(reservation).toBe('132px');
-		resize(52);
-		await action.update({ key: 'compact', context: 'chat-1:model-b', conversation: 'chat-1' });
-		expect(reservation).toBe('132px');
-		observeResize!();
-		expect(reservation).toBe('132px');
-		await action.update({ key: 'compact', context: 'chat-2:model-b', conversation: 'chat-2' });
-		expect(reservation).toBe('60px');
-		action.destroy();
-	});
-	it.each([true, false])('interpolates editor width without scaling its text (expanding %s)', async (expanding) => {
-		const { node, resize, interact } = setup();
-		resize(expanding ? 52 : 108);
-		let width = expanding ? 400 : 600;
-		const part = { getBoundingClientRect: () => ({ left: 40, top: 100, width }), animate: vi.fn(() => ({ cancel: vi.fn() })) };
-		Object.assign(node, { querySelector: (selector: string) => selector === '#chat-input' ? part : null });
-		const action = animateComposerHeight(node, layout('initial'));
-		await tick();
-		interact();
-		width = expanding ? 600 : 400;
-		resize(expanding ? 108 : 52);
-		await action.update(layout('next'));
-		expect(part.animate).toHaveBeenCalledWith([
-			{ transform: 'translate(0px, 0px)', width: expanding ? '400px' : '600px' },
-			{ transform: 'translate(0px, 0px)', width: expanding ? '600px' : '400px' }
-		], expect.anything());
-		action.destroy();
-	});
-	it.each([true, false])('reserves additional reading space only for expanded ongoing composers (expanded %s)', async (expanded) => {
-		const { node } = setup();
-		let observeResize: () => void;
-		vi.stubGlobal('ResizeObserver', class {
-			constructor(callback: () => void) { observeResize = callback; }
-			observe() {}
-			disconnect() {}
-		});
-		let reservation = '';
-		const root = { dataset: { ongoing: 'true' }, getBoundingClientRect: () => ({ height: 64 }) };
-		const pane = { style: { setProperty: (_key: string, value: string) => { reservation = value; } } };
-		vi.spyOn(node, 'closest').mockImplementation((selector) => (selector === '#chat-pane' ? pane : root) as unknown as HTMLElement);
-		Object.assign(node.classList, { contains: (name: string) => name === 'flex-col' && expanded });
-		const action = animateComposerHeight(node, layout('initial'));
-		await tick();
-		observeResize!();
-		expect(reservation).toBe(expanded ? '88px' : '72px');
-		action.destroy();
-	});
-	it('measures the centered editor in its animated row so the placeholder ends in its native position', async () => {
-		const { node, resize, interact } = setup();
-		resize(108);
-		let top = 100;
-		const part = { getBoundingClientRect: () => ({ left: 40, top }), animate: vi.fn(() => ({ cancel: vi.fn() })) };
-		Object.assign(node, { querySelector: (selector: string) => selector === '#chat-input' ? part : null });
-		vi.spyOn(node, 'closest').mockImplementation((selector) => selector === '#chat-pane' ? null : { dataset: { ongoing: 'true' } } as unknown as HTMLElement);
-		const action = animateComposerHeight(node, layout('expanded'));
-		await tick();
-		interact();
-		top = 101;
-		vi.spyOn(node, 'animate').mockImplementation(() => { top = 130; return { cancel: vi.fn(), onfinish: null } as unknown as Animation; });
-		resize(52);
-		await action.update(layout('compact'));
-		expect(part.animate).toHaveBeenCalledWith([
-			{ transform: 'translate(0px, -30px)' }, { transform: 'translate(0px, 0px)' }
-		], expect.anything());
-		action.destroy();
-	});
-	it('measures token controls in final layout, not the animated container height in ongoing chats', async () => {
-		const { node, resize, interact } = setup();
-		resize(108);
-		let top = 100;
-		const part = { getBoundingClientRect: () => ({ left: 40, top }), animate: vi.fn(() => ({ cancel: vi.fn() })) };
-		Object.assign(node, { querySelector: (selector: string) => selector === '[data-token-usage-trigger]' ? part : null });
-		vi.spyOn(node, 'closest').mockImplementation((selector) => selector === '#chat-pane' ? null : { dataset: { ongoing: 'true' } } as unknown as HTMLElement);
-		const action = animateComposerHeight(node, layout('expanded'));
-		await tick();
-		interact();
-		top = 101;
-		vi.spyOn(node, 'animate').mockImplementation(() => { top = 130; return { cancel: vi.fn(), onfinish: null } as unknown as Animation; });
-		resize(52);
-		await action.update(layout('compact'));
-		expect(part.animate).toHaveBeenCalledWith([
-			{ transform: 'translate(0px, -1px)' }, { transform: 'translate(0px, 0px)' }
-		], expect.anything());
-		action.destroy();
-	});
-	it('keeps compact controls at their previous position during contraction and clears transforms at the end', async () => {
-		const { node, animation, resize, interact } = setup();
-		resize(108);
-		let position = { left: 40, top: 100 };
-		const partAnimation = { cancel: vi.fn() };
-		const part = { getBoundingClientRect: () => position, animate: vi.fn(() => partAnimation) };
-		Object.assign(node, { querySelector: (selector: string) => selector === '#chat-input' ? part : null });
-		const action = animateComposerHeight(node, layout('expanded'));
-		await tick();
-		interact();
-		position = { left: 56, top: 130 };
-		resize(52);
-		await action.update(layout('compact'));
-		expect(part.animate).toHaveBeenCalledWith([
-			{ transform: 'translate(-16px, -30px)' },
-			{ transform: 'translate(0px, 0px)' }
-		], expect.objectContaining({ fill: 'both', duration: 260 }));
-		(animation.onfinish as unknown as () => void)();
-		expect(partAnimation.cancel).toHaveBeenCalledOnce();
+		s.interact(event);
+		for (const [key, height] of [['expanded', 108], ['larger', 200], ['compact', 52]] as const) {
+			s.resize(height);
+			await action.update(layout(key));
+		}
+		expect(s.node.animate).not.toHaveBeenCalled();
+		expect(s.leaf.animate).not.toHaveBeenCalled();
+		expect(s.node.classList.add).not.toHaveBeenCalled();
 		action.destroy();
 	});
 
-	it.each([0, 250])('preserves bottom breathing room only when already at the end (distance %s)', async (distance) => {
-		const { node, animation, resize, interact } = setup();
-		let observeResize: () => void;
-		vi.stubGlobal('ResizeObserver', class {
-			constructor(callback: () => void) { observeResize = callback; }
-			observe() {}
-			disconnect() {}
-		});
-		let reservation = '60px';
-		const messages = {
-			scrollHeight: 1000, clientHeight: 500, scrollTop: 500 - distance,
-			querySelectorAll: () => [{ getBoundingClientRect: () => ({ bottom: 300 }) }]
-		};
-		const root = { dataset: { ongoing: 'true' }, getBoundingClientRect: () => node.getBoundingClientRect() };
-		const pane = {
-			querySelector: () => messages,
-			style: { getPropertyValue: () => reservation, setProperty: (_key: string, value: string) => { reservation = value; } }
-		};
-		vi.spyOn(node, 'closest').mockImplementation((selector) => (selector === '#chat-pane' ? pane : root) as unknown as HTMLElement);
-		const measure = node.getBoundingClientRect;
-		vi.spyOn(node, 'getBoundingClientRect').mockImplementation(() => ({ ...measure(), top: 400 }) as DOMRect);
-		const action = animateComposerHeight(node, layout('compact'));
+	it.each([true, false])('preserves reading space across model changes (immediate %s)', async (immediate) => {
+		const s = setup(true);
+		s.resize(108);
+		const action = animateComposerHeight(s.node, layout('expanded', 'chat-1:a', 'chat-1'));
 		await tick();
-		interact();
-		resize(108);
+		s.observe();
+		const before = s.reservation();
+		s.interact();
+		if (immediate) s.resize(52);
+		await action.update(layout(immediate ? 'compact' : 'expanded', 'chat-1:b', 'chat-1'));
+		s.resize(52);
+		await action.update(layout('compact', 'chat-1:b', 'chat-1'));
+		s.observe();
+		expect(s.reservation()).toBe(before);
+		await action.update(layout('compact', 'chat-2:b', 'chat-2'));
+		expect(s.reservation()).toBe('60px');
+		action.destroy();
+	});
+
+	it.each([true, false])('retains the correct expanded/compact reading gap (expanded %s)', async (expanded) => {
+		const s = setup(true, expanded);
+		const action = animateComposerHeight(s.node, layout('initial'));
+		await tick();
+		s.observe();
+		expect(s.reservation()).toBe(expanded ? '76px' : '60px');
+		action.destroy();
+	});
+
+	it.each([0, 250])('reuses bottom breathing room only at the end (distance %s)', async (distance) => {
+		const s = setup(true, false, distance);
+		const action = animateComposerHeight(s.node, layout('compact'));
+		await tick();
+		s.interact();
+		s.resize(108);
 		await action.update(layout('expanded'));
-		expect(reservation).toBe(distance === 0 ? '60px' : '116px');
-		(animation.onfinish as unknown as () => void)();
-		expect(reservation).toBe(distance === 0 ? '60px' : '116px');
-		observeResize!();
-		expect(reservation).toBe(distance === 0 ? '60px' : '116px');
-		resize(160);
-		observeResize!();
-		expect(reservation).toBe('168px');
-		resize(52);
+		expect(s.reservation()).toBe(distance === 0 ? '60px' : '116px');
+		s.observe();
+		expect(s.reservation()).toBe(distance === 0 ? '60px' : '116px');
+		s.resize(160);
+		s.observe();
+		expect(s.reservation()).toBe('168px');
+		s.resize(52);
 		await action.update(layout('compact'));
-		expect(reservation).toBe('168px');
-		action.destroy();
-	});
-
-	it('animates both expansion and contraction without retaining a fixed height', async () => {
-		const { node, animation, resize, interact } = setup();
-		const action = animateComposerHeight(node, layout('compact'));
-		await tick();
-		interact();
-		resize(108);
-		await action.update(layout('expanded'));
-		expect(node.animate).toHaveBeenLastCalledWith([{ height: '52px' }, { height: '108px' }], expect.anything());
-		(animation.onfinish as unknown as () => void)();
-		resize(52);
-		await action.update(layout('compact'));
-		expect(node.animate).toHaveBeenLastCalledWith([{ height: '108px' }, { height: '52px' }], expect.anything());
-		action.destroy();
-		expect(animation.cancel).toHaveBeenCalled();
-	});
-
-	it('keeps a short layout transition when Windows disables client-area animations', async () => {
-		const { node, resize, interact } = setup(true);
-		const action = animateComposerHeight(node, layout('compact'));
-		await tick();
-		interact();
-		resize(108);
-		await action.update(layout('expanded'));
-		expect(node.animate).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ duration: 120 }));
+		expect(s.reservation()).toBe('168px');
 		action.destroy();
 	});
 
 	it('ignores stale updates and destroyed components', async () => {
-		const { node, resize, interact } = setup();
-		const action = animateComposerHeight(node, layout('compact'));
+		const s = setup(true);
+		const action = animateComposerHeight(s.node, layout('compact'));
 		await tick();
-		interact();
-		resize(108);
+		s.interact();
+		s.resize(108);
 		const first = action.update(layout('expanded'));
-		resize(52);
+		s.resize(52);
 		const second = action.update(layout('compact'));
 		await Promise.all([first, second]);
-		expect(node.animate).not.toHaveBeenCalled();
+		expect(s.reservation()).toBe('60px');
 		const last = action.update(layout('expanded'));
 		action.destroy();
 		await last;
-		expect(node.animate).not.toHaveBeenCalled();
-	});
-
-	it('does not animate restored integrations or a different chat', async () => {
-		const { node, resize, interact } = setup();
-		const action = animateComposerHeight(node, layout('compact'));
-		await tick();
-		resize(108);
-		await action.update(layout('expanded'));
-		expect(node.animate).not.toHaveBeenCalled();
-		interact();
-		resize(52);
-		await action.update(layout('compact', 'chat-2'));
-		resize(108);
-		await action.update(layout('expanded', 'chat-2'));
-		expect(node.animate).not.toHaveBeenCalled();
-		action.destroy();
+		expect(s.reservation()).toBe('60px');
+		expect(s.removeEventListener).toHaveBeenCalledTimes(4);
 	});
 });

@@ -2,6 +2,10 @@
 	import { getContext, onMount } from 'svelte';
 	import { fly } from 'svelte/transition';
 	import type { I18nStore } from '$lib/i18n';
+	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import Gauge from '$lib/components/icons/Gauge.svelte';
+	import Restore from '$lib/components/icons/Restore.svelte';
+	import Bolt from '$lib/components/icons/Bolt.svelte';
 	import {
 		getLocalModelLoadPreferences,
 		getLocalModelAccelerationMode,
@@ -22,12 +26,15 @@
 	$: firstLevelLabel = effortBased ? `${$i18n.t('Raciocínio')} ${$i18n.t('Leve')}` : $i18n.t(REASONING_LEVELS[0]);
 	$: levelLabel = level === 0 ? firstLevelLabel : `${$i18n.t('Raciocínio')} ${$i18n.t(REASONING_LEVELS[level])}`;
 	let accelerationMode: LocalModelAccelerationMode = 'normal';
+	let fastSweepFinished = false;
 	const accelerationModes: LocalModelAccelerationMode[] = ['normal', 'de', 'mtp'];
-	$: accelerationLabel = accelerationMode === 'normal' ? $i18n.t('Normal') : accelerationMode === 'de' ? $i18n.t('Rápido') : 'MTP';
+	$: accelerationLabel = $i18n.t(accelerationMode === 'normal' ? 'Normal' : accelerationMode === 'de' ? 'Rápido' : 'Predição');
 	let predictionLocked = false;
 	function syncPrediction() {
 		const preferences = getLocalModelLoadPreferences();
-		accelerationMode = getLocalModelAccelerationMode();
+		const nextMode = getLocalModelAccelerationMode();
+		if (nextMode !== accelerationMode) fastSweepFinished = false;
+		accelerationMode = nextMode;
 		predictionLocked = preferences.contextShift === 'on';
 	}
 	onMount(() => {
@@ -40,7 +47,12 @@
 		};
 	});
 	function chooseLevel(value: number) {
+		if (accelerationMode === 'de') fastSweepFinished = true;
 		onLevelChange(value as ReasoningLevel);
+	}
+	function resetDefinitions() {
+		setLocalModelAccelerationMode('normal', { reset: true });
+		chooseLevel(0);
 	}
 </script>
 
@@ -65,6 +77,9 @@
 			show = !show;
 		}}
 	>
+		{#if accelerationMode !== 'normal' && !predictionLocked}
+			<span class="flex shrink-0" data-acceleration-icon aria-hidden="true"><Bolt className="size-3.5" filled={accelerationMode === 'mtp'} /></span>
+		{/if}
 		<span class="text-gray-700 dark:text-gray-200">
 			{#if level === 0 && !effortBased}{firstLevelLabel}{:else}
 				<span class="reasoning-mode-name">{$i18n.t('Raciocínio')}{' '}</span><span class="text-gray-500 dark:text-gray-400">{$i18n.t(level === 0 ? 'Leve' : REASONING_LEVELS[level])}</span>
@@ -104,18 +119,61 @@
 				}
 			}}
 		>
-			<div class="px-2 pt-2 pb-1">
+			<div class="flex items-center justify-between px-1 pt-1">
+				<Tooltip content={`${$i18n.t('Velocidade')}: <span class="text-gray-400">${accelerationLabel}</span>`} tippyOptions={{ hideOnClick: false }}>
+					<button
+						id="reasoning-speed-control"
+						type="button"
+						class="reasoning-tool"
+						class:accelerated={accelerationMode !== 'normal'}
+						disabled={predictionLocked}
+						aria-label={`${$i18n.t('Velocidade')}: ${accelerationLabel}`}
+						aria-pressed={accelerationMode !== 'normal'}
+						data-mode={accelerationMode}
+						on:click={() => setLocalModelAccelerationMode(accelerationModes[(accelerationModes.indexOf(accelerationMode) + 1) % accelerationModes.length])}
+					>
+						<span class="reasoning-tool-icon"><Gauge className="size-[23px]" /></span>
+						<span class="acceleration-indicator" class:invisible={accelerationMode === 'normal'} aria-hidden="true">
+							<span></span><span class:hidden={accelerationMode !== 'mtp'}></span>
+						</span>
+					</button>
+				</Tooltip>
+				<Tooltip content={$i18n.t('Reset')}>
+					<button id="reasoning-reset-control" type="button" class="reasoning-tool" aria-label={$i18n.t('Reset')} on:click={resetDefinitions}>
+						<Restore className="size-[18px]" />
+					</button>
+				</Tooltip>
+			</div>
+			<div class="px-2 -mt-2 pb-4">
 				<div
-					class="mb-2 text-center text-sm leading-5 text-gray-800 dark:text-gray-100"
+					class="reasoning-level-label mb-3 text-center text-sm leading-5 text-gray-800 dark:text-gray-100"
 					data-reasoning-level-label
 				>
 					{#if level === 0 && !effortBased}{firstLevelLabel}{:else}
 						{$i18n.t('Raciocínio')} <span class="text-gray-500 dark:text-gray-400">{$i18n.t(level === 0 ? 'Leve' : REASONING_LEVELS[level])}</span>
 					{/if}
 				</div>
-				<div class="effort-track" style="--effort-progress: {(level / 3) * 100}%">
+				<div
+					class="effort-track"
+					class:fast-flow={level > 0 && accelerationMode === 'de' && !predictionLocked}
+					class:fast-settled={fastSweepFinished}
+					class:prediction-flow={level > 0 && accelerationMode === 'mtp' && !predictionLocked}
+					style="--effort-progress: {(level / 3) * 100}%; --effort-fraction: {level / 3}"
+				>
+					{#if level > 0 && accelerationMode === 'mtp' && !predictionLocked}
+						<!-- Start the complete particle set together when its count changes. -->
+						{#key level}
+							<div class="effort-fluid" aria-hidden="true">
+								{#each Array(level + 1) as _, index}
+									<span style="--particle-phase: {0.1 + index / (level + 1)}"></span>
+								{/each}
+							</div>
+						{/key}
+					{/if}
 					<div class="effort-dots" aria-hidden="true">
-						{#each REASONING_LEVELS as _, index}<span class:active={index <= level}></span>{/each}
+						{#each REASONING_LEVELS as _, index}
+							<span class:active={index <= level} style="--dot-index: {index}" on:animationend={() => { if (index === level) fastSweepFinished = true; }}></span>
+						{/each}
 					</div>
 					<input
 						type="range"
@@ -129,26 +187,61 @@
 					/>
 				</div>
 			</div>
-			<div class="mx-2 my-1 h-px bg-gray-100 dark:bg-gray-800"></div>
-			<div
-				class="flex w-full items-center justify-between gap-3 px-2 py-2 text-sm text-gray-700 dark:text-gray-200"
-				class:opacity-60={predictionLocked}
-			>
-				<span id="reasoning-speed-label">{$i18n.t('Velocidade')}</span>
-				<button
-					id="reasoning-speed-control"
-					type="button"
-					class="w-[5rem] shrink-0 whitespace-nowrap rounded-full px-0 py-1 border border-gray-200 dark:border-gray-700 text-xs text-center text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition disabled:cursor-not-allowed disabled:text-gray-400 disabled:dark:text-gray-500 disabled:hover:bg-transparent disabled:dark:hover:bg-transparent"
-					disabled={predictionLocked}
-					aria-label={`${$i18n.t('Velocidade')}: ${accelerationLabel}`}
-					on:click={() => setLocalModelAccelerationMode(accelerationModes[(accelerationModes.indexOf(accelerationMode) + 1) % accelerationModes.length])}
-				>{accelerationLabel}</button>
-			</div>
 		</div>
 	{/if}
 </div>
 
 <style>
+	.reasoning-tool {
+		position: relative;
+		/* The raised effort label must not cover the buttons' hit areas. */
+		z-index: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 30px;
+		height: 30px;
+		border-radius: 6px;
+		color: rgb(107 114 128);
+	}
+	.reasoning-tool:hover { background: rgb(243 244 246); }
+	:global(.dark) .reasoning-tool { color: rgb(163 163 163); }
+	:global(.dark) .reasoning-tool:hover { background: rgb(255 255 255 / 0.06); }
+	.reasoning-tool.accelerated, :global(.dark) .reasoning-tool.accelerated { color: rgb(59 130 246); }
+	.reasoning-tool:disabled { opacity: 0.45; cursor: not-allowed; background: transparent; }
+	.reasoning-tool-icon {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+	}
+	.reasoning-tool.accelerated .reasoning-tool-icon,
+	.reasoning-tool.accelerated .acceleration-indicator {
+		transform: translateY(-1px);
+	}
+	.reasoning-tool-icon :global(svg) {
+		position: absolute;
+		top: 3px;
+		left: 50%;
+		transform: translateX(-50%);
+		display: block;
+	}
+	.reasoning-level-label { position: relative; top: -2px; }
+	.acceleration-indicator {
+		position: absolute;
+		bottom: 3px;
+		left: 0;
+		right: 0;
+		display: flex;
+		justify-content: center;
+		gap: 2px;
+		pointer-events: none;
+	}
+	.acceleration-indicator span {
+		width: 3px;
+		height: 3px;
+		border-radius: 50%;
+		background: currentColor;
+	}
 	.effort-track {
 		position: relative;
 		height: 26px;
@@ -170,7 +263,12 @@
 	}
 	.effort-dots {
 		position: absolute;
-		inset: 0 11px;
+		z-index: 1;
+		inset: 0;
+		padding-inline: 11px;
+		border-radius: inherit;
+		overflow: hidden;
+		container-type: inline-size;
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
@@ -191,8 +289,49 @@
 	:global(.dark) .effort-dots span.active {
 		background: rgb(240 249 250 / 0.35);
 	}
+	.fast-flow:not(.fast-settled) .effort-dots span.active {
+		animation: effort-dot-flow 0.32s ease-out both;
+		animation-delay: calc(var(--dot-index) * 0.025s);
+	}
+	.fast-flow.fast-settled .effort-dots span.active { opacity: 0; }
+	@keyframes effort-dot-flow {
+		0% { transform: translateX(0); opacity: 1; }
+		60% { opacity: 0.45; }
+		100% { transform: translateX(calc(-1 * var(--dot-index) * (100cqw - 4px) / 3 - 4px)); opacity: 0; }
+	}
+	.prediction-flow .effort-dots span.active { opacity: 0; }
+	.effort-fluid {
+		--particle-duration: 0.66s;
+		position: absolute;
+		inset: 0 auto 0 0;
+		width: calc(var(--effort-progress) - 24px * var(--effort-fraction));
+		border-radius: 999px 0 0 999px;
+		overflow: hidden;
+		contain: paint;
+		container-type: inline-size;
+		pointer-events: none;
+	}
+	.effort-fluid span {
+		position: absolute;
+		left: 100%;
+		top: calc(50% - 2px);
+		width: 4px;
+		height: 4px;
+		border-radius: 50%;
+		background: rgb(224 242 254);
+		animation: effort-exhaust var(--particle-duration) linear infinite;
+		animation-delay: calc(-1 * var(--particle-duration) * var(--particle-phase));
+		will-change: transform, opacity;
+	}
+	@keyframes effort-exhaust {
+		0% { transform: translate(-2px, 0); opacity: 0; }
+		12% { opacity: 0.5; }
+		78% { opacity: 0.4; }
+		100% { transform: translate(calc(-96cqw - 2px), 0); opacity: 0; }
+	}
 	input {
 		position: absolute;
+		z-index: 2;
 		inset: 0;
 		width: 100%;
 		margin: 0;
@@ -235,6 +374,12 @@
 		outline-offset: 3px;
 	}
 	@media (prefers-reduced-motion: reduce) {
+		.fast-flow:not(.fast-settled) .effort-dots span.active {
+			animation-duration: 0.55s;
+		}
+		.effort-fluid {
+			--particle-duration: 1.2s;
+		}
 		button {
 			transition: none;
 		}

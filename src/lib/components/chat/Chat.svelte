@@ -149,7 +149,7 @@
 		| 'neve_image'
 		| 'neve_image_2'
 		| 'qwen_image_2s'
-		| 'qwen_image_2_1_official' = 'neve_image';
+		| 'qwen_image_2_1_official' = 'neve_image_2';
 	let stableDiffusionStyle:
 		| 'none'
 		| 'minimalist'
@@ -1799,18 +1799,24 @@
 
 	onMount(() => {
 		const storedImageQuality = localStorage.getItem('neveai.imageQuality');
+		if (storedImageQuality === 'qwen_image_2_2_experimental') {
+			const retiredResolution = localStorage.getItem('neveai.imageResolution.neve_image_2_2');
+			if (retiredResolution && !localStorage.getItem('neveai.imageResolution.neve_image_2_1')) {
+				localStorage.setItem('neveai.imageResolution.neve_image_2_1', retiredResolution);
+			}
+		}
+		localStorage.removeItem('neveai.imageResolution.neve_image_2_2');
 		const savedImageQuality =
-			storedImageQuality === 'qwen_image_2_1' ? 'qwen_image_2s' : storedImageQuality;
+			storedImageQuality === 'qwen_image_2_2_experimental' ? 'qwen_image_2_1_official' : storedImageQuality === 'qwen_image_2_1' ? 'qwen_image_2s' : storedImageQuality === 'neve_image' ? 'neve_image_2' : storedImageQuality;
 		stableDiffusionQuality = [
-			'neve_image',
 			'neve_image_2',
 			'qwen_image_2s',
 			'qwen_image_2_1_official'
 		].includes(savedImageQuality ?? '')
 			? (savedImageQuality as typeof stableDiffusionQuality)
-			: 'neve_image';
-		if (storedImageQuality === 'qwen_image_2_1') {
-			localStorage.setItem('neveai.imageQuality', 'qwen_image_2s');
+			: 'neve_image_2';
+		if (storedImageQuality !== stableDiffusionQuality) {
+			localStorage.setItem('neveai.imageQuality', stableDiffusionQuality);
 		}
 		localStorage.removeItem('neveai.image2Mode');
 		const previousImageStyle = localStorage.getItem('neveai.imageStyle');
@@ -4740,7 +4746,7 @@
 				stable_diffusion_quality: stableDiffusionQuality,
 				stable_diffusion_style: stableDiffusionStyle,
 				stable_diffusion_resolution:
-					stableDiffusionQuality === 'qwen_image_2_1_official' &&
+					(stableDiffusionQuality === 'qwen_image_2s' || stableDiffusionQuality === 'qwen_image_2_1_official') &&
 					files.some(
 						(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
 					)

@@ -29,6 +29,7 @@ from neveai.constants import ERROR_MESSAGES
 from neveai.utils.access_control import has_permission
 from neveai.utils.auth import get_admin_user, get_verified_user
 from neveai.utils.gpu_selection import preferred_amd_adapter, preferred_vulkan_device
+from neveai.utils.image_memory import ImageGenerationError, cpu_image_requested, is_image_memory_error, monotonic_progress
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -75,12 +76,14 @@ QWEN3_LLM_FILE = "Qwen3-4B-Instruct-2507-Q4_K_M.gguf"
 ZIMAGE_UNCENSORED_LLM_REPO = "BennyDaBall/Qwen3-4b-Z-Image-Turbo-AbliteratedV1"
 ZIMAGE_UNCENSORED_LLM_FILE = "Z-Image-AbliteratedV1.Q4_K_M.gguf"
 QWEN_IMAGE_21_REPO = "abenzerps/Qwen-Image-2.1-Uncensored-GGUF"
-QWEN_IMAGE_21_FILE = "qwen-image-2.1-UC-Q4_K_M.gguf"
 QWEN_IMAGE_21_LLM_REPO = "mradermacher/Qwen3-VL-8B-Instruct-Heretic-GGUF"
 QWEN_IMAGE_21_LLM_FILE = "Qwen3-VL-8B-Instruct-heretic.Q4_K_M.gguf"
 QWEN_IMAGE_21_VISION_FILE = "Qwen3-VL-8B-Instruct-heretic.mmproj-Q8_0.gguf"
 QWEN_IMAGE_21_OFFICIAL_QUALITY = "qwen_image_2_1_official"
 QWEN_IMAGE_2_FAST_AMD_QUALITY = "_qwen_image_2_fast_amd"
+QWEN_IMAGE_TURBO_REPO = "unsloth/Qwen-Image-2.1-Turbo-GGUF"
+QWEN_IMAGE_TURBO_FILE = "qwen-image-2.1-turbo-Q4_K_M.gguf"
+QWEN_IMAGE_TURBO_REVISION = "5d1f9f759ea877ae556cda88dbec958b62ad3809"
 QWEN_IMAGE_21_VAE_REPO = "Comfy-Org/Qwen-Image-2.1"
 QWEN_IMAGE_21_VAE_FILE = "vae/qwen_image_2.1_vae_bf16.safetensors"
 PROMPT_TRANSLATOR_REPO = "mradermacher/Huihui-Qwen3-4B-Instruct-2507-abliterated-GGUF"
@@ -100,6 +103,7 @@ MAX_IMAGE_STEPS = 8
 QUALITY_IMAGE_WIDTH = 1280
 QUALITY_IMAGE_HEIGHT = 1280
 QUALITY_IMAGE_STEPS = 8
+ZIMAGE_QUALITY_MIN_VRAM_MIB = 8 * 1024
 QUALITY_IMAGE_RESOLUTIONS = {
     "1:1": (1024, 1024),
     "16:9": (1280, 720),
@@ -107,9 +111,9 @@ QUALITY_IMAGE_RESOLUTIONS = {
     "4:3": (1152, 864),
     "3:4": (864, 1152),
 }
-QWEN_IMAGE_FAST_AMD_STEPS = 30
+QWEN_IMAGE_FAST_AMD_STEPS = 8
 QWEN_IMAGE_21_OFFICIAL_STEPS = 40
-QWEN_IMAGE_FAST_AMD_CFG_SCALE = 6.0
+QWEN_IMAGE_FAST_AMD_CFG_SCALE = 1.0
 QWEN_IMAGE_21_MAX_REFERENCES = 10
 QWEN_IMAGE_21_FULL_GPU_MIN_VRAM_MIB = 14 * 1024
 QWEN_IMAGE_21_RESOLUTIONS = {
@@ -248,9 +252,13 @@ def normalize_image_style(value: Optional[str]) -> str:
 
 def normalize_image_quality(value: Optional[str]) -> str:
     value = str(value or "neve_image").strip().lower()
+    if value == "neve_image":
+        return "neve_image_2"
     if value == "qwen_image_2_1":
         return "qwen_image_2s"
-    return value if value in {"neve_image", "neve_image_2", "qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY, QWEN_IMAGE_2_FAST_AMD_QUALITY} else "neve_image"
+    if value == "qwen_image_2_2_experimental":
+        return QWEN_IMAGE_21_OFFICIAL_QUALITY
+    return value if value in {"neve_image_2", "qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY, QWEN_IMAGE_2_FAST_AMD_QUALITY} else "neve_image_2"
 
 
 def normalize_qwen_image_resolution(value: Optional[str]) -> str:
@@ -969,7 +977,7 @@ def _preferred_sd_cpp_windows_backend() -> str:
     return "cpu"
 
 
-def _detected_gpu_vram_mib() -> Optional[int]:
+def _detected_gpu_vram_mib(*, selected_only: bool = False) -> Optional[int]:
     """Return conservative dedicated VRAM detection for memory-policy selection."""
     backend = _preferred_sd_cpp_windows_backend() if os.name == "nt" else "cuda12" if shutil.which("nvidia-smi") else "cpu"
     if backend == "cuda12":
@@ -977,6 +985,7 @@ def _detected_gpu_vram_mib() -> Optional[int]:
             result = subprocess.run(
                 [
                     "nvidia-smi",
+                    *(["--id=" + (os.environ.get("CUDA_VISIBLE_DEVICES") or "0").split(",")[0].strip()] if selected_only else []),
                     "--query-gpu=memory.total",
                     "--format=csv,noheader,nounits",
                 ],
@@ -1001,6 +1010,28 @@ def _detected_gpu_vram_mib() -> Optional[int]:
                 return None
 
     return None
+
+
+def _use_lightweight_zimage(quality: str, edit: bool) -> bool:
+    # Instruction editing uses Mageflow, not the non-equivalent Z-Image img2img path.
+    if quality != "neve_image_2" or edit:
+        return False
+    vram_mib = _detected_gpu_vram_mib(selected_only=True)
+    log.info("Neve Image 1.5: VRAM %s MiB; perfil %s", vram_mib, "leve Q4/offload" if vram_mib is None or vram_mib < ZIMAGE_QUALITY_MIN_VRAM_MIB else "Q8")
+    return vram_mib is None or vram_mib < ZIMAGE_QUALITY_MIN_VRAM_MIB
+
+
+def lightweight_image_dimensions(resolution: str) -> tuple[int, int]:
+    width, height = quality_image_dimensions(resolution)
+    scale = min(1.0, MAX_IMAGE_WIDTH / max(width, height))
+    return max(64, round(width * scale / 64) * 64), max(64, round(height * scale / 64) * 64)
+
+
+def _use_lightweight_mageflow(quality: str, edit: bool) -> bool:
+    if quality != "neve_image_2" or not edit:
+        return False
+    memory = _detected_gpu_vram_mib(selected_only=True)
+    return memory is None or memory < ZIMAGE_QUALITY_MIN_VRAM_MIB
 
 
 def _qwen_image_memory_args() -> list[str]:
@@ -1182,6 +1213,13 @@ class _ZImageTurboPipeline:
         self._model_id: Optional[str] = None
         self._quality = "neve_image"
         self._edit_mode = False
+        self._lightweight_generation = False
+        self._lightweight_edit = False
+        self._force_lightweight = False
+        self._force_cpu = False
+        self._recovery_seed = None
+        self._retry_prepared_prompt = None
+        self._recovery_lock = asyncio.Lock()
         self._load_lock = asyncio.Lock()
         self._generation_lock = asyncio.Lock()
         self._request_lock = asyncio.Lock()
@@ -1195,7 +1233,11 @@ class _ZImageTurboPipeline:
             model_id = normalize_sd_model_id(model_id)
             quality = normalize_image_quality(quality)
             edit = quality in {"neve_image_2", QWEN_IMAGE_2_FAST_AMD_QUALITY} and edit
-            if self._resources is not None and self._model_id == model_id and self._quality == quality and self._edit_mode == edit:
+            lightweight = (await asyncio.to_thread(_use_lightweight_zimage, quality, edit) or
+                           quality == "neve_image_2" and self._force_lightweight) and not edit
+            lightweight_edit = quality == "neve_image_2" and edit and (self._force_lightweight or
+                await asyncio.to_thread(_use_lightweight_mageflow, quality, edit))
+            if self._resources is not None and self._model_id == model_id and self._quality == quality and self._edit_mode == edit and self._lightweight_generation == lightweight and self._lightweight_edit == lightweight_edit:
                 return
 
             loop = asyncio.get_event_loop()
@@ -1209,21 +1251,23 @@ class _ZImageTurboPipeline:
                 token = hf_token or None
 
                 if quality == QWEN_IMAGE_2_FAST_AMD_QUALITY:
-                    def download_qwen(repo: str, filename: str, cache_dir: Path) -> Path:
+                    def download_qwen(repo: str, filename: str, cache_dir: Path, revision: Optional[str] = None) -> Path:
                         return Path(
                             hf_hub_download(
                                 repo_id=repo,
                                 filename=filename,
                                 cache_dir=str(cache_dir),
                                 token=token,
+                                revision=revision,
                             )
                         )
 
-                    log.info("Baixando/carregando Neve Image 2 Q4_K_M para AMD Vulkan...")
+                    log.info("Baixando/carregando Neve Image 2 Turbo Q4_K_M para AMD Vulkan...")
                     return _ZImageResources(
                         sd_cli=sd_cli,
                         diffusion_model=download_qwen(
-                            QWEN_IMAGE_21_REPO, QWEN_IMAGE_21_FILE, GGUF_CACHE_DIR
+                            QWEN_IMAGE_TURBO_REPO, QWEN_IMAGE_TURBO_FILE, GGUF_CACHE_DIR,
+                            QWEN_IMAGE_TURBO_REVISION,
                         ),
                         llm=download_qwen(
                             QWEN_IMAGE_21_LLM_REPO,
@@ -1259,7 +1303,7 @@ class _ZImageTurboPipeline:
                     )
 
                 gguf_repo = ZIMAGE_QUALITY_REPO if quality == "neve_image_2" else model_id
-                gguf_file = ZIMAGE_QUALITY_GGUF_FILE if quality == "neve_image_2" else ZIMAGE_GGUF_FILE
+                gguf_file = ZIMAGE_QUALITY_GGUF_FILE if quality == "neve_image_2" and not lightweight else ZIMAGE_GGUF_FILE
                 log.info("Baixando/carregando Z-Image-Turbo %s GGUF...", gguf_file)
                 diffusion_model = Path(
                     hf_hub_download(
@@ -1309,6 +1353,8 @@ class _ZImageTurboPipeline:
             self._model_id = model_id
             self._quality = quality
             self._edit_mode = edit
+            self._lightweight_generation = lightweight
+            self._lightweight_edit = lightweight_edit
             runtime_name = (
                 "Neve Image 2 (AMD)" if quality == QWEN_IMAGE_2_FAST_AMD_QUALITY
                 else "Mage-Flow-Edit" if edit else "Z-Image-Turbo"
@@ -1321,6 +1367,8 @@ class _ZImageTurboPipeline:
                 self._resources = None
                 self._model_id = None
                 self._quality = "neve_image"
+                self._lightweight_generation = False
+                self._lightweight_edit = False
                 self._edit_mode = False
 
     async def run(
@@ -1332,6 +1380,31 @@ class _ZImageTurboPipeline:
         progress_callback: Optional[ImageProgressCallback] = None,
         dimensions_callback: Optional[ImageDimensionsCallback] = None,
         **kwargs,
+    ) -> str:
+        async with self._recovery_lock:
+            cpu = os.name == "nt" and cpu_image_requested(await asyncio.to_thread(_preferred_sd_cpp_windows_backend))
+            plans = [(True, True)] if cpu else [(False, False), (True, False), (True, True)]
+            report = monotonic_progress(progress_callback)
+            self._recovery_seed = random.randint(0, 2**31 - 1)
+            self._retry_prepared_prompt = None
+            try:
+                for index, (lightweight, force_cpu) in enumerate(plans):
+                    self._force_lightweight, self._force_cpu = lightweight, force_cpu
+                    try:
+                        return await self._run_once(model_id, hf_token, quality, style, report, dimensions_callback, **kwargs)
+                    except Exception as exc:
+                        if not is_image_memory_error(exc) or index == len(plans) - 1:
+                            raise
+                        log.warning("Imagem local: recuperacao de memoria, tentativa %s: %s", index + 2, exc)
+                        await self.unload()
+            finally:
+                self._force_lightweight = self._force_cpu = False
+                self._recovery_seed = self._retry_prepared_prompt = None
+
+    async def _run_once(
+        self, model_id: str, hf_token: Optional[str], quality: str, style: str = "none",
+        progress_callback: Optional[ImageProgressCallback] = None,
+        dimensions_callback: Optional[ImageDimensionsCallback] = None, **kwargs,
     ) -> str:
         async with self._request_lock:
             quality = normalize_image_quality(quality)
@@ -1398,13 +1471,15 @@ class _ZImageTurboPipeline:
         if progress_callback is not None:
             await progress_callback(22)
         qwen_image_mode = self._quality == QWEN_IMAGE_2_FAST_AMD_QUALITY
-        prompt = (
+        prompt = (self._retry_prepared_prompt if self._recovery_seed is not None else None) or (
             _normalize_image_prompt_text(prompt)
             if qwen_image_mode
             else await _prepare_image_prompt(prompt, hf_token)
         )
         if not prompt:
             raise RuntimeError("Prompt vazio para geracao de imagem")
+        if self._recovery_seed is not None:
+            self._retry_prepared_prompt = prompt
         if progress_callback is not None:
             await progress_callback(26)
 
@@ -1440,11 +1515,15 @@ class _ZImageTurboPipeline:
             )
         )
 
-        quality_mode = self._quality == "neve_image_2"
+        quality_mode = self._quality == "neve_image_2" and not self._lightweight_generation and not self._lightweight_edit
         if qwen_image_mode:
             width, height = qwen_image_dimensions(resolution)
         elif quality_mode:
             width, height = quality_image_dimensions(resolution)
+        elif self._lightweight_generation or self._lightweight_edit:
+            width, height = lightweight_image_dimensions(resolution)
+            if init_image is not None:
+                width, height = _fit_init_image_dimensions(init_image, width, height, MAX_IMAGE_WIDTH)
         else:
             width = _align_image_dim(width, MAX_IMAGE_WIDTH, MAX_IMAGE_WIDTH)
             height = _align_image_dim(height, MAX_IMAGE_HEIGHT, MAX_IMAGE_HEIGHT)
@@ -1454,6 +1533,13 @@ class _ZImageTurboPipeline:
                 )
         if dimensions_callback is not None:
             await dimensions_callback(width, height)
+        if self._lightweight_edit and init_image is not None:
+            def resize_edit_reference() -> None:
+                from PIL import Image
+                with Image.open(init_image.path) as source:
+                    resized = source.convert("RGB").resize((width, height), Image.Resampling.LANCZOS)
+                resized.save(init_image.path, "PNG")
+            await asyncio.to_thread(resize_edit_reference)
         if progress_callback is not None:
             await progress_callback(33)
         if qwen_image_mode:
@@ -1462,7 +1548,7 @@ class _ZImageTurboPipeline:
         else:
             steps = 4 if self._edit_mode else _clamp_int(steps, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS, 1, QUALITY_IMAGE_STEPS if quality_mode else MAX_IMAGE_STEPS)
             cfg = _cfg_scale(guidance_scale)
-        seed = random.randint(0, 2**31 - 1)
+        seed = self._recovery_seed if self._recovery_seed is not None else random.randint(0, 2**31 - 1)
         filename = f"sd_{int(time.time())}_{seed}.png"
         output_path = IMAGE_OUTPUT_DIR / filename
         log.info(
@@ -1471,7 +1557,7 @@ class _ZImageTurboPipeline:
             _short_log_prompt(prompt),
         )
 
-        attention_args = (
+        attention_args = [] if self._force_cpu else (
             ["--sage-attn"]
             if qwen_image_mode and _supports_native_sage_attention()
             else ["--diffusion-fa"]
@@ -1507,7 +1593,9 @@ class _ZImageTurboPipeline:
                 else []
             ),
             *([] if quality_mode or qwen_image_mode else ["--offload-to-cpu"]),
-            *(_qwen_image_memory_args() if qwen_image_mode else []),
+            *(_qwen_image_memory_args() if qwen_image_mode and not self._force_cpu else []),
+            *(["--backend", "cpu", "--auto-fit", "off", "--vae-tiling", "--mmap"] if self._force_cpu else
+              self._mageflow_memory_args() if self._lightweight_edit else []),
             *(["--vae-conv-direct"] if quality_mode and not self._edit_mode and not qwen_image_mode else []),
             *(
                 ["--llm_vision", str(self._resources.llm_vision)]
@@ -1521,6 +1609,9 @@ class _ZImageTurboPipeline:
             str(output_path),
         ]
         if qwen_image_mode:
+            from neveai.routers.image_fast_generation import SIGMAS
+
+            cmd.extend(["--sigmas", SIGMAS])
             for reference_image in reference_images:
                 cmd.extend(["-r", str(reference_image.path)])
             if reference_images:
@@ -1541,7 +1632,7 @@ class _ZImageTurboPipeline:
                 runtime_name = "Qwen Image 2.1" if qwen_image_mode else "Z-Image-Turbo"
                 log.info("Gerando imagem %s %s %sx%s, steps=%s, cfg=%s", runtime_name, mode, width, height, steps, cfg)
                 last_progress = 33
-                retry_on_cpu = qwen_image_mode and os.name == "nt" and _preferred_sd_cpp_windows_backend() == "vulkan"
+                retry_on_cpu = qwen_image_mode and not self._force_cpu and os.name == "nt" and _preferred_sd_cpp_windows_backend() == "vulkan"
                 commands = [cmd]
                 if retry_on_cpu:
                     commands.append(_qwen_image_cpu_fallback_command(cmd))
@@ -1553,6 +1644,7 @@ class _ZImageTurboPipeline:
                         env=env,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
+                        **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}),
                     )
                     stdout_chunks: list[bytes] = []
                     stderr_chunks: list[bytes] = []
@@ -1625,10 +1717,14 @@ class _ZImageTurboPipeline:
                     output_text = output.decode("utf-8", errors="replace")
                     if process.returncode == 0:
                         break
-                    if attempt == 0 and retry_on_cpu and _is_vulkan_memory_failure(output_text):
+                    diagnostic = output_text.replace(prompt, '<prompt>')
+                    if attempt == 0 and retry_on_cpu and _is_vulkan_memory_failure(diagnostic):
                         log.warning("Qwen Image 2.1: falha de memoria no Vulkan; repetindo esta geracao em CPU")
                         continue
-                    raise RuntimeError(f"stable-diffusion.cpp falhou (codigo {process.returncode}): {output_text[-4000:]}")
+                    raise ImageGenerationError(
+                        f"stable-diffusion.cpp falhou (codigo {process.returncode}): {output_text[-4000:]}",
+                        memory_failure=is_image_memory_error(diagnostic),
+                    )
         finally:
             temporary_images = [*reference_images]
             if init_image is not None:
@@ -1650,6 +1746,16 @@ class _ZImageTurboPipeline:
         raw = output_path.read_bytes()
         b64 = base64.b64encode(raw).decode("utf-8")
         return f"data:image/png;base64,{b64}"
+
+    def _mageflow_memory_args(self) -> list[str]:
+        backend = _preferred_sd_cpp_windows_backend()
+        if backend == "cpu":
+            return ["--backend", "cpu", "--auto-fit", "off", "--vae-tiling", "--mmap"]
+        device = (preferred_vulkan_device(SD_CLI_PATH) or "vulkan0") if backend == "vulkan" else "cuda0"
+        memory = _detected_gpu_vram_mib(selected_only=True)
+        budget = f"{max(0.5, min(memory / 1024 * 0.7, memory / 1024 - 1.5)):g}" if memory else "-1.5"
+        return ["--backend", f"te=cpu,vae=cpu,diffusion={device}", "--auto-fit", "on",
+                "--max-vram", budget, "--offload-to-cpu", "--vae-tiling", "--mmap"]
 
 
 _sd_pipeline = _ZImageTurboPipeline()
@@ -1748,7 +1854,7 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
     if qwen_image_mode or quality == "qwen_image_2s":
         width, height = qwen_image_dimensions(form_data.resolution)
         steps = (
-            6 if quality == "qwen_image_2s"
+            8 if quality == "qwen_image_2s"
             else QWEN_IMAGE_21_OFFICIAL_STEPS if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
             else QWEN_IMAGE_FAST_AMD_STEPS
         )
@@ -1775,10 +1881,12 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
         if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
             from neveai.routers.image_quality_generation import neve_image_21_runtime
 
+            runtime = neve_image_21_runtime
+
             references = list(form_data.init_images or [])
             if form_data.init_image and form_data.init_image not in references:
                 references.insert(0, form_data.init_image)
-            data_uri = await neve_image_21_runtime.run(
+            data_uri = await runtime.run(
                 prompt=form_data.prompt,
                 resolution=form_data.resolution,
                 references=references,

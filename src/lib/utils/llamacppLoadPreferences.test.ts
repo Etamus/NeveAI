@@ -24,6 +24,22 @@ beforeEach(() => {
 });
 
 describe('Independent acceleration controls', () => {
+	it.each(['normal', 'de', 'mtp'] as const)('explicit reset clears saved %s even during context shift', (mode) => {
+		setLocalModelAccelerationMode(mode);
+		setLocalModelContextPreference(8192);
+		setLocalModelContextShiftPreference('on');
+		setLocalModelAccelerationMode('normal', { reset: true });
+		expect(getLocalModelAccelerationMode()).toBe('normal');
+		expect(getLocalModelLoadPreferences()).toMatchObject({ context: 8192, contextShift: 'on' });
+		setLocalModelContextShiftPreference('off');
+		expect(getLocalModelAccelerationMode()).toBe('normal');
+	});
+	it('cannot bypass the context shift lock to enable acceleration during reset', () => {
+		setLocalModelContextShiftPreference('on');
+		setLocalModelAccelerationMode('mtp', { reset: true });
+		setLocalModelContextShiftPreference('off');
+		expect(getLocalModelAccelerationMode()).toBe('normal');
+	});
 	it('defaults speed to normal', () => {
 		expect(getLocalModelAccelerationMode()).toBe('normal');
 	});

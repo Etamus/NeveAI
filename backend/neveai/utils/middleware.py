@@ -2494,7 +2494,7 @@ async def chat_stable_diffusion_handler(
     resolution = normalize_qwen_image_resolution(
         image_features.get("stable_diffusion_resolution")
     )
-    if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY and init_image_references:
+    if quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY} and init_image_references:
         resolution = "auto"
     if quality == "neve_image":
         resolution = "1:1"
@@ -2584,7 +2584,7 @@ async def chat_stable_diffusion_handler(
         elif quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY}:
             width, height = qwen_image_dimensions(resolution)
             steps = (
-                6 if quality == "qwen_image_2s"
+                8 if quality == "qwen_image_2s"
                 else QWEN_IMAGE_21_OFFICIAL_STEPS
             )
             guidance_scale = 1.0
@@ -2601,7 +2601,9 @@ async def chat_stable_diffusion_handler(
             if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
                 from neveai.routers.image_quality_generation import neve_image_21_runtime
 
-                data_uri = await neve_image_21_runtime.run(
+                runtime = neve_image_21_runtime
+
+                data_uri = await runtime.run(
                     prompt=image_prompt,
                     resolution=resolution,
                     references=init_image_references,
@@ -2659,7 +2661,7 @@ async def chat_stable_diffusion_handler(
                 metadata={
                     "source": (
                         "qwen-image-2s" if quality == "qwen_image_2s"
-                        else "qwen-image-2.1-official" if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
+                        else "neve-image-2.4" if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
                         else "z-image-turbo"
                     ),
                     "prompt": image_prompt,
