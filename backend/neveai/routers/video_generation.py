@@ -60,6 +60,7 @@ DEFAULT_HEIGHT = 576
 DEFAULT_FRAMES = 124
 DEFAULT_STEPS = 8
 DEFAULT_FPS = 24.0
+VIDEO_OUTPUT_CRF = 18.0
 VIDEO_DIMENSION_MULTIPLE = 32
 VIDEO_MAX_PIXELS = 768 * 1344
 VIDEO_RESOLUTION_DIMENSIONS = {
@@ -70,6 +71,51 @@ GENERATION_TIMEOUT_SECONDS = 60 * 60
 VIDEO_GPU_POWER_RATIO = 0.83
 VIDEO_GPU_MAX_TEMPERATURE_C = 76.0
 VIDEO_GPU_TEMPERATURE_POLL_SECONDS = 0.5
+
+
+class _VideoLoRAMemoryError(RuntimeError):
+    pass
+
+
+def _use_merged_video_lora(stats: dict, width: int, height: int, frames: int) -> bool:
+    """Keep the low-memory path outside the measured runtime-LoRA envelope."""
+    try:
+        device = stats["devices"][0]
+        memory = [
+            float(device["vram_total"]),
+            float(device["vram_free"]),
+            float(stats["system"]["ram_free"]),
+            float(stats["system"]["ram_total"]),
+        ]
+        gib = 1024**3
+        return not (
+            device["type"] == "cuda"
+            and all(math.isfinite(value) for value in memory)
+            and memory[0] >= 15 * gib
+            and memory[1] >= 12 * gib
+            and memory[2] >= 12 * gib
+            and memory[3] >= 30 * gib
+            and 0 < frames <= DEFAULT_FRAMES
+            and width > 0
+            and height > 0
+            and _align_video_dimension(width) * _align_video_dimension(height) <= 672 * 672
+        )
+    except (KeyError, IndexError, TypeError, ValueError):
+        return True
+
+
+def _video_lora_out_of_memory(messages: list) -> bool:
+    for event in messages:
+        if not isinstance(event, (list, tuple)) or len(event) != 2 or event[0] != "execution_error":
+            continue
+        details = event[1]
+        if not isinstance(details, dict) or str(details.get("node_id")) not in {"7", "12"}:
+            continue
+        kind = str(details.get("exception_type", "")).lower()
+        message = str(details.get("exception_message", "")).lower()
+        if kind.endswith("outofmemoryerror") or "cuda out of memory" in message or "cuda error: out of memory" in message:
+            return True
+    return False
 
 
 def _align_video_dimension(value: int) -> int:
@@ -635,6 +681,7 @@ for repo_id, filename, local_dir in items:
         width: int = DEFAULT_WIDTH,
         height: int = DEFAULT_HEIGHT,
         frames: int = DEFAULT_FRAMES,
+        low_vram_lora: bool = True,
     ) -> dict:
         width = _align_video_dimension(width)
         height = _align_video_dimension(height)
@@ -673,7 +720,7 @@ for repo_id, filename, local_dir in items:
                     "model": ["6", 0],
                     "lora_name": TURBO_LORA,
                     "strength": 1.0,
-                    "low_vram": True,
+                    "low_vram": low_vram_lora,
                 },
             },
             "8": {
@@ -713,8 +760,10 @@ for repo_id, filename, local_dir in items:
                 "inputs": {
                     "video": ["15", 0],
                     "filename_prefix": "video/NeveAI_MiniMax_H3",
-                    "format": "auto",
-                    "codec": "auto",
+                    "format": "mp4",
+                    "format.codec": "h264",
+                    "format.codec.encoding": "re-encode",
+                    "format.codec.encoding.crf": VIDEO_OUTPUT_CRF,
                 },
             },
         }
@@ -772,12 +821,56 @@ for repo_id, filename, local_dir in items:
         height: int = DEFAULT_HEIGHT,
         frames: int = DEFAULT_FRAMES,
     ) -> dict:
+        options = dict(
+            prompt=prompt,
+            progress=progress,
+            image=image,
+            last_image=last_image,
+            width=width,
+            height=height,
+            frames=frames,
+            seed=random.randint(0, 2**63 - 1),
+        )
+        try:
+            return await self._generate_once(**options)
+        except _VideoLoRAMemoryError:
+            if self._cancel_requested:
+                raise asyncio.CancelledError
+            await self.stop()
+            if self._cancel_requested:
+                raise asyncio.CancelledError
+            await progress("Reduzindo o uso de memoria para tentar novamente...")
+            if self._cancel_requested:
+                raise asyncio.CancelledError
+            return await self._generate_once(**options, low_vram_lora=True)
+
+    async def _generate_once(
+        self,
+        prompt: str,
+        progress: ProgressCallback,
+        image: Optional[tuple[str, bytes, str]] = None,
+        last_image: Optional[tuple[str, bytes, str]] = None,
+        width: int = DEFAULT_WIDTH,
+        height: int = DEFAULT_HEIGHT,
+        frames: int = DEFAULT_FRAMES,
+        *,
+        seed: int,
+        low_vram_lora: Optional[bool] = None,
+    ) -> dict:
         prompt = str(prompt or "").strip()
         if not prompt:
             raise ValueError("Descreva o video que deseja criar.")
         base_url = await self._start_server(progress)
         timeout = httpx.Timeout(connect=20, read=120, write=120, pool=20)
         async with httpx.AsyncClient(base_url=base_url, timeout=timeout) as client:
+            if low_vram_lora is None:
+                low_vram_lora = True
+                try:
+                    stats = await client.get("/system_stats", timeout=5)
+                    stats.raise_for_status()
+                    low_vram_lora = _use_merged_video_lora(stats.json(), width, height, frames)
+                except (httpx.HTTPError, ValueError):
+                    log.debug("Video memory preflight unavailable; using merged LoRA")
             input_image = None
             if image is not None:
                 await progress("Preparando a imagem de referencia...")
@@ -790,12 +883,13 @@ for repo_id, filename, local_dir in items:
             await progress("Gerando o conditioning...", 15)
             workflow = self._build_workflow(
                 prompt,
-                random.randint(0, 2**63 - 1),
+                seed,
                 input_image,
                 last_image=last_input_image,
                 width=width,
                 height=height,
                 frames=frames,
+                low_vram_lora=low_vram_lora,
             )
             client_id = f"neveai-{random.randint(1, 2**31)}"
             websocket = None
@@ -931,6 +1025,8 @@ for repo_id, filename, local_dir in items:
                         status = history.get("status") or {}
                         if status.get("status_str") == "error" or status.get("completed") is False:
                             messages = status.get("messages") or []
+                            if not low_vram_lora and _video_lora_out_of_memory(messages):
+                                raise _VideoLoRAMemoryError("A aplicacao da LoRA excedeu a memoria disponivel.")
                             raise RuntimeError(f"O workflow de video falhou: {messages[-1] if messages else 'erro desconhecido'}")
                         output = self._find_output_file(history)
                         if output:

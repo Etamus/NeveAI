@@ -1886,31 +1886,31 @@ def _normalize_chat_image_prompt_text(text: Any) -> str:
     return re.sub(r"\s+", " ", str(text or "")).strip()
 
 
-def _get_all_text_from_message(message: Optional[dict]) -> str:
+def _get_all_text_from_message(message: Optional[dict], *, preserve_formatting: bool = False) -> str:
     if not isinstance(message, dict):
         return ""
 
     content = message.get("content")
     if isinstance(content, list):
-        return _normalize_chat_image_prompt_text(
-            " ".join(
-                str(item.get("text") or "")
-                for item in content
-                if isinstance(item, dict) and item.get("type") == "text"
-            )
+        text = ("\n" if preserve_formatting else " ").join(
+            str(item.get("text") or "")
+            for item in content
+            if isinstance(item, dict) and item.get("type") == "text"
         )
-    return _normalize_chat_image_prompt_text(content)
+    else:
+        text = str(content or "")
+    return text.strip() if preserve_formatting else _normalize_chat_image_prompt_text(text)
 
 
 def _collect_stable_diffusion_prompt(
-    messages: list[dict], parent_message: Optional[dict] = None
+    messages: list[dict], parent_message: Optional[dict] = None, *, preserve_formatting: bool = False
 ) -> str:
-    current_prompt = _get_all_text_from_message(parent_message)
+    current_prompt = _get_all_text_from_message(parent_message, preserve_formatting=preserve_formatting)
     if current_prompt:
         return current_prompt
 
     last_user_message = get_last_user_message_item(messages or [])
-    return _get_all_text_from_message(last_user_message)
+    return _get_all_text_from_message(last_user_message, preserve_formatting=preserve_formatting)
 
 
 def _is_pasted_text_attachment(item: dict) -> bool:
@@ -2491,6 +2491,10 @@ async def chat_stable_diffusion_handler(
     )
 
     quality = normalize_image_quality(image_features.get("stable_diffusion_quality"))
+    if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
+        image_prompt = _collect_stable_diffusion_prompt(
+            messages, metadata.get("parent_message"), preserve_formatting=True,
+        )
     resolution = normalize_qwen_image_resolution(
         image_features.get("stable_diffusion_resolution")
     )
@@ -2538,8 +2542,6 @@ async def chat_stable_diffusion_handler(
         progress_height = int(height)
         await emit_image_progress(last_progress)
 
-    await emit_image_progress(0)
-
     media_slot_acquired = False
     try:
         _validate_media_attachments(
@@ -2547,6 +2549,12 @@ async def chat_stable_diffusion_handler(
             max_images=0 if quality == "neve_image" else 1 if quality == "neve_image_2" else 10,
             references=init_image_references,
         )
+        from neveai.utils.image_progress import initial_image_dimensions
+        progress_width, progress_height = await asyncio.to_thread(
+            initial_image_dimensions, quality, resolution, init_image_references,
+            getattr(user, "id", None), (progress_width, progress_height),
+        )
+        await emit_image_progress(0)
         async def emit_image_waiting() -> None:
             await __event_emitter__(
                 {
@@ -2598,6 +2606,7 @@ async def chat_stable_diffusion_handler(
 
         try:
             # Generate image directly and skip the LLM response path.
+            generation_details = {}
             if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
                 from neveai.routers.image_quality_generation import neve_image_21_runtime
 
@@ -2610,6 +2619,7 @@ async def chat_stable_diffusion_handler(
                     user_id=getattr(user, "id", None),
                     progress=emit_image_progress,
                     dimensions=emit_image_dimensions,
+                    details=generation_details,
                 )
             elif quality == "qwen_image_2s":
                 from neveai.routers.image_fast_generation import neve_image_2s_runtime
@@ -2661,9 +2671,11 @@ async def chat_stable_diffusion_handler(
                 metadata={
                     "source": (
                         "qwen-image-2s" if quality == "qwen_image_2s"
-                        else "neve-image-2.4" if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
+                        else "neve-image-2.6" if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
                         else "z-image-turbo"
                     ),
+                    "generated": True,
+                    **({"generation": generation_details} if generation_details else {}),
                     "prompt": image_prompt,
                     "quality": quality,
                     "style": style,

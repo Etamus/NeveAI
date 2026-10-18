@@ -40,6 +40,12 @@ class QwenImageReferencePromptTests(unittest.TestCase):
         self.assertIn("4", result)
         self.assertIn("2 personagens", result)
 
+    def test_quality_can_preserve_instruction_boundaries_and_literal_whitespace(self):
+        prompt = 'Use imagem 1.\nRemove only the arm.\nWrite "Line  one\nLine two" exactly.'
+        expected = 'Use <image1>.\nRemove only the arm.\nWrite "Line  one\nLine two" exactly.'
+        self.assertEqual(_normalize_qwen_reference_tokens(prompt, 1, preserve_formatting=True), expected)
+        self.assertEqual(_normalize_qwen_reference_tokens(prompt, 1), ' '.join(expected.split()))
+
 
 if __name__ == "__main__":
     unittest.main()

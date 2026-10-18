@@ -1,3 +1,4 @@
+import io
 import unittest
 import subprocess
 import tempfile
@@ -5,6 +6,7 @@ from pathlib import Path
 import httpx
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+from PIL import Image
 
 from neveai.routers.image_quality_generation import (
     ENCODER_FILE,
@@ -26,6 +28,9 @@ from neveai.routers.image_quality_generation import (
     _install_cfg1_node,
     CFG1_NODE_FILE,
     _fit_balanced_reference,
+    _fit_optimized_reference,
+    OPTIMIZED_EDIT_STEPS,
+    _sampling_progress,
 )
 from neveai.routers.stable_diffusion import (
     QWEN_IMAGE_21_OFFICIAL_QUALITY,
@@ -35,7 +40,7 @@ from neveai.routers.stable_diffusion import (
 
 class NeveImage21ComfyTests(unittest.TestCase):
     def test_branding_and_retired_profile_preserve_quality_runtime(self):
-        self.assertEqual(NeveImage21Runtime.NAME, "Neve Image 2.4")
+        self.assertEqual(NeveImage21Runtime.NAME, "Neve Image 2.6")
         self.assertEqual(normalize_image_quality("qwen_image_2_2_experimental"),
                          QWEN_IMAGE_21_OFFICIAL_QUALITY)
         self.assertEqual(normalize_image_quality(QWEN_IMAGE_21_OFFICIAL_QUALITY),
@@ -131,7 +136,9 @@ class NeveImage21ComfyTests(unittest.TestCase):
         runtime = NeveImage21Runtime()
         self.assertEqual(runtime._reference_size(1917, 1079, EDIT_MODEL_FILE, 0, 4), expected[0])
         self.assertEqual(runtime._reference_size(1917, 1079, MODEL_FILE, 0, 4), _fit_reference(1917, 1079))
-        self.assertEqual(runtime._reference_size(1917, 1079, EDIT_MODEL_FILE, 0, 2), _fit_reference(1917, 1079, detailed_edit=True))
+        with patch('neveai.routers.image_quality_generation.psutil.virtual_memory',
+                   return_value=SimpleNamespace(total=32 * 1024**3)):
+            self.assertEqual(runtime._reference_size(1917, 1079, EDIT_MODEL_FILE, 0, 2), expected[0])
 
     def test_balanced_graph_uses_lossless_cpu_cache_for_four_to_ten_reference_int8(self):
         for model in [MODEL_FILE, EDIT_MODEL_FILE]:
@@ -156,9 +163,38 @@ class NeveImage21ComfyTests(unittest.TestCase):
         self.assertLessEqual(sum(w * h for w, h in fitted[1:]), 1.1 * 1024**2)
         self.assertEqual(runtime._reference_size(*sources[0], MODEL_FILE, 0, 6),
                          _fit_reference(*sources[0]))
-        for count in (0, 1, 3, 11):
+        for count in (0, 11):
             with self.assertRaises(ValueError):
                 _fit_balanced_reference(512, 512, 0, count)
+
+    def test_detail_canvas_increases_only_primary_input_and_keeps_planner_budget(self):
+        runtime = NeveImage21Runtime()
+        with patch('neveai.routers.image_quality_generation.psutil.virtual_memory',
+                   return_value=SimpleNamespace(total=32 * 1024**3)):
+            for count in (1, 2, 3):
+                for index in range(count):
+                    for size in ((1920, 1088), (1672, 941), (512, 512), (8192, 8192)):
+                        with self.subTest(count=count, index=index, size=size):
+                            fitted = runtime._reference_size(*size, EDIT_MODEL_FILE, index, count)
+                            expected = (_fit_balanced_reference(*size, index, count) if index == 0
+                                        else _fit_reference(*size, detailed_edit=True))
+                            self.assertEqual(fitted, expected)
+                            self.assertLessEqual(fitted[0] * fitted[1], 3.1 * 1024**2)
+                            self.assertEqual(runtime._reference_size(*size, EDIT_MODEL_FILE, index, count,
+                                                                    detail_canvas=False),
+                                             _fit_reference(*size, detailed_edit=True))
+
+    def test_smaller_or_unknown_ram_keeps_existing_one_to_three_reference_budget(self):
+        runtime = NeveImage21Runtime()
+        for probe in (SimpleNamespace(total=16 * 1024**3), SimpleNamespace(total=24 * 1024**3),
+                      OSError('unavailable')):
+            kwargs = {'side_effect': probe} if isinstance(probe, Exception) else {'return_value': probe}
+            with patch('neveai.routers.image_quality_generation.psutil.virtual_memory', **kwargs):
+                for count in (1, 2, 3):
+                    self.assertEqual(runtime._reference_size(1920, 1088, EDIT_MODEL_FILE, 0, count),
+                                     _fit_reference(1920, 1088, detailed_edit=True))
+        self.assertEqual(runtime._reference_size(1920, 1088, MODEL_FILE, 0, 2),
+                         _fit_reference(1920, 1088))
 
     def test_int8_limit_matches_all_reference_counts(self):
         with patch('neveai.routers.image_quality_generation.os.name', 'nt'), \
@@ -232,7 +268,227 @@ class NeveImage21ComfyTests(unittest.TestCase):
             self.assertEqual(_pe_file_for_hardware(), PE_LOW_VRAM_FILE)
 
 
+class NeveImage21OptimizedEditingTests(unittest.TestCase):
+    def test_single_reference_keeps_cfg1_and_full_progress_without_an_unused_second_sampler(self):
+        graph = NeveImage21Runtime.build_workflow('Edit', 2368, 1344, ['source.png'], 123,
+                                                  EDIT_MODEL_FILE, optimized_edit=True)
+        self.assertNotIn('32', graph)
+        self.assertEqual(graph['4']['class_type'], 'NeveTextEncodeQwenImage21CFG1')
+        self.assertEqual(graph['5']['class_type'], 'KSampler')
+        self.assertEqual(graph['5']['inputs']['steps'], OPTIMIZED_EDIT_STEPS)
+        self.assertEqual(graph['5']['inputs']['cfg'], 1)
+        self.assertEqual(graph['5']['inputs']['seed'], 123)
+        self.assertEqual(graph['5']['inputs']['model'], ['30', 0])
+        self.assertEqual(graph['7']['inputs']['samples'], ['5', 0])
+        self.assertEqual(_fit_optimized_reference(2368, 1344, 0, 1), (2368, 1344))
+        self.assertEqual(_fit_optimized_reference(992, 1344, 0, 1), (1248, 1696))
+        self.assertEqual(_sampling_progress({'node': '5', 'value': 25, 'max': 25},
+                                            optimized_edit=True), 94)
+        for node in ('4', '7', '32'):
+            self.assertIsNone(_sampling_progress({'node': node, 'value': 25, 'max': 25},
+                                                 optimized_edit=True))
+
+    def test_progress_tracks_sampling_and_ignores_loading_and_decode_events(self):
+        values = [_sampling_progress({'node': '5', 'value': step, 'max': OPTIMIZED_EDIT_STEPS}, optimized_edit=True)
+                  for step in range(1, OPTIMIZED_EDIT_STEPS + 1)]
+        self.assertEqual(values, sorted(values))
+        self.assertEqual(values[-1], 94)
+        self.assertTrue(all(value < 94 for value in values[:-1]))
+        for node in ('1', '4', '7', '32', None):
+            self.assertIsNone(_sampling_progress({'node': node, 'value': 100, 'max': 100}, optimized_edit=True))
+        self.assertIsNone(_sampling_progress({'value': 1, 'max': 0}, optimized_edit=True))
+        self.assertIsNone(_sampling_progress({}))
+        self.assertIsNone(_sampling_progress({'max': None}))
+        self.assertEqual(_sampling_progress({'value': 5, 'max': 10}), 67)
+
+    def test_quality_profile_uses_native_cfg1_sampling_for_all_reference_counts(self):
+        for count in range(2, 11):
+            with self.subTest(count=count):
+                graph = NeveImage21Runtime.build_workflow('Edit', 1920, 1088,
+                    [f'{index}.png' for index in range(count)], 123, EDIT_MODEL_FILE, optimized_edit=True)
+                sampling = graph['5']['inputs']
+                self.assertNotIn('32', graph)
+                self.assertEqual(graph['4']['class_type'], 'NeveTextEncodeQwenImage21CFG1')
+                self.assertEqual(graph['4']['inputs']['negative_prompt'], '')
+                self.assertEqual(graph['30']['inputs'], {'model': ['1', 0], 'device': 'cpu', 'dtype': 'default'})
+                self.assertEqual(graph['5']['class_type'], 'KSampler')
+                self.assertEqual(sampling['latent_image'], ['4', 2])
+                self.assertEqual(sampling['model'], ['30', 0])
+                self.assertEqual(sampling['positive'], ['4', 0])
+                self.assertEqual(sampling['negative'], ['4', 1])
+                self.assertEqual(sampling['cfg'], 1)
+                self.assertEqual(sampling['seed'], 123)
+                self.assertEqual(sampling['steps'], OPTIMIZED_EDIT_STEPS)
+                self.assertEqual(sampling['sampler_name'], 'euler')
+                self.assertEqual(sampling['scheduler'], 'simple')
+                self.assertEqual(sampling['denoise'], 1)
+                self.assertEqual(graph['7']['inputs']['samples'], ['5', 0])
+                self.assertEqual(graph['3']['inputs']['vae_name'], VAE_FILE)
+                for index in range(count):
+                    self.assertEqual(graph['4']['inputs'][f'images.image_{index + 1}'], [str(index + 9), 0])
+
+    def test_legacy_paths_and_text_to_image_ignore_optimized_edit_flag(self):
+        for model, references in ((MODEL_FILE, ['1.png', '2.png']), (MODEL_FILE, []), (EDIT_MODEL_FILE, [])):
+            args = ('A flower', 1216, 704, references, 123, model)
+            self.assertEqual(NeveImage21Runtime.build_workflow(*args),
+                             NeveImage21Runtime.build_workflow(*args, optimized_edit=True))
+
+    def test_budget_is_bounded_for_one_through_ten_references_and_all_orientations(self):
+        runtime = NeveImage21Runtime()
+        for count in range(1, 11):
+            for size in ((1918, 1076), (992, 1344), (512, 512), (8192, 8192), (8192, 256)):
+                with self.subTest(count=count, size=size):
+                    sizes = [_fit_optimized_reference(*size, index, count) for index in range(count)]
+                    self.assertLessEqual(sizes[0][0] * sizes[0][1], 3.1 * 1024**2)
+                    if count >= 4:
+                        self.assertLessEqual(sum(w * h for w, h in sizes[1:]), 1.1 * 1024**2)
+                    else:
+                        self.assertTrue(all(w * h <= 2.1 * 1024**2 for w, h in sizes[1:]))
+                    self.assertTrue(all(w % 32 == h % 32 == 0 and min(w, h) >= 32 and max(w, h) <= 2560
+                                        for w, h in sizes))
+                    for index in range(count):
+                        self.assertEqual(runtime._reference_size(*size, EDIT_MODEL_FILE, index, count,
+                                                                  detail_canvas=False, optimized_edit=True),
+                                         runtime._reference_size(*size, EDIT_MODEL_FILE, index, count,
+                                                                  detail_canvas=False))
+        self.assertEqual(_fit_optimized_reference(1918, 1076, 0, 3), (2368, 1344))
+        self.assertLess(_fit_optimized_reference(512, 512, 0, 1)[0], 1440)
+        for args in ((0, 512, 0, 1), (512, 512, 0, 0), (512, 512, 0, 11), (512, 512, 2, 2)):
+            with self.assertRaises(ValueError):
+                _fit_optimized_reference(*args)
+
+    def test_quality_profile_preserves_pre_optimization_reference_detail(self):
+        for count in range(1, 11):
+            for index in range(count):
+                for size in ((145, 221), (186, 266), (1917, 1079), (3840, 2160)):
+                    with self.subTest(count=count, index=index, size=size):
+                        expected = (_fit_balanced_reference(*size, index, count)
+                                    if index == 0 or count >= 4 else _fit_reference(*size, detailed_edit=True))
+                        self.assertEqual(_fit_optimized_reference(*size, index, count), expected)
+
+    def test_quality_sampling_matches_pre_optimization_except_lossless_cache(self):
+        self.assertEqual(OPTIMIZED_EDIT_STEPS, STEPS)
+        for count in range(1, 11):
+            with self.subTest(count=count):
+                args = ('Edit', 2368, 1344, [f'{index}.png' for index in range(count)], 42, EDIT_MODEL_FILE)
+                expected = NeveImage21Runtime.build_workflow(*args)
+                expected['30'] = {'class_type': 'QwenImage21Cache', 'inputs': {
+                    'model': ['1', 0], 'device': 'cpu', 'dtype': 'default',
+                }}
+                expected['5']['inputs']['model'] = ['30', 0]
+                self.assertEqual(NeveImage21Runtime.build_workflow(*args, optimized_edit=True), expected)
+
+    def test_hardware_gate_and_memory_recovery_keep_legacy_profiles(self):
+        runtime = NeveImage21Runtime()
+        prefix = 'neveai.routers.image_quality_generation.'
+        for ram, expected in ((32, True), (24, False), (16, False)):
+            with patch(prefix + 'psutil.virtual_memory', return_value=SimpleNamespace(total=ram * 1024**3)):
+                self.assertEqual(runtime._optimized_edit_available(EDIT_MODEL_FILE), expected)
+                self.assertFalse(runtime._optimized_edit_available(MODEL_FILE))
+                for attribute in ('_force_gguf', '_cpu_mode', '_memory_saver'):
+                    setattr(runtime, attribute, True)
+                    self.assertFalse(runtime._optimized_edit_available(EDIT_MODEL_FILE))
+                    setattr(runtime, attribute, False)
+        with patch(prefix + 'psutil.virtual_memory', side_effect=OSError('unavailable')):
+            self.assertFalse(runtime._optimized_edit_available(EDIT_MODEL_FILE))
+
+
 class NeveImage21ModelPreparationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_detail_canvas_preserves_legacy_planner_pixels_prompt_and_reference_order(self):
+        prefix = 'neveai.routers.image_quality_generation.'
+        class WorkflowCaptured(Exception):
+            pass
+
+        sources = []
+        for index in range(10):
+            size = ((1917, 1079), (1672, 941), (512, 512))[min(index, 2)]
+            gradient = Image.linear_gradient('L').resize(size).convert('RGB')
+            tint = Image.new('RGB', size, (index * 23, 255 - index * 19, index * 17))
+            image = Image.blend(gradient, tint, 0.5)
+            sources.append(image)
+        prompt = 'Use image 2 only as the style of image 1; preserve its background.'
+        rewritten = 'Edit <image1> using only the rendering style of <image2>.'
+        for count, model, cpu, saver, cached in [
+            (1, EDIT_MODEL_FILE, False, False, False),
+            (2, EDIT_MODEL_FILE, False, False, False),
+            (3, EDIT_MODEL_FILE, False, False, False),
+            (4, EDIT_MODEL_FILE, False, False, False),
+            (10, EDIT_MODEL_FILE, False, False, False),
+            (2, MODEL_FILE, False, False, False),
+            (6, MODEL_FILE, False, False, False),
+            (2, MODEL_FILE, True, True, False),
+            (4, MODEL_FILE, False, True, False),
+            (2, EDIT_MODEL_FILE, False, False, True),
+        ]:
+            with self.subTest(count=count, model=model, cpu=cpu, saver=saver, cached=cached), \
+                    tempfile.TemporaryDirectory() as temporary:
+                runtime = NeveImage21Runtime()
+                runtime._cpu_mode, runtime._memory_saver = cpu, saver
+                runtime._retry_prompt = rewritten if cached else None
+                originals, expected_planning, expected_uploads = [], [], []
+                with patch(prefix + 'psutil.virtual_memory', return_value=SimpleNamespace(total=32 * 1024**3)):
+                    optimized = runtime._optimized_edit_available(model)
+                    from neveai.routers.image_quality_generation import _adaptive_auxiliary_sizes
+                    adaptive = (_adaptive_auxiliary_sizes([image.size for image in sources[1:count]])
+                                if optimized and count >= 4 else None)
+                    for index in range(count):
+                        image = sources[index]
+                        original = io.BytesIO()
+                        image.save(original, format='PNG')
+                        originals.append(original.getvalue())
+                        planning_size = (_fit_reference(*image.size, detailed_edit=model == EDIT_MODEL_FILE)
+                                         if count < 4 and not saver else
+                                         runtime._reference_size(*image.size, model, index, count, detail_canvas=False))
+                        for size, target in [
+                            (planning_size, expected_planning),
+                            (adaptive[index - 1] if adaptive is not None and index > 0 else
+                             runtime._reference_size(*image.size, model, index, count, optimized_edit=optimized), expected_uploads),
+                        ]:
+                            output = io.BytesIO()
+                            image.resize(size, Image.Resampling.LANCZOS).save(output, format='PNG')
+                            target.append(output.getvalue())
+                    uploads = []
+                    async def post(url, **kwargs):
+                        if url == '/upload/image':
+                            uploads.append(kwargs['files']['image'][1])
+                            return httpx.Response(200, json={'name': f'unit-{len(uploads)}.png'},
+                                                  request=httpx.Request('POST', 'http://localhost/upload/image'))
+                        self.assertEqual(url, '/prompt')
+                        expected_graph = runtime.build_workflow(
+                            rewritten, 512, 512, [f'unit-{i + 1}.png' for i in range(count)], 42,
+                            model_file=model, optimized_edit=optimized)
+                        if expected_graph['4']['class_type'] == 'NeveTextEncodeQwenImage21CFG1' and not runtime._cfg1_node_ready:
+                            expected_graph['4']['class_type'] = 'TextEncodeQwenImage21'
+                        self.assertEqual(kwargs['json']['prompt'], expected_graph)
+                        self.assertEqual(runtime._generation_details, {
+                            'effective_prompt': expected_graph['4']['inputs']['prompt'],
+                            'seed': '42', 'model_file': model, 'reference_count': count,
+                            'steps': expected_graph['5']['inputs']['steps'],
+                        })
+                        raise WorkflowCaptured()
+                    client = AsyncMock()
+                    client.__aenter__.return_value = client
+                    client.post.side_effect = post
+                    dimensions = AsyncMock()
+                    with patch.object(runtime, '_ensure_models', AsyncMock(return_value=model)), \
+                            patch.object(runtime, '_plan_edit', AsyncMock(return_value=rewritten)) as planner, \
+                            patch.object(runtime, '_start_comfy', AsyncMock(return_value='http://localhost')), \
+                            patch.object(runtime, '_stop', AsyncMock()), \
+                            patch(prefix + '_read_image_reference_bytes', side_effect=originals), \
+                            patch(prefix + 'httpx.AsyncClient', return_value=client), \
+                            patch(prefix + 'fast.INPUT_DIR', Path(temporary)), \
+                            patch(prefix + 'os.name', 'nt'):
+                        with self.assertRaises(WorkflowCaptured):
+                            await runtime._run_once(prompt, 'auto', ['ref'] * count, None, AsyncMock(),
+                                                    dimensions, cpu_mode=cpu, memory_saver=saver, seed=42)
+                    if cached:
+                        planner.assert_not_awaited()
+                    else:
+                        self.assertEqual(planner.await_args.args[:2], (prompt, expected_planning))
+                    self.assertEqual(uploads, expected_uploads)
+                    with Image.open(io.BytesIO(expected_uploads[0])) as image:
+                        dimensions.assert_awaited_once_with(*image.size)
+
     async def test_real_selection_boundary_and_basic_hardware_need_no_download(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

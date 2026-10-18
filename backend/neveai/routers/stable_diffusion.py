@@ -481,9 +481,9 @@ _QWEN_REFERENCE_GROUP_RE = re.compile(
 )
 
 
-def _normalize_qwen_reference_tokens(prompt: str, reference_count: int) -> str:
-    """Map explicit PT-BR/English reference numbers to Qwen's native tokens."""
-    prompt = _normalize_image_prompt_text(prompt)
+def _normalize_qwen_reference_tokens(prompt: str, reference_count: int, *, preserve_formatting: bool = False) -> str:
+    """Map reference numbers, optionally retaining instruction and literal-text formatting."""
+    prompt = str(prompt or "").strip() if preserve_formatting else _normalize_image_prompt_text(prompt)
     if not prompt or reference_count <= 0:
         return prompt
 

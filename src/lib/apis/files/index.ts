@@ -1,10 +1,12 @@
 import { NEVEAI_API_BASE_URL } from '$lib/constants';
 import { splitStream } from '$lib/utils';
 
-export const getGeneratedFiles = async (token: string, kind = 'all', query = '', skip = 0) => {
+export const getGeneratedFiles = async (
+	token: string, kind = 'all', query = '', skip = 0, signal?: AbortSignal
+) => {
 	const params = new URLSearchParams({ kind, query, skip: String(skip), limit: '50' });
 	const response = await fetch(`${NEVEAI_API_BASE_URL}/files/generated?${params}`, {
-		cache: 'no-store', headers: { authorization: `Bearer ${token}` }
+		cache: 'no-store', headers: { authorization: `Bearer ${token}` }, signal
 	});
 	if (!response.ok) throw (await response.json().catch(() => null))?.detail ?? String(response.status);
 	return response.json();

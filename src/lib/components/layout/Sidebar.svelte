@@ -738,7 +738,7 @@
 										src={($user?.profile_image_url ?? '').startsWith('data:')
 											? $user?.profile_image_url
 											: `${NEVEAI_API_BASE_URL}/users/${$user?.id}/profile/image`}
-										class=" size-7 object-cover rounded-full"
+										class=" size-6.5 object-cover rounded-full"
 										alt={$i18n.t('Open User Profile Menu')}
 										aria-label={$i18n.t('Open User Profile Menu')}
 										on:error={(e) => { (e.currentTarget as HTMLImageElement).src = generateInitialsImage($user?.name ?? '?'); }}
@@ -1149,21 +1149,21 @@
 							}}
 						>
 							<div
-								class=" flex items-center rounded-md py-2 px-1.5 w-full hover:bg-gray-100 dark:hover:bg-gray-700/50 transition"
+								class=" flex min-h-11 items-center rounded-md py-2 px-1.5 w-full hover:bg-gray-100 dark:hover:bg-gray-700/50 transition"
 							>
 								<div class=" self-center mr-3 relative">
 									<img
 										src={($user?.profile_image_url ?? '').startsWith('data:')
 											? $user?.profile_image_url
 											: `${NEVEAI_API_BASE_URL}/users/${$user?.id}/profile/image`}
-										class=" size-7 object-cover rounded-full"
+										class=" size-6.5 object-cover rounded-full"
 										alt={$i18n.t('Open User Profile Menu')}
 										aria-label={$i18n.t('Open User Profile Menu')}
 										on:error={(e) => { (e.currentTarget as HTMLImageElement).src = generateInitialsImage($user?.name ?? '?'); }}
 									/>
 
 								</div>
-								<div class=" self-center font-medium truncate max-w-[9rem]">
+								<div class=" self-center text-[0.8125rem] font-medium truncate max-w-[9rem]">
 									{getLimitedUserName($user?.name)}
 								</div>
 							</div>

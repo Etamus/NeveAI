@@ -243,21 +243,6 @@ select {
 	color: #a1a3a7; /* Darker fallback color for dark mode */
 }
 
-@keyframes smoothFadeIn {
-	0% {
-		opacity: 0;
-		transform: translateY(-10px);
-	}
-	100% {
-		opacity: 1;
-		transform: translateY(0);
-	}
-}
-
-.status-description {
-	animation: smoothFadeIn 0.2s forwards;
-}
-
 .katex-mathml {
 	display: none;
 }

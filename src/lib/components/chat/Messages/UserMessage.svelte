@@ -200,11 +200,12 @@
 								{/each}
 							</div>
 						{:else if imageFiles.length === 1}
-							<div class={($settings?.chatBubble ?? true) ? 'self-end' : ''}>
+							<div class="max-w-[20rem] {($settings?.chatBubble ?? true) ? 'self-end' : ''}">
 								<Image
 									src={getAttachmentUrl(imageFiles[0])}
 									alt={imageFiles[0]?.name ?? ''}
-									imageClassName="max-h-96 rounded-lg"
+									containerClassName="w-fit max-w-full"
+									imageClassName="max-h-80 max-w-full rounded-lg object-contain"
 								/>
 							</div>
 						{/if}

@@ -68,8 +68,52 @@ MAX_INT8_EDIT_REFERENCES = 10
 BALANCED_EDIT_PIXELS = 3 * 1024 * 1024
 BALANCED_CANVAS_AREA_GAIN = 1.6
 BALANCED_AUXILIARY_PIXELS = 1024 * 1024
+ADAPTIVE_AUXILIARY_PIXELS = 1536 * 1024
+MAX_AUXILIARY_PIXELS = 768 * 1024
 BALANCED_MAX_SIDE = 2560
 BALANCED_MIN_RAM = 24 * 1024 * 1024 * 1024
+DETAIL_EDIT_MIN_RAM = 30 * 1024 * 1024 * 1024
+OPTIMIZED_EDIT_STEPS = STEPS
+PE_EDIT_SCOPE = (
+    "\n\nEditing scope clarification: the user's requested operations override preservation of targeted attributes. "
+    "Replacing a whole person, character or object means transferring the whole replacement subject, "
+    "not merely its face, color or texture. Keep only the canvas-subject attributes explicitly requested. "
+    "Preserving position, pose or framing does not preserve the old subject's identity, body, anatomy, "
+    "material, hair, clothing or accessories. Conversely, a face-only edit must preserve the body and "
+    "other untargeted details. A removal must not also retain, shorten or conceal the removed target. "
+    "Describe the final visible state, including the requested absence and its coherent replacement. "
+    "Cover every requested operation, target, reference role and strength without contradicting it in "
+    "a preservation clause. Refer to images for identity, style and material rather than reconstructing "
+    "untargeted features in words. Do not invent poses, objects, scene elements or lighting changes. "
+    "Do not generalize a concrete requested location into a different scene. "
+    "Localized edits leave unrelated content alone; explicitly broad changes or new compositions "
+    "must remain possible at the requested strength. Do not weaken, exaggerate or censor the request. "
+    "Quote only text the user asks to render or edit, exactly as supplied; preserve other text by reference, "
+    "without guessed OCR. Keep the existing language rules and native JSON output format."
+    "\n\nBackground scope: distinguish replacement of an environment from editing only its style, "
+    "texture, lighting or a local part. When the user replaces the whole background, the old "
+    "environment and its scene-defining fixtures must be absent, not blended into the new setting. "
+    "Do not preserve old background objects, surfaces or environmental light sources unless the "
+    "user explicitly requests them. Light the retained subjects coherently for the requested new "
+    "environment; do not reintroduce the old setting through a preservation or lighting clause. "
+    "Conversely, a style-only, texture-only, lighting-only or localized edit must not replace the "
+    "environment or import unrelated scenery from a reference. References supply only their "
+    "requested roles. Interpret minor spelling errors in context without substituting a different "
+    "location or inventing an alternative setting. If uncertain, retain the user's location term "
+    "instead of confidently translating it into a different place. Write a concise final-state "
+    "directive for each requested operation. Avoid inventories of source-image features and "
+    "unrequested atmosphere, colors or lighting; these can contradict the requested replacement."
+    "\n\nFinal directive construction rule: for each requested replacement, describe the resulting "
+    "destination, not an inventory of what it replaces. In a full background replacement, write "
+    "'replace the entire background with' followed by the requested new environment. Do not list "
+    "the old background's objects, materials, colors or lights, even in removal or negative clauses: "
+    "they are not part of the destination. Mention a source-background element only when the user "
+    "explicitly asks to retain it. For a subject replacement, describe the replacement by its reference "
+    "and keep only explicitly requested source-subject attributes; do not repeat its discarded "
+    "identity, hair, eyes, anatomy or outfit. Use a short preservation clause referring to untargeted "
+    "content by image reference, not a visual inventory. This rule does not remove user-requested "
+    "details, literal text or exclusions, nor does it turn partial/style edits into replacements."
+)
 
 
 def _install_cfg1_node() -> None:
@@ -129,7 +173,7 @@ def _fit_reference(width: int, height: int, *, detailed_edit: bool = False) -> t
 
 
 def _fit_balanced_reference(width: int, height: int, index: int, count: int = BALANCED_EDIT_REFERENCES) -> tuple[int, int]:
-    if (width < 1 or height < 1 or not BALANCED_EDIT_REFERENCES <= count <= MAX_INT8_EDIT_REFERENCES
+    if (width < 1 or height < 1 or not 1 <= count <= MAX_INT8_EDIT_REFERENCES
             or not 0 <= index < count):
         raise ValueError("Imagem de referencia invalida")
     if index == 0:
@@ -139,6 +183,52 @@ def _fit_balanced_reference(width: int, height: int, index: int, count: int = BA
         budget = BALANCED_AUXILIARY_PIXELS / (count - 1)
     scale = min(math.sqrt(budget / (width * height)), BALANCED_MAX_SIDE / max(width, height))
     return tuple(max(32, round(side * scale / 32) * 32) for side in (width, height))
+
+
+def _fit_optimized_reference(width: int, height: int, index: int, count: int) -> tuple[int, int]:
+    if (width < 1 or height < 1 or not 1 <= count <= MAX_INT8_EDIT_REFERENCES
+            or not 0 <= index < count):
+        raise ValueError("Imagem de referencia invalida")
+    if index == 0 or count >= BALANCED_EDIT_REFERENCES:
+        return _fit_balanced_reference(width, height, index, count)
+    # Identity and texture references retain the detail available before the speed profile.
+    return _fit_reference(width, height, detailed_edit=True)
+
+
+def _adaptive_auxiliary_sizes(sizes: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Share a bounded pixel budget without upscaling small references."""
+    if not sizes or any(width < 1 or height < 1 for width, height in sizes):
+        raise ValueError("Imagem de referencia invalida")
+    capacities = [min(width * height, MAX_AUXILIARY_PIXELS) for width, height in sizes]
+    budgets = [0.0] * len(sizes)
+    pending = set(range(len(sizes)))
+    remaining = float(ADAPTIVE_AUXILIARY_PIXELS)
+    while pending:
+        share = remaining / len(pending)
+        limited = {index for index in pending if capacities[index] <= share}
+        if not limited:
+            for index in pending:
+                budgets[index] = share
+            break
+        for index in limited:
+            budgets[index] = capacities[index]
+            remaining -= capacities[index]
+        pending -= limited
+    result = []
+    for (width, height), budget in zip(sizes, budgets):
+        scale = min(1.0, math.sqrt(budget / (width * height)), BALANCED_MAX_SIDE / max(width, height))
+        # Round down so alignment cannot exceed the total or per-reference caps.
+        fitted = tuple(max(32, int(side * scale / 32) * 32) for side in (width, height))
+        ratio = width / height
+        if abs((fitted[0] / fitted[1]) / ratio - 1) > .03:
+            # Independent alignment can visibly squash tiny portrait references.
+            candidates = [fitted,
+                          (max(32, int(fitted[1] * ratio / 32) * 32), fitted[1]),
+                          (fitted[0], max(32, int(fitted[0] / ratio / 32) * 32))]
+            candidates = [size for size in candidates if size[0] <= fitted[0] and size[1] <= fitted[1]]
+            fitted = min(candidates, key=lambda size: abs((size[0] / size[1]) / ratio - 1))
+        result.append(fitted)
+    return result
 
 
 def _extract_pe_prompt(content: str) -> str:
@@ -157,11 +247,22 @@ def _extract_pe_prompt(content: str) -> str:
     raise RuntimeError("PE-I2I nao retornou um prompt de edicao valido.")
 
 
+def _sampling_progress(item: dict, *, optimized_edit: bool = False) -> Optional[int]:
+    maximum = item.get("max") or 0
+    if maximum <= 0:
+        return None
+    fraction = max(0.0, min(1.0, item.get("value", 0) / maximum))
+    if optimized_edit and str(item.get("node")) != "5":
+        return None
+    return min(94, 40 + int(54 * fraction))
+
+
 class NeveImage21Runtime:
-    NAME = "Neve Image 2.4"
+    NAME = "Neve Image 2.6"
     PE_CONTEXT = 16384
     PE_REASONING_BUDGET = PE_THINKING_TOKENS
     PE_RESPONSE_TOKENS = 1800
+    PE_TEMPERATURE = 0.2
 
     def __init__(self) -> None:
         self._lock = fast.neve_image_2s_runtime._lock
@@ -175,13 +276,15 @@ class NeveImage21Runtime:
         self._cpu_mode = False
         self._memory_saver = False
         self._retry_prompt = None
+        self._generation_details = {}
+        self._adaptive_auxiliary_used = False
 
     @staticmethod
-    def build_workflow(prompt: str, width: int, height: int, refs: list[str], seed: int, model_file: str = MODEL_FILE) -> dict:
+    def build_workflow(prompt: str, width: int, height: int, refs: list[str], seed: int, model_file: str = MODEL_FILE, *, optimized_edit: bool = False) -> dict:
         if len(refs) > 10:
-            raise ValueError("Neve Image 2.4 aceita ate dez imagens de referencia.")
+            raise ValueError("Neve Image 2.6 aceita ate dez imagens de referencia.")
         if refs:
-            prompt = _normalize_qwen_reference_tokens(prompt, len(refs))
+            prompt = _normalize_qwen_reference_tokens(prompt, len(refs), preserve_formatting=True)
         workflow = {
             "1": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": MODEL_FILE}},
             "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": ENCODER_FILE, "type": "qwen_image", "device": "default"}},
@@ -208,6 +311,11 @@ class NeveImage21Runtime:
                     "model": ["1", 0], "device": "cpu", "dtype": "default",
                 }}
                 workflow["5"]["inputs"]["model"] = ["30", 0]
+            if refs and optimized_edit:
+                workflow["30"] = {"class_type": "QwenImage21Cache", "inputs": {
+                    "model": ["1", 0], "device": "cpu", "dtype": "default",
+                }}
+                workflow["5"]["inputs"].update(model=["30", 0], steps=OPTIMIZED_EDIT_STEPS)
         if not refs:
             workflow["6"] = {"class_type": "EmptyLatentImage", "inputs": {
                 "width": width, "height": height, "batch_size": 1,
@@ -235,7 +343,7 @@ class NeveImage21Runtime:
                 else:
                     raise RuntimeError("Arquivo INT8 de edicao incompleto.")
             except (OSError, RuntimeError, httpx.HTTPError) as exc:
-                log.warning("Neve Image 2.4: usando GGUF de edicao apos falha no INT8: %s", exc)
+                log.warning("Neve Image 2.6: usando GGUF de edicao apos falha no INT8: %s", exc)
         diffusion = models / "diffusion_models" / model_file
         if not diffusion.is_file() or diffusion.stat().st_size < 1024:
             cached = await asyncio.to_thread(
@@ -260,7 +368,7 @@ class NeveImage21Runtime:
                 await asyncio.to_thread(_install_cfg1_node)
                 self._cfg1_node_ready = True
             except OSError as exc:
-                log.warning("Neve Image 2.4: usando condicionador original apos falha no adaptador CFG1: %s", exc)
+                log.warning("Neve Image 2.6: usando condicionador original apos falha no adaptador CFG1: %s", exc)
         if edit:
             PE_DIR.mkdir(parents=True, exist_ok=True)
             pe_file = self._pe_file()
@@ -362,18 +470,19 @@ class NeveImage21Runtime:
             base = await self._start(command, LLAMACPP_SERVER_BIN.parent)
             await progress(22)
             system = (pe_dir / PE_SYSTEM_FILE).read_text(encoding="utf-8").strip()
+            system += PE_EDIT_SCOPE
             content = [
                 {"type": "image_url", "image_url": {"url": "data:image/png;base64," + base64.b64encode(raw).decode("ascii")}}
                 for raw in images
             ]
-            content.append({"type": "text", "text": _normalize_qwen_reference_tokens(prompt, len(images))})
+            content.append({"type": "text", "text": _normalize_qwen_reference_tokens(prompt, len(images), preserve_formatting=True)})
             request = {
                 "model": pe_file,
                 "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": content},
                 ],
-                "temperature": 0.7, "max_tokens": self.PE_RESPONSE_TOKENS, "stream": False,
+                "temperature": self.PE_TEMPERATURE, "max_tokens": self.PE_RESPONSE_TOKENS, "stream": False,
             }
             async with httpx.AsyncClient(timeout=httpx.Timeout(30, read=1800 if self._cpu_mode else 300, write=120, pool=30)) as client:
                 response = await client.post(f"{base}/v1/chat/completions", json=request)
@@ -400,7 +509,15 @@ class NeveImage21Runtime:
     async def _start_comfy(self) -> str:
         return await self._start(self._comfy_command(), fast.COMFY_DIR)
 
-    def _reference_size(self, width: int, height: int, model_file: str, index: int, count: int) -> tuple[int, int]:
+    def _optimized_edit_available(self, model_file: str) -> bool:
+        if model_file != EDIT_MODEL_FILE or self._force_gguf or self._cpu_mode or self._memory_saver:
+            return False
+        try:
+            return psutil.virtual_memory().total >= DETAIL_EDIT_MIN_RAM
+        except (OSError, ValueError, psutil.Error):
+            return False
+
+    def _reference_size(self, width: int, height: int, model_file: str, index: int, count: int, *, detail_canvas: bool = True, optimized_edit: bool = False) -> tuple[int, int]:
         if self._memory_saver or (model_file == MODEL_FILE and count >= BALANCED_EDIT_REFERENCES):
             main_budget = 512**2 if self._cpu_mode else REFERENCE_PIXELS
             extra_budget = 512**2 if self._cpu_mode else BALANCED_AUXILIARY_PIXELS
@@ -408,8 +525,19 @@ class NeveImage21Runtime:
             side_limit = 512 if self._cpu_mode else MAX_REFERENCE_SIDE
             scale = min(1.0, math.sqrt(budget / (width * height)), side_limit / max(width, height))
             return tuple(max(32, round(side * scale / 32) * 32) for side in (width, height))
-        if model_file == EDIT_MODEL_FILE and BALANCED_EDIT_REFERENCES <= count <= MAX_INT8_EDIT_REFERENCES:
-            return _fit_balanced_reference(width, height, index, count)
+        if model_file == EDIT_MODEL_FILE:
+            if optimized_edit and detail_canvas:
+                return _fit_optimized_reference(width, height, index, count)
+            if BALANCED_EDIT_REFERENCES <= count <= MAX_INT8_EDIT_REFERENCES:
+                return _fit_balanced_reference(width, height, index, count)
+            if detail_canvas and index == 0 and 1 <= count < BALANCED_EDIT_REFERENCES:
+                try:
+                    enough_ram = psutil.virtual_memory().total >= DETAIL_EDIT_MIN_RAM
+                except (OSError, ValueError, psutil.Error):
+                    enough_ram = False
+                # Improve small faces without downscaling auxiliary identity references.
+                if enough_ram:
+                    return _fit_balanced_reference(width, height, index, count)
         return _fit_reference(width, height, detailed_edit=model_file == EDIT_MODEL_FILE)
 
     def _generation_size(self, resolution: str) -> tuple[int, int]:
@@ -418,10 +546,14 @@ class NeveImage21Runtime:
 
     async def run(
         self, prompt: str, resolution: str, references: list[str], user_id: Optional[str],
-        progress: ProgressCallback, dimensions: Optional[DimensionsCallback] = None,
+        progress: ProgressCallback, dimensions: Optional[DimensionsCallback] = None, *, details: Optional[dict] = None,
     ) -> str:
         async with self._request_lock:
-            return await self._run_recovery(prompt, resolution, references, user_id, progress, dimensions)
+            self._generation_details = {}
+            result = await self._run_recovery(prompt, resolution, references, user_id, progress, dimensions)
+            if details is not None:
+                details.update(self._generation_details)
+            return result
 
     async def _run_recovery(
         self, prompt: str, resolution: str, references: list[str], user_id: Optional[str],
@@ -433,16 +565,19 @@ class NeveImage21Runtime:
         report = monotonic_progress(progress)
         seed = random.getrandbits(63)
         # Retry only memory failures; preserve the seed and a successful planner rewrite.
-        plans = [(True, True, True)] if cpu else [(False, False, False), (True, False, True), (True, True, True)]
+        plans = [(True, True, True, False)] if cpu else [(False, False, False, False), (True, False, True, False), (True, True, True, False)]
         self._retry_prompt = None
         try:
-            for index, (gguf, cpu_mode, saver) in enumerate(plans):
+            for index, (gguf, cpu_mode, saver, legacy_auxiliary) in enumerate(plans):
                 try:
                     return await self._run_once(prompt, resolution, references, user_id, report, dimensions,
-                                                force_gguf=gguf, cpu_mode=cpu_mode, memory_saver=saver, seed=seed)
+                                                force_gguf=gguf, cpu_mode=cpu_mode, memory_saver=saver, seed=seed,
+                                                legacy_auxiliary=legacy_auxiliary)
                 except Exception as exc:
                     if not is_image_memory_error(exc) or index == len(plans) - 1:
                         raise
+                    if self._adaptive_auxiliary_used and not legacy_auxiliary:
+                        plans.insert(index + 1, (gguf, cpu_mode, saver, True))
                     log.warning("%s: recuperacao de memoria, tentativa %s: %s", self.NAME, index + 2, exc)
         finally:
             self._retry_prompt = None
@@ -451,6 +586,7 @@ class NeveImage21Runtime:
         self, prompt: str, resolution: str, references: list[str], user_id: Optional[str],
         progress: ProgressCallback, dimensions: Optional[DimensionsCallback] = None, *,
         force_gguf: bool = False, cpu_mode: bool = False, memory_saver: bool = False, seed: Optional[int] = None,
+        legacy_auxiliary: bool = False,
     ) -> str:
         if not prompt.strip():
             raise ValueError("Descreva a imagem que deseja criar.")
@@ -461,15 +597,40 @@ class NeveImage21Runtime:
         async with self._lock:
             uploaded: list[str] = []
             self._force_gguf, self._cpu_mode, self._memory_saver = force_gguf, cpu_mode, memory_saver
+            self._adaptive_auxiliary_used = False
             try:
                 model_file = await self._ensure_models(progress, bool(references), len(references))
+                optimized_edit = bool(references) and self._optimized_edit_available(model_file)
                 prepared: list[bytes] = []
+                planning_images: list[bytes] = []
                 width, height = self._generation_size(resolution)
+                adaptive_sizes = None
+                reference_bytes = None
+                if optimized_edit and 4 <= len(references) <= MAX_INT8_EDIT_REFERENCES and not legacy_auxiliary:
+                    reference_bytes = [await asyncio.to_thread(_read_image_reference_bytes, reference, user_id)
+                                       for reference in references]
+                    source_sizes = []
+                    for raw in reference_bytes[1:]:
+                        with Image.open(io.BytesIO(raw)) as source:
+                            orientation = source.getexif().get(274)
+                            source_sizes.append(source.size[::-1] if orientation in (5, 6, 7, 8) else source.size)
+                    adaptive_sizes = _adaptive_auxiliary_sizes(source_sizes)
+                    self._adaptive_auxiliary_used = True
                 for index, reference in enumerate(references):
-                    raw = await asyncio.to_thread(_read_image_reference_bytes, reference, user_id)
+                    raw = reference_bytes[index] if reference_bytes is not None else await asyncio.to_thread(_read_image_reference_bytes, reference, user_id)
                     with Image.open(io.BytesIO(raw)) as opened:
                         image = ImageOps.exif_transpose(opened).convert("RGB")
-                        size = self._reference_size(*image.size, model_file, index, len(references))
+                        size = self._reference_size(*image.size, model_file, index, len(references), optimized_edit=optimized_edit)
+                        if adaptive_sizes is not None and index > 0:
+                            size = adaptive_sizes[index - 1]
+                        planning_raw = None
+                        if self._retry_prompt is None:
+                            # Canvas detail must not change the planner's previous visual input.
+                            planning_size = self._reference_size(*image.size, model_file, index, len(references), detail_canvas=False)
+                            if planning_size != size:
+                                planning_output = io.BytesIO()
+                                image.resize(planning_size, Image.Resampling.LANCZOS).save(planning_output, format="PNG")
+                                planning_raw = planning_output.getvalue()
                         if size != image.size:
                             image = image.resize(size, Image.Resampling.LANCZOS)
                         if index == 0:
@@ -477,11 +638,13 @@ class NeveImage21Runtime:
                         output = io.BytesIO()
                         image.save(output, format="PNG")
                         prepared.append(output.getvalue())
+                        if self._retry_prompt is None:
+                            planning_images.append(planning_raw if planning_raw is not None else prepared[-1])
                 if dimensions is not None:
                     await dimensions(width, height)
                 if prepared:
                     if self._retry_prompt is None:
-                        self._retry_prompt = await self._plan_edit(prompt, prepared, progress)
+                        self._retry_prompt = await self._plan_edit(prompt, planning_images, progress)
                     prompt = self._retry_prompt
                 await progress(30)
                 base = await self._start_comfy()
@@ -497,7 +660,11 @@ class NeveImage21Runtime:
                         name = response.json()["name"]
                         names.append(name)
                         uploaded.append(name)
-                    workflow = self.build_workflow(prompt, width, height, names, seed if seed is not None else random.getrandbits(63), model_file=model_file)
+                    generation_seed = seed if seed is not None else random.getrandbits(63)
+                    workflow = self.build_workflow(prompt, width, height, names, generation_seed, model_file=model_file, optimized_edit=optimized_edit)
+                    self._generation_details = {"effective_prompt": workflow["4"]["inputs"]["prompt"],
+                                                "seed": str(generation_seed), "model_file": model_file,
+                                                "reference_count": len(names), "steps": workflow["5"]["inputs"]["steps"]}
                     if workflow["4"]["class_type"] == "NeveTextEncodeQwenImage21CFG1" and not self._cfg1_node_ready:
                         workflow["4"]["class_type"] = "TextEncodeQwenImage21"
                     client_id = f"neve21-{random.getrandbits(64):016x}"
@@ -527,8 +694,10 @@ class NeveImage21Runtime:
                                         if event.type == aiohttp.WSMsgType.TEXT:
                                             data = event.json()
                                             item = data.get("data") or {}
-                                            if data.get("type") == "progress" and item.get("prompt_id") == prompt_id and item.get("max"):
-                                                last_progress = max(last_progress, min(94, 40 + int(54 * item["value"] / item["max"])))
+                                            if data.get("type") == "progress" and item.get("prompt_id") == prompt_id:
+                                                value = _sampling_progress(item, optimized_edit=optimized_edit)
+                                                if value is not None:
+                                                    last_progress = max(last_progress, value)
                                     except asyncio.TimeoutError:
                                         pass
                                 else:

@@ -1,8 +1,3 @@
-<script lang="ts" context="module">
-	let cachedUpdateAvailable = false;
-	let cachedLatestProjectVersion = '';
-</script>
-
 <script lang="ts">
 	import { getContext, onMount } from 'svelte';
 	import { get } from 'svelte/store';
@@ -12,7 +7,7 @@
 	import HuggingFace from '$lib/components/icons/HuggingFace.svelte';
 	import Scale from '$lib/components/icons/Scale.svelte';
 	import { NEVEAI_VERSION, user } from '$lib/stores';
-	import { compareVersion } from '$lib/utils';
+	import { getAvailableUpdateTargets } from '$lib/utils/updateAvailability';
 	import bundledProjectVersion from '../../../../../version.txt?raw';
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
@@ -23,8 +18,8 @@
 	const licenseUrl = 'https://github.com/Etamus/NeveAI/blob/main/LICENSE.txt';
 	let versionRefreshInterval: ReturnType<typeof setInterval>;
 	let updateRefreshInterval: ReturnType<typeof setInterval>;
-	let updateAvailable = cachedUpdateAvailable;
-	let latestProjectVersion = cachedLatestProjectVersion;
+	let updateAvailable = false;
+	let latestProjectVersion = '';
 	let startingUpdater = false;
 
 	$: if ($NEVEAI_VERSION && $NEVEAI_VERSION !== projectVersion) {
@@ -54,55 +49,18 @@
 	const checkForUpdateStatus = async () => {
 		if ($user?.role !== 'admin') {
 			updateAvailable = false;
-			cachedUpdateAvailable = false;
-			cachedLatestProjectVersion = '';
 			return;
 		}
 
 		const data = await getVersionUpdates(localStorage.token).catch(() => null);
 		if (!data) {
 			updateAvailable = false;
-			cachedUpdateAvailable = false;
-			cachedLatestProjectVersion = '';
 			return;
 		}
 
-		const current = typeof data?.current === 'string' ? data.current : projectVersion;
-		const latest =
-			typeof data?.latest_tag === 'string'
-				? data.latest_tag
-				: typeof data?.latest === 'string'
-					? data.latest
-					: '';
-		const llamaCpp = data?.llama_cpp ?? null;
-		const llamaLatest =
-			typeof llamaCpp?.latest_tag === 'string'
-				? llamaCpp.latest_tag
-				: typeof llamaCpp?.latest === 'string'
-					? llamaCpp.latest
-					: '';
-		const projectUpdateAvailable =
-			typeof data?.neve_update_available === 'boolean'
-				? data.neve_update_available
-				: latest
-					? compareVersion(latest, current)
-					: false;
-		const llamaUpdateAvailable =
-			typeof llamaCpp?.update_available === 'boolean' ? llamaCpp.update_available : false;
-		const pendingTargets: string[] = [];
-
-		if (projectUpdateAvailable) {
-			pendingTargets.push(latest ? `NeveAI ${latest}` : 'NeveAI');
-		}
-
-		if (llamaUpdateAvailable) {
-			pendingTargets.push(llamaLatest ? `llama.cpp ${llamaLatest}` : 'llama.cpp');
-		}
-
+		const pendingTargets = getAvailableUpdateTargets(data, projectVersion);
 		latestProjectVersion = pendingTargets.join(' e ');
-		updateAvailable = projectUpdateAvailable || llamaUpdateAvailable;
-		cachedLatestProjectVersion = latestProjectVersion;
-		cachedUpdateAvailable = updateAvailable;
+		updateAvailable = pendingTargets.length > 0;
 	};
 
 	const startUpdate = async () => {

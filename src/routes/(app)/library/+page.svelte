@@ -19,14 +19,114 @@
 	let kind = 'all';
 	let files: any[] = [];
 	let loading = true;
+	let settledEmpty = false;
 	let hasMore = false;
 	let error = '';
 	let selectedFile: any = null;
 	let showViewer = false;
 	let timer: ReturnType<typeof setTimeout>;
 	let requestId = 0;
+	let loadController: AbortController | undefined;
+	let refreshQueued = false;
 	let mounted = false;
 	const url = (file: any) => `${NEVEAI_API_BASE_URL}/files/${file.id}/content`;
+	const thumbnailUrl = (file: any) =>
+		`${NEVEAI_API_BASE_URL}/files/${file.id}/thumbnail?v=${file.updated_at ?? file.created_at ?? ''}`;
+	const loadPreview = (
+		node: HTMLImageElement | HTMLVideoElement,
+		options: { src: string; fallback?: string; eager?: boolean }
+	) => {
+		let source = options.src;
+		let fallback = options.fallback;
+		let loaded = false;
+		let disposed = false;
+		let revision = 0;
+		let replacement: HTMLImageElement | undefined;
+		let observer: IntersectionObserver | undefined;
+		const image = node instanceof HTMLImageElement ? node : undefined;
+		const reveal = async () => {
+			if (!image || !image.naturalWidth) return;
+			const currentRevision = revision;
+			const currentSource = image.src;
+			try { await image.decode(); } catch {
+				if (!image.complete || !image.naturalWidth) return;
+			}
+			if (!disposed && revision === currentRevision && image.src === currentSource) {
+				image.dataset.previewReady = 'true';
+			}
+		};
+		const useFallback = () => {
+			if (!image) return;
+			delete image.dataset.previewReady;
+			if (fallback) {
+				const original = new URL(fallback, window.location.href).href;
+				if (image.src !== original) image.src = original;
+			}
+		};
+		const cancelReplacement = () => {
+			if (!replacement) return;
+			replacement.onload = replacement.onerror = null;
+			replacement.src = '';
+			replacement = undefined;
+		};
+		const load = () => {
+			const currentRevision = ++revision;
+			cancelReplacement();
+			if (image?.dataset.previewReady === 'true') {
+				// Keep the decoded preview visible while a newer file version is fetched.
+				const pending = new Image();
+				replacement = pending;
+				pending.decoding = 'async';
+				pending.onload = async () => {
+					try { await pending.decode(); } catch {
+						if (!pending.complete || !pending.naturalWidth) return;
+					}
+					if (!disposed && revision === currentRevision) {
+						image.src = pending.src;
+						replacement = undefined;
+					}
+				};
+				pending.onerror = () => {
+					if (!disposed && revision === currentRevision && fallback) {
+						const original = new URL(fallback, window.location.href).href;
+						if (pending.src !== original) pending.src = original;
+					}
+				};
+				pending.src = source;
+			} else node.src = source;
+			loaded = true;
+			observer?.disconnect();
+		};
+		image?.addEventListener('load', reveal);
+		image?.addEventListener('error', useFallback);
+		// Prefetch nearby rows without requesting several screens of full media at once.
+		if (options.eager || typeof IntersectionObserver === 'undefined') load();
+		else {
+			observer = new IntersectionObserver(
+				(entries) => { if (entries.some((entry) => entry.isIntersecting)) load(); },
+				{ root: node.closest('main'), rootMargin: '480px' }
+			);
+			observer.observe(node);
+		}
+		return {
+			update(next: { src: string; fallback?: string; eager?: boolean }) {
+				fallback = next.fallback;
+				if (next.src !== source) {
+					source = next.src;
+					if (loaded) load();
+				}
+				if (next.eager && !loaded) load();
+			},
+			destroy() {
+				disposed = true;
+				revision++;
+				observer?.disconnect();
+				cancelReplacement();
+				image?.removeEventListener('load', reveal);
+				image?.removeEventListener('error', useFallback);
+			}
+		};
+	};
 	const mediaKind = (file: any) => (file.meta?.content_type ?? '').split('/')[0];
 	$: visibleFiles = files.filter(
 		(file) =>
@@ -37,6 +137,9 @@
 	);
 	const load = async (more = false, preservePages = false) => {
 		const id = ++requestId;
+		loadController?.abort();
+		const controller = new AbortController();
+		loadController = controller;
 		const requestedKind = kind;
 		const pageCount = preservePages ? Math.max(1, Math.ceil(files.length / 50)) : 1;
 		const start = more ? files.length : 0;
@@ -46,7 +149,9 @@
 			const results: any[] = [];
 			let lastPage: any[] = [];
 			for (let page = 0; page < pageCount; page++) {
-				lastPage = await getGeneratedFiles(localStorage.token, requestedKind, '', start + page * 50);
+				lastPage = await getGeneratedFiles(
+					localStorage.token, requestedKind, '', start + page * 50, controller.signal
+				);
 				if (id !== requestId) return;
 				results.push(...lastPage);
 				if (lastPage.length < 50) break;
@@ -55,11 +160,18 @@
 			files = [
 				...new Map((more ? [...files, ...results] : results).map((file) => [file.id, file])).values()
 			];
+			settledEmpty = files.length === 0;
 			hasMore = lastPage.length === 50;
 		} catch (cause) {
-			if (id === requestId) error = String(cause);
+			if (id === requestId && !controller.signal.aborted) error = String(cause);
 		} finally {
-			if (id === requestId) loading = false;
+			if (id === requestId) {
+				loading = false;
+				if (refreshQueued) {
+					refreshQueued = false;
+					void load(false, true);
+				}
+			}
 		}
 	};
 	$: if (mounted) {
@@ -84,7 +196,8 @@
 		mounted = true;
 		window.addEventListener('focus', refresh);
 		const filesChanged = () => {
-			void load(false, true);
+			if (loading) refreshQueued = true;
+			else void load(false, true);
 		};
 		window.addEventListener('neve:files-changed', filesChanged);
 		document.addEventListener('visibilitychange', refresh);
@@ -99,6 +212,7 @@
 	onDestroy(() => {
 		clearTimeout(timer);
 		requestId++;
+		loadController?.abort();
 	});
 </script>
 
@@ -118,23 +232,24 @@
 				on:click={() => {
 					if (kind !== tab.id) {
 						requestId++;
+						loadController?.abort();
 						loading = true;
 						kind = tab.id;
 					}
 				}}>{$i18n.t(tab.label)}</button
 			>{/each}
 	</nav>
-	<main class="flex-1 min-h-0 overflow-y-auto px-5 pb-6">
+	<main class="flex-1 min-h-0 overflow-y-auto px-5 pb-6" aria-busy={loading}>
 		{#if error}<div role="alert" class="py-8 text-sm text-gray-500">
 				{error} <button class="underline" on:click={() => load(false, true)}>{$i18n.t('Retry')}</button>
 			</div>{/if}
-		{#if visibleFiles.length === 0 && !error && !loading}<p
+		{#if visibleFiles.length === 0 && !error && (!loading || settledEmpty)}<p
 				class="py-12 text-center text-sm text-gray-500"
 			>
 				{$i18n.t('No creations yet')}
 			</p>{/if}
 		<div class="library-grid">
-			{#each visibleFiles as file (file.id)}
+			{#each visibleFiles as file, fileIndex (file.id)}
 				<article class="overflow-hidden rounded-2xl">
 					<button
 						class="library-item block w-full text-left relative overflow-hidden rounded-2xl aspect-[4/3] bg-gray-100 dark:bg-gray-850"
@@ -143,13 +258,15 @@
 					>
 						<div class="h-full w-full overflow-hidden flex items-center justify-center">
 							{#if mediaKind(file) === 'image'}<img
-									src={url(file)}
-									alt={file.filename}
-									loading="lazy"
-									class="size-full object-cover"
+									use:loadPreview={{ src: thumbnailUrl(file), fallback: url(file), eager: fileIndex < 12 }}
+									alt=""
+									loading="eager"
+									fetchpriority={fileIndex < 8 ? 'high' : 'auto'}
+									decoding="async"
+									class="library-preview size-full object-cover"
 								/>
 							{:else if mediaKind(file) === 'video'}<video
-									src={url(file)}
+									use:loadPreview={{ src: url(file), eager: fileIndex < 12 }}
 									preload="metadata"
 									muted
 									playsinline
@@ -196,14 +313,28 @@
 		grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr));
 		gap: 16px;
 	}
-	.library-item {
-		transition:
-			filter 140ms ease,
-			box-shadow 140ms ease;
+	.library-grid > article {
+		aspect-ratio: 4 / 3;
 	}
-	.library-item:hover {
-		filter: brightness(0.88);
+	.library-preview {
+		visibility: hidden;
+	}
+	.library-preview:global([data-preview-ready='true']) {
+		visibility: visible;
+	}
+	.library-item::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		pointer-events: none;
+		background: rgb(0 0 0 / 12%);
 		box-shadow: inset 0 0 0 2px rgb(128 128 128 / 35%);
+		opacity: 0;
+		transition: opacity 140ms ease;
+	}
+	.library-item:hover::after {
+		opacity: 1;
 	}
 	.library-item:focus-visible {
 		outline: 2px solid #888;

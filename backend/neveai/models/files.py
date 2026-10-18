@@ -126,6 +126,7 @@ class FilesTable:
                 File.meta["data"]["generated"].as_boolean().is_(True),
                 source == "file_generation",
                 source.like("z-image-%"), source.like("qwen-image-%"),
+                source.like("neve-image-%"),
                 source.like("ace-step-%"), source.like("minimax-h3-%"),
             )
             files = db.query(File).filter(File.user_id == user_id, generated)

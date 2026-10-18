@@ -91,6 +91,80 @@ class LibraryTests(unittest.TestCase):
         self.db.commit()
         self.assertEqual(Files.get_generated_files("me", "image"), [])
 
+    def test_neve_images_include_previous_branding_without_backfilling_database(self):
+        for index, source in enumerate(("neve-image-2.4", "neve-image-2.2", "neve-image-2.6")):
+            self.db.add(File(id=source, filename=f"{source}.png", user_id="me",
+                             meta={"content_type": "image/png", "data": {"source": source}},
+                             created_at=100 + index, updated_at=100 + index))
+        self.db.add(File(id="private-neve", filename="private.png", user_id="other",
+                         meta={"content_type": "image/png", "data": {"source": "neve-image-2.2"}},
+                         created_at=200, updated_at=200))
+        self.db.commit()
+        images = Files.get_generated_files("me", "image")
+        self.assertEqual([item["id"] for item in images], ["neve-image-2.6", "neve-image-2.2", "neve-image-2.4", "image"])
+        self.assertEqual([item["id"] for item in Files.get_generated_files("me", query="neve-image-2.4")], ["neve-image-2.4"])
+        self.assertEqual(Files.get_generated_files("me", "image", skip=1, limit=1)[0]["id"], "neve-image-2.2")
+        self.assertEqual([item["id"] for item in Files.get_generated_files("me", "document")], ["pdf"])
+
+    def test_explicit_generated_flag_handles_new_sources_without_exposing_uploads(self):
+        self.db.add(File(id="new-source", filename="new.png", user_id="me",
+                         meta={"content_type": "image/png", "data": {"source": "future-renderer", "generated": True}},
+                         created_at=100, updated_at=100))
+        self.db.add(File(id="named-upload", filename="neve-image-2.2.png", user_id="me",
+                         meta={"content_type": "image/png", "data": {}}, created_at=101, updated_at=101))
+        self.db.commit()
+        self.assertEqual({item["id"] for item in Files.get_generated_files("me", "image")}, {"image", "new-source"})
+
+
+class ChatImageLibraryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_chat_quality_image_is_persisted_with_current_source_and_generated_flag(self):
+        from neveai.utils.middleware import chat_stable_diffusion_handler
+
+        config = SimpleNamespace(STABLE_DIFFUSION_WIDTH=1024, STABLE_DIFFUSION_HEIGHT=1024,
+            STABLE_DIFFUSION_MODEL="local", STABLE_DIFFUSION_HF_TOKEN="",
+            STABLE_DIFFUSION_STEPS=40, STABLE_DIFFUSION_GUIDANCE_SCALE=1)
+        request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(config=config),
+            url_path_for=lambda name, **kwargs: f"/api/v1/files/{kwargs['id']}/content"))
+        message = {"role": "user", "content": "Replace the person.\nPreserve the background.",
+                   "files": [{"type": "image", "url": "reference", "content_type": "image/png"}]}
+        metadata = {"parent_message": message}
+        emitter = AsyncMock()
+        async def render(**kwargs):
+            kwargs["details"].update({"effective_prompt": "Verified editing directive", "seed": "42"})
+            return "data:image/png;base64,aW1hZ2U="
+        with patch("neveai.utils.middleware._acquire_media_generation_slot", AsyncMock()), \
+                patch("neveai.utils.image_progress.initial_image_dimensions", return_value=(704, 1216)), \
+                patch("neveai.utils.middleware._release_media_generation_slot"), \
+                patch("neveai.routers.llamacpp.model_manager.standby", AsyncMock(return_value=None)), \
+                patch("neveai.routers.stable_diffusion._sd_pipeline.unload", AsyncMock()), \
+                patch("neveai.routers.image_quality_generation.neve_image_21_runtime.run",
+                      AsyncMock(side_effect=render)) as generate, \
+                patch("neveai.utils.middleware.upload_file_handler", return_value=SimpleNamespace(id="created")) as upload:
+            await chat_stable_diffusion_handler(request, {"messages": [message]}, {
+                "__metadata__": metadata, "__event_emitter__": emitter,
+                "__features__": {"stable_diffusion_quality": "qwen_image_2_1_official"},
+            }, SimpleNamespace(id="me"))
+        upload.assert_called_once()
+        stored = upload.call_args.kwargs["metadata"]
+        self.assertEqual(stored["source"], "neve-image-2.6")
+        self.assertIs(stored["generated"], True)
+        self.assertEqual(stored["prompt"], message["content"])
+        self.assertEqual(stored["generation"], {"effective_prompt": "Verified editing directive", "seed": "42"})
+        self.assertEqual(generate.await_args.kwargs["references"], ["reference"])
+        self.assertEqual(generate.await_args.kwargs["prompt"], message["content"])
+        self.assertTrue(metadata["skip_llm"])
+        self.assertTrue(any(call.args[0]["type"] == "files" for call in emitter.await_args_list))
+        self.assertFalse(any(call.args[0].get("data", {}).get("error") for call in emitter.await_args_list))
+        first_status = next(call.args[0]['data'] for call in emitter.await_args_list if call.args[0]['type'] == 'status')
+        self.assertEqual((first_status['width'], first_status['height']), (704, 1216))
+        self.assertEqual(first_status['progress'], 0)
+
+    def test_prompt_formatting_opt_in_keeps_legacy_modes_unchanged(self):
+        from neveai.utils.middleware import _collect_stable_diffusion_prompt
+        message = {"role": "user", "content": 'First operation.\nSecond operation.\nWrite "A  B".'}
+        self.assertEqual(_collect_stable_diffusion_prompt([message]), 'First operation. Second operation. Write "A B".')
+        self.assertEqual(_collect_stable_diffusion_prompt([message], preserve_formatting=True), message["content"])
+
 
 class ResearchTests(unittest.IsolatedAsyncioTestCase):
     def test_repository_context_rejects_unrelated_results(self):

@@ -22,6 +22,7 @@ from fastapi import (
 )
 
 from fastapi.responses import FileResponse, StreamingResponse
+from PIL.Image import DecompressionBombError
 from sqlalchemy.orm import Session
 from neveai.internal.db import get_session, SessionLocal
 
@@ -47,9 +48,10 @@ from neveai.routers.audio import transcribe
 from neveai.storage.provider import Storage
 
 
-from neveai.config import BYPASS_ADMIN_ACCESS_CONTROL
+from neveai.config import BYPASS_ADMIN_ACCESS_CONTROL, CACHE_DIR
 from neveai.utils.auth import get_admin_user, get_verified_user
 from neveai.utils.misc import strict_match_mime_type
+from neveai.utils.file_thumbnails import get_image_thumbnail
 from pydantic import BaseModel
 
 log = logging.getLogger(__name__)
@@ -659,6 +661,40 @@ def update_file_data_content_by_id(
 ############################
 # Get File Content By Id
 ############################
+
+
+@router.get("/{id}/thumbnail")
+def get_file_thumbnail_by_id(
+    id: str,
+    user=Depends(get_verified_user),
+    db: Session = Depends(get_session),
+):
+    file = Files.get_file_by_id(id, db=db)
+    if not file or not (
+        file.user_id == user.id
+        or user.role == "admin"
+        or has_access_to_file(id, "read", user, db=db)
+    ):
+        raise HTTPException(status_code=404, detail=ERROR_MESSAGES.NOT_FOUND)
+
+    if not file.path:
+        raise HTTPException(status_code=404, detail=ERROR_MESSAGES.NOT_FOUND)
+    mime = (file.meta or {}).get("content_type") or ""
+    if not isinstance(mime, str) or not mime.startswith("image/"):
+        raise HTTPException(status_code=415, detail="Image thumbnail unavailable")
+    try:
+        source = Path(Storage.get_file(file.path))
+        thumbnail = get_image_thumbnail(source, CACHE_DIR / "library-thumbnails")
+        return FileResponse(
+            thumbnail,
+            media_type="image/webp",
+            headers={"Cache-Control": "private, max-age=3600", "Vary": "Cookie, Authorization"},
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=ERROR_MESSAGES.NOT_FOUND)
+    except (OSError, ValueError, DecompressionBombError):
+        log.debug("Image thumbnail unavailable for file %s", id, exc_info=True)
+        raise HTTPException(status_code=415, detail="Image thumbnail unavailable")
 
 
 @router.get("/{id}/content")

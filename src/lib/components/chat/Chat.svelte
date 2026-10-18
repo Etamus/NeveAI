@@ -60,8 +60,11 @@
 	} from '$lib/apis/llamacpp';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
 	import { getMessageScrollAnchor } from '$lib/utils/messageScrollAnchor';
-	import { getMessagesContentHeight } from '$lib/utils/messageScrollGeometry';
+	import { consumeGenerationSpacerHeight, getMessagesContentHeight, hasHiddenMessageContentBelow } from '$lib/utils/messageScrollGeometry';
+	import { SYNC_COMPOSER_LAYOUT } from '$lib/utils/animateComposerHeight';
 	import { getAccordionScrollPosition } from '$lib/utils/accordionScrollPosition';
+	import { dismissTooltipsOnMediaScroll } from '$lib/utils/mediaGenerationHover';
+	import { HISTORY_LAYOUT_EVENT } from '$lib/utils/historyScrollLock';
 	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
 	import { getFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
 	import { updateFolderById } from '$lib/apis/folders';
@@ -2699,15 +2702,18 @@
 			return;
 		}
 
+		const composer = messagesContainerElement.closest('#chat-pane')?.querySelector<HTMLElement>('#message-input-container');
+		showScrollToBottomButton = hasHiddenMessageContentBelow(
+			messagesContainerElement,
+			composer?.getBoundingClientRect().top ?? messagesContainerElement.getBoundingClientRect().bottom
+		) && Date.now() >= scrollToBottomButtonSuppressUntil;
+
 		const activeMessageElement = anchoredGeneratingMessageId
 			? document.getElementById(`message-${anchoredGeneratingMessageId}`)
 			: null;
 
 		if (activeMessageElement) {
 			const hasHiddenContentBelow = !isMessagesContainerAtBottom();
-			showScrollToBottomButton =
-				hasHiddenContentBelow && Date.now() >= scrollToBottomButtonSuppressUntil;
-
 			if (updateAutoScroll) {
 				autoScroll = !hasHiddenContentBelow;
 			}
@@ -2715,8 +2721,6 @@
 		}
 
 		const atBottom = isMessagesContainerAtBottom();
-		showScrollToBottomButton = !atBottom && Date.now() >= scrollToBottomButtonSuppressUntil;
-
 		if (updateAutoScroll) {
 			autoScroll = atBottom;
 		}
@@ -2936,8 +2940,7 @@
 			const pane = messagesContainerElement?.closest<HTMLElement>('#chat-pane');
 			const composer = pane?.querySelector<HTMLElement>('[data-composer-root]');
 			if (composer?.dataset.ongoing === 'true') {
-				const readingGap = composer.querySelector('#message-input-container')?.classList.contains('flex-col') ? 24 : 8;
-				pane.style.setProperty('--chat-composer-height', `${Math.ceil(composer.getBoundingClientRect().height + readingGap)}px`);
+				composer.dispatchEvent(new Event(SYNC_COMPOSER_LAYOUT));
 			}
 		}
 		prepareGenerationSpacerForMessageTop(scrollTargetMessageId, topOffset, includeReadingPadding);
@@ -3003,34 +3006,6 @@
 			getMessagesContentHeight(messagesContainerElement, generationBottomSpacerHeight) -
 				messagesContainerElement.clientHeight
 		);
-	};
-
-	const hasActiveVisualMediaSpacer = () =>
-		Boolean(
-			messagesContainerElement &&
-				anchoredGeneratingMessageId &&
-				visualMediaGenerationAnchorId === anchoredGeneratingMessageId &&
-				generationBottomSpacerHeight > 0
-		);
-
-	const discardVisualMediaGenerationSpacer = (desiredScrollTop?: number) => {
-		if (
-			!messagesContainerElement ||
-			!textGenerationAnchorUserMoved ||
-			!hasActiveVisualMediaSpacer()
-		) {
-			return false;
-		}
-
-		const nextScrollTop = desiredScrollTop ?? messagesContainerElement.scrollTop;
-		generationBottomSpacerHeight = 0;
-		activeGenerationSpacerHeightLimit = 0;
-		generationSpacerScrollLimit = null;
-		generationSpacerScrollAllowance = null;
-		flushSync();
-		messagesContainerElement.scrollTop = Math.min(nextScrollTop, getMessagesMaxScrollTop());
-		scheduleScrollStateUpdate({ updateAutoScroll: false });
-		return true;
 	};
 
 	const setGenerationSpacerScrollLimit = (scrollTop: number) => {
@@ -3137,6 +3112,21 @@
 		);
 	};
 
+	const consumeGenerationSpacerDistance = (upwardDistance: number, currentScrollTop: number) => {
+		const nextSpacerHeight = consumeGenerationSpacerHeight(generationBottomSpacerHeight, upwardDistance);
+		if (generationBottomSpacerHeight - nextSpacerHeight < 0.5) return;
+		const naturalMax = getMaxScrollWithoutGenerationSpacer();
+		generationBottomSpacerHeight = nextSpacerHeight;
+		if (anchoredGeneratingMessageId) activeGenerationSpacerHeightLimit = nextSpacerHeight;
+		if (nextSpacerHeight === 0) {
+			generationSpacerScrollLimit = null;
+			generationSpacerScrollAllowance = null;
+		} else if (!anchoredGeneratingMessageId && generationSpacerScrollLimit !== null) {
+			generationSpacerScrollAllowance = Math.min(nextSpacerHeight, Math.max(0, currentScrollTop - naturalMax));
+			generationSpacerScrollLimit = naturalMax + generationSpacerScrollAllowance;
+		}
+	};
+
 	const consumeGenerationSpacerFromUpwardScroll = () => {
 		if (!messagesContainerElement) return;
 
@@ -3166,31 +3156,7 @@
 			return;
 		}
 
-		const maxScrollWithoutSpacer = getMaxScrollWithoutGenerationSpacer();
-		const nextSpacerHeight = Math.max(0, generationBottomSpacerHeight - upwardDistance);
-		if (generationBottomSpacerHeight - nextSpacerHeight < 0.5) return;
-
-		if (currentScrollTop <= maxScrollWithoutSpacer + 0.5) {
-			generationBottomSpacerHeight = 0;
-			generationSpacerScrollLimit = null;
-			generationSpacerScrollAllowance = null;
-			if (anchoredGeneratingMessageId) {
-				activeGenerationSpacerHeightLimit = 0;
-			}
-			return;
-		}
-
-		generationBottomSpacerHeight = nextSpacerHeight;
-		if (anchoredGeneratingMessageId) {
-			activeGenerationSpacerHeightLimit = nextSpacerHeight;
-		} else if (generationSpacerScrollLimit !== null) {
-			const remainingAllowance = Math.min(
-				nextSpacerHeight,
-				Math.max(0, currentScrollTop - maxScrollWithoutSpacer)
-			);
-			generationSpacerScrollAllowance = remainingAllowance;
-			generationSpacerScrollLimit = maxScrollWithoutSpacer + remainingAllowance;
-		}
+		consumeGenerationSpacerDistance(upwardDistance, currentScrollTop);
 	};
 
 	const beginGenerationSpacerPointerScroll = () => {
@@ -3265,6 +3231,14 @@
 		}
 
 		if (event.deltaY < 0) {
+			// At the top, keep consuming short-chat filler gradually without moving the transcript.
+			if (!anchoredGeneratingMessageId && !generating && generationBottomSpacerHeight > 0 && messagesContainerElement.scrollTop <= 0.5) {
+				const distance = event.deltaMode === 1 ? -event.deltaY * 16 : event.deltaMode === 2 ? -event.deltaY * messagesContainerElement.clientHeight : -event.deltaY;
+				consumeGenerationSpacerDistance(distance, 0);
+				flushSync();
+				lastMessagesScrollTop = messagesContainerElement.scrollTop;
+				event.preventDefault();
+			}
 			if (generationBottomSpacerHeight > 0) {
 				generationSpacerUpwardScrollIntentUntil = performance.now() + 180;
 			}
@@ -3274,22 +3248,6 @@
 
 		if (event.deltaY <= 0) return;
 		generationSpacerUpwardScrollIntentUntil = 0;
-
-		if (hasActiveVisualMediaSpacer()) {
-			cancelMessagesBottomWheelLock();
-			const wheelDeltaPixels =
-				event.deltaMode === 1
-					? event.deltaY * 16
-					: event.deltaMode === 2
-						? event.deltaY * messagesContainerElement.clientHeight
-						: event.deltaY;
-
-			event.preventDefault();
-			discardVisualMediaGenerationSpacer(
-				messagesContainerElement.scrollTop + wheelDeltaPixels
-			);
-			return;
-		}
 
 		const idleGenerationScrollLimit =
 			!anchoredGeneratingMessageId &&
@@ -3340,6 +3298,18 @@
 		if (typeof ResizeObserver === 'undefined') {
 			return {};
 		}
+		const viewport = node.closest<HTMLElement>('#messages-container');
+		const synchronizeHistoryPosition = () => {
+			if (!messagesContainerElement) return;
+			lastMessagesScrollTop = messagesContainerElement.scrollTop;
+			if (anchoredGeneratingMessageId && !textGenerationAnchorUserMoved) {
+				textGenerationAnchorScrollTop = lastMessagesScrollTop;
+			}
+		};
+		viewport?.addEventListener(HISTORY_LAYOUT_EVENT, synchronizeHistoryPosition);
+		const restoreMediaHover = viewport ? dismissTooltipsOnMediaScroll(viewport, () =>
+			Boolean(anchoredGeneratingMessageId && visualMediaGenerationAnchorId === anchoredGeneratingMessageId)
+		) : () => {};
 
 		let resizeFrame: ReturnType<typeof requestAnimationFrame> | null = null;
 		let reasoningLayout: { scrollTop: number; reclaimSpacer: boolean } | null = null;
@@ -3544,6 +3514,8 @@
 
 		return {
 			destroy() {
+				viewport?.removeEventListener(HISTORY_LAYOUT_EVENT, synchronizeHistoryPosition);
+				restoreMediaHover();
 				cancelReasoningLayout();
 				node.removeEventListener('neve:reasoning-layout', handleReasoningLayout);
 				node.removeEventListener('neve:chat-layout', handleReasoningLayout);
@@ -4256,21 +4228,9 @@
 					continue;
 				}
 
-				const currentlyLoaded = loadedModels.length > 0 ? loadedModels[0] : null;
-
 				modelLoading = true;
 				try {
 					toast.info($i18n.t('Loading model... Please wait.'));
-					if (currentlyLoaded) {
-						try {
-							await unloadLocalModel(localStorage.token, currentlyLoaded.id);
-						} catch (unloadErr) {
-							console.warn(
-								'Could not explicitly unload previous model (may already be inactive):',
-								unloadErr
-							);
-						}
-					}
 
 					const doLoad = () =>
 						loadLocalModel(
@@ -4317,7 +4277,21 @@
 		return true;
 	};
 
+	let submittingPrompt = false;
 	const submitPrompt = async (
+		userPrompt: string,
+		options: { _raw?: boolean; features?: Record<string, any> | null } = {}
+	) => {
+		if (submittingPrompt) return;
+		submittingPrompt = true;
+		try {
+			return await submitPromptInternal(userPrompt, options);
+		} finally {
+			submittingPrompt = false;
+		}
+	};
+
+	const submitPromptInternal = async (
 		userPrompt,
 		{
 			_raw = false,
@@ -4384,21 +4358,9 @@
 					const needsLoad =
 						loadedModel === null || !loadedLocalModelMatchesPlan(loadedModel, loadPlan);
 					if (needsLoad) {
-						const currentlyLoaded = loadedModels.length > 0 ? loadedModels[0] : null;
-
 						modelLoading = true;
 						try {
 							toast.info($i18n.t('Loading model... Please wait.'));
-							if (currentlyLoaded) {
-								try {
-									await unloadLocalModel(localStorage.token, currentlyLoaded.id);
-								} catch (unloadErr) {
-									console.warn(
-										'Could not explicitly unload previous model (may already be inactive):',
-										unloadErr
-									);
-								}
-							}
 
 							const doLoad = () =>
 								loadLocalModel(
@@ -4496,13 +4458,7 @@
 		if (history?.currentId) {
 			const lastMessage = history.messages[history.currentId];
 
-			if (lastMessage.error && !lastMessage.content) {
-				if (!discardFailedContextTurn()) {
-					// Preserve the existing behavior for non-context errors.
-					toast.error($i18n.t(`Oops! There was an error in the previous response.`));
-					return;
-				}
-			}
+			if (lastMessage.error && !lastMessage.content) discardFailedContextTurn();
 		}
 
 		messageInput?.setText('');
@@ -5932,9 +5888,6 @@
 									if (clampMessagesBottomWheelJitter()) {
 										return;
 									}
-									if (discardVisualMediaGenerationSpacer()) {
-										return;
-									}
 									if (clampIdleGenerationSpacerScroll()) {
 										return;
 									}
@@ -6138,16 +6091,10 @@
 				/>
 			</PaneGroup>
 		</div>
-		{#if !loadedChatViewportReady}
-			<div class="absolute inset-0 z-20 flex items-center justify-center">
-				<Spinner className="size-5" />
-			</div>
-		{/if}
-	{:else if loading}
-		<div class=" flex items-center justify-center h-full w-full">
-			<div class="m-auto">
-				<Spinner className="size-5" />
-			</div>
+	{/if}
+	{#if loading || !loadedChatViewportReady}
+		<div class="absolute inset-0 z-20 flex items-center justify-center">
+			<Spinner className="size-5" />
 		</div>
 	{/if}
 </div>

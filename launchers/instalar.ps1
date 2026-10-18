@@ -538,6 +538,7 @@ $script:InstallerPtToEn = [ordered]@{
     'Gerando build do frontend' = 'Building the frontend'
     'Publicando frontend' = 'Publishing frontend'
     'Verificando atualizações…' = 'Checking for updates...'
+    'Verificando...' = 'Checking...'
     'Consultando GitHub…' = 'Checking GitHub...'
     'Consultando releases do llama.cpp' = 'Checking llama.cpp releases'
     'Versão instalada:' = 'Installed version:'
@@ -4351,8 +4352,9 @@ if ($llamaInstalledTag) {
 }
 
 # =============================================================================
-# Consulta a release mais recente (síncrono, antes de mostrar)
+# Consulta as releases fora da thread da janela.
 # =============================================================================
+function Get-UpdateReleaseState([string]$llamaInstalledAsset, [string]$llamaInstalledBackend) {
 $latestTag   = $null
 $releaseObj  = $null
 $checkError  = $null
@@ -4380,9 +4382,21 @@ try {
 } catch {
     $llamaCheckError = Get-FriendlyGitHubError $_
 }
+return @{
+    LatestTag = $latestTag; Release = $releaseObj; Error = $checkError
+    LlamaLatestTag = $llamaLatestTag; LlamaRelease = $llamaReleaseObj; LlamaError = $llamaCheckError
+}
+}
 
 $appIntegrity = Test-NeveAppIntegrity $ROOT
 
+function Complete-UpdateReleaseCheck($result) {
+$script:latestTag = $result.LatestTag
+$script:releaseObj = $result.Release
+$script:checkError = $result.Error
+$script:llamaLatestTag = $result.LlamaLatestTag
+$script:llamaReleaseObj = $result.LlamaRelease
+$script:llamaCheckError = $result.LlamaError
 $ctl.LblCurrent.Text = $currentVersion
 if ($checkError) {
     $ctl.LblCheckTitle.Text = 'Falha ao verificar atualizações'
@@ -4471,6 +4485,63 @@ if ($ctl.ChkUpdateNeve.Visibility -eq 'Visible' -and $ctl.ChkUpdateLlama.Visibil
 }
 
 Update-PrimaryButtonState
+}
+
+$ctl.LblCurrent.Text = $currentVersion
+$ctl.LblLlamaCurrent.Text = $llamaCurrentDisplay
+$ctl.LblCheckTitle.Text = 'Verificando atualizações…'
+$ctl.LblCheckSub.Text = ''
+$ctl.LblLatest.Text = '...'
+$ctl.LblLlamaLatest.Text = '...'
+$ctl.LblStatus.Text = 'Verificando...'
+$ctl.LblLlamaStatus.Text = 'Verificando...'
+$ctl.ChkUpdateNeve.Visibility = 'Collapsed'
+$ctl.ChkUpdateLlama.Visibility = 'Collapsed'
+$ctl.BtnLlama.IsEnabled = $false
+Update-PrimaryButtonState
+
+$releaseSession = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+foreach ($name in @('Normalize-ReleaseTag', 'Test-ReleaseTagValid', 'Get-FriendlyGitHubError',
+    'Get-GitHubLatestTagFromRedirect', 'New-GitHubReleaseFallbackObject', 'Get-GitHubLatestRelease',
+    'New-LlamaReleaseAssetReference', 'Test-LlamaReleaseAssetReference', 'Test-LlamaBackendCompatible',
+    'Get-GitHubLatestLlamaRelease', 'Get-UpdateReleaseState')) {
+    $definition = (Get-Command $name -CommandType Function).Definition
+    $releaseSession.Commands.Add((New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry($name, $definition)))
+}
+foreach ($name in @('UA', 'REPO_OWNER', 'REPO_NAME', 'LLAMA_API_RELEASES')) {
+    $releaseSession.Variables.Add((New-Object System.Management.Automation.Runspaces.SessionStateVariableEntry($name, (Get-Variable $name -ValueOnly), '')))
+}
+$script:ReleaseCheckRunspace = [RunspaceFactory]::CreateRunspace($releaseSession)
+$script:ReleaseCheckRunspace.Open()
+$script:ReleaseCheckPowerShell = [PowerShell]::Create()
+$script:ReleaseCheckPowerShell.Runspace = $script:ReleaseCheckRunspace
+[void]$script:ReleaseCheckPowerShell.AddScript('param($asset, $backend) Get-UpdateReleaseState $asset $backend').AddArgument($llamaInstalledAsset).AddArgument($llamaInstalledBackend)
+$script:ReleaseCheckAsync = $script:ReleaseCheckPowerShell.BeginInvoke()
+$script:ReleaseCheckTimer = New-Object Windows.Threading.DispatcherTimer
+$script:ReleaseCheckTimer.Interval = [TimeSpan]::FromMilliseconds(50)
+$script:ReleaseCheckTimer.Add_Tick({
+    if (-not $script:ReleaseCheckAsync.IsCompleted) { return }
+    $script:ReleaseCheckTimer.Stop()
+    try {
+        $results = @($script:ReleaseCheckPowerShell.EndInvoke($script:ReleaseCheckAsync))
+        if ($results.Count -eq 0) { throw 'Falha ao verificar atualizações.' }
+        Complete-UpdateReleaseCheck $results[-1]
+    } catch {
+        Complete-UpdateReleaseCheck @{ Error = "$_"; LlamaError = "$_" }
+    } finally {
+        $ctl.BtnLlama.IsEnabled = $true
+        $script:ReleaseCheckPowerShell.Dispose()
+        $script:ReleaseCheckRunspace.Dispose()
+        $script:ReleaseCheckPowerShell = $null
+    }
+})
+$script:ReleaseCheckTimer.Start()
+$window.Add_Closed({
+    $script:ReleaseCheckTimer.Stop()
+    if ($script:ReleaseCheckPowerShell) {
+        try { [void]$script:ReleaseCheckPowerShell.BeginStop($null, $null) } catch {}
+    }
+})
 
 # =============================================================================
 # Worker da atualização combinada (NeveAI -> llama.cpp)

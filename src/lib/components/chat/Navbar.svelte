@@ -22,7 +22,7 @@
 	import ChatPlus from '../icons/ChatPlus.svelte';
 	import ChatCheck from '../icons/ChatCheck.svelte';
 	import Knobs from '../icons/Knobs.svelte';
-	import Category from '../icons/Category.svelte';
+	import Blocks from '../icons/Blocks.svelte';
 	import { showModelSettings } from '$lib/stores';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import UnifiedModels from '$lib/components/chat/UnifiedModels.svelte';
@@ -394,7 +394,7 @@
 								aria-label="Models"
 							>
 								<div class=" m-auto self-center">
-									<Category squaresOnly={true} />
+									<Blocks />
 								</div>
 							</button>
 						</Tooltip>

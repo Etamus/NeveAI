@@ -2156,7 +2156,7 @@
 />
 
 {#if loaded}
-	<div class="w-full font-primary" data-composer-root data-ongoing={Boolean(history?.currentId)}>
+	<div class="w-full font-primary" data-composer-root data-ongoing={Boolean(history?.currentId)} data-generating={responseInProgress}>
 		<div class=" mx-auto inset-x-0 bg-transparent flex justify-center">
 			<div
 				class="flex flex-col px-3 {($settings?.widescreenMode ?? null)
@@ -2881,7 +2881,7 @@
 													>
 														<span
 															>{stableDiffusionQuality === 'qwen_image_2_1_official'
-																? 'Neve Image 2.4'
+																? 'Neve Image 2.6'
 															: stableDiffusionQuality === 'qwen_image_2s'
 																? 'Neve Image 2'
 																	: 'Neve Image 1.5'}</span
@@ -2906,7 +2906,7 @@
 															class="fixed z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
 															transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
 														>
-													{#each [{ id: 'neve_image_2', label: 'Neve Image 1.5' }, { id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.4' }] as quality}
+													{#each [{ id: 'neve_image_2', label: 'Neve Image 1.5' }, { id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.6' }] as quality}
 																<button
 																	type="button"
 																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -3341,7 +3341,7 @@
 									class:image-style-dropdown-ready={renderedImageStyleThumbnailsReady}
 									class:invisible={!renderedImageStyleThumbnailsReady}
 								>
-									<div class="flex w-full items-start gap-1.5">
+									<div class="image-style-card-strip flex w-full items-start gap-1.5">
 										<button
 											type="button"
 											class="group relative aspect-[4/5] w-[calc((100%_-_1.5rem)/5)] shrink-0 overflow-hidden rounded-md border-0 p-0 text-left outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-gray-400 {stableDiffusionStyle ===
@@ -3440,6 +3440,27 @@
 {/if}
 
 <style>
+	.image-style-card-strip {
+		position: relative;
+		isolation: isolate;
+	}
+	.image-style-card-strip::before {
+		content: '';
+		position: absolute;
+		inset: 0 0 0.75rem;
+		z-index: -1;
+		border-radius: 6px;
+		background: rgb(255 255 255 / 75%);
+		backdrop-filter: blur(10px);
+		clip-path: inset(0 round 6px);
+		-webkit-mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
+		mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
+		pointer-events: none;
+	}
+	:global(.dark) .image-style-card-strip::before {
+		background: rgb(0 0 0 / 72%);
+	}
+	.chat-input-scroll { overscroll-behavior-y: contain; }
 	.message-input-active-controls :global(button.group:not(:hover)),
 	.message-input-active-controls :global(button[aria-label='Available Tools']:not(:hover)) {
 		background-color: transparent;

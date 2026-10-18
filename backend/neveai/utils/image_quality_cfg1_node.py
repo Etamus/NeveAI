@@ -1,4 +1,4 @@
-"""ComfyUI extension for Neve Image 2.4's fixed CFG=1 edit workflows."""
+"""ComfyUI extension for Neve Image 2.6's fixed CFG=1 edit workflows."""
 
 from comfy_api.latest import ComfyExtension
 from comfy_extras.nodes_qwen import TextEncodeQwenImage21

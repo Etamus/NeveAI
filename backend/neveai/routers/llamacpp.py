@@ -401,6 +401,21 @@ class _LoadedModelInfo:
         self.token_prediction = _normalize_token_prediction(token_prediction)
         self.speculative_decoding = _normalize_speculative_decoding(speculative_decoding)
 
+    def load_result(self) -> dict:
+        return {
+            "id": self.model_id,
+            "filename": self.filename,
+            "status": "loaded",
+            "n_gpu_layers": self.n_gpu_layers,
+            "n_ctx": self.n_ctx,
+            "context_auto": self.context_auto,
+            "mmproj_filename": self.mmproj_filename,
+            "cache_type": self.cache_type,
+            "speculative_decoding": self.speculative_decoding,
+            "token_prediction": self.token_prediction,
+            "context_shift": self.context_shift,
+        }
+
 
 def _normalize_speculative_decoding(value: Optional[str]) -> str:
     value = str(value or "default").strip().lower()
@@ -717,6 +732,21 @@ class LocalModelManager:
             speculative_decoding = "off"
 
         async with self._lock:
+            # Recheck after waiting: another request may have loaded this exact profile.
+            existing = self._loaded.get(model_id)
+            if (
+                existing is not None
+                and self._is_process_alive(model_id)
+                and existing.n_gpu_layers == n_gpu_layers
+                and (existing.context_auto if n_ctx == 0 else existing.n_ctx == n_ctx and not existing.context_auto)
+                and (existing.mmproj_filename or "") == (mmproj_filename or "")
+                and existing.cache_type == cache_type
+                and existing.speculative_decoding == speculative_decoding
+                and existing.token_prediction == token_prediction
+                and existing.context_shift == context_shift
+            ):
+                return existing.load_result()
+
             # Unload ALL currently loaded models before loading a new one
             # This ensures only one model is active at a time and frees file handles
             other_ids = [mid for mid in list(self._loaded.keys()) if mid != model_id]
@@ -786,19 +816,7 @@ class LocalModelManager:
             self._loaded[model_id].context_auto = auto_context
 
             log.info(f"Model loaded via llama-server: {model_id} (port={port}, gpu_layers={n_gpu_layers}, ctx={n_ctx}, mmproj={mmproj_filename})")
-            return {
-                "id": model_id,
-                "filename": filename,
-                "status": "loaded",
-                "n_gpu_layers": n_gpu_layers,
-                "n_ctx": n_ctx,
-                "context_auto": auto_context,
-                "mmproj_filename": mmproj_filename,
-                "cache_type": cache_type,
-                "speculative_decoding": speculative_decoding,
-                "token_prediction": token_prediction,
-                "context_shift": context_shift,
-            }
+            return self._loaded[model_id].load_result()
 
     async def unload_model(self, model_id: str) -> dict:
         """Unload a model by stopping its llama-server."""

@@ -8,6 +8,7 @@
 	import type { i18n as i18nType, t } from 'i18next';
 
 	const i18n = getContext<Writable<i18nType>>('i18n');
+	const isRestoringWindow = getContext<() => boolean>('message-window-restoring') ?? (() => false);
 
 	const dispatch = createEventDispatcher();
 
@@ -549,7 +550,7 @@
 		id="message-{message.id}"
 		dir={$settings.chatDirection}
 		style="scroll-margin-top: 3rem;"
-		in:fade={{ duration: 150, delay: 50 }}
+		in:fade={{ duration: isRestoringWindow() ? 0 : 150, delay: isRestoringWindow() ? 0 : 50 }}
 	>
 		<div class="flex-auto w-0 pl-1.5 relative">
 			<div>

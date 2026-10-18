@@ -78,7 +78,7 @@
 		}}
 	>
 		{#if accelerationMode !== 'normal' && !predictionLocked}
-			<span class="flex shrink-0" data-acceleration-icon aria-hidden="true"><Bolt className="size-3.5" filled={accelerationMode === 'mtp'} /></span>
+			<span class="flex shrink-0" data-acceleration-icon aria-hidden="true"><Bolt className="size-3.5" filled={true} /></span>
 		{/if}
 		<span class="text-gray-700 dark:text-gray-200">
 			{#if level === 0 && !effortBased}{firstLevelLabel}{:else}
@@ -132,7 +132,7 @@
 						data-mode={accelerationMode}
 						on:click={() => setLocalModelAccelerationMode(accelerationModes[(accelerationModes.indexOf(accelerationMode) + 1) % accelerationModes.length])}
 					>
-						<span class="reasoning-tool-icon"><Gauge className="size-[23px]" /></span>
+						<span class="reasoning-tool-icon"><Gauge className="size-[24px]" /></span>
 						<span class="acceleration-indicator" class:invisible={accelerationMode === 'normal'} aria-hidden="true">
 							<span></span><span class:hidden={accelerationMode !== 'mtp'}></span>
 						</span>
@@ -220,12 +220,12 @@
 	}
 	.reasoning-tool-icon :global(svg) {
 		position: absolute;
-		top: 3px;
+		top: 2.5px;
 		left: 50%;
 		transform: translateX(-50%);
 		display: block;
 	}
-	.reasoning-level-label { position: relative; top: -2px; }
+	.reasoning-level-label { position: relative; top: -5px; }
 	.acceleration-indicator {
 		position: absolute;
 		bottom: 3px;

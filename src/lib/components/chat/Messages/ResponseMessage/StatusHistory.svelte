@@ -49,13 +49,12 @@
 			return items;
 		}, []);
 	$: status = visibleHistory.at(-1) ?? null;
-	$: isCompletedVisualStatus =
-		status?.done === true &&
+	$: isMediaStatus =
 		['stable_diffusion', 'video_generation', 'music_generation'].includes(
-			String(status?.action ?? '').toLowerCase()
+			String(status?.action ?? '').trim().toLowerCase()
 		);
 
-	$: if (isCompletedVisualStatus) {
+	$: if (isMediaStatus) {
 		showHistory = false;
 	}
 
@@ -70,24 +69,29 @@
 {#if visibleHistory.length > 0 && status}
 	{#if status?.hidden !== true}
 		<div class="flex flex-col w-full">
-			<button
-				class="w-full {isCompletedVisualStatus ? 'cursor-default' : ''}"
-				aria-label={$i18n.t('Toggle status history')}
-				aria-expanded={isCompletedVisualStatus ? false : showHistory}
-				disabled={isCompletedVisualStatus}
-				on:click={(event) => {
-					if (!isCompletedVisualStatus) {
+			{#if isMediaStatus}
+				<div class="w-full cursor-default">
+					<div class="flex items-start gap-2">
+						<StatusItem {status} />
+					</div>
+				</div>
+			{:else}
+				<button
+					class="w-full"
+					aria-label={$i18n.t('Toggle status history')}
+					aria-expanded={showHistory}
+					on:click={(event) => {
 						notifyChatLayout(event.currentTarget, 200, !showHistory);
 						showHistory = !showHistory;
-					}
-				}}
-			>
-				<div class="flex items-start gap-2">
-					<StatusItem {status} />
-				</div>
-			</button>
+					}}
+				>
+					<div class="flex items-start gap-2">
+						<StatusItem {status} />
+					</div>
+				</button>
+			{/if}
 
-			{#if showHistory && !isCompletedVisualStatus}
+			{#if showHistory && !isMediaStatus}
 				<div class="flex flex-row" transition:slide={{ duration: 200, easing: quintOut }}>
 					{#if visibleHistory.length > 1}
 						<div class="w-full">

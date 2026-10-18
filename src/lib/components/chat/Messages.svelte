@@ -1,8 +1,6 @@
 <script context="module" lang="ts">
 	const DEFAULT_MESSAGES_COUNT = 30;
 	const MESSAGE_LOAD_INCREMENT = 40;
-	const LOAD_MORE_COOLDOWN_MS = 220;
-	const chatMessagesCountCache = new Map<string, number>();
 </script>
 
 <script lang="ts">
@@ -22,9 +20,10 @@
 	import { toast } from 'svelte-sonner';
 	import { getChatList, updateChatById } from '$lib/apis/chats';
 	import { copyToClipboard, extractCurlyBraceWords } from '$lib/utils';
+	import { lockHistoryScroll, observeHistoryBoundary, waitForHistoryLayout } from '$lib/utils/historyScrollLock';
 
 	import Message from './Messages/Message.svelte';
-	import Loader from '../common/Loader.svelte';
+	import VirtualMessage from './Messages/VirtualMessage.svelte';
 	import Spinner from '../common/Spinner.svelte';
 
 	import ChatPlaceholder from './ChatPlaceholder.svelte';
@@ -68,7 +67,9 @@
 	export let messagesCount: number | null = DEFAULT_MESSAGES_COUNT;
 	let messagesLoading = false;
 	let messagesCountChatId = '';
-	let lastLoadMoreAt = 0;
+	let historyLoader: HTMLDivElement;
+	let historyLoaderTop = 0;
+	let historyLoadController: AbortController | null = null;
 
 	const getMessagesContainer = () =>
 		document.getElementById('messages-container') as HTMLElement | null;
@@ -80,7 +81,9 @@
 		if (!element) return null;
 
 		const containerRect = element.getBoundingClientRect();
-		const messageElements = Array.from(
+		const windows = Array.from(element.querySelectorAll<HTMLElement>('[data-message-window]'))
+			.filter((row) => row.getBoundingClientRect().height > 0);
+		const messageElements = windows.length ? windows : Array.from(
 			element.querySelectorAll<HTMLElement>('[id^="message-"]')
 		).filter((messageElement) => history.messages?.[getMessageElementId(messageElement)]);
 
@@ -88,8 +91,10 @@
 			const rect = messageElement.getBoundingClientRect();
 			if (rect.bottom >= containerRect.top + 1) {
 				return {
+					element: messageElement,
 					messageId: getMessageElementId(messageElement),
 					offsetTop: rect.top - containerRect.top,
+					scrollTop: element.scrollTop,
 					scrollHeight: element.scrollHeight
 				};
 			}
@@ -102,9 +107,9 @@
 		const element = getMessagesContainer();
 		if (!element || !anchor) return;
 
-		const messageElement = document.getElementById(`message-${anchor.messageId}`);
+		const messageElement = anchor.element?.isConnected ? anchor.element : null;
 		if (!messageElement) {
-			element.scrollTop += element.scrollHeight - anchor.scrollHeight;
+			element.scrollTop = anchor.scrollTop + element.scrollHeight - anchor.scrollHeight;
 			return;
 		}
 
@@ -118,33 +123,43 @@
 	};
 
 	$: if (chatId && chatId !== messagesCountChatId) {
+		historyLoadController?.abort();
 		messagesCountChatId = chatId;
-		messagesCount = chatMessagesCountCache.get(chatId) ?? DEFAULT_MESSAGES_COUNT;
+		messagesCount = DEFAULT_MESSAGES_COUNT;
 		messagesLoading = false;
-		lastLoadMoreAt = 0;
 	}
 
 	const loadMoreMessages = async () => {
-		if (messagesLoading || messagesCount === null) return;
-
-		const now = Date.now();
-		if (now - lastLoadMoreAt < LOAD_MORE_COOLDOWN_MS) return;
-		lastLoadMoreAt = now;
+		if (messagesLoading || historyLoadController || messagesCount === null) return;
 
 		messagesLoading = true;
 		const anchor = getTopVisibleMessageAnchor();
-		messagesCount += MESSAGE_LOAD_INCREMENT;
-		if (chatId) {
-			chatMessagesCountCache.set(chatId, messagesCount);
+		const viewport = getMessagesContainer();
+		historyLoaderTop = Math.max(0,
+			(historyLoader?.getBoundingClientRect().top ?? 0) - (viewport?.getBoundingClientRect().top ?? 0)
+		);
+		const controller = new AbortController();
+		historyLoadController = controller;
+		const lock = viewport ? lockHistoryScroll(viewport, () => restoreTopVisibleMessageAnchor(anchor)) : null;
+		controller.signal.addEventListener('abort', () => lock?.release(false), { once: true });
+		try {
+			messagesCount += MESSAGE_LOAD_INCREMENT;
+			buildMessages();
+			await tick();
+			if (viewport && !controller.signal.aborted) {
+				lock?.synchronize();
+				await waitForHistoryLayout(viewport, () => lock?.synchronize(), () =>
+					!viewport.querySelector('[data-message-measured="false"]'), controller.signal
+				);
+			}
+		} finally {
+			if (historyLoadController === controller) {
+				messagesLoading = false;
+				await tick();
+				lock?.release();
+				historyLoadController = null;
+			} else lock?.release(false);
 		}
-		buildMessages();
-
-		await tick();
-		restoreTopVisibleMessageAnchor(anchor);
-		await new Promise((resolve) => requestAnimationFrame(resolve));
-		restoreTopVisibleMessageAnchor(anchor);
-
-		messagesLoading = false;
 	};
 
 	let pendingRebuild: number | null = null;
@@ -500,6 +515,7 @@
 	};
 
 	onDestroy(() => {
+		historyLoadController?.abort();
 		cancelAnimationFrame(pendingRebuild);
 	});
 
@@ -522,22 +538,28 @@
 			{#key chatId}
 				<section class="w-full" aria-labelledby="chat-conversation">
 					<h2 class="sr-only" id="chat-conversation">{$i18n.t('Chat Conversation')}</h2>
-					{#if messages.at(0)?.parentId !== null}
-						<Loader
-							on:visible={(e) => {
-								if (!messagesLoading) {
-									loadMoreMessages();
-								}
-							}}
+					{#if messagesLoading || messages.at(0)?.parentId !== null}
+						<div
+							bind:this={historyLoader}
+							class="w-full h-6 flex items-center justify-center pointer-events-none"
+							class:sticky={messagesLoading}
+							class:z-20={messagesLoading}
+							style:top={messagesLoading ? `${historyLoaderTop}px` : undefined}
+							role="status"
+							aria-label={$i18n.t('Loading...')}
+							data-history-loader
+							use:observeHistoryBoundary={loadMoreMessages}
 						>
-							<div class="w-full flex justify-center py-1 text-xs animate-pulse items-center gap-2">
-								<Spinner className=" size-4" />
-								<div class=" ">{$i18n.t('Loading...')}</div>
-							</div>
-						</Loader>
+							<Spinner className=" size-4" />
+						</div>
 					{/if}
 					<ul role="log" aria-live="polite" aria-relevant="additions" aria-atomic="false">
 						{#each messages as message, messageIdx (message.id)}
+							<VirtualMessage
+								messageId={message.id}
+								enabled={messages.length > DEFAULT_MESSAGES_COUNT}
+								keepMounted={messageIdx >= messages.length - 6 || message.done === false}
+							>
 							<Message
 								{chatId}
 								bind:history
@@ -565,11 +587,13 @@
 								{editCodeBlock}
 								{topPadding}
 							/>
+							</VirtualMessage>
 						{/each}
 					</ul>
 					{#if bottomSpacerHeight > 0}
 						<div
 							aria-hidden="true"
+							data-generation-spacer
 							class="shrink-0 pointer-events-none"
 							style="height: {bottomSpacerHeight}px;"
 						/>
