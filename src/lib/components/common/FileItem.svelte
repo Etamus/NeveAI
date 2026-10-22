@@ -11,6 +11,7 @@
 	import Spinner from './Spinner.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import AttachmentFile from '$lib/components/icons/AttachmentFile.svelte';
+	import AttachmentRemoveButton from './AttachmentRemoveButton.svelte';
 
 	const i18n = getContext('i18n');
 	const dispatch = createEventDispatcher();
@@ -29,6 +30,7 @@
 	export let small = false;
 	export let inputChip = false;
 	export let chatAttachment = false;
+	export let composerTile = false;
 
 	export let name: string;
 	export let type: string;
@@ -85,13 +87,40 @@
 		anchor.remove();
 		setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
 	};
+	const openAttachment = () => {
+		if (item?.generated || item?.file?.data?.content || item?.type === 'file' || item?.content || modal) {
+			showModal = !showModal;
+		} else if (url) {
+			if (type === 'file') {
+				window.open(url.startsWith('http') ? `${url}/content` : `${NEVEAI_API_BASE_URL}/files/${url}/content`, '_blank').focus();
+			} else window.open(url, '_blank').focus();
+		}
+		dispatch('click');
+	};
 </script>
 
 {#if item}
 	<FileItemModal bind:show={showModal} bind:item {edit} {chatAttachment} animated={false} />
 {/if}
 
-{#if item?.generated}
+{#if composerTile}
+	<div class="composer-file-tile relative group group/attachment shrink-0 {className}">
+		<button type="button" disabled={loading} aria-busy={loading} class="flex size-full flex-col overflow-hidden rounded-lg border border-gray-200/70 bg-gray-100/90 text-left text-gray-700 hover:bg-gray-200/80 dark:border-gray-700/50 dark:bg-gray-800/80 dark:text-gray-200 dark:hover:bg-gray-700/70" title={decodeString(name)} aria-label={decodeString(name)} on:click={openAttachment}>
+			<span class="flex min-h-0 flex-1 items-center justify-center">
+				{#if loading}<Spinner className="size-5" />
+				{:else if type==='collection'}<Database className="size-5" />
+				{:else if type==='note'}<PageEdit className="size-5" />
+				{:else if type==='chat'}<ChatBubble className="size-5" />
+				{:else if type==='folder'}<Folder className="size-5" />
+				{:else}<AttachmentFile {name} {contentType} kindOverride={attachmentKind} className="size-5" />{/if}
+			</span>
+			<span class="block w-full min-w-0 shrink-0 bg-black/5 px-1 py-1 text-[11px] leading-[14px] dark:bg-black/20">
+				<span class="block truncate">{decodeString(name)}</span>
+			</span>
+		</button>
+		{#if dismissible}<AttachmentRemoveButton label={$i18n.t('Remove file')} on:click={()=>dispatch('dismiss')} />{/if}
+	</div>
+{:else if item?.generated}
 	<div class="relative group {className}">
 		<button
 			type="button"
@@ -142,25 +171,7 @@
 					: 'rounded-lg p-1.5'
 				: 'rounded-xl p-1.5'} text-left"
 			type="button"
-			on:click={async () => {
-				if (item?.file?.data?.content || item?.type === 'file' || item?.content || modal) {
-					showModal = !showModal;
-				} else {
-					if (url) {
-						if (type === 'file') {
-							if (url.startsWith('http')) {
-								window.open(`${url}/content`, '_blank').focus();
-							} else {
-								window.open(`${NEVEAI_API_BASE_URL}/files/${url}/content`, '_blank').focus();
-							}
-						} else {
-							window.open(`${url}`, '_blank').focus();
-						}
-					}
-				}
-
-				dispatch('click');
-			}}
+			on:click={openAttachment}
 		>
 			{#if !small}
 				<div
@@ -274,3 +285,7 @@
 		</button>
 	</div>
 {/if}
+
+<style>
+	.composer-file-tile{width:var(--composer-attachment-size,4rem);height:var(--composer-attachment-size,4rem);}
+</style>

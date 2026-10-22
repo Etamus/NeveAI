@@ -6,12 +6,25 @@ afterEach(() => {
 });
 
 describe('Scroll-to-bottom button visibility', () => {
-	const viewport = (messageBottom: number | null) => ({
-		getBoundingClientRect: () => ({ bottom: 900 }),
-		querySelector: () => messageBottom === null ? null : { getBoundingClientRect: () => ({ bottom: messageBottom }) },
-		scrollHeight: 4000,
-		scrollTop: 0
-	}) as unknown as HTMLElement;
+	const viewport = (messageBottom: number | null, { wrapped = false, placeholder = false } = {}) => {
+		const message = messageBottom === null ? null : {
+			getBoundingClientRect: () => ({ bottom: messageBottom }),
+			hasAttribute: () => false
+		};
+		const window = message && {
+			getBoundingClientRect: () => ({ bottom: placeholder ? messageBottom : 0 }),
+			hasAttribute: (name: string) => name === 'data-message-window',
+			querySelector: () => placeholder ? null : message
+		};
+		return {
+			getBoundingClientRect: () => ({ bottom: 900 }),
+			querySelector: (selector: string) => selector === '[role="log"] > :last-child'
+				? (wrapped ? window : message)
+				: (wrapped ? null : message),
+			scrollHeight: 4000,
+			scrollTop: 0
+		} as unknown as HTMLElement;
+	};
 	it.each([200, 600, 700, 704.5])('ignores reserved scrolling when the last message ends at %s', bottom => {
 		expect(hasHiddenMessageContentBelow(viewport(bottom), 700)).toBe(false);
 	});
@@ -28,6 +41,18 @@ describe('Scroll-to-bottom button visibility', () => {
 	});
 	it('does not show a button before messages mount', () => {
 		expect(hasHiddenMessageContentBelow(viewport(null), 700)).toBe(false);
+	});
+	it('finds a message inside its virtualization window', () => {
+		expect(hasHiddenMessageContentBelow(viewport(1000, { wrapped: true }), 700)).toBe(true);
+	});
+	it('measures the message instead of a display-contents window with an empty rectangle', () => {
+		expect(hasHiddenMessageContentBelow(viewport(750, { wrapped: true }), 700)).toBe(true);
+	});
+	it('ignores bottom spacing when a wrapped message is already visible', () => {
+		expect(hasHiddenMessageContentBelow(viewport(650, { wrapped: true }), 700)).toBe(false);
+	});
+	it('uses the reserved height if the last virtualized window is temporarily unmounted', () => {
+		expect(hasHiddenMessageContentBelow(viewport(1000, { wrapped: true, placeholder: true }), 700)).toBe(true);
 	});
 });
 

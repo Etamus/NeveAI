@@ -65,6 +65,27 @@ export const lockHistoryScroll = (viewport: HTMLElement, align: () => void) => {
 	const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(synchronize);
 	const content = viewport.querySelector?.('[data-messages-content]');
 	if (content) resize?.observe(content);
+	const observedRows = new WeakSet<Element>();
+	const observeRows = () => {
+		for (const row of content?.querySelectorAll?.('[data-message-window]') ?? []) {
+			if (observedRows.has(row)) continue;
+			observedRows.add(row);
+			resize?.observe(row);
+		}
+	};
+	observeRows();
+	// Inner reflows can move the reading anchor without resizing the whole list.
+	// Compensate DOM/media changes before paint instead of waiting for the next RAF.
+	const mutations = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => {
+		observeRows();
+		synchronize();
+	});
+	if (content) mutations?.observe(content, {
+		childList: true, characterData: true, subtree: true, attributes: true,
+		attributeFilter: ['style', 'class', 'src', 'width', 'height', 'open']
+	});
+	viewport.addEventListener('load', synchronize, true);
+	viewport.addEventListener('error', synchronize, true);
 	return {
 		synchronize,
 		release(synchronizePosition = true) {
@@ -72,6 +93,9 @@ export const lockHistoryScroll = (viewport: HTMLElement, align: () => void) => {
 			if (synchronizePosition) synchronize();
 			released = true;
 			resize?.disconnect();
+			mutations?.disconnect();
+			viewport.removeEventListener('load', synchronize, true);
+			viewport.removeEventListener('error', synchronize, true);
 			viewport.removeEventListener('wheel', prevent, capture);
 			viewport.removeEventListener('touchmove', prevent, capture);
 			viewport.removeEventListener('keydown', keydown, capture);

@@ -14,7 +14,7 @@
 		currentChatPage,
 		temporaryChatEnabled
 	} from '$lib/stores';
-	import { tick, getContext, onMount, onDestroy, createEventDispatcher } from 'svelte';
+	import { tick, getContext, setContext, onMount, onDestroy, createEventDispatcher } from 'svelte';
 	const dispatch = createEventDispatcher();
 
 	import { toast } from 'svelte-sonner';
@@ -117,7 +117,7 @@
 		const messageRect = messageElement.getBoundingClientRect();
 		const nextScrollTop = element.scrollTop + messageRect.top - containerRect.top - anchor.offsetTop;
 
-		if (Math.abs(element.scrollTop - nextScrollTop) > 1) {
+		if (Math.abs(element.scrollTop - nextScrollTop) > 0.5) {
 			element.scrollTop = nextScrollTop;
 		}
 	};
@@ -240,7 +240,24 @@
 		}
 	};
 
+	let branchNavigating = false;
+	let branchRestoreFrame = 0;
+	const beginBranchNavigation = () => {
+		cancelAnimationFrame(branchRestoreFrame);
+		branchNavigating = true;
+		autoScroll = false;
+		return getMessagesContainer()?.scrollTop ?? 0;
+	};
+	const restoreBranchScroll = async (scrollTop: number) => {
+		await tick();
+		const viewport = getMessagesContainer();
+		if (viewport) viewport.scrollTop = Math.min(scrollTop, Math.max(0, viewport.scrollHeight - viewport.clientHeight));
+		branchRestoreFrame = requestAnimationFrame(() => { branchNavigating = false; });
+	};
+	setContext('branch-navigation', { begin: beginBranchNavigation, restore: restoreBranchScroll, active: () => branchNavigating });
+
 	const gotoMessage = async (message: any, idx: number) => {
+		const scrollTop = beginBranchNavigation();
 		// Determine the correct sibling list (either parent's children or root messages)
 		let siblings;
 		if (message.parentId !== null) {
@@ -268,20 +285,11 @@
 			history.currentId = messageId;
 		}
 
-		await tick();
-
-		// Optional auto-scroll
-		if ($settings?.scrollOnBranchChange ?? true) {
-			const element = document.getElementById('messages-container');
-			autoScroll = element.scrollHeight - element.scrollTop <= element.clientHeight + 50;
-
-			setTimeout(() => {
-				scrollToBottom();
-			}, 100);
-		}
+		await restoreBranchScroll(scrollTop);
 	};
 
 	const showPreviousMessage = async (message) => {
+		const scrollTop = beginBranchNavigation();
 		if (message.parentId !== null) {
 			let messageId =
 				history.messages[message.parentId].childrenIds[
@@ -316,19 +324,11 @@
 			}
 		}
 
-		await tick();
-
-		if ($settings?.scrollOnBranchChange ?? true) {
-			const element = document.getElementById('messages-container');
-			autoScroll = element.scrollHeight - element.scrollTop <= element.clientHeight + 50;
-
-			setTimeout(() => {
-				scrollToBottom();
-			}, 100);
-		}
+		await restoreBranchScroll(scrollTop);
 	};
 
 	const showNextMessage = async (message) => {
+		const scrollTop = beginBranchNavigation();
 		if (message.parentId !== null) {
 			let messageId =
 				history.messages[message.parentId].childrenIds[
@@ -367,16 +367,7 @@
 			}
 		}
 
-		await tick();
-
-		if ($settings?.scrollOnBranchChange ?? true) {
-			const element = document.getElementById('messages-container');
-			autoScroll = element.scrollHeight - element.scrollTop <= element.clientHeight + 50;
-
-			setTimeout(() => {
-				scrollToBottom();
-			}, 100);
-		}
+		await restoreBranchScroll(scrollTop);
 	};
 
 	const rateMessage = async (messageId, rating) => {
@@ -515,6 +506,7 @@
 	};
 
 	onDestroy(() => {
+		cancelAnimationFrame(branchRestoreFrame);
 		historyLoadController?.abort();
 		cancelAnimationFrame(pendingRebuild);
 	});

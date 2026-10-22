@@ -4,6 +4,7 @@
 	import NewFolderAlt from '../../icons/NewFolderAlt.svelte';
 	import FilePlusAlt from '../../icons/FilePlusAlt.svelte';
 	import Spinner from '../../common/Spinner.svelte';
+	import { continuousSpinner } from '$lib/utils/continuousSpinner';
 	import Tooltip from '../../common/Tooltip.svelte';
 
 	const i18n = getContext('i18n');
@@ -91,6 +92,7 @@
 				viewBox="0 0 20 20"
 				fill="currentColor"
 				class="size-3.5 {loading ? 'animate-spin' : ''}"
+				use:continuousSpinner={loading}
 			>
 				<path
 					fill-rule="evenodd"

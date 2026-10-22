@@ -13,6 +13,9 @@
 
 html {
 	word-break: break-word;
+	/* Keep mobile text inflation from changing control geometry independently. */
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
 	/* font-size scales the entire document via the same UI control */
 	font-size: calc(1rem * var(--app-text-scale, 1));
 }

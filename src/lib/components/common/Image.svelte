@@ -4,10 +4,13 @@
 	import { settings } from '$lib/stores';
 	import ImagePreview from './ImagePreview.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
+	import AttachmentThumbnail from './AttachmentThumbnail.svelte';
 	import { getContext } from 'svelte';
 
 	export let src = '';
 	export let alt = '';
+	export let deferLoading = false;
+	export let attachmentLoading = false;
 
 	export let className = ` w-full ${($settings?.highContrastMode ?? false) ? '' : 'outline-hidden focus:outline-hidden'}`;
 	export let containerClassName = 'w-fit';
@@ -36,7 +39,8 @@
 		aria-label={$i18n.t('Show image preview')}
 		type="button"
 	>
-		<img src={_src} {alt} class={imageClassName} draggable="false" data-cy="image" />
+		{#if attachmentLoading}<AttachmentThumbnail src={_src} {alt} className={imageClassName} loadingBackground={true} />
+		{:else}<img src={_src} loading={deferLoading ? 'lazy' : 'eager'} data-chat-image-sized={deferLoading ? '' : undefined} {alt} class={imageClassName} draggable="false" data-cy="image" />{/if}
 	</button>
 
 	{#if dismissible}

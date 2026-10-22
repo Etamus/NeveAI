@@ -15,6 +15,7 @@
 	import Markdown from './Markdown.svelte';
 	import GitHubRepositoryContent from './GitHubRepositoryContent.svelte';
 	import Image from '$lib/components/common/Image.svelte';
+	import { imageModeDisplayLabel } from '$lib/utils/imageModes';
 	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
@@ -58,6 +59,7 @@
 	let editScrollContainer: HTMLDivElement;
 
 	let message = structuredClone(history.messages[messageId]);
+	$: imageModeLabel = imageModeDisplayLabel(message);
 	$: if (history.messages) {
 		const source = history.messages[messageId];
 		if (source) {
@@ -190,6 +192,7 @@
 											: undefined}
 									>
 										<Image
+											deferLoading={true}
 											src={getAttachmentUrl(file)}
 											alt={file?.name ?? ''}
 											containerClassName="size-full"
@@ -370,7 +373,7 @@
 										class="whitespace-pre-wrap break-words chat-user-content transition-all duration-200"
 										style={!expanded && contentOverflows ? 'max-height: 7.5rem; overflow: hidden;' : ''}
 									>
-										<GitHubRepositoryContent content={message.content} />
+										<GitHubRepositoryContent content={imageModeLabel ? $i18n.t(imageModeLabel) : message.content} />
 									</div>
 
 									{#if !expanded && contentOverflows}

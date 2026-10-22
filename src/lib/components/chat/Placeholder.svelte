@@ -45,6 +45,7 @@
 	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2s' | 'qwen_image_2_1_official' = 'neve_image';
 	export let stableDiffusionStyle: 'none' | 'minimalist' | 'polygonal' | 'fantasy' | 'comics' | 'arcane' | 'spontaneous' | 'realistic' | 'manga' | 'pixelated' = 'none';
 	export let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
+	export let stableDiffusionModeOptions: import('$lib/utils/imageModes').ImageModeOptions = { mode: 'normal' };
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
 	export let videoGenerationResolution: '480p' | '672p' = '480p';
@@ -133,6 +134,7 @@
 					bind:stableDiffusionQuality
 					bind:stableDiffusionStyle
 					bind:stableDiffusionResolution
+					bind:stableDiffusionModeOptions
 					bind:musicGenerationEnabled
 					bind:videoGenerationEnabled
 					bind:videoGenerationResolution

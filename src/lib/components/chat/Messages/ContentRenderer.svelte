@@ -1,5 +1,6 @@
 <script>
 	import { onDestroy, onMount, tick, getContext } from 'svelte';
+	import { autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
 	const i18n = getContext('i18n');
 
 	import Markdown from './Markdown.svelte';
@@ -50,6 +51,7 @@
 
 	let contentContainerElement;
 	let floatingButtonsElement;
+	let stopFloatingPosition;
 
 	let sourceIds = [];
 	$: getSourceIds(sources);
@@ -94,32 +96,24 @@
 			let selection = window.getSelection();
 
 			if (selection.toString().trim().length > 0) {
-				const range = selection.getRangeAt(0);
-				const rect = range.getBoundingClientRect();
-
-				const parentRect = contentContainerElement.getBoundingClientRect();
-
-				// Adjust based on parent rect
-				const top = rect.bottom - parentRect.top;
-				const left = rect.left - parentRect.left;
+				const range = selection.getRangeAt(0).cloneRange();
 
 				if (buttonsContainerElement) {
 					buttonsContainerElement.style.display = 'block';
 
-					// Calculate space available on the right
-					const spaceOnRight = parentRect.width - left;
-					let halfScreenWidth = $mobile ? window.innerWidth / 2 : window.innerWidth / 3;
-
-					if (spaceOnRight < halfScreenWidth) {
-						const right = parentRect.right - rect.right;
-						buttonsContainerElement.style.right = `${right}px`;
-						buttonsContainerElement.style.left = 'auto'; // Reset left
-					} else {
-						// Enough space, position using 'left'
-						buttonsContainerElement.style.left = `${left}px`;
-						buttonsContainerElement.style.right = 'auto'; // Reset right
-					}
-					buttonsContainerElement.style.top = `${top + 5}px`; // +5 to add some spacing
+					stopFloatingPosition?.();
+					const reference = {
+						getBoundingClientRect: () => range.getBoundingClientRect(),
+						contextElement: contentContainerElement
+					};
+					stopFloatingPosition = autoUpdate(reference, buttonsContainerElement, async () => {
+						const { x, y } = await computePosition(reference, buttonsContainerElement, {
+							strategy: 'fixed', placement: 'bottom-start',
+							middleware: [offset(8), flip(), shift({ padding: 8 })]
+						});
+						if (!buttonsContainerElement.isConnected) return;
+						Object.assign(buttonsContainerElement.style, { left: `${x}px`, top: `${y}px`, right: 'auto' });
+					});
 				}
 			} else {
 				closeFloatingButtons();
@@ -128,6 +122,8 @@
 	};
 
 	const closeFloatingButtons = () => {
+		stopFloatingPosition?.();
+		stopFloatingPosition = null;
 		const buttonsContainerElement = document.getElementById(`floating-buttons-${id}`);
 		if (buttonsContainerElement) {
 			buttonsContainerElement.style.display = 'none';
@@ -151,15 +147,14 @@
 
 	onMount(() => {
 		if (floatingButtons) {
-			contentContainerElement?.addEventListener('mouseup', updateButtonPosition);
 			document.addEventListener('mouseup', updateButtonPosition);
 			document.addEventListener('keydown', keydownHandler);
 		}
 	});
 
 	onDestroy(() => {
+		stopFloatingPosition?.();
 		if (floatingButtons) {
-			contentContainerElement?.removeEventListener('mouseup', updateButtonPosition);
 			document.removeEventListener('mouseup', updateButtonPosition);
 			document.removeEventListener('keydown', keydownHandler);
 		}

@@ -87,11 +87,11 @@
 	$: parsedResult = parseJSONString(result);
 </script>
 
-<div {id} class={className}>
+<div {id} class={className} data-message-expanded={open}>
 	{#if embeds && Array.isArray(embeds) && embeds.length > 0}
 		<!-- Embed Mode: Show iframes without collapsible behavior -->
 		<div class="py-1 w-full cursor-pointer">
-			<div class="w-full text-xs text-gray-500">
+			<div class="w-full text-xs text-gray-500 select-none">
 				{attributes.name}
 			</div>
 			{#each embeds as embed, idx}
@@ -111,7 +111,7 @@
 		<!-- Tool call display -->
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<div
-			class="{buttonClassName} cursor-pointer"
+			class="{buttonClassName} cursor-pointer select-none"
 			on:pointerup={(event) => {
 				notifyChatLayout(event.currentTarget, 300, !open);
 				open = !open;

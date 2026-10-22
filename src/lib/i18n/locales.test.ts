@@ -9,6 +9,23 @@ const resources = {
 };
 
 describe('Interface translations after cleanup', () => {
+	it('translates all composer integration descriptions', async () => {
+		const descriptions = {
+			'Add attachments': 'Adicionar anexos',
+			'File, image, video, audio': 'Arquivo, imagem, vídeo, áudio',
+			'Search for up-to-date information and news': 'Busque informações e notícias atualizadas',
+			'Get detailed research results': 'Obtenha resultados detalhados de pesquisa',
+			'Preview generated code': 'Trabalhe com uma prévia dos seus códigos',
+			'Create and edit images': 'Crie e edite imagens',
+			'Create videos with text and images': 'Crie e dirija vídeos',
+			'Create and remix music': 'Crie e remixe músicas',
+			'Create and edit documents, spreadsheets and presentations': 'Crie e edite documentos, planilhas e apresentações'
+		};
+		for (const [key, value] of Object.entries(descriptions)) {
+			expect(ptBR[key]).toBe(value);
+			expect(enUS[key]).toBe(key);
+		}
+	});
 	it('preserves the current Portuguese labels', async () => {
 		const instance = i18next.createInstance();
 		await instance.init({ lng: 'pt-BR', resources, returnEmptyString: false, fallbackLng: false });
@@ -37,6 +54,8 @@ describe('Interface translations after cleanup', () => {
 			'Data Controls': 'Data',
 			'New Chat': 'New chat',
 			'Web Search': 'Web search',
+			Ask: 'Ask',
+			Explain: 'Explain',
 			'Deep Search': 'Deep search',
 			'Upload Files': 'Upload files',
 			'Search Models': 'Search...',

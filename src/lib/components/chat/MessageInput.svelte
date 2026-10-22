@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { getLastChatUsage, getChatContextWindow, getUsageTotalTokens, getUsageTokensPerSecond, formatUsageTokensPerSecond } from '$lib/utils/chatUsage';
 	import { toast } from 'svelte-sonner';
 
 	import { marked } from 'marked';
@@ -11,6 +12,14 @@
 	dayjs.extend(relativeTime);
 
 	import { onMount, tick, getContext, createEventDispatcher } from 'svelte';
+	import { onChatDropdownDismiss } from '$lib/utils/chatDropdownDismissal';
+	import ImageModeSelector from './MessageInput/ImageModeSelector.svelte';
+	import ImageModeEditor from './MessageInput/ImageModeEditor.svelte';
+	import ImageSwapSlots from './MessageInput/ImageSwapSlots.svelte';
+	import { imageModeDefaults, imageModeFiles, imageModeSourceKey, imageModeIsSwap, imageModeHasEditor, imageModeFileError, imageModeSubmission, type ImageModeOptions } from '$lib/utils/imageModes';
+	import { preloadImageModeThumbnails } from '$lib/utils/imageModeThumbnails';
+	import {attachmentScroller} from '$lib/utils/attachmentScroll';
+	import './MessageInput/attachmentStrip.css';
 
 	import {
 		filterMediaAttachments,
@@ -60,6 +69,7 @@
 	import ReasoningDropdown from './MessageInput/ReasoningDropdown.svelte';
 	import { getReasoningLevel, getReasoningState, setReasoningLevel, usesReasoningEffort, type ReasoningLevel } from '$lib/utils/reasoningModes';
 	import FileItem from '../common/FileItem.svelte';
+	import AttachmentRemoveButton from '../common/AttachmentRemoveButton.svelte';
 	import Image from '../common/Image.svelte';
 	import Spinner from '../common/Spinner.svelte';
 
@@ -91,6 +101,7 @@
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
 	const PASTED_TEXT_FULL_CONTEXT_LINE_LIMIT = 1000;
+	const STOP_BUTTON_COLORS = 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100';
 
 	export let onUpload: Function = (e) => {};
 	export let onChange: Function = () => {};
@@ -118,7 +129,12 @@
 	export let prompt = '';
 	export let files: any[] = [];
 	export let sendDisabled = false;
-	$: canSubmitMessage = prompt.trim().length > 0 || files.some((file) => file?.pastedText === true);
+	$: activeImageMode = stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s' && (hasImageAttachment || pendingImageAttachments > 0 || uploadPending) ? stableDiffusionModeOptions.mode : 'normal';
+	$: restoreActive = activeImageMode === 'restore';
+	$: imagePromptHidden = restoreActive || activeImageMode === 'outpaint';
+	$: canSubmitMessage = (prompt.trim().length > 0 || files.some((file) => file?.pastedText === true) ||
+		((restoreActive || imageModeIsSwap(activeImageMode) || activeImageMode === 'outpaint') && !imageModeFileError(activeImageMode, files) && imageModeFiles(files).length > 0)) &&
+		(activeImageMode !== 'inpaint' || !!stableDiffusionModeOptions.mask);
 	$: hasImageAttachment = files.some(
 		(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
 	);
@@ -130,6 +146,31 @@
 	export let codeExecutionEnabled = false;
 	export let fileGenerationEnabled = false;
 	export let stableDiffusionEnabled = false;
+	export let stableDiffusionModeOptions: ImageModeOptions = imageModeDefaults();
+	$: if (stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s') void preloadImageModeThumbnails();
+	let showImageModeEditor=false;
+	function openImageModeEditor(){closeComposerDropdowns();showImageModeEditor=true;}
+	$: if(!imageModeHasEditor(activeImageMode)||!imageModeFiles(files).length)showImageModeEditor=false;
+	$: imageSwapActive = imageModeIsSwap(activeImageMode);
+	function submitComposer() {
+		const mode = activeImageMode;
+		const error = imageModeFileError(mode, files);
+		if (error) { toast.error($i18n.t(error)); return; }
+		if (uploadPending || pendingImageAttachments || files.some(file => file.status === 'uploading')) return;
+		const submission = imageModeSubmission(mode, prompt, text => $i18n.t(text));
+		dispatch('submit', submission.imageModeDisplay ? submission : submission.prompt);
+	}
+	let emptyImageModeResetQueued = false;
+	function resetEmptyImageMode() {
+		if (emptyImageModeResetQueued) return;
+		emptyImageModeResetQueued = true;
+		// Update bindings outside this reactive pass so dependent upload policies refresh too.
+		queueMicrotask(() => {
+			emptyImageModeResetQueued = false;
+			if (stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s' && stableDiffusionModeOptions.mode !== 'normal' && !imageModeFiles(files).length && !pendingImageAttachments && !uploadPending) stableDiffusionModeOptions = imageModeDefaults();
+		});
+	}
+	$: if (stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s' && stableDiffusionModeOptions.mode !== 'normal' && !hasImageAttachment && !pendingImageAttachments && !uploadPending) resetEmptyImageMode();
 	export let stableDiffusionQuality:
 		| 'neve_image'
 		| 'neve_image_2'
@@ -270,23 +311,13 @@
 				viewport.scrollLeft = maxThumbLeft ? (thumbLeft / maxThumbLeft) * maxScrollLeft : 0;
 			};
 
-			const onWheel = (event: WheelEvent) => {
-				const maxScrollLeft = Math.max(0, viewport.scrollWidth - viewport.clientWidth);
-				if (maxScrollLeft === 0) return;
-
-				const delta =
-					Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-				if (delta === 0) return;
-
-				event.preventDefault();
-				event.stopPropagation();
-
-				const nextScrollLeft = Math.min(
-					maxScrollLeft,
-					Math.max(0, viewport.scrollLeft + delta)
-				);
-				if (Math.abs(nextScrollLeft - viewport.scrollLeft) < 0.5) return;
-				viewport.scrollLeft = nextScrollLeft;
+			const scrolling = attachmentScroller(viewport);
+			let thumbFrame = 0;
+			const scheduleThumb = () => {
+				if (!thumbFrame) thumbFrame = requestAnimationFrame(() => {
+					thumbFrame = 0;
+					updateThumb();
+				});
 			};
 
 			const onPointerDown = (event: PointerEvent) => {
@@ -314,11 +345,10 @@
 				event.preventDefault();
 			};
 
-			const resizeObserver = new ResizeObserver(updateThumb);
+			const resizeObserver = new ResizeObserver(scheduleThumb);
 			resizeObserver.observe(viewport);
 			resizeObserver.observe(track);
-			viewport.addEventListener('scroll', updateThumb, { passive: true });
-			viewport.addEventListener('wheel', onWheel, { passive: false });
+			viewport.addEventListener('scroll', scheduleThumb, { passive: true });
 			track.addEventListener('pointerdown', onPointerDown);
 			track.addEventListener('pointermove', onPointerMove);
 			track.addEventListener('pointerup', onPointerUp);
@@ -328,8 +358,9 @@
 
 			cleanup = () => {
 				resizeObserver.disconnect();
-				viewport.removeEventListener('scroll', updateThumb);
-				viewport.removeEventListener('wheel', onWheel);
+				viewport.removeEventListener('scroll', scheduleThumb);
+				scrolling.destroy();
+				cancelAnimationFrame(thumbFrame);
 				track.removeEventListener('pointerdown', onPointerDown);
 				track.removeEventListener('pointermove', onPointerMove);
 				track.removeEventListener('pointerup', onPointerUp);
@@ -370,7 +401,8 @@
 		stableDiffusionEnabled,
 		stableDiffusionQuality,
 		videoGenerationEnabled,
-		musicGenerationEnabled
+		musicGenerationEnabled,
+		stableDiffusionModeOptions.mode
 	);
 	$: if (mediaAttachmentPolicy && files.length) {
 		const allowed = filterMediaAttachments(mediaAttachmentPolicy, files);
@@ -516,74 +548,13 @@
 	let showTokenPopup = false;
 
 	// Token usage from the last assistant message
-	$: lastUsage = (() => {
-		if (!history?.messages || !history?.currentId) return null;
-		let id = history.currentId;
-		while (id) {
-			const msg = history.messages[id];
-			if (msg?.role === 'assistant' && msg?.done && msg?.usage) return msg.usage;
-			id = msg?.parentId;
-		}
-		return null;
-	})();
+	$: lastUsage = getLastChatUsage(history);
+	$: chatContextWindow = getChatContextWindow(history);
 
 	function formatTokens(n: number): string {
 		if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
 		if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
 		return String(n);
-	}
-
-	function toNumber(value: unknown): number | null {
-		if (typeof value === 'number' && Number.isFinite(value)) return value;
-		if (typeof value === 'string') {
-			const parsed = Number(value.replace(',', '.'));
-			return Number.isFinite(parsed) ? parsed : null;
-		}
-		return null;
-	}
-
-	function getTokensPerSecond(usage: Record<string, unknown> | null): number | null {
-		if (!usage) return null;
-
-		const directKeys = [
-			'tokens_per_second',
-			'output_tokens_per_second',
-			'completion_tokens_per_second',
-			'response_tokens_per_second',
-			'response_token/s',
-			'tokens/s',
-			'predicted_per_second',
-			'eval_per_second'
-		];
-
-		for (const key of directKeys) {
-			const directValue = toNumber(usage[key]);
-			if (directValue !== null) return directValue;
-		}
-
-		const outputTokens = toNumber(
-			usage.output_tokens ?? usage.completion_tokens ?? usage.eval_count ?? usage.predicted_n
-		);
-		if (!outputTokens) return null;
-
-		const evalDuration = toNumber(usage.eval_duration);
-		if (evalDuration && evalDuration > 0) {
-			return outputTokens / (evalDuration / 1_000_000_000);
-		}
-
-		const predictedMs = toNumber(usage.predicted_ms);
-		if (predictedMs && predictedMs > 0) {
-			return outputTokens / (predictedMs / 1000);
-		}
-
-		return null;
-	}
-
-	function formatTokensPerSecond(value: number | null): string {
-		if (value === null) return 'N/A';
-		if (value >= 100) return value.toFixed(0);
-		if (value >= 10) return value.toFixed(1);
-		return value.toFixed(2);
 	}
 
 	const inputVariableHandler = async (text: string): Promise<string> => {
@@ -821,6 +792,7 @@
 	let loaded = false;
 	let showThinkingDropdown = false;
 	let showImageQualityDropdown = false;
+	let showImageModeDropdown = false;
 	let showImageStyleDropdown = false;
 	let imageStyleDropdownRequest = 0;
 	let showImageResolutionDropdown = false;
@@ -835,6 +807,7 @@
 		showImageStyleDropdown = false;
 	};
 	const closeComposerDropdowns = () => {
+		showImageModeDropdown = false;
 		showThinkingDropdown = false;
 		showImageQualityDropdown = false;
 		closeImageStyleDropdown();
@@ -843,6 +816,10 @@
 		showVideoDurationDropdown = false;
 		showVideoAspectRatioDropdown = false;
 	};
+	onMount(() => onChatDropdownDismiss(() => {
+		closeComposerDropdowns();
+		showTokenPopup = false;
+	}));
 	$: if (!videoGenerationEnabled) {
 		showVideoResolutionDropdown = false;
 		showVideoDurationDropdown = false;
@@ -874,10 +851,17 @@
 		}
 	};
 	$: if (!stableDiffusionEnabled) {
+		showImageModeDropdown = false;
 		showImageQualityDropdown = false;
 		closeImageStyleDropdown();
 		showImageResolutionDropdown = false;
 	}
+	$: if (stableDiffusionQuality !== 'qwen_image_2s') showImageModeDropdown = false;
+	$: if (!imageModeFiles(files).length) showImageModeDropdown = false;
+	function clearImageModeSource() {
+		stableDiffusionModeOptions = { ...stableDiffusionModeOptions, source_id: undefined, mask: null, crop: null, reference_crops: [] };
+	}
+	$: if (stableDiffusionModeOptions.source_id && imageModeSourceKey(imageModeFiles(files)[0]) !== stableDiffusionModeOptions.source_id) clearImageModeSource();
 	$: if (stableDiffusionQuality !== 'neve_image_2') {
 		closeImageStyleDropdown();
 	}
@@ -885,6 +869,7 @@
 	$: if (dropdownChatId !== $chatId) {
 		dropdownChatId = $chatId;
 		showThinkingDropdown = false;
+		showImageModeDropdown = false;
 		showImageQualityDropdown = false;
 		closeImageStyleDropdown();
 		showImageResolutionDropdown = false;
@@ -912,7 +897,7 @@
 		return isImageResolution(savedResolution) ? savedResolution : '1:1';
 	};
 	const selectImageModel = (
-		quality: 'neve_image' | 'neve_image_2' | 'qwen_image_2s' | 'qwen_image_2_1_official'
+		quality: typeof stableDiffusionQuality
 	) => {
 		saveImageResolution(stableDiffusionQuality);
 		stableDiffusionQuality = quality;
@@ -989,6 +974,7 @@
 				fullWidth?: boolean;
 				positionAnchorId?: string;
 				fitAvailableHeight?: boolean;
+				immediate?: boolean;
 				tokenUsage?: boolean;
 		  };
 
@@ -1103,7 +1089,10 @@
 			const cleanup = autoUpdate(positionAnchor, node, schedulePositionUpdate);
 			visualViewport?.addEventListener('resize', schedulePositionUpdate);
 			visualViewport?.addEventListener('scroll', schedulePositionUpdate);
-			schedulePositionUpdate();
+			if (typeof options === 'object' && options.immediate) {
+				if (animationFrame !== null) cancelAnimationFrame(animationFrame);
+				positionWithinViewport();
+			} else schedulePositionUpdate();
 
 			return {
 				destroy() {
@@ -1263,7 +1252,8 @@
 			stableDiffusionEnabled,
 			stableDiffusionQuality,
 			videoGenerationEnabled,
-			musicGenerationEnabled
+			musicGenerationEnabled,
+			activeImageMode
 		);
 		if (policy?.maxCount === 0) {
 			toast.error($i18n.t('Este modelo não aceita anexos.'));
@@ -1275,7 +1265,7 @@
 		}
 		if (policy && files.length + pendingImageAttachments >= policy.maxCount) {
 			toast.error(
-				policy.maxCount === 1 && stableDiffusionQuality === 'neve_image_2'
+				policy.maxCount === 1
 					? $i18n.t('Este modo aceita até 1 imagem.')
 					: $i18n.t('Este modo aceita até {{count}} imagens.', { count: policy.maxCount })
 			);
@@ -1408,7 +1398,8 @@
 			stableDiffusionEnabled,
 			stableDiffusionQuality,
 			videoGenerationEnabled,
-			musicGenerationEnabled
+			musicGenerationEnabled,
+			activeImageMode
 		);
 		const acceptedFiles = [];
 		let remainingSlots = policy
@@ -1425,7 +1416,7 @@
 			}
 			if (remainingSlots <= 0) {
 				toast.error(
-					policy.maxCount === 1 && stableDiffusionQuality === 'neve_image_2'
+					policy.maxCount === 1
 						? $i18n.t('Este modo aceita até 1 imagem.')
 						: $i18n.t('Este modo aceita até {{count}} imagens.', { count: policy.maxCount })
 				);
@@ -1541,7 +1532,8 @@
 							stableDiffusionEnabled,
 							stableDiffusionQuality,
 							videoGenerationEnabled,
-							musicGenerationEnabled
+							musicGenerationEnabled,
+							activeImageMode
 						);
 						if (
 							activePolicy &&
@@ -1608,19 +1600,6 @@
 				event.preventDefault();
 			}
 		}
-	};
-
-	const handleAttachmentsWheel = (event: WheelEvent) => {
-		const container = event.currentTarget as HTMLDivElement;
-		if (container.scrollWidth <= container.clientWidth) return;
-
-		const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-		if (delta === 0) return;
-
-		const maxScrollLeft = Math.max(0, container.scrollWidth - container.clientWidth);
-		container.scrollLeft = Math.min(maxScrollLeft, Math.max(0, container.scrollLeft + delta));
-		event.preventDefault();
-		event.stopPropagation();
 	};
 
 	const onDragOver = (e: DragEvent) => {
@@ -1894,27 +1873,16 @@
 </script>
 
 {#snippet usageIndicator()}
-{#if lastUsage && !stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled}
-	{@const totalTokens =
-		lastUsage.total_tokens ??
-		(lastUsage.prompt_tokens ?? lastUsage.input_tokens ?? 0) +
-			(lastUsage.completion_tokens ?? lastUsage.output_tokens ?? 0)}
-	{@const contextModel = (() => {
-		const mid = atSelectedModel?.id ?? selectedModels?.[0];
-		return $models.find((m) => m.id === mid);
-	})()}
-	{@const contextWindow =
-		contextModel?.llamacpp?.n_ctx ||
-		contextModel?.info?.params?.num_ctx ||
-		contextModel?.info?.meta?.context_length ||
-		128000}
-	{@const usageRatio = Math.min(totalTokens / contextWindow, 1)}
+{#if (lastUsage || chatContextWindow) && !stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled}
+	{@const totalTokens = getUsageTotalTokens(lastUsage)}
+	{@const contextWindow = chatContextWindow}
+	{@const usageRatio = contextWindow ? Math.min(totalTokens / contextWindow, 1) : 0}
 	{@const ringRadius = 9}
 	{@const circumference = 2 * Math.PI * ringRadius}
 	{@const strokeOffset = circumference * (1 - usageRatio)}
 	{@const ringColor =
 		usageRatio > 0.9 ? '#ef4444' : usageRatio > 0.7 ? '#f59e0b' : '#6b7280'}
-	{@const tokensPerSecond = getTokensPerSecond(lastUsage)}
+	{@const tokensPerSecond = getUsageTokensPerSecond(lastUsage)}
 	<!-- svelte-ignore a11y-no-static-element-interactions -->
 	<div
 		class="relative flex items-center self-center"
@@ -1956,7 +1924,7 @@
 			</svg>
 			<span
 				class="text-[14px] font-medium tabular-nums"
-				style="color: {ringColor}">{(usageRatio * 100).toFixed(1)}%</span
+				style="color: {ringColor}">{contextWindow ? `${(usageRatio * 100).toFixed(1)}%` : '--'}</span
 			>
 		</div>
 
@@ -2015,7 +1983,7 @@
 						>
 						<span
 							class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
-							>{formatTokensPerSecond(tokensPerSecond)}</span
+							>{formatUsageTokensPerSecond(tokensPerSecond)}</span
 						>
 					</div>
 					<div class="flex justify-between items-center">
@@ -2033,7 +2001,7 @@
 						>
 						<span
 							class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
-							>{formatTokens(contextWindow)}</span
+							>{contextWindow ? formatTokens(contextWindow) : '--'}</span
 						>
 					</div>
 					<div
@@ -2045,7 +2013,7 @@
 						<span
 							class="text-[14px] font-semibold tabular-nums"
 							style="color: {ringColor}"
-							>{(usageRatio * 100).toFixed(1)}%</span
+							>{contextWindow ? `${(usageRatio * 100).toFixed(1)}%` : '--'}</span
 						>
 					</div>
 				</div>
@@ -2125,6 +2093,10 @@
 
 <ToolServersModal bind:show={showTools} {selectedToolIds} />
 
+{#if imageModeHasEditor(activeImageMode)&&imageModeFiles(files).length}
+	<ImageModeEditor bind:show={showImageModeEditor} bind:options={stableDiffusionModeOptions} {files} disabled={responseInProgress || uploadPending || pendingImageAttachments > 0} />
+{/if}
+
 <InputVariablesModal
 	bind:show={showInputVariablesModal}
 	variables={inputVariables}
@@ -2170,6 +2142,7 @@
 						>
 							<button
 								class=" bg-white border border-gray-100 dark:border-none dark:bg-white/20 p-1.5 rounded-full pointer-events-auto"
+								data-scroll-to-bottom
 								on:click={() => {
 									if (onScrollToBottom) {
 										onScrollToBottom();
@@ -2211,7 +2184,7 @@
 						type="file"
 						accept={mediaAttachmentPolicy?.accept ?? undefined}
 						hidden
-						multiple
+						multiple={mediaAttachmentPolicy?.maxCount !== 1}
 						on:change={async () => {
 							if (inputFiles && inputFiles.length > 0) {
 								const _inputFiles = Array.from(inputFiles);
@@ -2229,7 +2202,7 @@
 						on:submit|preventDefault={() => {
 							// check if selectedModels support image input
 							if (!sendDisabled && canSubmitMessage) {
-								dispatch('submit', prompt);
+									submitComposer();
 							}
 						}}
 					>
@@ -2299,24 +2272,27 @@
 									</div>
 								{/if}
 
-								{#if files.length > 0}
+								{#if imageSwapActive || restoreActive || imageModeHasEditor(activeImageMode)}
+									<ImageSwapSlots bind:files mode={stableDiffusionModeOptions.mode as 'outfit'|'body'|'restore'|'inpaint'|'outpaint'} options={stableDiffusionModeOptions} onEdit={openImageModeEditor} uploadFiles={inputFilesHandler} disabled={uploadPending || responseInProgress || pendingImageAttachments > 0 || files.some(file => file.status === 'uploading')} />
+								{:else if files.length > 0}
 									<div
-										class="scrollbar-hidden attachment-strip mx-2 mt-2.5 mb-1 h-[52px] min-h-[52px] max-h-[52px] pb-1 flex min-w-0 max-w-full items-start flex-nowrap gap-2 overflow-x-auto overflow-y-hidden"
+										class="composer-attachment-strip attachment-strip mx-2 mt-2.5 mb-1 px-1 pt-1 pb-1 flex min-w-0 max-w-full items-start flex-nowrap gap-2 overflow-x-auto overflow-y-hidden"
 										dir={$settings?.chatDirection ?? 'auto'}
-										on:wheel|nonpassive={handleAttachmentsWheel}
+										use:attachmentScroller
 									>
-										{#each files as file, fileIdx}
+										{#each files as file, fileIdx (file.itemId || file.id || file)}
 											{#if file.type === 'image' || (file?.content_type ?? '').startsWith('image/')}
 												{@const fileUrl =
-													file.url.startsWith('data') || file.url.startsWith('http')
+													!file.url ? '' : file.url.startsWith('data') || file.url.startsWith('http')
 														? file.url
 														: `${NEVEAI_API_BASE_URL}/files/${file.url}${file?.content_type ? '/content' : ''}`}
-												<div class="relative group shrink-0">
+												<div class="relative group group/attachment shrink-0">
 													<div class="relative flex items-center">
 														<Image
 															src={fileUrl}
+															attachmentLoading={true}
 															alt=""
-															imageClassName="size-8 rounded-lg object-cover"
+															imageClassName="composer-image-thumbnail rounded-lg object-cover"
 														/>
 														{#if !stableDiffusionEnabled && !videoGenerationEnabled && (atSelectedModel ? visionCapableModels.length === 0 : selectedModels.length !== visionCapableModels.length)}
 															<Tooltip
@@ -2345,36 +2321,18 @@
 															</Tooltip>
 														{/if}
 													</div>
-													<div class="absolute top-0 right-0 z-10">
-														<button
-															class="flex size-4 items-center justify-center bg-white text-black border border-white rounded-full {($settings?.highContrastMode ??
-															false)
-																? ''
-																: 'outline-hidden focus:outline-hidden group-hover:visible invisible transition'}"
-															type="button"
-															aria-label={$i18n.t('Remove file')}
+													<AttachmentRemoveButton
+															label={$i18n.t('Remove file')}
 															on:click={() => {
 																files.splice(fileIdx, 1);
 																files = files;
 															}}
-														>
-															<svg
-																xmlns="http://www.w3.org/2000/svg"
-																viewBox="0 0 20 20"
-																fill="currentColor"
-																aria-hidden="true"
-																class="size-4"
-															>
-																<path
-																	d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
-																/>
-															</svg>
-														</button>
-													</div>
+													/>
 												</div>
 											{:else}
 												<FileItem
-													className="w-36 shrink-0"
+													className="shrink-0"
+													composerTile={true}
 													inputChip={true}
 													item={file}
 													name={file.name}
@@ -2449,7 +2407,7 @@
 								</div>
 							{/if}
 
-							<div class="composer-editor {isCompact ? 'flex-1 min-w-0 px-1 flex items-center' : 'px-2.5'}">
+						<div class="composer-editor {isCompact ? 'flex-1 min-w-0 px-1 flex items-center' : 'px-2.5'}" class:hidden={imagePromptHidden} inert={imagePromptHidden}>
 								<div
 									bind:this={chatInputContainerEl}
 									class="chat-input-scroll rtl:text-right ltr:text-left bg-transparent dark:text-gray-100 outline-hidden w-full px-1 resize-none h-fit max-h-47 overflow-auto {files.length ===
@@ -2611,7 +2569,7 @@
 																if (enterPressed) {
 														keyboardEvent.preventDefault();
 																	if (!sendDisabled && canSubmitMessage) {
-																		dispatch('submit', prompt);
+																		submitComposer();
 																	}
 																}
 															}
@@ -2646,7 +2604,7 @@
 									<Tooltip content={$i18n.t(responseInProgress ? 'Stop' : 'Send message')}>
 										<button
 											id="send-message-button"
-										class="grid size-8 shrink-0 place-items-center {responseInProgress || (!sendDisabled && canSubmitMessage)
+											class="grid size-8 shrink-0 place-items-center {responseInProgress ? STOP_BUTTON_COLORS : (!sendDisabled && canSubmitMessage)
 												? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 '
 											: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full p-0 self-center"
 										type={responseInProgress ? 'button' : 'submit'}
@@ -2655,7 +2613,7 @@
 										on:click={() => { if (responseInProgress) stopResponse(); }}
 										>
 										{#if responseInProgress}
-												<svg viewBox="0 0 24 24" fill="currentColor" class="size-5" aria-hidden="true"><circle cx="12" cy="12" r="9.75" /><rect x="8.25" y="8.25" width="7.5" height="7.5" rx="1.15" class="text-black dark:text-white" /></svg>
+												<svg viewBox="0 0 24 24" fill="currentColor" class="size-5 -translate-x-[0.5px]" aria-hidden="true"><rect x="6.25" y="6.25" width="11.5" height="11.5" rx="1.15" /></svg>
 										{:else}
 											<svg
 												xmlns="http://www.w3.org/2000/svg"
@@ -2904,7 +2862,7 @@
 														<div
 															use:viewportDropdown
 															class="fixed z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
-															transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
+															in:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
 														>
 													{#each [{ id: 'neve_image_2', label: 'Neve Image 1.5' }, { id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.6' }] as quality}
 																<button
@@ -2990,6 +2948,9 @@
 															</div>
 														{/if}
 													</div>
+												{/if}
+												{#if stableDiffusionQuality === 'qwen_image_2s'}
+														<ImageModeSelector bind:options={stableDiffusionModeOptions} bind:show={showImageModeDropdown} {files} disabled={sendDisabled || responseInProgress || uploadPending || pendingImageAttachments > 0} ongoing={!!history?.currentId} position={viewportDropdown} scroller={styleOptionsHorizontalScroller} onOpen={closeComposerDropdowns} />
 												{/if}
 												{#if stableDiffusionQuality === 'neve_image_2'}
 													<div
@@ -3264,7 +3225,7 @@
 												<button
 													id="send-message-button"
 													aria-label={$i18n.t('Stop')}
-													class="grid size-8 shrink-0 place-items-center rounded-full bg-white p-0 text-gray-800 transition hover:bg-gray-100 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-800"
+													class="grid size-8 shrink-0 place-items-center rounded-full p-0 transition {STOP_BUTTON_COLORS}"
 													type="button"
 													on:click={() => {
 														stopResponse();
@@ -3274,16 +3235,15 @@
 														xmlns="http://www.w3.org/2000/svg"
 														viewBox="0 0 24 24"
 														fill="currentColor"
-														class="block size-5 -translate-x-[0.5px] translate-y-[0.5px]"
+														class="block size-5 -translate-x-[0.5px]"
+														aria-hidden="true"
 													>
-														<circle cx="12" cy="12" r="9.75" />
 														<rect
-															x="8.25"
-															y="8.25"
-															width="7.5"
-															height="7.5"
+															x="6.25"
+															y="6.25"
+															width="11.5"
+															height="11.5"
 															rx="1.15"
-															class="text-white dark:text-gray-700"
 															fill="currentColor"
 														/>
 													</svg>
@@ -3453,14 +3413,21 @@
 		background: rgb(255 255 255 / 75%);
 		backdrop-filter: blur(10px);
 		clip-path: inset(0 round 6px);
-		-webkit-mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
-		mask-image: linear-gradient(to bottom, transparent, #000 20%, #000 80%, transparent);
+		-webkit-mask-image: linear-gradient(to bottom, transparent, #000 6%, #000 94%, transparent);
+		mask-image: linear-gradient(to bottom, transparent, #000 6%, #000 94%, transparent);
 		pointer-events: none;
 	}
 	:global(.dark) .image-style-card-strip::before {
 		background: rgb(0 0 0 / 72%);
 	}
 	.chat-input-scroll { overscroll-behavior-y: contain; }
+	:global(#send-message-button) {
+		min-width: 2rem;
+		min-height: 2rem;
+		aspect-ratio: 1;
+		line-height: 1;
+	}
+	:global(#send-message-button > svg) { display: block; flex-shrink: 0; }
 	.message-input-active-controls :global(button.group:not(:hover)),
 	.message-input-active-controls :global(button[aria-label='Available Tools']:not(:hover)) {
 		background-color: transparent;
@@ -3478,8 +3445,6 @@
 		.composer-compact-add { display: flex; align-items: center; height: 2rem; }
 		:global(#message-input-container.flex-row > :has(#input-menu-button)) {
 			margin-inline-start: 0.375rem;
-			position: relative;
-			top: -0.046875rem;
 		}
 		.composer-compact-controls { padding-right: 0.375rem; }
 	}
@@ -3505,21 +3470,28 @@
 	.stable-image-toggle .chip-label {
 		white-space: nowrap;
 	}
-	@container (max-width: 28rem) {
-		.stable-image-actions .stable-image-toggle .chip-label { display: none; }
-		.stable-image-actions .image-quality-control > button,
-		.stable-image-actions .image-resolution-control > button,
-		.stable-image-actions .image-style-control > button { padding-inline: 0.25rem; white-space: nowrap; }
-		.stable-image-actions .image-style-control { min-width: 0; flex-shrink: 1; }
-		.stable-image-actions .image-style-control > button { max-width: 100%; min-width: 0; }
-		.stable-image-actions .image-style-control > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-		.stable-image-actions .image-style-control svg { flex-shrink: 0; }
+	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-actions-primary {
+		max-width: none;
 	}
+	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-active-controls {
+		overflow-x: auto;
+		overscroll-behavior-x: contain;
+		scrollbar-width: none;
+	}
+	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-active-controls::-webkit-scrollbar { display: none; }
+	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-active-controls > button { flex-shrink: 0; }
+	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-active-controls > div > button { white-space: nowrap; }
+	:global(.composer-more-trigger) { display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
+	:global(#send-message-button > svg) { translate: none; }
+	.message-input-actions-primary, .message-input-actions-secondary { align-self: center; align-items: center; }
+	.message-input-add-control { display: flex; align-items: center; }
+	.message-input-active-controls > button { translate: none; }
 	@media (max-width: 767px) {
 		:global(#message-input-container) { padding-inline: 0.5rem; border-radius: 1.5rem; }
 		:global(#message-input-container > .composer-editor) { padding-inline: 0.375rem; }
 		:global(#input-menu-button) { width: 36px; height: 36px; }
 		:global(.composer-add-icon) { translate: none; transform: none; }
+		:global(#input-menu-button) { flex: none; }
 		:global(#message-input-container.flex-row) {
 			display: grid;
 			grid-template-columns: 2.25rem minmax(0, 1fr);
@@ -3555,8 +3527,8 @@
 		.chat-input-scroll { max-height: min(12rem, 35dvh); }
 		.message-input-actions {
 			display: grid;
-			grid-template-columns: 2.25rem minmax(0, 1fr);
-			row-gap: 0.375rem;
+			grid-template-columns: 36px minmax(36px, 1fr) minmax(0, max-content);
+			column-gap: 0.25rem;
 			align-items: center;
 			margin-inline: 0;
 		}
@@ -3565,24 +3537,63 @@
 		.message-input-actions .message-input-active-controls,
 		.stable-image-actions .message-input-active-controls {
 			display: flex;
-			grid-column: 1 / -1;
+			grid-column: 2;
 			grid-row: 1;
 			margin-left: 0;
 			gap: 0.25rem;
-			flex-wrap: wrap;
+			flex-wrap: nowrap;
 			align-items: center;
+			overflow-x: auto;
+			overscroll-behavior-x: contain;
+			scrollbar-width: none;
 		}
-		.message-input-actions .message-input-add-control { grid-column: 1; grid-row: 2; align-self: center; }
-		.message-input-actions-secondary { grid-column: 2; grid-row: 2; justify-self: end; align-self: center; margin-right: 0.25rem; align-items: center; }
+		.message-input-actions .message-input-active-controls::-webkit-scrollbar { display: none; }
+		.message-input-actions .message-input-add-control { grid-column: 1; grid-row: 1; align-self: center; }
+		.message-input-actions .message-input-add-control { display: flex; align-items: center; }
+		.message-input-actions .message-input-active-controls > button { translate: none; }
+		.message-input-actions-secondary { grid-column: 3; grid-row: 1; justify-self: end; align-self: center; margin-right: 0.25rem; align-items: center; min-width: 0; max-width: 100%; }
+		.message-input-actions-secondary :global(#thinking-dropdown-container) { min-width: 0; }
+		.message-input-actions-secondary :global(#thinking-dropdown-container > button) { min-width: 0; max-width: 100%; }
+		.message-input-actions-secondary :global(#thinking-dropdown-container > button > span:not([data-acceleration-icon])) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+		.message-input-actions-secondary :global(#thinking-dropdown-container > button > svg) { flex-shrink: 0; }
+		.message-input-actions-secondary > :global(div:has(> #send-message-button)),
+		.composer-compact-controls > :global(div:has(> #send-message-button)) { flex-shrink: 0; }
 		:global(#send-message-button) { align-self: center; }
 		:global(.chat-composer-overlay) { padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px)); }
-		.message-input-actions:not(.stable-image-actions) .message-input-active-controls .chip-label { display: inline !important; }
+		.message-input-actions .message-input-active-controls .chip-label {
+			display: block;
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			padding: 0;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
+		}
+		.message-input-actions .message-input-active-controls :global(button.bg-gray-100) {
+			position: relative;
+			flex: 0 0 36px;
+			width: 36px;
+			min-width: 36px;
+			max-width: none;
+			height: 36px;
+			padding: 0;
+			gap: 0;
+			justify-content: center;
+		}
 		.message-input-active-controls button { min-height: 36px; white-space: nowrap; }
 		:global([data-composer-root] button.invisible) { visibility: visible; }
-		.stable-image-actions .image-quality-control { flex: 1 1 8rem; }
-		.stable-image-actions .image-style-control { flex: 1 1 6rem; }
+		.stable-image-actions .image-quality-control,
+		.stable-image-actions .image-style-control { flex: 0 0 auto; }
 		.stable-image-actions .image-resolution-control { flex: 0 0 auto; }
-		.stable-image-actions .stable-image-toggle .chip-label { display: none; }
+		.message-input-active-controls .image-quality-control,
+		.message-input-active-controls .image-resolution-control,
+		.message-input-active-controls .image-style-control { flex: 0 0 auto; }
+		.message-input-actions .message-input-active-controls > div > button {
+			width: max-content;
+			max-width: none;
+			padding-inline: 0.5rem;
+		}
 		.image-quality-control, .image-style-control { min-width: 0; }
 		.image-quality-control > button, .image-style-control > button { max-width: 100%; }
 		.image-quality-control > button > span, .image-style-control > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -3601,16 +3612,4 @@
 		margin-bottom: 0.625rem;
 	}
 
-	.attachment-strip {
-		overscroll-behavior-x: contain;
-		scrollbar-color: transparent transparent;
-	}
-
-	.attachment-strip:hover {
-		scrollbar-color: auto;
-	}
-
-	.attachment-strip:not(:hover)::-webkit-scrollbar-thumb {
-		visibility: hidden !important;
-	}
 </style>

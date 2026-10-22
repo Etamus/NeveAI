@@ -23,6 +23,7 @@
 	import Video from '$lib/components/icons/Video.svelte';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import IntegrationOptionLabel from './IntegrationOptionLabel.svelte';
 
 	import { setFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
 	import type { MediaAttachmentPolicy } from '$lib/utils/mediaAttachmentPolicy';
@@ -258,6 +259,7 @@
 
 <Dropdown
 	bind:show
+	triggerClassName="composer-more-trigger"
 	on:change={(e) => {
 		if (e.detail === false) {
 			onClose();
@@ -300,9 +302,9 @@
 								}
 							}}
 						>
-							<Clip />
+							<div class="shrink-0"><Clip /></div>
 
-						<div class="line-clamp-1 -ml-0.5">{$i18n.t('Upload Files')}</div>
+						<div class="min-w-0 flex-1 -ml-0.5"><IntegrationOptionLabel label="Add attachments" description="File, image, video, audio" /></div>
 						</DropdownMenu.Item>
 					</Tooltip>
 
@@ -335,10 +337,10 @@
 					{#if showWebSearchButton}
 						<Tooltip content="" placement="top-start">
 							<button class="my-px flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(webSearchEnabled)}" aria-pressed={webSearchEnabled} on:click={() => toggleNativeIntegration('web_search')}>
-								<div class="flex-1 truncate">
+								<div class="min-w-0 flex-1">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0"><GlobeAlt /></div>
-										<div class=" truncate">{$i18n.t('Web Search')}</div>
+										<IntegrationOptionLabel label="Web Search" description="Search for up-to-date information and news" />
 									</div>
 								</div>
 								<div class="size-4 shrink-0">{#if webSearchEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
@@ -349,10 +351,10 @@
 					{#if showWebSearchButton}
 						<Tooltip content="" placement="top-start">
 							<button class="my-px flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(deepSearchEnabled)}" aria-pressed={deepSearchEnabled} on:click={() => toggleNativeIntegration('deep_search')}>
-								<div class="flex-1 truncate">
+								<div class="min-w-0 flex-1">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0"><Atom02 /></div>
-										<div class=" truncate">{$i18n.t('Deep Search')}</div>
+										<IntegrationOptionLabel label="Deep Search" description="Get detailed research results" />
 									</div>
 								</div>
 								<div class="size-4 shrink-0">{#if deepSearchEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
@@ -370,16 +372,12 @@
 												<path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/>
 											</svg>
 										</div>
-										<div class=" truncate">{$i18n.t('Artifacts')}</div>
+										<IntegrationOptionLabel label="Artifacts" description="Preview generated code" />
 									</div>
 								</div>
 								<div class="size-4 shrink-0">{#if codeExecutionEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
 							</button>
 						</Tooltip>
-					{/if}
-
-					{#if showStableDiffusionButton}
-						<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[96%]" />
 					{/if}
 
 					{#if showStableDiffusionButton}
@@ -390,7 +388,7 @@
 										<div class="shrink-0">
 											<ImageIcon className="size-4" strokeWidth="1.5" />
 										</div>
-										<div class=" truncate">{$i18n.t('Criar imagem')}</div>
+										<IntegrationOptionLabel label="Criar imagem" description="Create and edit images" />
 									</div>
 								</div>
 								<div class="size-4 shrink-0">{#if stableDiffusionEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
@@ -404,7 +402,7 @@
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0"><Video className="size-4" strokeWidth="1.5" /></div>
-										<div class="truncate">{$i18n.t('Criar vídeo')}</div>
+										<IntegrationOptionLabel label="Criar vídeo" description="Create videos with text and images" />
 									</div>
 								</div>
 								<div class="size-4 shrink-0">{#if videoGenerationEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
@@ -420,7 +418,7 @@
 										<div class="shrink-0">
 											<MusicNote className="size-4" strokeWidth="1.5" />
 										</div>
-										<div class="truncate">{$i18n.t('Criar música')}</div>
+										<IntegrationOptionLabel label="Criar música" description="Create and remix music" />
 									</div>
 								</div>
 								<div class="size-4 shrink-0">{#if musicGenerationEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
@@ -462,7 +460,7 @@
 											<path d="M9 21V9" />
 										</svg>
 									</div>
-									<div class="truncate">{$i18n.t('Tools')}</div>
+									<IntegrationOptionLabel label="Tools" description="Create and edit documents, spreadsheets and presentations" />
 								</div>
 								<div class="pointer-events-none shrink-0">
 									<Switch
@@ -540,7 +538,8 @@
 		border-radius: 0.375rem;
 	}
 	:global(.composer-integrations-menu) {
-		border: 1px solid rgba(0, 0, 0, 0.18) !important;
+		container-type: inline-size;
+		border: 1px solid rgba(0, 0, 0, 0.12) !important;
 	}
 	:global(.dark .composer-integrations-menu) {
 		border-color: rgba(255, 255, 255, 0.22) !important;

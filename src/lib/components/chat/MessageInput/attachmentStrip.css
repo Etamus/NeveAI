@@ -1,0 +1,47 @@
+.composer-attachment-strip {
+	height: calc(2.25rem + 18px);
+	min-height: calc(2.25rem + 18px);
+	max-height: calc(2.25rem + 18px);
+	padding-top: calc(.25rem + 2px);
+	padding-bottom: calc(10px - .25rem);
+	padding-inline: calc(.25rem + 1px);
+	overscroll-behavior-x: contain;
+	scrollbar-color: auto;
+}
+.composer-attachment-strip::-webkit-scrollbar { height: 6px; }
+.composer-attachment-strip.attachment-strip {
+	--composer-attachment-size: 4rem;
+	height: calc(var(--composer-attachment-size) + 20px);
+	min-height: calc(var(--composer-attachment-size) + 20px);
+	max-height: calc(var(--composer-attachment-size) + 20px);
+	padding-top: calc(.25rem + 3px);
+	padding-bottom: calc(11px - .25rem);
+}
+.attachment-strip :is(.composer-image-thumbnail, .composer-file-tile) {
+	width: var(--composer-attachment-size);
+	min-width: var(--composer-attachment-size);
+	max-width: var(--composer-attachment-size);
+	height: var(--composer-attachment-size);
+	min-height: var(--composer-attachment-size);
+	max-height: var(--composer-attachment-size);
+}
+.composer-attachment-strip::-webkit-scrollbar-track { margin-inline: 4px; }
+.composer-attachment-strip:not(:hover):not(:focus-within)::-webkit-scrollbar-thumb { background-color: transparent; border-color: transparent; }
+.composer-attachment-strip.image-role-attachments {
+	height: 80px;
+	min-height: 80px;
+	max-height: 80px;
+	padding-top: 4px;
+	padding-bottom: 8px;
+}
+.composer-attachment-strip.image-role-attachments:not(:hover)::-webkit-scrollbar-thumb { background-color: transparent; border-color: transparent; }
+@supports (-moz-appearance: none) {
+	.composer-attachment-strip.image-role-attachments { scrollbar-width: thin; }
+	.composer-attachment-strip.image-role-attachments:not(:hover) { scrollbar-color: transparent transparent; }
+}
+.composer-attachment-strip.single-image-attachment {
+	height: 72px;
+	min-height: 72px;
+	max-height: 72px;
+	padding-bottom: 0;
+}

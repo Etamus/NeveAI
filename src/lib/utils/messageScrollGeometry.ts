@@ -3,8 +3,11 @@ export function consumeGenerationSpacerHeight(height: number, upwardDistance: nu
 }
 
 export function hasHiddenMessageContentBelow(container: HTMLElement, visibleBottom: number): boolean {
-	const lastMessage = container.querySelector<HTMLElement>('[role="log"] > [role="listitem"]:last-child');
-	if (!lastMessage) return false;
+	const lastRow = container.querySelector<HTMLElement>('[role="log"] > :last-child');
+	if (!lastRow) return false;
+	const lastMessage = lastRow.hasAttribute('data-message-window')
+		? lastRow.querySelector<HTMLElement>('[role="listitem"]') ?? lastRow
+		: lastRow;
 	return lastMessage.getBoundingClientRect().bottom > Math.min(container.getBoundingClientRect().bottom, visibleBottom) + 5;
 }
 

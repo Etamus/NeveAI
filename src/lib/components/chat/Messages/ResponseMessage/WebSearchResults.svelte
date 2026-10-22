@@ -54,11 +54,12 @@
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <div
-	class="web-search-block -ml-3 mb-2 w-[calc(100%+0.75rem)] select-none overflow-hidden text-sm"
+	class="web-search-block -ml-3 mb-2 w-[calc(100%+0.75rem)] overflow-hidden text-sm"
+	data-message-expanded={open}
 >
 	<!-- Trigger -->
 	<div
-		class="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer group/ws-trigger"
+		class="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer group/ws-trigger select-none"
 		on:pointerup|stopPropagation={(event) => {
 			notifyChatLayout(event.currentTarget, 200, !open);
 			open = !open;
@@ -104,7 +105,7 @@
 	<!-- Results content -->
 	{#if open && items.length > 0}
 		<div
-			class="px-3 pb-2.5 pt-1"
+			class="px-3 pb-2.5 pt-1 select-text"
 			transition:slide={{ duration: 200, easing: quintOut, axis: 'y' }}
 		>
 			<div class="flex flex-wrap gap-1.5">

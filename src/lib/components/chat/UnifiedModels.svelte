@@ -79,6 +79,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { continuousSpinner } from '$lib/utils/continuousSpinner';
 	import Search from '$lib/components/icons/Search.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
@@ -1689,7 +1690,7 @@
 				{#if gm && (am?.is_active ?? true)}
 					{#if isProcessing}
 						<div class="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500">
-							<svg class="w-3 h-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+							<svg use:continuousSpinner class="w-3 h-3 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
 								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
 								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
 							</svg>

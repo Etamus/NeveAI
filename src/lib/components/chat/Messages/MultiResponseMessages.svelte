@@ -15,6 +15,8 @@
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
 	import ProfileImage from './ProfileImage.svelte';
 	const i18n = getContext('i18n');
+	const isRestoringWindow = getContext<() => boolean>('message-window-restoring') ?? (() => false);
+	const branchNavigation = getContext<{begin: () => number; restore: (top: number) => Promise<void>; active: () => boolean}>('branch-navigation');
 	dayjs.extend(localizedFormat);
 
 	export let chatId;
@@ -68,6 +70,7 @@
 	}
 
 	const gotoMessage = async (modelIdx, messageIdx) => {
+		const scrollTop = branchNavigation.begin();
 		// Clamp messageIdx to ensure it's within valid range
 		groupedMessageIdsIdx[modelIdx] = Math.max(
 			0,
@@ -90,13 +93,12 @@
 
 		// Await UI updates
 		await tick();
+		await branchNavigation.restore(scrollTop);
 		await updateChat();
-
-		// Trigger scrolling after navigation
-		triggerScroll();
 	};
 
 	const showPreviousMessage = async (modelIdx) => {
+		const scrollTop = branchNavigation.begin();
 		groupedMessageIdsIdx[modelIdx] = Math.max(0, groupedMessageIdsIdx[modelIdx] - 1);
 
 		let messageId = groupedMessageIds[modelIdx].messageIds[groupedMessageIdsIdx[modelIdx]];
@@ -112,11 +114,12 @@
 		history.currentId = messageId;
 
 		await tick();
+		await branchNavigation.restore(scrollTop);
 		await updateChat();
-		triggerScroll();
 	};
 
 	const showNextMessage = async (modelIdx) => {
+		const scrollTop = branchNavigation.begin();
 		groupedMessageIdsIdx[modelIdx] = Math.min(
 			groupedMessageIds[modelIdx].messageIds.length - 1,
 			groupedMessageIdsIdx[modelIdx] + 1
@@ -135,8 +138,8 @@
 		history.currentId = messageId;
 
 		await tick();
+		await branchNavigation.restore(scrollTop);
 		await updateChat();
-		triggerScroll();
 	};
 
 	const initHandler = async () => {
@@ -199,6 +202,7 @@
 
 	const onGroupClick = async (_messageId, modelIdx) => {
 		if (messageId != _messageId) {
+			const scrollTop = branchNavigation.begin();
 			let currentMessageId = _messageId;
 			let messageChildrenIds = history.messages[currentMessageId].childrenIds;
 			while (messageChildrenIds.length !== 0) {
@@ -207,6 +211,7 @@
 			}
 			history.currentId = currentMessageId;
 			selectedModelIdx = modelIdx;
+			await branchNavigation.restore(scrollTop);
 
 			// await tick();
 			// await updateChat();
@@ -228,7 +233,7 @@
 		await initHandler();
 		await tick();
 
-		if ($settings?.scrollOnBranchChange ?? true) {
+		if (($settings?.scrollOnBranchChange ?? true) && !isRestoringWindow() && !branchNavigation.active()) {
 			const messageElement = document.getElementById(`message-${messageId}`);
 			if (messageElement) {
 				messageElement.scrollIntoView({ block: 'start' });

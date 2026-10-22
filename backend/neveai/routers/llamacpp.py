@@ -1268,6 +1268,7 @@ class LocalModelManager:
         if isinstance(response_format, dict):
             payload["response_format"] = response_format
 
+        context_window = getattr(self._loaded.get(model_id), "n_ctx", None)
         if stream:
             return self._stream_proxy(client, payload, model_id)
         else:
@@ -1278,10 +1279,13 @@ class LocalModelManager:
             result = resp.json()
             # Override model name to our model_id
             result["model"] = model_id
+            if isinstance(context_window, int) and context_window > 0 and result.get("usage"):
+                result["usage"]["context_window"] = context_window
             return result
 
     def _stream_proxy(self, client: httpx.AsyncClient, payload: dict, model_id: str):
         """Stream SSE from llama-server back to the client."""
+        context_window = getattr(self._loaded.get(model_id), "n_ctx", None)
         async def _generate():
             try:
                 async with client.stream(
@@ -1319,6 +1323,9 @@ class LocalModelManager:
                             try:
                                 data = json.loads(data_str)
                                 data["model"] = model_id
+                                if isinstance(context_window, int) and context_window > 0 and (data.get("usage") or data.get("timings")):
+                                    data.setdefault("usage", {})
+                                    data["usage"] = {**(data["usage"] or {}), "context_window": context_window}
                                 yield f"data: {json.dumps(data)}\n\n"
                             except json.JSONDecodeError:
                                 yield f"{line}\n\n"

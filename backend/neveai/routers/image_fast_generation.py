@@ -85,6 +85,21 @@ def _reference_size(width: int, height: int, index: int, count: int) -> tuple[in
     return tuple(max(32, round(side * scale / 32) * 32) for side in (width, height))
 
 
+def _encode_reference_png(raw: bytes, index: int, count: int, *, cpu_mode: bool = False) -> tuple[bytes, tuple[int, int]]:
+    from PIL import Image, ImageOps
+
+    with Image.open(io.BytesIO(raw)) as opened:
+        image = ImageOps.exif_transpose(opened).convert("RGB")
+    size = _reference_size(*image.size, index, count)
+    if cpu_mode:
+        size = cpu_image_size(*size, max_side=512 if index == 0 else 256)
+    if size != image.size:
+        image = image.resize(size, Image.Resampling.LANCZOS)
+    encoded = io.BytesIO()
+    image.save(encoded, format="PNG", compress_level=3)
+    return encoded.getvalue(), size
+
+
 def _python() -> Path:
     return RUNTIME_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
@@ -220,6 +235,7 @@ class NeveImage2SRuntime:
         from huggingface_hub import hf_hub_download
 
         assets = MODEL_ASSETS[1:] if self._gguf_mode else MODEL_ASSETS
+        pending = []
         for filename, size, sha in assets:
             target = MODELS_DIR / filename
             if not target.exists():
@@ -231,9 +247,21 @@ class NeveImage2SRuntime:
                 raise RuntimeError(f"Neve Image 2 Turbo: arquivo incompleto: {target.name}")
             signature = (size, target.stat().st_mtime_ns)
             if self._verified_assets.get(target) != signature:
-                if await asyncio.to_thread(_sha256, target) != sha:
-                    raise RuntimeError(f"Neve Image 2 Turbo: integridade invalida: {target.name}")
-                self._verified_assets[target] = signature
+                pending.append((target, sha, signature))
+
+        # Bound disk readers and retain the full checksum before starting the worker.
+        verification_slots = asyncio.Semaphore(2)
+        async def verify(target, sha, signature):
+            async with verification_slots:
+                digest = await asyncio.to_thread(_sha256, target)
+            if digest != sha:
+                raise RuntimeError(f"Neve Image 2 Turbo: integridade invalida: {target.name}")
+            self._verified_assets[target] = signature
+
+        results = await asyncio.gather(*(verify(*item) for item in pending), return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
         if self._gguf_mode:
             from neveai.routers.stable_diffusion import QWEN_IMAGE_TURBO_REPO, QWEN_IMAGE_TURBO_REVISION
 
@@ -363,6 +391,15 @@ class NeveImage2SRuntime:
             *(["--cpu"] if self._cpu_mode else ["--lowvram"] if self._memory_saver else []),
         ]
 
+    def _encode_reference(self, raw: bytes, index: int, count: int, *, cpu_mode: bool = False):
+        return _encode_reference_png(raw, index, count, cpu_mode=cpu_mode)
+
+    def _output_dimensions(self, width: int, height: int) -> tuple[int, int]:
+        return width, height
+
+    def _finalize_image(self, data: bytes) -> bytes:
+        return data
+
     async def run(
         self, prompt: str, resolution: str, references: list[str], user_id: Optional[str],
         progress: ProgressCallback, dimensions: Optional[DimensionsCallback] = None,
@@ -438,22 +475,14 @@ class NeveImage2SRuntime:
                     refs = []
                     for index, reference in enumerate(references):
                         raw = await asyncio.to_thread(_read_image_reference_bytes, reference, user_id)
-                        from PIL import Image, ImageOps
-
-                        with Image.open(io.BytesIO(raw)) as opened:
-                            image = ImageOps.exif_transpose(opened).convert("RGB")
-                        size = _reference_size(*image.size, index, len(references))
-                        if cpu_mode:
-                            size = cpu_image_size(*size, max_side=512 if index == 0 else 256)
-                        if size != image.size:
-                            image = image.resize(size, Image.Resampling.LANCZOS)
+                        image_bytes, size = await asyncio.to_thread(
+                            self._encode_reference, raw, index, len(references), cpu_mode=cpu_mode,
+                        )
                         if index == 0:
                             width, height = size
-                        image_bytes = io.BytesIO()
-                        image.save(image_bytes, format="PNG")
                         response = await client.post(
                             "/upload/image",
-                            files={"image": (f"neve_2s_{random.getrandbits(64):016x}.png", image_bytes.getvalue(), "image/png")},
+                            files={"image": (f"neve_2s_{random.getrandbits(64):016x}.png", image_bytes, "image/png")},
                             data={"type": "input", "overwrite": "false"},
                         )
                         response.raise_for_status()
@@ -461,7 +490,7 @@ class NeveImage2SRuntime:
                         refs.append(filename)
                         uploaded_refs.append(filename)
                     if dimensions is not None and references:
-                        await dimensions(width, height)
+                        await dimensions(*self._output_dimensions(width, height))
                     await progress(28)
                     workflow = self.build_workflow(prompt, width, height, refs, seed if seed is not None else random.getrandbits(63))
                     if gguf:
@@ -529,7 +558,8 @@ class NeveImage2SRuntime:
                                     if output_path.is_relative_to(OUTPUT_DIR.resolve()):
                                         output_path.unlink(missing_ok=True)
                                     await progress(99)
-                                    return "data:image/png;base64," + base64.b64encode(response.content).decode("ascii")
+                                    image_data = await asyncio.to_thread(self._finalize_image, response.content)
+                                    return "data:image/png;base64," + base64.b64encode(image_data).decode("ascii")
                             raise RuntimeError("Neve Image 2 excedeu o tempo limite.")
                         finally:
                             if websocket is not None:

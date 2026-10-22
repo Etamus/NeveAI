@@ -11,7 +11,8 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
-	import { createEventDispatcher, onDestroy, getContext, tick } from 'svelte';
+	import { createEventDispatcher, onDestroy, onMount, getContext, tick } from 'svelte';
+	import { onChatDropdownDismiss } from '$lib/utils/chatDropdownDismissal';
 
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
@@ -93,6 +94,7 @@
 	let tagsContainerElement;
 
 	let show = false;
+	onMount(() => onChatDropdownDismiss(() => { show = false; }));
 	let showLoadSettings = false;
 	$: if (!show) showLoadSettings = false;
 	let tags = [];

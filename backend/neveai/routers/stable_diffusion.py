@@ -1772,6 +1772,40 @@ class GenerateForm(BaseModel):
     quality: str = "neve_image"
     style: str = "none"
     resolution: str = "1:1"
+    mode_options: Optional[dict] = None
+
+
+@router.post("/modes/segment")
+async def segment_mode_image(request: Request, user=Depends(get_verified_user)):
+    if not request.app.state.config.ENABLE_STABLE_DIFFUSION or (
+        user.role != "admin" and not has_permission(user.id, "features.stable_diffusion", request.app.state.config.USER_PERMISSIONS)
+    ):
+        raise HTTPException(status_code=403, detail="Geracao de imagem indisponivel.")
+    from neveai.routers.image_fast_modes import SegmentRequest, segment_image
+    from pydantic import ValidationError
+    try:
+        form = SegmentRequest.model_validate(await request.json())
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Selecao invalida.") from exc
+    task = None
+    watcher = None
+    async def cancel_on_disconnect():
+        while True:
+            await asyncio.sleep(0.2)
+            if await request.is_disconnected():
+                if task is not None:
+                    task.cancel()
+                return
+    try:
+        task = asyncio.create_task(segment_image(form, user.id))
+        watcher = asyncio.create_task(cancel_on_disconnect())
+        return {"mask": await task}
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    finally:
+        if watcher is not None:
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
 
 
 class ConfigForm(BaseModel):
@@ -1899,7 +1933,12 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
             references = list(form_data.init_images or [])
             if form_data.init_image and form_data.init_image not in references:
                 references.insert(0, form_data.init_image)
-            data_uri = await neve_image_2s_runtime.run(
+            image_runner = neve_image_2s_runtime.run
+            if form_data.mode_options and form_data.mode_options.get("mode", "normal") != "normal":
+                from neveai.routers.image_fast_modes import run_image_mode
+                from functools import partial
+                image_runner = partial(run_image_mode, options=form_data.mode_options)
+            data_uri = await image_runner(
                 prompt=form_data.prompt,
                 resolution=form_data.resolution,
                 references=references,

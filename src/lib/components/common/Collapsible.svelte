@@ -172,6 +172,7 @@
 	<div
 		{id}
 		bind:this={activityElement}
+		data-message-expanded={open && !hide}
 		class="reasoning-block mb-4 w-full overflow-hidden rounded-xl border transition-colors duration-150 {showActivityChrome
 			? 'border-gray-200/80 bg-gray-50/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-white/[0.035] dark:shadow-none'
 			: 'border-transparent'} {className}"
@@ -336,7 +337,7 @@
 	</div>
 {:else}
 	<!-- Original non-reasoning collapsible -->
-	<div {id} class={className} bind:this={activityElement}>
+	<div {id} class={className} bind:this={activityElement} data-message-expanded={open && !hide}>
 		{#if title !== null}
 			<!-- svelte-ignore a11y-no-static-element-interactions -->
 			<!-- svelte-ignore a11y-click-events-have-key-events -->

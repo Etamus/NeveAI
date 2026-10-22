@@ -123,9 +123,6 @@
 		{#each availableFeatures as feature}
 			{@const featureLabel = getFeatureLabel(feature)}
 			{@const featureState = featureViewState[feature] ?? { enabled: false, disabled: false }}
-			{#if feature === 'stable_diffusion' && availableFeatures.includes('code_execution')}
-				<div class="my-0.5 w-[96%] border-t border-gray-300/50 dark:border-gray-600/30"></div>
-			{/if}
 			<div
 				class="flex w-full items-center justify-between gap-3 transition {featureState.disabled
 					? 'opacity-50 text-gray-400 dark:text-gray-500'

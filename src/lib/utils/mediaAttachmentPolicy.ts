@@ -10,11 +10,15 @@ export const getMediaAttachmentPolicy = (
 	imageEnabled: boolean,
 	imageQuality: string,
 	videoEnabled: boolean,
-	musicEnabled: boolean
+	musicEnabled: boolean,
+	imageMode = 'normal'
 ): MediaAttachmentPolicy | null => {
 	if (videoEnabled) return { kind: 'image', maxCount: 2, accept: 'image/*' };
 	if (imageEnabled) {
-		const maxCount = imageQuality === 'neve_image' ? 0 : imageQuality === 'neve_image_2' ? 1 : 10;
+		const maxCount = imageQuality === 'neve_image' ? 0 : imageQuality === 'neve_image_2' ? 1 :
+			imageQuality === 'qwen_image_2s' && ['restore', 'inpaint', 'outpaint'].includes(imageMode) ? 1 :
+			imageQuality === 'qwen_image_2s' && imageMode === 'body' ? 4 :
+			imageQuality === 'qwen_image_2s' && imageMode === 'outfit' ? 5 : 10;
 		return { kind: 'image', maxCount, accept: 'image/*' };
 	}
 	if (musicEnabled) {

@@ -116,7 +116,7 @@
 		<div class="text-sm font-medium">{$i18n.t('Version')}</div>
 		<div class="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
 			<span>{projectVersion}</span>
-			{#if updateAvailable}
+			{#if updateAvailable || startingUpdater}
 				<button
 					type="button"
 					class="bg-transparent p-0 text-sm font-medium text-gray-700 transition-opacity hover:opacity-60 disabled:cursor-default disabled:opacity-60 dark:text-gray-200"

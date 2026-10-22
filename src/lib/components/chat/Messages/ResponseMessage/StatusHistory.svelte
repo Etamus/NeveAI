@@ -59,10 +59,10 @@
 	}
 
 	$: if (
-		statusHistory.length !== history.length ||
-		JSON.stringify(statusHistory) !== JSON.stringify(history)
+		(statusHistory?.length ?? 0) !== history.length ||
+		JSON.stringify(statusHistory ?? []) !== JSON.stringify(history)
 	) {
-		history = statusHistory;
+		history = statusHistory ?? [];
 	}
 </script>
 
@@ -70,14 +70,14 @@
 	{#if status?.hidden !== true}
 		<div class="flex flex-col w-full">
 			{#if isMediaStatus}
-				<div class="w-full cursor-default">
+				<div class="w-full cursor-default select-none">
 					<div class="flex items-start gap-2">
 						<StatusItem {status} />
 					</div>
 				</div>
 			{:else}
 				<button
-					class="w-full"
+					class="w-full select-none"
 					aria-label={$i18n.t('Toggle status history')}
 					aria-expanded={showHistory}
 					on:click={(event) => {
@@ -92,7 +92,7 @@
 			{/if}
 
 			{#if showHistory && !isMediaStatus}
-				<div class="flex flex-row" transition:slide={{ duration: 200, easing: quintOut }}>
+				<div class="flex flex-row select-text" transition:slide={{ duration: 200, easing: quintOut }}>
 					{#if visibleHistory.length > 1}
 						<div class="w-full">
 							{#each visibleHistory as status, idx}

@@ -1481,28 +1481,9 @@ async def get_github_latest_release_tag(session, repo: str):
 
 
 def launch_installer_update_page():
-    import subprocess
+    from neveai.utils.updater_launcher import launch_installer_update_page as launch
 
-    installer_path = BASE_DIR / "launchers" / "instalar.vbs"
-    if not installer_path.exists():
-        raise FileNotFoundError(f"instalar.vbs não encontrado em {installer_path}")
-
-    command = [
-        os.path.join(
-            os.environ.get("SystemRoot", r"C:\Windows"),
-            "System32",
-            "wscript.exe",
-        ),
-        "//nologo",
-        str(installer_path),
-        "--page",
-        "update",
-    ]
-    subprocess.Popen(
-        command,
-        cwd=str(BASE_DIR),
-        close_fds=True,
-    )
+    launch(BASE_DIR)
 
 
 @app.post("/api/shutdown")

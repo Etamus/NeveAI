@@ -563,7 +563,7 @@
 						{/if}
 
 						{#if showVisualGenerationProgress}
-							<div class="my-2 w-full">
+							<div class="{latestVisualGenerationStatus.action === 'stable_diffusion' ? 'my-1' : 'my-2'} w-full">
 								<GeneratedMediaProgress
 									kind={latestVisualGenerationStatus.action === 'video_generation' ? 'video' : 'image'}
 									progress={latestVisualGenerationStatus.progress ??
@@ -598,6 +598,7 @@
 													style={`aspect-ratio: ${generatedVisualAspectRatio}; width: min(100%, ${generatedImageDisplayWidth}rem); max-height: 26rem;`}
 												>
 													<Image
+														deferLoading={true}
 														src={file.url}
 														alt={message.content}
 														containerClassName="size-full"

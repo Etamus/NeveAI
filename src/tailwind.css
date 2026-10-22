@@ -56,6 +56,11 @@
 		@apply cursor-pointer;
 	}
 
+	/* Labels may truncate; control icons must retain their own dimensions. */
+	button > svg {
+		flex-shrink: 0;
+	}
+
 	input::placeholder,
 	textarea::placeholder {
 		color: theme(--color-gray-400);

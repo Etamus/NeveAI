@@ -3,6 +3,7 @@
 	import type { ListeningPort } from '$lib/apis/terminal';
 	import { getListeningPorts, getPortProxyUrl } from '$lib/apis/terminal';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import { continuousSpinner } from '$lib/utils/continuousSpinner';
 
 	const i18n = getContext('i18n');
 
@@ -85,6 +86,7 @@
 						viewBox="0 0 20 20"
 						fill="currentColor"
 						class="size-3 {loading ? 'animate-spin' : ''}"
+						use:continuousSpinner={loading}
 					>
 						<path
 							fill-rule="evenodd"

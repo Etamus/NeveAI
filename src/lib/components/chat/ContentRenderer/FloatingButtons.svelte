@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { marked } from 'marked';
 
 	import { getContext, tick, onDestroy } from 'svelte';
 	const i18n = getContext('i18n');
+	const prepareModel = getContext<((modelId: string) => Promise<{params: Record<string, unknown>} | null>) | undefined>('prepare-text-model');
 
 	import { chatCompletion } from '$lib/apis/openai';
+	import { createOpenAITextStream } from '$lib/apis/streaming';
+	import { getSelectionActionLabel } from '$lib/utils/selectionActions';
+	import { removeReasoningControlTokens } from '$lib/utils';
 
 	import ChatBubble from '$lib/components/icons/ChatBubble.svelte';
 	import LightBulb from '$lib/components/icons/LightBulb.svelte';
@@ -31,6 +34,14 @@
 	let responseContent = null;
 	let responseDone = false;
 	let controller = null;
+	let requestVersion = 0;
+	let responseError = '';
+	let responseModel = null;
+	let responseContainer: HTMLDivElement;
+	const portal = (node: HTMLElement) => {
+		document.body.appendChild(node);
+		return { destroy: () => node.remove() };
+	};
 
 	$: if (actions.length === 0) {
 		actions = DEFAULT_ACTIONS;
@@ -53,19 +64,13 @@
 	];
 
 	const autoScroll = async () => {
-		const responseContainer = document.getElementById('response-container');
 		if (responseContainer) {
-			// Scroll to bottom only if the scroll is at the bottom give 50px buffer
-			if (
-				responseContainer.scrollHeight - responseContainer.clientHeight <=
-				responseContainer.scrollTop + 50
-			) {
-				responseContainer.scrollTop = responseContainer.scrollHeight;
-			}
+			responseContainer.scrollTop = responseContainer.scrollHeight;
 		}
 	};
 
 	const actionHandler = async (actionId) => {
+		if (controller && !responseDone) return;
 		if (!model) {
 			toast.error($i18n.t('Model not selected'));
 			return;
@@ -81,6 +86,7 @@
 			toast.error($i18n.t('Action not found'));
 			return;
 		}
+		if (selectedAction.prompt?.includes('{{INPUT_CONTENT}}') && !floatingInputValue.trim()) return;
 
 		let prompt = selectedAction?.prompt ?? '';
 		let toolIds = [];
@@ -113,11 +119,24 @@
 
 		content = prompt;
 		responseContent = '';
-
-		let res;
-		[res, controller] = await chatCompletion(localStorage.token, {
-			model: model,
-			model_item: $models.find((m) => m.id === model),
+		responseDone = false;
+		responseError = '';
+		const requestModel = model;
+		responseModel = requestModel;
+		const version = ++requestVersion;
+		const requestController = new AbortController();
+		controller = requestController;
+		try {
+			const prepared = prepareModel ? await prepareModel(requestModel) : {};
+			if (!prepared) {
+				if (version === requestVersion) responseError = $i18n.t('Could not load the selected model.');
+				return;
+			}
+			if (version !== requestVersion || requestController.signal.aborted) return;
+			const [res] = await chatCompletion(localStorage.token, {
+			...prepared,
+			model: requestModel,
+			model_item: $models.find((m) => m.id === requestModel),
 			session_id: $socket?.id,
 			chat_id: $chatId,
 			messages: [
@@ -139,65 +158,33 @@
 					}
 				: {}),
 
-			stream: true // Enable streaming
-		});
-
-		if (res && res.ok) {
-			const reader = res.body.getReader();
-			const decoder = new TextDecoder();
-
-			const processStream = async () => {
-				while (true) {
-					// Read data chunks from the response stream
-					const { done, value } = await reader.read();
-					if (done) {
-						break;
-					}
-
-					// Decode the received chunk
-					const chunk = decoder.decode(value, { stream: true });
-
-					// Process lines within the chunk
-					const lines = chunk.split('\n').filter((line) => line.trim() !== '');
-
-					for (const line of lines) {
-						if (line.startsWith('data: ')) {
-							if (line.startsWith('data: [DONE]')) {
-								responseDone = true;
-
-								await tick();
-								autoScroll();
-								continue;
-							} else {
-								// Parse the JSON chunk
-								try {
-									const data = JSON.parse(line.slice(6));
-
-									// Append the `content` field from the "choices" object
-									if (data.choices && data.choices[0]?.delta?.content) {
-										responseContent += data.choices[0].delta.content;
-
-										autoScroll();
-									}
-								} catch (e) {
-									console.error(e);
-								}
-							}
-						}
-					}
-				}
-			};
-
-			// Process the stream in the background
-			try {
-				await processStream();
-			} catch (e) {
-				if (e.name !== 'AbortError') {
-					console.error(e);
-				}
+			stream: true
+		}, undefined, requestController);
+			if (!res?.ok || !res.body) throw new Error($i18n.t('An error occurred while fetching the explanation'));
+			const stream = await createOpenAITextStream(res.body, false);
+			for await (const update of stream) {
+				if (version !== requestVersion || requestController.signal.aborted) break;
+				if (update.error) throw new Error(update.error.message ?? String(update.error));
+				const follow = !responseContainer || responseContainer.scrollHeight - responseContainer.clientHeight <= responseContainer.scrollTop + 50;
+				responseContent += update.value;
+				await tick();
+				if (follow) await autoScroll();
+				if (update.done) break;
 			}
-		} else {
-			toast.error($i18n.t('An error occurred while fetching the explanation'));
+			if (version === requestVersion && !requestController.signal.aborted) {
+				if (!removeReasoningControlTokens(responseContent).trim()) throw new Error($i18n.t('An error occurred while fetching the explanation'));
+				const follow = !responseContainer || responseContainer.scrollHeight - responseContainer.clientHeight <= responseContainer.scrollTop + 50;
+				responseDone = true;
+				await tick();
+				if (follow) await autoScroll();
+			}
+		} catch (error) {
+			if (version === requestVersion && !requestController.signal.aborted) {
+				responseError = error?.message ?? $i18n.t('An error occurred while fetching the explanation');
+				toast.error(responseError);
+			}
+		} finally {
+			if (version === requestVersion) controller = null;
 		}
 	};
 
@@ -214,13 +201,14 @@
 		];
 
 		onAdd({
-			modelId: model,
+			modelId: responseModel,
 			parentId: messageId,
 			messages: messages
 		});
 	};
 
 	export const closeHandler = () => {
+		requestVersion += 1;
 		if (controller) {
 			controller.abort();
 		}
@@ -229,11 +217,14 @@
 		selectedText = '';
 		responseContent = null;
 		responseDone = false;
+		responseError = '';
+		controller = null;
 		floatingInput = false;
 		floatingInputValue = '';
 	};
 
 	onDestroy(() => {
+		requestVersion += 1;
 		if (controller) {
 			controller.abort();
 		}
@@ -242,18 +233,21 @@
 
 <div
 	id={`floating-buttons-${id}`}
-	class="absolute rounded-lg mt-1 text-xs z-9999"
+	class="fixed text-xs z-9999 max-w-[calc(100vw-16px)]"
 	style="display: none"
+	use:portal
+	on:wheel|stopPropagation
+	on:touchmove|stopPropagation
 >
 	{#if responseContent === null}
 		{#if !floatingInput}
 			<div
-				class="flex flex-row shrink-0 p-0.5 bg-white dark:bg-gray-850 dark:text-gray-100 text-medium rounded-xl shadow-xl border border-gray-100 dark:border-gray-800"
+				class="flex flex-row shrink-0 p-0.5 bg-white dark:bg-gray-850 dark:text-gray-100 text-medium rounded-lg shadow-xl border border-gray-100 dark:border-gray-800"
 			>
 				{#each actions as action}
 					<button
-						aria-label={action.label}
-						class="px-1.5 py-[1px] hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl flex items-center gap-1 min-w-fit transition"
+						aria-label={getSelectionActionLabel(action, (key) => $i18n.t(key))}
+						class="px-1.5 py-[1px] hover:bg-gray-50 dark:hover:bg-gray-800 rounded-md flex items-center gap-1 min-w-fit transition"
 						on:click={async () => {
 							selectedText = window.getSelection().toString();
 							selectedAction = action;
@@ -277,23 +271,24 @@
 						{#if action.icon}
 							<svelte:component this={action.icon} className="size-3 shrink-0" />
 						{/if}
-						<div class="shrink-0">{action.label}</div>
+						<div class="shrink-0">{getSelectionActionLabel(action, (key) => $i18n.t(key))}</div>
 					</button>
 				{/each}
 			</div>
 		{:else}
 			<div
-				class="py-1 flex dark:text-gray-100 bg-white dark:bg-gray-850 border border-gray-100 dark:border-gray-800 w-72 rounded-full shadow-xl"
+				class="py-1 flex dark:text-gray-100 bg-white dark:bg-gray-850 border border-gray-100 dark:border-gray-800 w-72 max-w-full rounded-xl shadow-xl"
 			>
 				<input
 					type="text"
 					id="floating-message-input"
+					autocomplete="off"
 					class="ml-5 bg-transparent outline-hidden w-full flex-1 text-sm"
 					placeholder={$i18n.t('Ask a question')}
 					aria-label={$i18n.t('Ask a question')}
 					bind:value={floatingInputValue}
 					on:keydown={(e) => {
-						if (e.key === 'Enter') {
+						if (e.key === 'Enter' && !e.isComposing) {
 							actionHandler(selectedAction?.id);
 						}
 					}}
@@ -302,6 +297,7 @@
 				<div class="ml-1 mr-1">
 					<button
 						aria-label={$i18n.t('Submit question')}
+						disabled={!floatingInputValue.trim()}
 						class="{floatingInputValue !== ''
 							? 'bg-black text-white hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100 '
 							: 'text-white bg-gray-200 dark:text-gray-900 dark:bg-gray-700 disabled'} transition rounded-full p-1.5 m-0.5 self-center"
@@ -327,31 +323,35 @@
 		{/if}
 	{:else}
 		<div
-			class="bg-white dark:bg-gray-850 dark:text-gray-100 rounded-3xl shadow-xl w-80 max-w-full border border-gray-100 dark:border-gray-800"
+			class="bg-white dark:bg-gray-850 dark:text-gray-100 rounded-2xl overflow-hidden p-1 shadow-xl w-80 max-w-full border border-gray-100 dark:border-gray-800"
 		>
 			<div
-				class="bg-white dark:bg-gray-850 dark:text-gray-100 text-medium rounded-3xl px-3.5 pt-3 w-full"
+				class="text-medium max-h-28 overflow-y-auto overscroll-contain px-2.5 pt-2 w-full"
 			>
 				<div class="font-medium">
 					<Markdown id={`${id}-float-prompt`} {content} />
 				</div>
 			</div>
 
-			<div class="bg-white dark:bg-gray-850 dark:text-gray-100 text-medium rounded-4xl w-full">
+			<div class="text-medium w-full min-h-0">
 				<div
-					class=" max-h-80 overflow-y-auto w-full markdown-prose-xs px-3.5 py-3"
-					id="response-container"
+					class="max-h-[min(20rem,45dvh)] overflow-y-auto overscroll-contain w-full markdown-prose-xs px-2.5 py-3 rounded-xl"
+					style="scrollbar-gutter: stable;"
+					data-selection-response
+					bind:this={responseContainer}
 				>
-					{#if !responseContent || responseContent?.trim() === ''}
+					{#if responseError}
+						<div role="alert">{responseError}</div>
+					{:else if !responseContent || responseContent?.trim() === ''}
 						<Skeleton size="sm" />
 					{:else}
-						<Markdown id={`${id}-float-response`} content={responseContent} />
+						<Markdown id={`${id}-float-response`} content={removeReasoningControlTokens(responseContent)} />
 					{/if}
 
-					{#if responseDone}
+					{#if responseDone && !responseError && responseContent?.trim()}
 						<div class="flex justify-end pt-3 text-sm font-medium">
 							<button
-								class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-full"
+								class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-lg"
 								on:click={addHandler}
 							>
 								{$i18n.t('Add')}

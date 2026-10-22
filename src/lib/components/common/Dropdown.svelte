@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { DropdownMenu } from 'bits-ui';
-	import { createEventDispatcher, getContext } from 'svelte';
+	import { createEventDispatcher, getContext, onMount } from 'svelte';
+	import { onChatDropdownDismiss } from '$lib/utils/chatDropdownDismissal';
 
 	const i18n = getContext('i18n');
 
 	import { flyAndScale } from '$lib/utils/transitions';
 
 	export let show = false;
+	onMount(() => onChatDropdownDismiss(() => { show = false; }));
 	export let side: 'left' | 'right' | 'bottom' | 'top' = 'bottom';
 	export let align: 'center' | 'end' | 'start' = 'start';
 	export let closeOnOutsideClick = true;

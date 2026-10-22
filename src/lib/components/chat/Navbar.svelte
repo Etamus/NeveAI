@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getContext, onMount } from 'svelte';
+	import { dismissChatDropdowns } from '$lib/utils/chatDropdownDismissal';
 
 	import { banners, chatId, config, mobile, models as globalModels, settings, showLocalModelsModal, showSidebar, temporaryChatEnabled, user } from '$lib/stores';
 
@@ -261,7 +262,7 @@
 			id="navbar-bg-gradient-to-b"
 			class="{chat?.id
 				? 'visible'
-				: 'invisible'} bg-linear-to-b from-white via-white/80 to-transparent dark:from-gray-950 dark:via-gray-950/80 dark:to-transparent pointer-events-none absolute inset-0 -bottom-7 z-[-1]"
+				: 'invisible'} bg-linear-to-b from-white via-white/80 to-transparent dark:from-black dark:via-black/80 dark:to-transparent pointer-events-none absolute inset-0 -bottom-7 z-[-1]"
 		></div>
 
 		<div class=" flex max-w-full w-full mx-auto px-1.5 md:px-2 pt-0.5 bg-transparent">
@@ -339,6 +340,7 @@
 									class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
 									id="temporary-chat-button"
 									on:click={async () => {
+										await dismissChatDropdowns();
 										if (($settings?.temporaryChatByDefault ?? false) && $temporaryChatEnabled) {
 											// for proper initNewChat handling
 											await temporaryChatEnabled.set(null);
@@ -394,7 +396,7 @@
 								aria-label="Models"
 							>
 								<div class=" m-auto self-center">
-									<Blocks />
+									<Blocks className="size-4.5 scale-110" />
 								</div>
 							</button>
 						</Tooltip>
@@ -463,5 +465,10 @@
 		.chat-navbar :global(button[aria-label='Models']),
 		.chat-navbar :global(#chat-parameters-button) { width: 40px; height: 40px; padding: 0; justify-content: center; align-items: center; }
 		.chat-navbar :global(button svg) { flex-shrink: 0; }
+		.chat-navbar-actions :global(button) { flex-shrink: 0; }
+		.chat-navbar :global(button[aria-label='Models'] svg) {
+			width: max(1.125rem, 20.7px);
+			height: max(1.125rem, 20.7px);
+		}
 	}
 </style>

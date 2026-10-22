@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, setContext } from 'svelte';
+	import { isChatImageLayoutPending } from '$lib/utils/deferredChatImage';
 
 	export let messageId: string;
 	export let enabled = false;
@@ -25,7 +26,7 @@
 			(media) => !(media as HTMLMediaElement).paused && !(media as HTMLMediaElement).ended
 		);
 		const editingOrExpanded = row.querySelector(
-			'textarea, [contenteditable="true"], [aria-expanded="true"], [data-state="open"], details[open], [id^="reasoning-content-"]'
+			'textarea, [contenteditable="true"], [aria-expanded="true"], [data-state="open"], [data-message-expanded="true"], details[open]'
 		);
 		const scrolled = Array.from(row.querySelectorAll<HTMLElement>('pre, [class*="overflow-"]')).some(
 			(element) => element.scrollTop > 0 || element.scrollLeft > 0
@@ -38,7 +39,7 @@
 	const measure = (node: HTMLElement) => {
 		if (typeof ResizeObserver === 'undefined') return {};
 		const update = () => {
-			mediaPending = Array.from(node.querySelectorAll('img')).some((image) => !image.complete);
+			mediaPending = Array.from(node.querySelectorAll('img')).some(isChatImageLayoutPending);
 			const height = node.getBoundingClientRect().height;
 			if (height > 0 && !mediaPending) measuredHeight = height;
 			measurementPending = false;

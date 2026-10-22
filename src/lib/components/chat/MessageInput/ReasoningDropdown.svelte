@@ -72,7 +72,7 @@
 		aria-expanded={show}
 		aria-controls="reasoning-dropdown"
 		class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full transition cursor-pointer bg-transparent text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
-		style="font-size: 0.79rem; font-family: 'Segoe UI', sans-serif; font-weight: 400;"
+		style="font-size: 0.79rem; font-family: 'Segoe UI', 'Vazirmatn', sans-serif; font-weight: 400; white-space: nowrap;"
 		on:click|preventDefault={() => {
 			show = !show;
 		}}
@@ -89,7 +89,7 @@
 			xmlns="http://www.w3.org/2000/svg"
 			viewBox="0 0 20 20"
 			fill="currentColor"
-			class="size-3.5 transition-transform {show ? '' : 'rotate-180'}"
+			class="size-3.5 shrink-0 transition-transform {show ? '' : 'rotate-180'}"
 			aria-hidden="true"
 			><path
 				fill-rule="evenodd"

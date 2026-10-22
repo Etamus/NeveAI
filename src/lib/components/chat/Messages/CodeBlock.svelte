@@ -3,6 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount, tick, onDestroy } from 'svelte';
 	import { config } from '$lib/stores';
+	import { continuousSpinner } from '$lib/utils/continuousSpinner';
 
 	import PyodideWorker from '$lib/workers/pyodide.worker?worker';
 	import { executeCode } from '$lib/apis/utils';
@@ -67,6 +68,7 @@
 
 	let renderHTML = null;
 	let renderError = null;
+	let pendingRenders = 0;
 
 	let highlightedCode = null;
 	let executing = false;
@@ -349,6 +351,7 @@
 	const render = async () => {
 		onUpdate(token);
 		if (lang === 'mermaid' && (token?.raw ?? '').slice(-4).includes('```')) {
+			pendingRenders++;
 			try {
 				renderHTML = await renderMermaid(code);
 			} catch (error) {
@@ -356,11 +359,14 @@
 				const errorMsg = error instanceof Error ? error.message : String(error);
 				renderError = $i18n.t('Failed to render diagram') + `: ${errorMsg}`;
 				renderHTML = null;
+			} finally {
+				pendingRenders--;
 			}
 		} else if (
 			(lang === 'vega' || lang === 'vega-lite') &&
 			(token?.raw ?? '').slice(-4).includes('```')
 		) {
+			pendingRenders++;
 			try {
 				renderHTML = await renderVegaVisualization(code);
 			} catch (error) {
@@ -368,6 +374,8 @@
 				const errorMsg = error instanceof Error ? error.message : String(error);
 				renderError = $i18n.t('Failed to render visualization') + `: ${errorMsg}`;
 				renderHTML = null;
+			} finally {
+				pendingRenders--;
 			}
 		}
 	};
@@ -428,7 +436,7 @@
 	});
 </script>
 
-<div>
+<div data-chat-layout-pending={pendingRenders > 0 ? 'true' : undefined}>
 	<div
 		class="relative {className} flex flex-col rounded-lg border border-gray-200/50 dark:border-gray-700/40 my-0.5"
 		dir="ltr"
@@ -470,6 +478,7 @@
 						{#if executing}
 							<div
 								class="run-code-button bg-none border-none p-1 cursor-not-allowed"
+								use:continuousSpinner
 							>
 								<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="size-4 animate-spin"><path fill-rule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H4.598a.75.75 0 00-.75.75v3.634a.75.75 0 001.5 0v-2.033l.312.311a7 7 0 0011.712-3.138.75.75 0 00-1.449-.389zm-11.023-3.848a.75.75 0 00.726.947h.008a.75.75 0 00.722-.953 5.5 5.5 0 019.2-2.467l.312.311H12.82a.75.75 0 000 1.5h3.634a.75.75 0 00.75-.75V2.53a.75.75 0 00-1.5 0v2.034l-.312-.312A7 7 0 003.68 7.387a.75.75 0 00.609.189z" clip-rule="evenodd" /></svg>
 							</div>

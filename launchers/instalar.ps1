@@ -7050,4 +7050,10 @@ Update-HubInstallModeState
 # =============================================================================
 # Mostrar a janela
 # =============================================================================
+$installerReadyPath = $env:NEVE_INSTALLER_READY_FILE
+if ($installerReadyPath) {
+    $window.Add_ContentRendered({
+        try { [IO.File]::WriteAllText($installerReadyPath, 'ready') } catch {}
+    }.GetNewClosure())
+}
 [void]$window.ShowDialog()

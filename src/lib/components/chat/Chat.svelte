@@ -3,7 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { PaneGroup, Pane, type PaneAPI } from 'paneforge';
 
-	import { flushSync, getContext, onMount, tick } from 'svelte';
+	import { flushSync, getContext, setContext, onMount, tick } from 'svelte';
 	import { fade } from 'svelte/transition';
 	const i18n: Writable<i18nType> = getContext('i18n');
 
@@ -31,6 +31,10 @@
 		displayFileHandler
 	} from '$lib/utils';
 	import { AudioQueue } from '$lib/utils/audio';
+	import { getUsageContextWindow } from '$lib/utils/chatUsage';
+	import { activateDeferredChatImages } from '$lib/utils/deferredChatImage';
+	import { prepareLoadedChatLayout } from '$lib/utils/loadedChatLayout';
+	import { RESIDUAL_CHAT_SCROLL_ATTRIBUTE, stabilizeResidualChatScroll } from '$lib/utils/residualChatScroll';
 
 	import {
 		createNewChat,
@@ -113,7 +117,7 @@
 	let activeGenerationSpacerHeightLimit: number | null = null;
 	let lastMessagesScrollTop = 0;
 	let generationSpacerUpwardScrollIntentUntil = 0;
-	let loadedChatBottomFollowToken = 0;
+	let loadedChatLayoutController: AbortController | null = null;
 	let textGenerationAnchorScrollTop: number | null = null;
 	let textGenerationAnchorUserMoved = false;
 	let messagesBottomWheelLockUntil = 0;
@@ -165,6 +169,8 @@
 		| 'manga'
 		| 'pixelated' = 'none';
 	let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
+	import { imageModePrompt, imageModeFileError, imageModeIsSwap, imageSwapSlots, type ImageModeDisplay } from '$lib/utils/imageModes';
+	let stableDiffusionModeOptions: import('$lib/utils/imageModes').ImageModeOptions = { mode: 'normal' };
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
 	let videoGenerationResolution: '480p' | '672p' = '480p';
@@ -510,6 +516,7 @@
 		prompt: string;
 		files: any[];
 		features?: Record<string, any> | null;
+		imageModeDisplay?: ImageModeDisplay;
 	}[] = [];
 
 	$: if (chatIdProp) {
@@ -517,9 +524,9 @@
 	}
 
 	const navigateHandler = async () => {
+		loadedChatLayoutController?.abort();
 		loading = true;
 		loadedChatViewportReady = false;
-		loadedChatBottomFollowToken += 1;
 
 		// Save current queue to sessionStorage before navigating away
 		if (messageQueue.length > 0 && $chatId) {
@@ -543,13 +550,35 @@
 		const storageChatInput = sessionStorage.getItem(
 			`chat-input${chatIdProp ? `-${chatIdProp}` : ''}`
 		);
+		const restoreInputDraft = () => {
+			if (!storageChatInput) return;
+			try {
+				const input = JSON.parse(storageChatInput);
+				if (!$temporaryChatEnabled) {
+					messageInput?.setText(input.prompt);
+					files = input.files;
+					selectedToolIds = input.selectedToolIds;
+					webSearchEnabled = input.webSearchEnabled;
+					deepSearchEnabled = input.deepSearchEnabled ?? false;
+					codeExecutionEnabled = input.codeExecutionEnabled ?? false;
+					fileGenerationEnabled = getFileGenerationPreference(input.fileGenerationEnabled ?? false);
+					stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
+					musicGenerationEnabled = input.musicGenerationEnabled ?? false;
+					videoGenerationEnabled = input.videoGenerationEnabled ?? false;
+					normalizeExclusiveFeatureToggles();
+					thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
+				}
+			} catch (e) {}
+		};
 
 		if (chatIdProp && (await loadChat())) {
 			const loadedChatId = chatIdProp;
 			loading = false;
 			flushSync();
 			await setDefaults();
-			await restoreLoadedChatBottom(loadedChatId);
+			// Prepare passive drafts before measuring; queued sends retain their existing order.
+			if (!sessionStorage.getItem(`chat-queue-${chatIdProp}`)) restoreInputDraft();
+			if (!(await prepareLoadedChatBottom(loadedChatId))) return;
 			if (chatIdProp !== loadedChatId || $chatId !== loadedChatId) return;
 			loadedChatViewportReady = true;
 
@@ -571,7 +600,8 @@
 							await tick();
 							const combinedPrompt = restoredQueue.map((m) => m.prompt).join('\n\n');
 							await submitPrompt(combinedPrompt, {
-								features: restoredQueue.at(0)?.features ?? null
+								features: restoredQueue.at(0)?.features ?? null,
+								imageModeDisplay: restoredQueue.length === 1 ? restoredQueue[0].imageModeDisplay : undefined
 							});
 						} else {
 							// Has pending tasks - show as queued (chatCompletedHandler will process)
@@ -581,31 +611,10 @@
 				} catch (e) {}
 			}
 
-			if (storageChatInput) {
-				try {
-					const input = JSON.parse(storageChatInput);
-
-					if (!$temporaryChatEnabled) {
-						messageInput?.setText(input.prompt);
-						files = input.files;
-						selectedToolIds = input.selectedToolIds;
-						webSearchEnabled = input.webSearchEnabled;
-						deepSearchEnabled = input.deepSearchEnabled ?? false;
-						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
-						fileGenerationEnabled = getFileGenerationPreference(
-							input.fileGenerationEnabled ?? false
-						);
-						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
-						musicGenerationEnabled = input.musicGenerationEnabled ?? false;
-						videoGenerationEnabled = input.videoGenerationEnabled ?? false;
-						normalizeExclusiveFeatureToggles();
-						thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
-					}
-				} catch (e) {}
-			}
+			if (storedQueueData) restoreInputDraft();
 
 			const chatInput = document.getElementById('chat-input');
-			chatInput?.focus();
+			chatInput?.focus({ preventScroll: true });
 		} else {
 			await goto('/');
 		}
@@ -2029,6 +2038,7 @@
 				audioQueue.set(null);
 				// Reset code execution store so CodeBlock in other views doesn't see stale value
 				chatCodeExecutionEnabled.set(false);
+				loadedChatLayoutController?.abort();
 				if (scrollRAF) {
 					cancelAnimationFrame(scrollRAF);
 					scrollRAF = null;
@@ -2519,9 +2529,12 @@
 		new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
 	const waitForRenderedMedia = async (root: ParentNode, selector = 'img, video') => {
-		const pendingMedia = Array.from(root.querySelectorAll(selector)).map((element) => {
+		const activatedImages = activateDeferredChatImages(root);
+		const pendingMedia = Array.from(new Set<Element>([
+			...root.querySelectorAll(selector), ...activatedImages
+		])).map((element) => {
 			if (element instanceof HTMLImageElement) {
-				if (element.complete) return Promise.resolve();
+				if (element.complete || element.loading === 'lazy') return Promise.resolve();
 				return new Promise<void>((resolve) => {
 					element.addEventListener('load', () => resolve(), { once: true });
 					element.addEventListener('error', () => resolve(), { once: true });
@@ -2545,57 +2558,19 @@
 		await Promise.all(pendingMedia);
 	};
 
-	const restoreLoadedChatBottom = async (expectedChatId: string) => {
-		const token = ++loadedChatBottomFollowToken;
-		let userInterrupted = false;
-		const isCurrentLoad = () =>
-			token === loadedChatBottomFollowToken &&
-			$chatId === expectedChatId &&
-			!anchoredGeneratingMessageId &&
-			!userInterrupted;
-		const pinToBottom = () => {
-			if (!isCurrentLoad() || !messagesContainerElement) return false;
-			messagesContainerElement.scrollTop = messagesContainerElement.scrollHeight;
-			return true;
-		};
-
-		await tick();
-		if (!pinToBottom()) return false;
-		const loadedMessagesContainer = messagesContainerElement;
-
-		const interruptBottomFollow = () => {
-			userInterrupted = true;
-		};
-		loadedMessagesContainer.addEventListener('wheel', interruptBottomFollow, { passive: true });
-		loadedMessagesContainer.addEventListener('pointerdown', interruptBottomFollow, {
-			passive: true
-		});
-		const resizeObserver = new ResizeObserver(() => pinToBottom());
-		resizeObserver.observe(loadedMessagesContainer.firstElementChild ?? loadedMessagesContainer);
-
-		let timeoutId: ReturnType<typeof setTimeout> | null = null;
+	const prepareLoadedChatBottom = async (expectedChatId: string) => {
+		loadedChatLayoutController?.abort();
+		const controller = new AbortController();
+		loadedChatLayoutController = controller;
 		try {
-			await Promise.race([
-				waitForRenderedMedia(
-					loadedMessagesContainer,
-					'[data-generated-visual-media] img, [data-generated-visual-media] video'
-				),
-				new Promise<void>((resolve) => {
-					timeoutId = setTimeout(resolve, 5000);
-				})
-			]);
-			if (timeoutId) clearTimeout(timeoutId);
-			await waitForAnimationFrame();
-			if (!pinToBottom()) return false;
-			await waitForAnimationFrame();
-			if (!pinToBottom()) return false;
+			await tick();
+			if (controller.signal.aborted || $chatId !== expectedChatId || !messagesContainerElement) return false;
+			const ready = await prepareLoadedChatLayout(messagesContainerElement, controller.signal);
+			if (!ready || $chatId !== expectedChatId) return false;
 			updateScrollStateFromContainer({ updateAutoScroll: true });
 			return true;
 		} finally {
-			if (timeoutId) clearTimeout(timeoutId);
-			resizeObserver.disconnect();
-			loadedMessagesContainer.removeEventListener('wheel', interruptBottomFollow);
-			loadedMessagesContainer.removeEventListener('pointerdown', interruptBottomFollow);
+			if (loadedChatLayoutController === controller) loadedChatLayoutController = null;
 		}
 	};
 
@@ -3223,6 +3198,8 @@
 	};
 
 	const preventMessagesBottomWheelJitter = (event: WheelEvent) => {
+		// Let nested scrollable blocks handle their own wheel events; the viewport is locked by CSS.
+		if (messagesContainerElement?.hasAttribute(RESIDUAL_CHAT_SCROLL_ATTRIBUTE)) return;
 		cancelBottomNavigation?.();
 		if (!messagesContainerElement) return;
 		if (anchoredGeneratingMessageId) {
@@ -3278,6 +3255,14 @@
 
 		if (anchoredGeneratingMessageId) {
 			cancelMessagesBottomWheelLock();
+			// Spacer sizing rounds up to whole pixels; do not scroll into that rounding remainder.
+			if (
+				visualMediaGenerationAnchorId === anchoredGeneratingMessageId &&
+				generationBottomSpacerHeight > 0 &&
+				getMessagesMaxScrollTop() - messagesContainerElement.scrollTop <= 1
+			) {
+				event.preventDefault();
+			}
 			return;
 		}
 
@@ -3669,6 +3654,7 @@
 		// Process message queue - combine all queued messages and submit at once
 		if (messageQueue.length > 0) {
 			const queuedFeatures = messageQueue.at(0)?.features ?? null;
+			const queuedImageModeDisplay = messageQueue.length === 1 ? messageQueue[0].imageModeDisplay : undefined;
 			const combinedPrompt = messageQueue.map((m) => m.prompt).join('\n\n');
 			const combinedFiles = messageQueue.flatMap((m) => m.files);
 			messageQueue = [];
@@ -3676,7 +3662,7 @@
 			// Set the files and submit
 			files = combinedFiles;
 			await tick();
-			await submitPrompt(combinedPrompt, { features: queuedFeatures });
+			await submitPrompt(combinedPrompt, { features: queuedFeatures, imageModeDisplay: queuedImageModeDisplay });
 		}
 	};
 
@@ -4193,8 +4179,8 @@
 		};
 	};
 
-	const ensureLocalModelsReady = async (modelIds: string[]) => {
-		if (videoGenerationEnabled) {
+	const ensureLocalModelsReady = async (modelIds: string[], { textOnly = false } = {}) => {
+		if (!textOnly && videoGenerationEnabled) {
 			await putVideoGenerationModelInStandby();
 			return true;
 		}
@@ -4210,8 +4196,9 @@
 				const loadedModels = await getLoadedLocalModels(localStorage.token);
 				const loadedModel = loadedModels.find((lm) => lm.id === modelId) ?? null;
 
-				const mediaGenerationRequested =
-					stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
+				const mediaGenerationRequested = !textOnly && (
+					stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled
+				);
 				if (mediaGenerationRequested) {
 					stableDiffusionStandbyModel =
 						loadedModel ?? loadedModels[0] ?? stableDiffusionStandbyModel;
@@ -4277,10 +4264,24 @@
 		return true;
 	};
 
+	setContext('prepare-text-model', async (modelId: string) => {
+		if (!(await ensureLocalModelsReady([modelId], { textOnly: true }))) return null;
+		return { params: {
+			...$settings?.params,
+			...params,
+			...(resolveLocalModelSelection(modelId) ? {
+				reasoning_mode: thinkingEnabled ? 'reasoning' : 'quick',
+				reasoning_extended: thinkingExtendedEnabled,
+				reasoning_unlimited: thinkingUnlimitedEnabled
+			} : {}),
+			...(!thinkingEnabled && currentModelsExplicitlyToggleReasoning() ? { no_think: true } : {})
+		} };
+	});
+
 	let submittingPrompt = false;
 	const submitPrompt = async (
 		userPrompt: string,
-		options: { _raw?: boolean; features?: Record<string, any> | null } = {}
+		options: { _raw?: boolean; features?: Record<string, any> | null; imageModeDisplay?: ImageModeDisplay } = {}
 	) => {
 		if (submittingPrompt) return;
 		submittingPrompt = true;
@@ -4295,14 +4296,25 @@
 		userPrompt,
 		{
 			_raw = false,
-			features = null
-		}: { _raw?: boolean; features?: Record<string, any> | null } = {}
+			features = null,
+			imageModeDisplay = undefined
+		}: { _raw?: boolean; features?: Record<string, any> | null; imageModeDisplay?: ImageModeDisplay } = {}
 	) => {
 		console.log('submitPrompt', userPrompt, $chatId);
 		normalizeExclusiveFeatureToggles();
 		// Keep the user's selected integration stable across asynchronous model
 		// checks and the route change performed when the first message is sent.
 		const requestFeatures = features ?? structuredClone(getFeatures());
+		if (requestFeatures.stable_diffusion && requestFeatures.stable_diffusion_quality === 'qwen_image_2s') {
+			const mode = requestFeatures.stable_diffusion_mode_options?.mode ?? 'normal';
+			const error = imageModeFileError(mode, files);
+			if (error) { toast.error($i18n.t(error)); return; }
+			if (imageModeIsSwap(mode)) { const slots = imageSwapSlots(files); files = [slots.base, ...slots.references]; }
+			userPrompt = imageModePrompt(mode, userPrompt);
+			if (imageModeDisplay?.mode !== mode || imageModeDisplay?.prompt !== userPrompt) imageModeDisplay = undefined;
+		} else {
+			imageModeDisplay = undefined;
+		}
 		if (requestFeatures.video_generation) {
 			await putVideoGenerationModelInStandby();
 		}
@@ -4440,7 +4452,8 @@
 						id: uuidv4(),
 						prompt: userPrompt,
 						files: _files,
-						features: requestFeatures
+						features: requestFeatures,
+						...(imageModeDisplay ? { imageModeDisplay } : {})
 					}
 				];
 				// Clear input
@@ -4491,6 +4504,7 @@
 			childrenIds: [],
 			role: 'user',
 			content: userPrompt,
+			...(imageModeDisplay ? { image_mode_display: imageModeDisplay } : {}),
 			files: _files.length > 0 ? _files : undefined,
 			timestamp: Math.floor(Date.now() / 1000), // Unix epoch
 			models: selectedModels
@@ -4701,8 +4715,9 @@
 						: false,
 				stable_diffusion_quality: stableDiffusionQuality,
 				stable_diffusion_style: stableDiffusionStyle,
+				...(stableDiffusionQuality === 'qwen_image_2s' ? { stable_diffusion_mode_options: stableDiffusionModeOptions } : {}),
 				stable_diffusion_resolution:
-					(stableDiffusionQuality === 'qwen_image_2s' || stableDiffusionQuality === 'qwen_image_2_1_official') &&
+					['qwen_image_2s', 'qwen_image_2_1_official'].includes(stableDiffusionQuality) &&
 					files.some(
 						(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
 					)
@@ -4872,6 +4887,15 @@
 	) => {
 		const responseMessage = _history.messages[responseMessageId];
 		const userMessage = _history.messages[responseMessage.parentId];
+		const requestContextWindow = getUsageContextWindow({
+			context_window: resolveLocalModelSelection(model.id)?.model?.llamacpp?.n_ctx
+		});
+		if (requestContextWindow !== null) {
+			responseMessage.context_window = requestContextWindow;
+			if (_chatId === $chatId && history.messages[responseMessageId]) {
+				history.messages[responseMessageId].context_window = requestContextWindow;
+			}
+		}
 		const effectiveRequestFeatures = requestFeatures ?? getFeatures();
 		const isVisualMediaRequest = Boolean(
 			effectiveRequestFeatures?.stable_diffusion || effectiveRequestFeatures?.video_generation
@@ -5372,6 +5396,7 @@
 					stableDiffusionQuality,
 					stableDiffusionStyle,
 					stableDiffusionResolution,
+					stableDiffusionModeOptions,
 					videoGenerationResolution,
 					videoGenerationDuration,
 					videoGenerationAspectRatio
@@ -5391,6 +5416,7 @@
 						stableDiffusionResolution =
 							message?.statusHistory?.find((status: any) => status.action === 'stable_diffusion')
 								?.resolution ?? stableDiffusionResolution;
+						stableDiffusionModeOptions = message?.statusHistory?.find((status: any) => status.action === 'stable_diffusion')?.mode_options ?? { mode: 'normal' };
 					}
 					if (generatedAction === 'video_generation') {
 						const videoStatus = message?.statusHistory?.find(
@@ -5402,6 +5428,8 @@
 					}
 				}
 
+				const imageModeRequestFeatures = generatedAction === 'stable_diffusion' && stableDiffusionQuality === 'qwen_image_2s'
+					? structuredClone(getFeatures()) : null;
 				try {
 					if (!(await ensureLocalModelsReady([model.id]))) {
 						return;
@@ -5450,7 +5478,8 @@
 						createMessagesList(_history, message.id),
 						_history,
 						message.id,
-						$chatId
+						$chatId,
+						imageModeRequestFeatures
 					);
 
 					if (chatEventEmitter) clearInterval(chatEventEmitter);
@@ -5466,6 +5495,7 @@
 						stableDiffusionQuality = previousMediaState.stableDiffusionQuality;
 						stableDiffusionStyle = previousMediaState.stableDiffusionStyle;
 						stableDiffusionResolution = previousMediaState.stableDiffusionResolution;
+						stableDiffusionModeOptions = previousMediaState.stableDiffusionModeOptions;
 						videoGenerationResolution = previousMediaState.videoGenerationResolution;
 						videoGenerationDuration = previousMediaState.videoGenerationDuration;
 						videoGenerationAspectRatio = previousMediaState.videoGenerationAspectRatio;
@@ -5873,6 +5903,7 @@
 								id="messages-container"
 								class:reasoning-layout-no-scroll={reasoningScrollbarSuppressed}
 								bind:this={messagesContainerElement}
+								use:stabilizeResidualChatScroll={!generating && !anchoredGeneratingMessageId && generationBottomSpacerHeight === 0 && !accordionNavigationActive}
 							style="overflow-anchor: none; scrollbar-gutter: stable both-edges; clip-path: inset(0 0 0.5rem 0);"
 								on:wheel|nonpassive={preventMessagesBottomWheelJitter}
 								on:pointerdown={beginGenerationSpacerPointerScroll}
@@ -5942,6 +5973,7 @@
 									bind:stableDiffusionQuality
 									bind:stableDiffusionStyle
 									bind:stableDiffusionResolution
+									bind:stableDiffusionModeOptions
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
 									bind:videoGenerationResolution
@@ -5971,7 +6003,7 @@
 											// Set files and submit
 											files = item.files;
 											await tick();
-											await submitPrompt(item.prompt, { features: item.features ?? null });
+											await submitPrompt(item.prompt, { features: item.features ?? null, imageModeDisplay: item.imageModeDisplay });
 										}
 									}}
 									onQueueEdit={(id) => {
@@ -5994,10 +6026,11 @@
 									}}
 									on:submit={async (e) => {
 										clearDraft();
-										if (e.detail || files.length > 0) {
+										const submission = typeof e.detail === 'string' ? { prompt: e.detail } : e.detail;
+										if (submission.prompt || files.length > 0) {
 											await tick();
 
-											submitPrompt(e.detail.replaceAll('\n\n', '\n'));
+											submitPrompt(submission.prompt.replaceAll('\n\n', '\n'), { imageModeDisplay: submission.imageModeDisplay });
 										}
 									}}
 								/>
@@ -6026,6 +6059,7 @@
 									bind:stableDiffusionQuality
 									bind:stableDiffusionStyle
 									bind:stableDiffusionResolution
+									bind:stableDiffusionModeOptions
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
 									bind:videoGenerationResolution
@@ -6050,9 +6084,10 @@
 									}}
 									on:submit={async (e) => {
 										clearDraft();
-										if (e.detail || files.length > 0) {
+										const submission = typeof e.detail === 'string' ? { prompt: e.detail } : e.detail;
+										if (submission.prompt || files.length > 0) {
 											await tick();
-											submitPrompt(e.detail.replaceAll('\n\n', '\n'));
+											submitPrompt(submission.prompt.replaceAll('\n\n', '\n'), { imageModeDisplay: submission.imageModeDisplay });
 										}
 									}}
 								/>
@@ -6100,6 +6135,9 @@
 </div>
 
 <style>
+	#messages-container:global([data-chat-residual-scroll]) {
+		overflow-y: hidden;
+	}
 	@supports not selector(::-webkit-scrollbar) {
 		#messages-container.reasoning-layout-no-scroll {
 			scrollbar-color: transparent transparent;

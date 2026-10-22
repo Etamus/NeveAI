@@ -22,6 +22,58 @@ class Viewport extends EventTarget {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('history scroll lock', () => {
+	it('aligns inner mutations before the next animation frame and disconnects on release', () => {
+		const viewport = new Viewport(); const content = {};
+		(viewport as any).querySelector = () => content;
+		let changed: () => void;
+		const observe = vi.fn(); const disconnect = vi.fn();
+		vi.stubGlobal('MutationObserver', class {
+			constructor(callback: () => void) { changed = callback; }
+			observe = observe;
+			disconnect = disconnect;
+		});
+		const align = vi.fn(); const lock = lockHistoryScroll(viewport as any, align);
+		expect(observe).toHaveBeenCalledWith(content, expect.objectContaining({ subtree: true, childList: true, attributes: true }));
+		changed!(); expect(align).toHaveBeenCalledOnce();
+		lock.release(false); expect(disconnect).toHaveBeenCalledOnce();
+		changed!(); expect(align).toHaveBeenCalledOnce();
+	});
+	it('observes message sizes even when the total list size stays unchanged', () => {
+		const viewport = new Viewport(); const rows = [{}];
+		const content = { querySelectorAll: () => rows };
+		(viewport as any).querySelector = () => content;
+		let resized: () => void; let changed: () => void;
+		const observe = vi.fn();
+		vi.stubGlobal('ResizeObserver', class {
+			constructor(callback: () => void) { resized = callback; }
+			observe = observe;
+			disconnect = vi.fn();
+		});
+		vi.stubGlobal('MutationObserver', class {
+			constructor(callback: () => void) { changed = callback; }
+			observe = vi.fn();
+			disconnect = vi.fn();
+		});
+		const align = vi.fn(); const lock = lockHistoryScroll(viewport as any, align);
+		expect(observe).toHaveBeenCalledWith(rows[0]);
+		rows.push({}); changed!();
+		expect(observe).toHaveBeenCalledWith(rows[1]);
+		const count = observe.mock.calls.length; changed!();
+		expect(observe).toHaveBeenCalledTimes(count);
+		resized!(); expect(align).toHaveBeenCalledTimes(3);
+		lock.release(false);
+	});
+	it('aligns media completion synchronously and removes its listeners when cancelled', () => {
+		const viewport = new Viewport(); const align = vi.fn();
+		const lock = lockHistoryScroll(viewport as any, align);
+		viewport.dispatchEvent(new Event('load'));
+		viewport.dispatchEvent(new Event('error'));
+		expect(align).toHaveBeenCalledTimes(2);
+		lock.release(false);
+		viewport.dispatchEvent(new Event('load'));
+		viewport.dispatchEvent(new Event('error'));
+		expect(align).toHaveBeenCalledTimes(2);
+	});
 	it('compensates cold layout changes before paint and disconnects on release', () => {
 		const viewport = new Viewport(); const content = {};
 		(viewport as any).querySelector = () => content;

@@ -34,4 +34,12 @@ describe('media attachment limits', () => {
 		expect(isMediaAttachmentAllowed(policy, { name: 'movie.mp4', type: 'video/mp4' })).toBe(false);
 		expect(isMediaAttachmentAllowed(policy, { name: 'image.png', type: 'image/png' })).toBe(false);
 	});
+	it('limits only Neve Image 2 swap and restore attachments', () => {
+		expect(getMediaAttachmentPolicy(true,'qwen_image_2s',false,false,'outfit')?.maxCount).toBe(5);
+		expect(getMediaAttachmentPolicy(true,'qwen_image_2s',false,false,'body')?.maxCount).toBe(4);
+		expect(getMediaAttachmentPolicy(true,'qwen_image_2s',false,false,'restore')?.maxCount).toBe(1);
+		for(const mode of ['inpaint','outpaint'])expect(getMediaAttachmentPolicy(true,'qwen_image_2s',false,false,mode)?.maxCount).toBe(1);
+		expect(getMediaAttachmentPolicy(true,'qwen_image_2s',false,false,'normal')?.maxCount).toBe(10);
+		expect(getMediaAttachmentPolicy(true,'qwen_image_2_1_official',false,false,'restore')?.maxCount).toBe(10);
+	});
 });
