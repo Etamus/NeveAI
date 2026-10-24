@@ -43,6 +43,125 @@ def parse_quoted_replacement(objective):
     return match.groups() if match.group(1).strip() else None
 
 
+def _replacement_value_type(snapshot, item, new):
+    if snapshot.format == "xlsx":
+        if item.get("is_formula"):
+            return "formula" if new.startswith("=") else "text"
+        if item.get("value_type") == "b" and new in {"0", "1"}:
+            return "boolean"
+        if item.get("value_type") == "n":
+            try:
+                if math.isfinite(float(new)):
+                    return "number"
+            except ValueError:
+                pass
+    return "text"
+
+
+def listed_replacements(snapshot, objective):
+    """Resolve only complete, explicit replacement lists, never mixed instructions."""
+    lines = [line.strip() for line in objective.splitlines() if line.strip()]
+    if not lines or not re.fullmatch(
+        r"(?:(?:quero que )?(?:troque|substitua) (?:os )?seguintes (?:textos|trechos)"
+        r"|replace (?:the )?following texts?):",
+        lines[0],
+        re.IGNORECASE,
+    ):
+        return None
+    if len(lines) < 3:
+        return None
+    pairs = []
+    for line in lines[1:]:
+        line = re.sub(r"^(?:[-*]|\d+[.)])\s+", "", line)
+        line = re.sub(
+            r"^(?:todos? (?:os |as )?|todas? (?:as |os )?|all (?:occurrences of )?)",
+            "",
+            line,
+            flags=re.IGNORECASE,
+        )
+        parts = re.split(r"\s+(?:por|with)\s+", line, flags=re.IGNORECASE)
+        if len(parts) != 2:
+            return None
+        values = []
+        for part in parts:
+            part = part.strip()
+            if part.startswith(('"', "\u201c")):
+                closing = '"' if part[0] == '"' else "\u201d"
+                if len(part) < 2 or not part.endswith(closing):
+                    return None
+                part = part[1:-1]
+            if any(quote in part for quote in ('"', "\u201c", "\u201d")):
+                return None
+            values.append(part)
+        if not values[0].strip() or not parts[1].strip():
+            return None
+        pairs.append(values)
+
+    # Locate every rule in the immutable source before applying any of them.
+    ranges = {}
+    for target, replacement in pairs:
+        found = False
+        for item in snapshot.elements:
+            for match in re.finditer(re.escape(target), item["text"]):
+                found = True
+                if not item.get("editable", True):
+                    raise DocumentEditError(
+                        "O trecho inclui um elemento protegido; o original foi mantido intacto."
+                    )
+                ranges.setdefault(item["id"], []).append(
+                    (match.start(), match.end(), replacement)
+                )
+        if not found:
+            raise DocumentEditError(
+                "Um trecho da lista nao foi encontrado no documento; revise o texto original antes de substituir."
+            )
+    changes = []
+    for item in snapshot.elements:
+        selected = sorted(ranges.get(item["id"], []))
+        if not selected:
+            continue
+        if any(left[1] > right[0] for left, right in zip(selected, selected[1:])):
+            raise DocumentEditError(
+                "A lista possui alvos sobrepostos ou duplicados; esclareca as substituicoes."
+            )
+        old = new = item["text"]
+        for start, end, replacement in reversed(selected):
+            new = new[:start] + replacement + new[end:]
+        if new != old:
+            change = {
+                "id": item["id"],
+                "old_text": old,
+                "new_text": new,
+                "value_type": _replacement_value_type(snapshot, item, new),
+            }
+            if (
+                snapshot.format == "pdf"
+                and snapshot.inventory.get("pdf_edit_strategy") == "unicode_objects"
+            ):
+                change["literal_replacements"] = [
+                    {
+                        "old_text": target,
+                        "new_text": replacement,
+                        "occurrences": sum(
+                            1
+                            for start, end, value in selected
+                            if old[start:end] == target and value == replacement
+                        ),
+                    }
+                    for target, replacement in pairs
+                    if any(
+                        old[start:end] == target and value == replacement
+                        for start, end, value in selected
+                    )
+                ]
+            changes.append(change)
+    if not changes:
+        raise DocumentEditError(
+            "A lista nao muda o conteudo solicitado; o original foi mantido intacto."
+        )
+    return changes
+
+
 def quoted_replacement(snapshot, objective):
     """Explicit quoted replacements need matching, not a generative rewrite."""
     parsed = parse_quoted_replacement(objective)
@@ -119,24 +238,12 @@ def quoted_replacement(snapshot, objective):
                     + new[min(len(old), end - cursor) :]
                 )
             if old != new:
-                value_type = "text"
-                if snapshot.format == "xlsx":
-                    if item.get("is_formula"):
-                        value_type = "formula" if new.startswith("=") else "text"
-                    elif item.get("value_type") == "b" and new in {"0", "1"}:
-                        value_type = "boolean"
-                    elif item.get("value_type") == "n":
-                        try:
-                            if math.isfinite(float(new)):
-                                value_type = "number"
-                        except ValueError:
-                            pass
                 changes.append(
                     {
                         "id": item["id"],
                         "old_text": old,
                         "new_text": new,
-                        "value_type": value_type,
+                        "value_type": _replacement_value_type(snapshot, item, new),
                     }
                 )
         cursor = right + 1
@@ -157,7 +264,9 @@ async def _complete_proposal(complete, messages, schema):
 async def propose_document_edits(
     snapshot, objective, complete, progress=None, conversation_context=None
 ):
-    literal = quoted_replacement(snapshot, objective)
+    literal = listed_replacements(snapshot, objective)
+    if literal is None:
+        literal = quoted_replacement(snapshot, objective)
     if literal:
         import asyncio
 

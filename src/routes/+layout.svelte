@@ -786,7 +786,7 @@
 	}
 
 	:global([data-sonner-toaster][data-y-position='top'][data-x-position='right']) {
-		top: calc(max(var(--offset), env(safe-area-inset-top)) + 20px + var(--neve-update-toast-offset, 0px) + var(--neve-download-toast-offset, 0px));
+		top: calc(max(var(--offset), env(safe-area-inset-top)) + 20px + var(--neve-update-toast-offset, 0px) + var(--neve-download-toast-offset, 0px) + var(--neve-model-runtime-toast-offset, 0px));
 	}
 
 	:global([data-sonner-toaster] [data-sonner-toast][data-styled='true']) {
@@ -851,7 +851,7 @@
 
 	@media (max-width: 600px) {
 		:global([data-sonner-toaster][data-y-position='top'][data-x-position='right']) {
-			top: calc(40px + var(--neve-update-toast-offset, 0px) + var(--neve-download-toast-offset, 0px));
+			top: calc(40px + var(--neve-update-toast-offset, 0px) + var(--neve-download-toast-offset, 0px) + var(--neve-model-runtime-toast-offset, 0px));
 		}
 
 		:global([data-sonner-toaster] [data-sonner-toast][data-styled='true']) {

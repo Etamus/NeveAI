@@ -1,17 +1,12 @@
 <script>
 	import { onDestroy } from 'svelte';
-	import { marked } from 'marked';
 	import { replaceTokens, processResponseContent } from '$lib/utils';
 	import { user } from '$lib/stores';
 
-	import markedExtension from '$lib/utils/marked/extension';
-	import markedKatexExtension from '$lib/utils/marked/katex-extension';
-	import { disableSingleTilde } from '$lib/utils/marked/strikethrough-extension';
-	import { mentionExtension } from '$lib/utils/marked/mention-extension';
+	import { createChatMarkdownParser } from '$lib/utils/marked/chat-lexer';
+	import { createStreamingMarkdownScheduler } from '$lib/utils/marked/streaming-parser';
 
 	import MarkdownTokens from './Markdown/MarkdownTokens.svelte';
-	import footnoteExtension from '$lib/utils/marked/footnote-extension';
-	import citationExtension from '$lib/utils/marked/citation-extension';
 
 	export let id = '';
 	export let content;
@@ -35,74 +30,29 @@
 	export let onTaskClick = () => {};
 
 	let tokens = [];
-	let pendingUpdate = null;
-	let lastContent = '';
-	let lastParsedContent = '';
-
-	const options = {
-		throwOnError: false,
-		breaks: true
-	};
-
-	marked.use(markedKatexExtension(options));
-	marked.use(markedExtension(options));
-	marked.use(citationExtension(options));
-	marked.use(footnoteExtension(options));
-	marked.use(disableSingleTilde);
-	marked.use({
-		extensions: [
-			mentionExtension({ triggerChar: '@' }),
-			mentionExtension({ triggerChar: '#' }),
-			mentionExtension({ triggerChar: '$' })
-		]
+	let parse = createChatMarkdownParser();
+	let context = [];
+	let snapshot = '';
+	let modelName;
+	let userName;
+	const scheduler = createStreamingMarkdownScheduler(() => {
+		const processed = replaceTokens(processResponseContent(snapshot), modelName, userName);
+		tokens = parse(processed);
 	});
 
-	const parseTokens = (force = false) => {
-		if (!force && content === lastContent) return;
-		lastContent = content;
-
-		const processed = replaceTokens(processResponseContent(content), model?.name, $user?.name);
-		if (!force && processed === lastParsedContent) return;
-		lastParsedContent = processed;
-
-		const newTokens = marked.lexer(processed);
-
-		// During streaming: reuse stable token references so Svelte skips re-rendering
-		// completed tokens — only the actively-growing last token gets a new reference.
-		if (!done && tokens.length > 0) {
-			tokens = newTokens.map((tok, i) => {
-				const prev = tokens[i];
-				if (prev && prev.type === tok.type && prev.raw === tok.raw) return prev;
-				return tok;
-			});
-		} else {
-			tokens = newTokens;
-		}
+	const updateHandler = (value, isDone, messageId, nextModelName, nextUserName) => {
+		const changedId = context[0] !== messageId;
+		const changedContext = changedId || context[1] !== nextModelName || context[2] !== nextUserName;
+		if (changedId) parse = createChatMarkdownParser();
+		context = [messageId, nextModelName, nextUserName];
+		snapshot = value ?? '';
+		modelName = nextModelName;
+		userName = nextUserName;
+		scheduler.update(isDone || changedContext || snapshot.length === 0, snapshot.length > 0);
 	};
 
-	const updateHandler = (content, isDone) => {
-		if (content) {
-			if (isDone) {
-				cancelAnimationFrame(pendingUpdate);
-				pendingUpdate = null;
-				parseTokens(true);
-			} else if (tokens.length === 0) {
-				parseTokens();
-			} else if (!pendingUpdate) {
-				pendingUpdate = requestAnimationFrame(() => {
-					pendingUpdate = null;
-					parseTokens();
-				});
-			}
-		}
-	};
-
-	$: updateHandler(content, done);
-
-	// Throttle parsing to once per animation frame while streaming
-	$: onDestroy(() => {
-		cancelAnimationFrame(pendingUpdate);
-	});
+	$: updateHandler(content, done, id, model?.name, $user?.name);
+	onDestroy(() => scheduler.destroy());
 </script>
 
 {#key id}

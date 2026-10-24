@@ -4,7 +4,8 @@ import uuid
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
-from neveai.internal.db import Base, get_db_context
+from neveai.internal.db import Base
+from neveai.utils.db_work import transaction_context as get_db_context
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import (
@@ -131,21 +132,27 @@ class ChatMessageTable:
         user_id: str,
         data: dict,
         db: Optional[Session] = None,
+        commit: bool = True,
     ) -> Optional[ChatMessageModel]:
         """Insert or update a chat message."""
         with get_db_context(db) as db:
             now = int(time.time())
             timestamp = data.get("timestamp", now)
+            if not isinstance(timestamp, (int, float)):
+                timestamp = now
 
             # Use composite ID: {chat_id}-{message_id}
             composite_id = f"{chat_id}-{message_id}"
 
             existing = db.get(ChatMessage, composite_id)
+            info = data.get("info") or {}
+            usage = data.get("usage") if "usage" in data else info.get("usage")
+            has_usage = "usage" in data or "usage" in info
             if existing:
                 # Update existing
                 if "role" in data:
                     existing.role = data["role"]
-                if "parent_id" in data:
+                if "parent_id" in data or "parentId" in data:
                     existing.parent_id = data.get("parent_id") or data.get("parentId")
                 if "content" in data:
                     existing.content = data.get("content")
@@ -162,29 +169,18 @@ class ChatMessageTable:
                 if "done" in data:
                     existing.done = data.get("done", True)
                 if "status_history" in data or "statusHistory" in data:
-                    existing.status_history = data.get("status_history") or data.get(
-                        "statusHistory"
-                    )
+                    existing.status_history = data.get("status_history", data.get("statusHistory"))
                 if "error" in data:
                     existing.error = data.get("error")
-                # Extract usage - check direct field first, then info.usage
-                usage = data.get("usage")
-                if not usage:
-                    info = data.get("info", {})
-                    usage = info.get("usage") if info else None
-                if usage:
+                if has_usage:
                     existing.usage = usage
                 existing.updated_at = now
-                db.commit()
-                db.refresh(existing)
-                return ChatMessageModel.model_validate(existing)
+                result = ChatMessageModel.model_validate(existing)
+                if commit:
+                    db.commit()
+                return result
             else:
                 # Insert new
-                # Extract usage - check direct field first, then info.usage
-                usage = data.get("usage")
-                if not usage:
-                    info = data.get("info", {})
-                    usage = info.get("usage") if info else None
                 message = ChatMessage(
                     id=composite_id,
                     chat_id=chat_id,
@@ -198,17 +194,17 @@ class ChatMessageTable:
                     sources=data.get("sources"),
                     embeds=data.get("embeds"),
                     done=data.get("done", True),
-                    status_history=data.get("status_history")
-                    or data.get("statusHistory"),
+                    status_history=data.get("status_history", data.get("statusHistory")),
                     error=data.get("error"),
                     usage=usage,
                     created_at=timestamp,
                     updated_at=now,
                 )
                 db.add(message)
-                db.commit()
-                db.refresh(message)
-                return ChatMessageModel.model_validate(message)
+                result = ChatMessageModel.model_validate(message)
+                if commit:
+                    db.commit()
+                return result
 
 
     # Analytics methods

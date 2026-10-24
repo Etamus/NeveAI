@@ -13,6 +13,7 @@ export interface LocalModelRuntimeEventDetail {
 	timestamp: number;
 	filename?: string;
 	modelId?: string;
+	displayName?: string;
 	result?: any;
 	error?: string;
 }
@@ -49,6 +50,7 @@ export interface LocalModel {
 	is_loaded: boolean;
 	loaded_at: number | null;
 	n_gpu_layers: number | null;
+	process_rss_bytes?: number | null;
 	n_ctx: number | null;
 	context_auto?: boolean;
 	mmproj_filename: string | null;
@@ -252,13 +254,14 @@ export const loadLocalModel = async (
 	cache_type: string = 'f16',
 	speculative_decoding: string = 'default',
 	token_prediction: string = 'off',
-	context_shift: string = 'off'
+	context_shift: string = 'off',
+	display_name?: string
 ): Promise<any> => {
 	if (n_ctx === 0 && !(await getLlamaCppStatus(token)).automatic_context) {
 		throw new Error('Reinicie a interface para ativar o contexto automático atualizado.');
 	}
 	const operationId = createLocalModelOperationId();
-	emitLocalModelRuntimeEvent({ operationId, action: 'load', phase: 'start', filename });
+	emitLocalModelRuntimeEvent({ operationId, action: 'load', phase: 'start', filename, displayName: display_name });
 
 	try {
 		const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/load`, {
@@ -291,6 +294,7 @@ export const loadLocalModel = async (
 			action: 'load',
 			phase: 'success',
 			filename,
+			displayName: display_name,
 			modelId: result?.id,
 			result
 		});
@@ -301,19 +305,21 @@ export const loadLocalModel = async (
 			action: 'load',
 			phase: 'error',
 			filename,
+			displayName: display_name,
 			error: error?.message || 'Falha ao carregar modelo'
 		});
 		throw error;
 	}
 };
 
-export const unloadLocalModel = async (token: string = '', model_id: string): Promise<any> => {
+export const unloadLocalModel = async (token: string = '', model_id: string, display_name?: string): Promise<any> => {
 	const operationId = createLocalModelOperationId();
 	emitLocalModelRuntimeEvent({
 		operationId,
 		action: 'unload',
 		phase: 'start',
-		modelId: model_id
+		modelId: model_id,
+		displayName: display_name
 	});
 
 	try {
@@ -337,6 +343,7 @@ export const unloadLocalModel = async (token: string = '', model_id: string): Pr
 					action: 'unload',
 					phase: 'success',
 					modelId: model_id,
+					displayName: display_name,
 					result
 				});
 				return result;
@@ -350,6 +357,7 @@ export const unloadLocalModel = async (token: string = '', model_id: string): Pr
 			action: 'unload',
 			phase: 'success',
 			modelId: model_id,
+			displayName: display_name,
 			result
 		});
 		return result;
@@ -359,6 +367,7 @@ export const unloadLocalModel = async (token: string = '', model_id: string): Pr
 			action: 'unload',
 			phase: 'error',
 			modelId: model_id,
+			displayName: display_name,
 			error: error?.message || 'Falha ao descarregar modelo'
 		});
 		throw error;

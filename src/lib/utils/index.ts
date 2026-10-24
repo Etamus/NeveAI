@@ -389,6 +389,8 @@ export const formatDate = (inputDate) => {
 	}
 };
 
+let clipboardMarkdownConfigured = false;
+
 export const copyToClipboard = async (text, html = null, formatted = false) => {
 	if (formatted) {
 		let styledHtml = '';
@@ -401,8 +403,11 @@ export const copyToClipboard = async (text, html = null, formatted = false) => {
 					return hljs.highlight(code, { language }).value;
 				}
 			};
-			marked.use(markedKatexExtension(options));
-			marked.use(markedExtension(options));
+			if (!clipboardMarkdownConfigured) {
+				marked.use(markedKatexExtension(options));
+				marked.use(markedExtension(options));
+				clipboardMarkdownConfigured = true;
+			}
 			// DEVELOPER NOTE: Go to `$lib/components/chat/Messages/Markdown.svelte` to add extra markdown extensions for rendering.
 
 			const htmlContent = marked.parse(text);

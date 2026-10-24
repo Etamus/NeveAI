@@ -61,6 +61,7 @@ dependencies = [
     "chardet==5.2.0",
     "pypdf==6.19.0",
     "pypdfium2==5.13.0",
+    "PyMuPDF==1.26.6",
     "lxml==6.1.3",
     "striprtf==0.0.33",
     "fpdf2==2.8.9",

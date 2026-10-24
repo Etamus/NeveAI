@@ -32,6 +32,11 @@ export const imageModeDefaults = (mode: ImageMode = 'normal'): ImageModeOptions 
 });
 
 export const imageModeHasEditor = (mode: string) => mode === 'inpaint' || mode === 'outpaint';
+export const imageModeOwnsAttachmentSpacing = (
+	imageGenerationEnabled: boolean,
+	imageModel: string,
+	mode: string
+) => imageGenerationEnabled && imageModel === 'qwen_image_2s' && mode !== 'normal';
 export const imageModeHasPreview = (options: ImageModeOptions) =>
 	options.mode === 'inpaint' ? Boolean(options.mask) : options.mode === 'outpaint' &&
 	[options.rotation, options.pad_left, options.pad_right, options.pad_top, options.pad_bottom].some(value => Boolean(value));
@@ -57,11 +62,14 @@ export function imageModeDisplayLabel(message: { content?: unknown; image_mode_d
 	if (!display || display.mode === 'normal' || display.prompt !== message.content) return '';
 	return IMAGE_MODES.find(mode => mode.id === display.mode)?.label ?? '';
 }
-export const imageModeAttachmentLimit = (mode: string) => mode === 'restore' || imageModeHasEditor(mode) ? 1 : mode === 'body' ? 4 : mode === 'outfit' ? 5 : 10;
-export const imageModeAvailable = (mode: string, files: any[]) => mode === 'normal' || (
-	imageModeFiles(files).length > 0 && imageModeFiles(files).length <= imageModeAttachmentLimit(mode) &&
-	!imageModeFiles(files).some(file => file.status === 'uploading' || file.status === 'error')
-);
+export const imageModeAttachmentLimit = (mode: string) => mode === 'restore' || imageModeHasEditor(mode) ? 1 : imageModeIsSwap(mode) ? 4 : 10;
+export const imageModeAvailable = (mode: string, files: any[]) => {
+	const images = imageModeFiles(files);
+	return mode === 'normal' || images.length === 0 || (
+		images.length <= imageModeAttachmentLimit(mode) &&
+		!images.some(file => file.status === 'uploading' || file.status === 'error')
+	);
+};
 export const imageSwapSlots = (files: any[]) => {
 	const images = imageModeFiles(files);
 	const base = images.find(file => file.image_mode_role === 'base') ?? images.find(file => !file.image_mode_role);
@@ -75,7 +83,7 @@ export const imageModeFileError = (mode: string, files: any[]) => {
 	}
 	if (imageModeHasEditor(mode) && imageModeFiles(files).length !== 1) return 'Selecione apenas uma imagem para editar.';
 	if (!imageModeIsSwap(mode)) return '';
-	if (imageModeFiles(files).length > imageModeAttachmentLimit(mode)) return mode === 'body' ? 'Use no máximo quatro imagens, incluindo a base.' : 'Use no máximo cinco imagens, incluindo a base.';
+	if (imageModeFiles(files).length > imageModeAttachmentLimit(mode)) return 'Use no máximo quatro imagens, incluindo a base.';
 	const slots = imageSwapSlots(files);
 	if (!slots.base) return 'Adicione a imagem base.';
 	if (!slots.references.length) return mode === 'outfit' ? 'Adicione a referência de roupa.' : 'Adicione a referência do personagem.';
@@ -97,4 +105,14 @@ export const imageModeSourceKey = (file: any): string => {
 	let hash = 2166136261;
 	for (let index = 0; index < url.length; index++) hash = Math.imul(hash ^ url.charCodeAt(index), 16777619);
 	return `inline:${url.length}:${hash >>> 0}`;
+};
+
+export const imageModeSubmissionError = (options: ImageModeOptions, files: any[]) => {
+	const error = imageModeFileError(options.mode, files);
+	if (error) return error;
+	if (options.mode === 'outpaint' && (
+		options.source_id !== imageModeSourceKey(imageModeFiles(files)[0]) ||
+		!imageModeHasPreview(options)
+	)) return 'Apply an expansion adjustment before sending.';
+	return '';
 };

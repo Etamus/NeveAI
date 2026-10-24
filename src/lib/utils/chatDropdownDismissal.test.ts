@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { dismissChatDropdowns, onChatDropdownDismiss } from './chatDropdownDismissal';
 
 describe('Chat dropdown dismissal before temporary-mode changes', () => {
-	afterEach(() => vi.unstubAllGlobals());
+	afterEach(() => { vi.unstubAllGlobals(); });
 
 	it('closes dropdown state before finishing its exit and resolves after the exit', async () => {
 		vi.stubGlobal('requestAnimationFrame', (callback: () => void) => { callback(); return 1; });

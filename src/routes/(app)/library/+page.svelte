@@ -7,7 +7,7 @@
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 	import DocumentThumbnail from '$lib/components/common/DocumentThumbnail.svelte';
 	import Sidebar from '$lib/components/icons/Sidebar.svelte';
-	import { mobile, showSidebar } from '$lib/stores';
+	import { chatId, mobile, selectedFolder, showSidebar } from '$lib/stores';
 	const i18n = getContext('i18n');
 	const tabs = [
 		{ id: 'all', label: 'All' },
@@ -193,6 +193,8 @@
 		if (!document.hidden && !showViewer && !loading) void load(false, true);
 	};
 	onMount(() => {
+		chatId.set('');
+		selectedFolder.set(null);
 		mounted = true;
 		window.addEventListener('focus', refresh);
 		const filesChanged = () => {

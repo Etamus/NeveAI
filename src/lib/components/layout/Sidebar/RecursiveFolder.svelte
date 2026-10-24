@@ -586,7 +586,7 @@
 				{/if}
 
 				<div
-					class="translate-y-[0.5px] flex-1 justify-start text-start line-clamp-1 {!folderHasItems
+					class="h-5 flex-1 justify-start text-start leading-5 line-clamp-1 {!folderHasItems
 						? 'ml-[5px]'
 						: ''}"
 				>
@@ -615,7 +615,7 @@
 									edit = false;
 								}
 							}}
-							class="w-full h-full bg-transparent outline-hidden"
+							class="m-0 block h-5 w-full border-0 bg-transparent p-0 leading-5 outline-hidden"
 						/>
 					{:else}
 						{folders[folderId].name}
@@ -650,9 +650,7 @@
 
 		<div slot="content" class="w-full pt-0.5">
 			{#if (folders[folderId]?.childrenIds ?? []).length > 0 || (chats ?? []).length > 0}
-				<div
-					class="ml-3 pl-1 flex flex-col overflow-y-auto scrollbar-hidden border-s border-gray-100 dark:border-gray-700"
-				>
+				<div class="ml-3 pl-1 flex flex-col overflow-y-auto scrollbar-hidden">
 					{#if folders[folderId]?.childrenIds}
 						{@const children = folders[folderId]?.childrenIds
 							.map((id) => folders[id])

@@ -24,6 +24,8 @@ from fastapi import (
 from fastapi.responses import FileResponse, StreamingResponse
 from PIL.Image import DecompressionBombError
 from sqlalchemy.orm import Session
+from neveai.utils.db_work import session_route, db_work
+from neveai.utils.file_queries import file_process_state, files_without_content
 from neveai.internal.db import get_session, SessionLocal
 
 from neveai.constants import ERROR_MESSAGES
@@ -190,6 +192,7 @@ def process_uploaded_file(
 
 
 @router.post("/", response_model=FileModelResponse)
+@session_route
 def upload_file(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -243,11 +246,11 @@ def upload_file_handler(
         file_extension = file_extension[1:] if file_extension else ""
 
         if process and request.app.state.config.ALLOWED_FILE_EXTENSIONS:
-            request.app.state.config.ALLOWED_FILE_EXTENSIONS = [
+            allowed_extensions = [
                 ext for ext in request.app.state.config.ALLOWED_FILE_EXTENSIONS if ext
             ]
 
-            if file_extension not in request.app.state.config.ALLOWED_FILE_EXTENSIONS:
+            if file_extension not in allowed_extensions:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=ERROR_MESSAGES.DEFAULT(
@@ -343,20 +346,19 @@ def upload_file_handler(
 
 
 @router.get("/", response_model=list[FileModelResponse])
-async def list_files(
+@session_route
+def list_files(
     user=Depends(get_verified_user),
     content: bool = Query(True),
     db: Session = Depends(get_session),
 ):
+    if not content:
+        user_id = None if user.role == "admin" and BYPASS_ADMIN_ACCESS_CONTROL else user.id
+        return files_without_content(user_id=user_id, db=db)
     if user.role == "admin" and BYPASS_ADMIN_ACCESS_CONTROL:
         files = Files.get_files(db=db)
     else:
         files = Files.get_files_by_user_id(user.id, db=db)
-
-    if not content:
-        for file in files:
-            if "content" in file.data:
-                del file.data["content"]
 
     return files
 
@@ -367,6 +369,7 @@ async def list_files(
 
 
 @router.get("/generated")
+@session_route
 def list_generated_files(
     kind: str = Query("all", pattern="^(all|image|video|audio|document)$"),
     query: str = Query("", max_length=200),
@@ -379,7 +382,8 @@ def list_generated_files(
 
 
 @router.get("/search", response_model=list[FileModelResponse])
-async def search_files(
+@session_route
+def search_files(
     filename: str = Query(
         ...,
         description="Filename pattern to search for. Supports wildcards such as '*.txt'",
@@ -402,7 +406,8 @@ async def search_files(
     )
 
     # Use optimized database query with pagination
-    files = Files.search_files(
+    query_files = Files.search_files if content else files_without_content
+    files = query_files(
         user_id=user_id,
         filename=filename,
         skip=skip,
@@ -416,11 +421,6 @@ async def search_files(
             detail="No files found matching the pattern.",
         )
 
-    if not content:
-        for file in files:
-            if file.data and "content" in file.data:
-                del file.data["content"]
-
     return files
 
 
@@ -430,7 +430,8 @@ async def search_files(
 
 
 @router.delete("/all")
-async def delete_all_files(
+@session_route
+def delete_all_files(
     user=Depends(get_admin_user), db: Session = Depends(get_session)
 ):
     result = Files.delete_all_files(db=db)
@@ -438,7 +439,7 @@ async def delete_all_files(
         try:
             Storage.delete_all_files()
             VECTOR_DB_CLIENT.reset()
-            await asyncio.to_thread(_clear_generated_media_cache)
+            _clear_generated_media_cache()
         except Exception as e:
             log.exception(e)
             log.error("Error deleting files")
@@ -460,7 +461,8 @@ async def delete_all_files(
 
 
 @router.get("/{id}", response_model=Optional[FileModel])
-async def get_file_by_id(
+@session_route
+def get_file_by_id(
     id: str, user=Depends(get_verified_user), db: Session = Depends(get_session)
 ):
     file = Files.get_file_by_id(id, db=db)
@@ -480,8 +482,7 @@ async def get_file_by_id(
             from neveai.retrieval.pdf_layout import repair_pdf_content
             content = file.data.get('content', '')
             if isinstance(content, str):
-                from starlette.concurrency import run_in_threadpool
-                repaired = await run_in_threadpool(repair_pdf_content, file.path, content)
+                repaired = repair_pdf_content(file.path, content)
                 if repaired != content:
                     file = file.model_copy(update={'data': {**file.data, 'content': repaired}})
         return file
@@ -492,14 +493,23 @@ async def get_file_by_id(
         )
 
 
+def _authorized_file_process_state(id, user, db):
+    state = file_process_state(id, db)
+    if state:
+        state["allowed"] = (
+            state["user_id"] == user.id or user.role == "admin"
+            or has_access_to_file(id, "read", user, db=db)
+        )
+    return state
+
+
 @router.get("/{id}/process/status")
 async def get_file_process_status(
     id: str,
     stream: bool = Query(False),
     user=Depends(get_verified_user),
-    db: Session = Depends(get_session),
 ):
-    file = Files.get_file_by_id(id, db=db)
+    file = await db_work(_authorized_file_process_state, id, user)
 
     if not file:
         raise HTTPException(
@@ -508,9 +518,9 @@ async def get_file_process_status(
         )
 
     if (
-        file.user_id == user.id
+        file["user_id"] == user.id
         or user.role == "admin"
-        or has_access_to_file(id, "read", user, db=db)
+        or file["allowed"]
     ):
         if stream:
             MAX_FILE_PROCESSING_DURATION = 3600 * 2
@@ -520,9 +530,9 @@ async def get_file_process_status(
                 # Each poll creates its own short-lived session to avoid holding a
                 # connection for hours. A WebSocket push would be more efficient.
                 for _ in range(MAX_FILE_PROCESSING_DURATION):
-                    file_item = Files.get_file_by_id(file_id)  # Creates own session
+                    file_item = await db_work(file_process_state, file_id)
                     if file_item:
-                        data = file_item.model_dump().get("data", {})
+                        data = file_item
                         status = data.get("status")
 
                         if status:
@@ -543,11 +553,11 @@ async def get_file_process_status(
                     await asyncio.sleep(1)
 
             return StreamingResponse(
-                event_stream(file.id),
+                event_stream(file["id"]),
                 media_type="text/event-stream",
             )
         else:
-            return {"status": file.data.get("status", "pending")}
+            return {"status": file["status"] if file["has_status"] else "pending"}
     else:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -561,7 +571,8 @@ async def get_file_process_status(
 
 
 @router.get("/{id}/data/content")
-async def get_file_data_content_by_id(
+@session_route
+def get_file_data_content_by_id(
     id: str, user=Depends(get_verified_user), db: Session = Depends(get_session)
 ):
     file = Files.get_file_by_id(id, db=db)
@@ -595,6 +606,7 @@ class ContentForm(BaseModel):
 
 
 @router.post("/{id}/data/content/update")
+@session_route
 def update_file_data_content_by_id(
     request: Request,
     id: str,
@@ -664,6 +676,7 @@ def update_file_data_content_by_id(
 
 
 @router.get("/{id}/thumbnail")
+@session_route
 def get_file_thumbnail_by_id(
     id: str,
     user=Depends(get_verified_user),
@@ -698,7 +711,8 @@ def get_file_thumbnail_by_id(
 
 
 @router.get("/{id}/content")
-async def get_file_content_by_id(
+@session_route
+def get_file_content_by_id(
     id: str,
     user=Depends(get_verified_user),
     attachment: bool = Query(False),
@@ -773,7 +787,8 @@ async def get_file_content_by_id(
 
 
 @router.get("/{id}/content/html")
-async def get_html_file_content_by_id(
+@session_route
+def get_html_file_content_by_id(
     id: str, user=Depends(get_verified_user), db: Session = Depends(get_session)
 ):
     file = Files.get_file_by_id(id, db=db)
@@ -826,7 +841,8 @@ async def get_html_file_content_by_id(
 
 
 @router.get("/{id}/content/{file_name}")
-async def get_file_content_by_id(
+@session_route
+def get_file_content_by_id(
     id: str, user=Depends(get_verified_user), db: Session = Depends(get_session)
 ):
     file = Files.get_file_by_id(id, db=db)
@@ -890,7 +906,8 @@ async def get_file_content_by_id(
 
 
 @router.delete("/{id}")
-async def delete_file_by_id(
+@session_route
+def delete_file_by_id(
     id: str, user=Depends(get_verified_user), db: Session = Depends(get_session)
 ):
     file = Files.get_file_by_id(id, db=db)

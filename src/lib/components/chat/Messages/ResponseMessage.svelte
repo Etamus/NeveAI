@@ -16,6 +16,7 @@
 	import { audioQueue, config, models, settings, TTSWorker, user } from '$lib/stores';
 	import { copyToClipboard as _copyToClipboard, getMessageContentParts, removeAllDetails, removeReasoningControlTokens } from '$lib/utils';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
+	import { messageSnapshotEqual } from '$lib/utils/messageSnapshot';
 
 	import Name from './Name.svelte';
 	import ProfileImage from './ProfileImage.svelte';
@@ -121,12 +122,10 @@
 	$: if (history.messages) {
 		const source = history.messages[messageId];
 		if (source) {
-			// Fast path: O(1) check on the fields that change most often (content during streaming, done at end)
-			// Avoids 2x O(n) JSON.stringify calls that are always true during streaming anyway
+			// Streaming text and completion take the direct field fast path.
 			if (message.content !== source.content || message.done !== source.done) {
 				message = structuredClone(source);
-			} else if (JSON.stringify(message) !== JSON.stringify(source)) {
-				// Slow path: full comparison for infrequent changes (sources, annotations, status, etc.)
+			} else if (!messageSnapshotEqual(message, source)) {
 				message = structuredClone(source);
 			}
 		}
@@ -594,7 +593,7 @@
 											{#if message?.statusHistory?.some((status) => status.action === 'stable_diffusion')}
 												<div
 													data-generated-visual-media
-													class="relative w-full overflow-hidden rounded-lg"
+											class="relative w-full overflow-hidden rounded-[0.625rem]"
 													style={`aspect-ratio: ${generatedVisualAspectRatio}; width: min(100%, ${generatedImageDisplayWidth}rem); max-height: 26rem;`}
 												>
 													<Image
@@ -603,11 +602,11 @@
 														alt={message.content}
 														containerClassName="size-full"
 														className="block size-full outline-hidden focus:outline-hidden"
-														imageClassName="block size-full rounded-lg object-contain"
+												imageClassName="block size-full rounded-[0.625rem] object-contain"
 													/>
 												</div>
 											{:else}
-												<Image src={file.url} alt={message.content} imageClassName="rounded-lg" />
+										<Image src={file.url} alt={message.content} imageClassName="rounded-[0.625rem]" />
 											{/if}
 										{:else if file.type === 'audio' || (file?.content_type ?? '').startsWith('audio/')}
 											{#if message?.statusHistory?.some((status) => status.action === 'music_generation')}

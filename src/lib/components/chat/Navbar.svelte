@@ -453,17 +453,24 @@
 
 <style>
 	@media (max-width: 767px) {
-		.chat-navbar { padding-top: env(safe-area-inset-top, 0px); padding-bottom: 0; }
+		.chat-navbar {
+			min-height: calc(3rem + env(safe-area-inset-top, 0px));
+			padding-top: env(safe-area-inset-top, 0px);
+			padding-bottom: 0;
+		}
+		.chat-navbar > :global(div) { min-height: 3rem; }
 		.chat-navbar-model { min-width: 0; margin: 0; padding: 0; }
-		.chat-navbar-actions { align-self: center; gap: 0; }
+		.chat-navbar-actions { align-self: center; gap: 0; min-width: 0; }
 		.chat-navbar-sidebar { align-self: center; margin: 0; transform: none; }
-		.chat-navbar-sidebar :global(button) { width: 40px; height: 40px; justify-content: center; align-items: center; }
-		.chat-navbar :global(button) { min-height: 40px; }
+		.chat-navbar-sidebar :global(button) { width: 38px; height: 38px; justify-content: center; align-items: center; padding: 0; }
+		.chat-navbar :global(button) { min-height: 38px; }
 		.chat-navbar :global(button[id^='model-selector-']) { padding-inline: 0.375rem; font-size: 14px; }
 		.chat-navbar :global(button[aria-label='New Chat']) { display: none; }
 		.chat-navbar :global(#chat-context-menu-button),
 		.chat-navbar :global(button[aria-label='Models']),
-		.chat-navbar :global(#chat-parameters-button) { width: 40px; height: 40px; padding: 0; justify-content: center; align-items: center; }
+		.chat-navbar :global(#chat-parameters-button),
+		.chat-navbar :global(#temporary-chat-button),
+		.chat-navbar :global(#save-temporary-chat-button) { width: 38px; height: 38px; padding: 0; justify-content: center; align-items: center; }
 		.chat-navbar :global(button svg) { flex-shrink: 0; }
 		.chat-navbar-actions :global(button) { flex-shrink: 0; }
 		.chat-navbar :global(button[aria-label='Models'] svg) {

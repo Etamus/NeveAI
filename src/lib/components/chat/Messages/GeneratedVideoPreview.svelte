@@ -98,7 +98,7 @@
 			</button>
 		</div>
 
-		<div class="relative flex max-h-[calc(100dvh-7rem)] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg">
+		<div class="relative flex max-h-[calc(100dvh-7rem)] max-w-[calc(100vw-2rem)] overflow-hidden rounded-[0.625rem]">
 			<!-- Generated clips do not have a caption track available. -->
 			<!-- svelte-ignore a11y_media_has_caption -->
 			<video

@@ -15,7 +15,9 @@
 	import Markdown from './Markdown.svelte';
 	import GitHubRepositoryContent from './GitHubRepositoryContent.svelte';
 	import Image from '$lib/components/common/Image.svelte';
+	import { userMessageAttachmentUrl, userMessageImageSize } from '$lib/utils/userMessageImageLayout';
 	import { imageModeDisplayLabel } from '$lib/utils/imageModes';
+	import { messageSnapshotEqual } from '$lib/utils/messageSnapshot';
 	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
@@ -65,7 +67,7 @@
 		if (source) {
 			if (message.content !== source.content) {
 				message = structuredClone(source);
-			} else if (JSON.stringify(message) !== JSON.stringify(source)) {
+			} else if (!messageSnapshotEqual(message, source)) {
 				message = structuredClone(source);
 			}
 		}
@@ -134,10 +136,7 @@
 	const isImageAttachment = (file) =>
 		file?.type === 'image' || (file?.content_type ?? '').startsWith('image/');
 
-	const getAttachmentUrl = (file) =>
-		file?.url?.startsWith('data') || file?.url?.startsWith('http')
-			? file.url
-			: `${NEVEAI_API_BASE_URL}/files/${file.url}${file?.content_type ? '/content' : ''}`;
+	const getAttachmentUrl = userMessageAttachmentUrl;
 
 	$: if (message.content && contentElement) {
 		tick().then(checkOverflow);
@@ -184,7 +183,7 @@
 							>
 								{#each imageFiles as file, fileIndex}
 									<div
-										class="aspect-square min-w-0 overflow-hidden rounded-lg"
+									class="aspect-square min-w-0 overflow-hidden rounded-[0.625rem]"
 										style:grid-column-start={imageFiles.length >= 4 &&
 										gridRemainder > 0 &&
 										fileIndex === imageFiles.length - gridRemainder
@@ -197,18 +196,21 @@
 											alt={file?.name ?? ''}
 											containerClassName="size-full"
 											className="block size-full outline-hidden focus:outline-hidden"
-											imageClassName="block size-full rounded-lg object-cover"
+										imageClassName="block size-full rounded-[0.625rem] object-cover"
 										/>
 									</div>
 								{/each}
 							</div>
 						{:else if imageFiles.length === 1}
-							<div class="max-w-[20rem] {($settings?.chatBubble ?? true) ? 'self-end' : ''}">
+							{@const size = userMessageImageSize(imageFiles[0].image_width, imageFiles[0].image_height)}
+							<div class="relative max-w-[20rem] shrink-0 {($settings?.chatBubble ?? true) ? 'self-end' : ''}"
+								style={size ? `width: min(100%, ${size.width}px); aspect-ratio: ${size.width} / ${size.height};` : undefined}>
 								<Image
 									src={getAttachmentUrl(imageFiles[0])}
 									alt={imageFiles[0]?.name ?? ''}
-									containerClassName="w-fit max-w-full"
-									imageClassName="max-h-80 max-w-full rounded-lg object-contain"
+									containerClassName={size ? 'absolute inset-0 size-full' : 'w-fit max-w-full'}
+									className={size ? 'block size-full' : 'w-full'}
+									imageClassName={size ? 'm-0! block size-full rounded-[0.625rem] object-contain' : 'max-h-80 max-w-full rounded-[0.625rem] object-contain'}
 								/>
 							</div>
 						{/if}
@@ -359,7 +361,7 @@
 				<div class="w-full">
 					<div class="flex {($settings?.chatBubble ?? true) ? 'justify-end pb-1' : 'w-full'}">
 						<div
-							data-user-message-scroll-anchor={message.files?.some(isImageAttachment) ? '' : undefined}
+							data-user-message-scroll-anchor={message.files?.length ? '' : undefined}
 							class="rounded-xl {($settings?.chatBubble ?? true)
 								? `max-w-[80%] px-4 py-2 bg-gray-50 dark:bg-gray-850 ${
 										message.files ? 'rounded-tr-lg' : ''

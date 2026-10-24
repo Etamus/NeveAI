@@ -99,8 +99,8 @@ def validate_mode_references(mode, references):
         raise ValueError("Selecione apenas uma imagem para editar.")
     if mode == "body" and not 2 <= len(references) <= 4:
         raise ValueError("Use de duas a quatro imagens, incluindo a base.")
-    if mode == "outfit" and not 2 <= len(references) <= 5:
-        raise ValueError("Use de duas a cinco imagens, incluindo a base.")
+    if mode == "outfit" and not 2 <= len(references) <= 4:
+        raise ValueError("Use de duas a quatro imagens, incluindo a base.")
 
 
 class NeveImage2ModeRuntime(fast.NeveImage2SRuntime):

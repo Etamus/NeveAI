@@ -24,6 +24,7 @@
 		{id:'9:16',shape:'h-5 w-[11px]'}
 	];
 	$: availableRatios=ratios.filter(option=>outpaintAspect(width,height,options,ratioValue(option.id)));
+	$: modified=Boolean((options?.rotation??0)||(options?.pad_left??0)||(options?.pad_right??0)||(options?.pad_top??0)||(options?.pad_bottom??0)||options?.crop);
 	function ratioValue(value:string){const [w,h]=value.split(':').map(Number);return w/h;}
 	function setAspect(){if(aspect==='free')return;const next=outpaintAspect(width,height,options,ratioValue(aspect));if(next)options=next;}
 	function chooseAspect(value:string){aspect=value;setAspect();aspectMenu=false;}
@@ -105,7 +106,7 @@
 		</div>
 	{:else if source}<div class="absolute inset-0 grid place-items-center"><Spinner className="size-5" /></div>
 	{:else}<div class="absolute inset-0 grid place-items-center text-sm text-gray-500">{$i18n.t('Imagem principal')}</div>{/if}
-	<div class="absolute bottom-3 right-3 z-30"><Tooltip content={$i18n.t('Reset')}><button type="button" class="grid size-8 place-items-center rounded-md bg-white/90 text-gray-500 hover:bg-gray-100 dark:bg-gray-850/90 dark:text-gray-300 dark:hover:bg-gray-800" aria-label={$i18n.t('Reset')} on:click={reset}><Restore className="size-4" /></button></Tooltip></div>
+	{#if modified}<div class="absolute bottom-3 right-3 z-30"><Tooltip content={$i18n.t('Reset')}><button type="button" class="grid size-8 place-items-center rounded-md bg-white/90 text-gray-500 hover:bg-gray-100 dark:bg-gray-850/90 dark:text-gray-300 dark:hover:bg-gray-800" aria-label={$i18n.t('Reset')} on:click={reset}><svg viewBox="0 0 15 15" class="size-4" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.85355 2.14645C5.04882 2.34171 5.04882 2.65829 4.85355 2.85355L3.70711 4H9C11.4853 4 13.5 6.01472 13.5 8.5C13.5 10.9853 11.4853 13 9 13H5C4.72386 13 4.5 12.7761 4.5 12.5C4.5 12.2239 4.72386 12 5 12H9C10.933 12 12.5 10.433 12.5 8.5C12.5 6.567 10.933 5 9 5H3.70711L4.85355 6.14645C5.04882 6.34171 5.04882 6.65829 4.85355 6.85355C4.65829 7.04882 4.34171 7.04882 4.14645 6.85355L2.14645 4.85355C1.95118 4.65829 1.95118 4.34171 2.14645 4.14645L4.14645 2.14645C4.34171 1.95118 4.65829 1.95118 4.85355 2.14645Z" /></svg></button></Tooltip></div>{/if}
 	{#if ready&&manipulating}<div class="pointer-events-none absolute bottom-3 left-3 z-20 flex items-center gap-3 rounded-md bg-white/90 px-2 py-1.5 text-xs tabular-nums text-gray-500 dark:bg-gray-850/90 dark:text-gray-300" data-outpaint-info><span>{`${frame.width} \u00d7 ${frame.height}`}</span><span>{options.rotation??0}{'\u00b0'}</span></div>{/if}
 </div>
 <style>

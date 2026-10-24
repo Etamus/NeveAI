@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { getContext, tick } from 'svelte';
 
-	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 
@@ -159,12 +158,6 @@
 						disabled={loading}
 					>
 						{edit ? $i18n.t('Editar') : $i18n.t('Criar')}
-
-						{#if loading}
-							<div class="ml-2 self-center">
-								<Spinner />
-							</div>
-						{/if}
 					</button>
 				</div>
 			</form>

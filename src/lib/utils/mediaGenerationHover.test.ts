@@ -42,7 +42,7 @@ const setup = (active = true) => {
 	return { root, reference, button, instance, poppers, enabled, dispatch, destroy };
 };
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('tooltips while visual media is generating', () => {
 	it('removes the floating tooltip and disables stale hover on scroll', () => {

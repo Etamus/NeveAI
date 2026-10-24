@@ -326,7 +326,7 @@
 	{#if confirmEdit}
 		<div
 			id="sidebar-chat-item"
-			class=" w-full flex justify-between rounded-lg px-[11px] py-[6px] {isCurrentChat ||
+			class=" w-full flex items-center justify-between rounded-lg px-[11px] py-[6px] {isCurrentChat ||
 			confirmEdit
 				? 'bg-gray-100 dark:bg-gray-800 selected'
 				: selected
@@ -338,7 +338,7 @@
 			<input
 				id="chat-title-input-{id}"
 				bind:value={chatTitle}
-				class="bg-transparent w-full outline-hidden"
+				class="m-0 block h-5 w-full border-0 bg-transparent p-0 leading-5 outline-hidden"
 				placeholder={generating ? $i18n.t('Generating...') : ''}
 				disabled={generating}
 				on:keydown={chatTitleInputKeydownHandler}
@@ -350,7 +350,7 @@
 	{:else}
 		<a
 			id="sidebar-chat-item"
-			class=" w-full flex justify-between rounded-lg px-[11px] py-[6px] {isCurrentChat ||
+			class=" w-full flex items-center justify-between rounded-lg px-[11px] py-[6px] {isCurrentChat ||
 			confirmEdit
 				? 'bg-gray-100 dark:bg-gray-800 selected'
 				: selected
@@ -383,8 +383,8 @@
 			on:focus={(e) => {}}
 			draggable="false"
 		>
-			<div class="flex self-center flex-1 w-full min-w-0">
-				<div dir="auto" class="text-left self-center overflow-hidden w-full h-[20px] truncate {$activeChatIds.has(id) && !mouseOver && !chatMenuOpen && !selected && id !== $chatId ? 'sidebar-chat-title-fade' : ''}">
+			<div class="flex min-h-5 flex-1 items-center w-full min-w-0">
+				<div dir="auto" class="block h-5 w-full overflow-hidden text-left leading-5 truncate {$activeChatIds.has(id) && !mouseOver && !chatMenuOpen && !selected && id !== $chatId ? 'sidebar-chat-title-fade' : ''}">
 					{title}
 				</div>
 			</div>
@@ -408,8 +408,8 @@
 						? 'from-gray-100 dark:from-gray-800'
 						: 'invisible group-hover:visible from-gray-100 dark:from-gray-800'}
             absolute {className === 'pr-2'
-			? 'right-[8px]'
-			: 'right-1'} top-0 bottom-0 flex items-center pr-0.5 mr-1.5 pl-5 bg-linear-to-l from-80%
+			? 'right-[6px]'
+			: 'right-0.5'} top-0 bottom-0 flex items-center pr-0.5 mr-1.5 pl-5 bg-linear-to-l from-80%
               to-transparent"
 		on:mouseenter={(e) => {
 			mouseOver = true;
@@ -523,7 +523,7 @@
 			pointer-events: auto;
 			padding: 0;
 			margin: 0;
-			right: 0.375rem;
+			right: 0.25rem;
 			color: var(--color-gray-500);
 		}
 		:global(#sidebar-chat-item) { padding-right: 4.75rem; min-height: 44px; align-items: center; }

@@ -4,9 +4,9 @@
 
 	import { getContext, onMount, tick } from 'svelte';
 
-	import { formatFileSize, getLineCount } from '$lib/utils';
+	import { formatFileSize } from '$lib/utils';
+	import { truncateFileName } from '$lib/utils/fileViewer';
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
-	import { settings } from '$lib/stores';
 	import { getKnowledgeById } from '$lib/apis/knowledge';
 	import { getFileById, getFileContentById } from '$lib/apis/files';
 
@@ -14,9 +14,6 @@
 	import Markdown from '$lib/components/chat/Messages/Markdown.svelte';
 
 	const i18n = getContext('i18n');
-
-	const CONTENT_PREVIEW_LIMIT = 10000;
-	let expandedContent = false;
 
 	import Modal from './Modal.svelte';
 	import XMark from '../icons/XMark.svelte';
@@ -47,16 +44,13 @@
 	let isDocx = false;
 	let isPptx = false;
 	let isPlainText = false;
+	let videoPreviewReady = false;
 
-	let selectedTab = '';
-	$: hasExtractedContent = Boolean((item?.file?.data?.content ?? item?.content ?? '').trim());
-	$: hasDocumentPreview = isPDF || isExcel || isCode || isMarkdown || isDocx || isPptx;
 	let excelWorkbook: WorkBook | null = null;
 	let excelSheetNames: string[] = [];
 	let selectedSheet = '';
 	let excelHtml = '';
 	let excelError = '';
-	let rowCount = 0;
 
 	// DOCX state
 	let docxHtml = '';
@@ -209,7 +203,6 @@
 		const worksheet = excelWorkbook.Sheets[selectedSheet];
 		const result = await excelToTable(worksheet);
 		excelHtml = result.html;
-		rowCount = result.rowCount;
 	};
 
 	$: if (selectedSheet && excelWorkbook) {
@@ -270,8 +263,6 @@
 	};
 
 	const loadContent = async () => {
-		selectedTab = item?.generated || isAudio || isVideo || (hasDocumentPreview && !hasExtractedContent) ? 'preview' : '';
-		expandedContent = false;
 		if (item?.type === 'collection') {
 			loading = true;
 
@@ -312,11 +303,11 @@
 			loading = false;
 		}
 
-		if (hasDocumentPreview && !(item?.file?.data?.content ?? item?.content ?? '').trim()) selectedTab = 'preview';
 		await tick();
 	};
 
 $: if (show) {
+	videoPreviewReady = false;
 	loadContent();
 }
 
@@ -347,8 +338,8 @@ $: if (show) {
 			<div class="flex items-start justify-between">
 				<div class="min-w-0 flex-1 pr-3">
 					<div class=" font-medium text-lg dark:text-gray-100">
-						<div class="line-clamp-1 cursor-default">
-							{item?.name ?? 'File'}
+						<div class="line-clamp-1 cursor-default" title={item?.name ?? 'File'}>
+							{truncateFileName(item?.name ?? 'File')}
 						</div>
 					</div>
 				</div>
@@ -368,16 +359,14 @@ $: if (show) {
 
 			<div>
 				<div class="flex flex-col items-center md:flex-row gap-1 justify-between w-full">
-					<div class=" flex flex-wrap text-xs gap-1 text-gray-500">
+					<div class="flex flex-wrap gap-x-2 gap-y-1 text-xs text-gray-500">
 						{#if item?.type === 'collection'}
 							{#if item?.type}
 								<div class="capitalize shrink-0">{item.type}</div>
-								•
 							{/if}
 
 							{#if item?.description}
 								<div class="line-clamp-1">{item.description}</div>
-								•
 							{/if}
 
 							{#if item?.created_at}
@@ -389,21 +378,6 @@ $: if (show) {
 
 						{#if item.size}
 							<div class="capitalize shrink-0">{formatFileSize(item.size)}</div>
-							{#if !(isImage || isAudio || isVideo) && (hasExtractedContent || item?.knowledge)}•{/if}
-						{/if}
-
-						{#if item?.file?.data?.content && !isAudio}
-							<div class="capitalize shrink-0">
-								{#if isExcel && rowCount > 0 && selectedTab === 'preview'}
-									{$i18n.t('{{COUNT}} Rows', {
-										COUNT: rowCount
-									})}
-								{:else}
-									{$i18n.t('{{COUNT}} extracted lines', {
-										COUNT: getLineCount(item?.file?.data?.content ?? '')
-									})}
-								{/if}
-							</div>
 						{/if}
 
 						{#if item?.knowledge}
@@ -446,36 +420,10 @@ $: if (show) {
 			</div>
 		</div>
 
-		<div class="flex-1 min-h-0 flex flex-col overflow-hidden">
+		<div class="flex-1 min-h-0 flex flex-col overflow-hidden pt-2.5">
 			{#if !loading}
-				{#if !item?.generated && !isAudio && !isVideo && hasDocumentPreview && hasExtractedContent}
-					<div
-						class="shrink-0 flex mb-2.5 scrollbar-none overflow-x-auto w-full border-b border-gray-50 dark:border-gray-850/30 text-center text-sm font-medium bg-transparent dark:text-gray-200"
-					>
-						<button
-							class="min-w-fit py-1.5 px-4 border-b {selectedTab === ''
-								? ' '
-								: ' border-transparent text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-							type="button"
-							on:click={() => {
-								selectedTab = '';
-							}}>{$i18n.t('Content')}</button
-						>
-
-						<button
-							class="min-w-fit py-1.5 px-4 border-b {selectedTab === 'preview'
-								? ' '
-								: ' border-transparent text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-							type="button"
-							on:click={() => {
-								selectedTab = 'preview';
-							}}>{$i18n.t('Preview')}</button
-						>
-					</div>
-				{/if}
-
 				<div
-					class="flex-1 min-h-0 {(selectedTab === 'preview' && isPDF) || isVideo || isImage
+					class="flex-1 min-h-0 {isPDF || isVideo || isImage
 						? 'overflow-hidden'
 						: 'overflow-auto'}"
 				>
@@ -492,13 +440,13 @@ $: if (show) {
 					{/if}
 
 					{#if isImage}
-						<div class="file-image-viewport relative h-full w-full overflow-hidden bg-white dark:bg-gray-900">
+						<div class="file-image-viewport relative h-full w-full overflow-hidden rounded-lg bg-white dark:bg-gray-900">
 							<div class="flex h-full w-full items-center justify-center">
 								<img
 									use:initImagePanzoom
 									src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
 									alt={item?.name ?? 'Image'}
-									class="file-image-target block h-full w-full object-contain rounded-lg"
+									class="file-image-target block h-auto max-h-full w-auto max-w-full rounded-lg object-contain"
 									loading="lazy"
 									draggable="false"
 								/>
@@ -519,77 +467,18 @@ $: if (show) {
 							{/if}
 						</div>
 					{:else if isVideo}
-						<div class="flex h-full w-full items-center justify-center overflow-hidden">
-							<GeneratedVideoPlayer src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`} fileId={item.id} name={item.name} fitContainer />
+						<div class="relative flex h-full w-full items-center justify-center overflow-hidden">
+							<GeneratedVideoPlayer src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`} fileId={item.id} name={item.name} fitContainer revealAfterMetadata on:ready={()=>videoPreviewReady=true} />
+							{#if !videoPreviewReady}<div class="pointer-events-none absolute inset-0 grid place-items-center"><Spinner className="size-5" /></div>{/if}
 						</div>
-					{:else if selectedTab === ''}
-						{#if item?.file?.data}
-							{@const rawContent = (item?.file?.data?.content ?? '').trim() || 'Sem conteúdo'}
-							{@const isTruncated =
-								($settings?.renderMarkdownInPreviews ?? true) &&
-								rawContent.length > CONTENT_PREVIEW_LIMIT &&
-								!expandedContent}
-							{#if $settings?.renderMarkdownInPreviews ?? true}
-								<div class="text-sm prose dark:prose-invert max-w-full">
-									<Markdown
-										content={isTruncated ? rawContent.slice(0, CONTENT_PREVIEW_LIMIT) : rawContent}
-										id="file-preview"
-									/>
-								</div>
-								{#if isTruncated}
-									<button
-										class="mt-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition"
-										on:click={() => {
-											expandedContent = true;
-										}}
-									>
-										{$i18n.t('Show all ({{COUNT}} characters)', {
-											COUNT: rawContent.length.toLocaleString()
-										})}
-									</button>
-								{/if}
-							{:else}
-								<div class="text-xs whitespace-pre-wrap">
-									{rawContent}
-								</div>
-							{/if}
-						{:else if item?.content}
-							{@const rawContent = (item?.content ?? '').trim() || 'Sem conteúdo'}
-							{@const isTruncated =
-								($settings?.renderMarkdownInPreviews ?? true) &&
-								rawContent.length > CONTENT_PREVIEW_LIMIT &&
-								!expandedContent}
-							{#if $settings?.renderMarkdownInPreviews ?? true}
-								<div class="text-sm prose dark:prose-invert max-w-full">
-									<Markdown
-										content={isTruncated ? rawContent.slice(0, CONTENT_PREVIEW_LIMIT) : rawContent}
-										id="file-preview-content"
-									/>
-								</div>
-								{#if isTruncated}
-									<button
-										class="mt-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition"
-										on:click={() => {
-											expandedContent = true;
-										}}
-									>
-										{$i18n.t('Show all ({{COUNT}} characters)', {
-											COUNT: rawContent.length.toLocaleString()
-										})}
-									</button>
-								{/if}
-							{:else}
-								<div class="text-xs whitespace-pre-wrap">
-									{rawContent}
-								</div>
-							{/if}
-						{/if}
-					{:else if selectedTab === 'preview'}
+					{:else}
 						{#if isPDF}
-							<PDFViewer
-								url={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
-								className="w-full h-full border-0 rounded-lg"
-							/>
+							<div class="h-full w-full overflow-hidden rounded-lg">
+								<PDFViewer
+									url={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
+									className="w-full h-full border-0"
+								/>
+							</div>
 						{:else if isExcel}
 							{#if excelError}
 								<div class="text-red-500 text-sm p-4">
@@ -717,7 +606,7 @@ $: if (show) {
 					{/if}
 				</div>
 			{:else}
-				<div class="flex items-center justify-center py-6">
+				<div class="flex flex-1 min-h-0 items-center justify-center">
 					<Spinner className="size-5" />
 				</div>
 			{/if}

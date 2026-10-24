@@ -23,7 +23,7 @@ const setup = (overflow = 1, enabled = true) => {
 	const action = stabilizeResidualChatScroll(viewport as unknown as HTMLElement, enabled);
 	return {viewport, attributes, action, resize: () => resized(), mutate: () => changed(), disconnectResize, disconnectMutation, observeResize};
 };
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('idle residual chat scrolling', () => {
 	it('observes the wrapper border box so composer padding changes release the lock', () => {

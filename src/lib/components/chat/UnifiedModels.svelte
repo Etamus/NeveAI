@@ -953,6 +953,18 @@
 
 	const isSameLocalModel = (localModel: LocalModel, model: LocalModel) =>
 		localModel.id === model.id || localModel.filename === model.filename;
+	const localModelDisplayName = (model: LocalModel) =>
+		(adminModels ?? []).find((entry: any) =>
+			entry.id === model.id ||
+			entry.id === `local/${model.filename}` ||
+			entry.info?.meta?.filename === model.filename
+		)?.name ??
+		($_models ?? []).find((entry: any) =>
+			entry.id === model.id ||
+			entry.id === `local/${model.filename}` ||
+			entry.info?.meta?.filename === model.filename
+		)?.name ??
+		model.filename.replace(/\.gguf$/i, '');
 
 	const markLocalModelLoaded = (model: LocalModel, result: any, mmprojFilename: string | null = null) => {
 		localModels = localModels.map((localModel) =>
@@ -1131,7 +1143,8 @@
 				getCacheTypeForLoad(),
 				getSpeculativeDecodingForLoad(),
 				getTokenPredictionForLoad(),
-				getContextShiftForLoad()
+				getContextShiftForLoad(),
+				localModelDisplayName(model)
 			);
 			markLocalModelLoaded(model, result);
 			localSuccess = `${model.filename} carregado com sucesso!`;
@@ -1184,7 +1197,8 @@
 				getCacheTypeForLoad(),
 				getSpeculativeDecodingForLoad(),
 				getTokenPredictionForLoad(),
-				getContextShiftForLoad()
+				getContextShiftForLoad(),
+				localModelDisplayName(model)
 			);
 			markLocalModelLoaded(model, result, mmprojFile);
 			localSuccess = $i18n.t('{{name}} loaded! (vision: {{file}})', {
@@ -1213,7 +1227,7 @@
 		localSuccess = '';
 		let completed = false;
 		try {
-			await unloadLocalModel(localStorage.token, model.id);
+			await unloadLocalModel(localStorage.token, model.id, localModelDisplayName(model));
 			localSuccess = `${model.filename} descarregado.`;
 			markLocalModelUnloaded(model.filename, model.id);
 			setLocalModelUnloadSettling(model.filename);
@@ -1578,7 +1592,7 @@
 					{#if vramPreviewModel && vramProjectedOffloadBytes > 0}
 						<span class="shrink-0 text-red-600 dark:text-red-300">RAM: {formatBytes(vramProjectedOffloadBytes)}</span>
 					{:else if loadedModelHasOffload}
-						<span class="shrink-0 text-red-600 dark:text-red-300">{$i18n.t('RAM: uso parcial')}</span>
+						<span class="shrink-0 text-red-600 dark:text-red-300">RAM: {loadedLocalModel?.process_rss_bytes != null ? formatBytes(loadedLocalModel.process_rss_bytes) : '—'}</span>
 					{:else}
 						<span class="shrink-0">{$i18n.t('Livre:')} {formatBytes(vramDisplayedFreeBytes)}</span>
 					{/if}

@@ -16,7 +16,7 @@
 	import ImageModeSelector from './MessageInput/ImageModeSelector.svelte';
 	import ImageModeEditor from './MessageInput/ImageModeEditor.svelte';
 	import ImageSwapSlots from './MessageInput/ImageSwapSlots.svelte';
-	import { imageModeDefaults, imageModeFiles, imageModeSourceKey, imageModeIsSwap, imageModeHasEditor, imageModeFileError, imageModeSubmission, type ImageModeOptions } from '$lib/utils/imageModes';
+	import { imageModeDefaults, imageModeFiles, imageModeSourceKey, imageModeIsSwap, imageModeHasEditor, imageModeFileError, imageModeSubmissionError, imageModeSubmission, type ImageModeOptions } from '$lib/utils/imageModes';
 	import { preloadImageModeThumbnails } from '$lib/utils/imageModeThumbnails';
 	import {attachmentScroller} from '$lib/utils/attachmentScroll';
 	import './MessageInput/attachmentStrip.css';
@@ -129,15 +129,17 @@
 	export let prompt = '';
 	export let files: any[] = [];
 	export let sendDisabled = false;
-	$: activeImageMode = stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s' && (hasImageAttachment || pendingImageAttachments > 0 || uploadPending) ? stableDiffusionModeOptions.mode : 'normal';
+	$: activeImageMode = stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s' ? stableDiffusionModeOptions.mode : 'normal';
 	$: restoreActive = activeImageMode === 'restore';
 	$: imagePromptHidden = restoreActive || activeImageMode === 'outpaint';
+	$: imageSubmissionError = imageModeSubmissionError({...stableDiffusionModeOptions, mode:activeImageMode}, files);
 	$: canSubmitMessage = (prompt.trim().length > 0 || files.some((file) => file?.pastedText === true) ||
 		((restoreActive || imageModeIsSwap(activeImageMode) || activeImageMode === 'outpaint') && !imageModeFileError(activeImageMode, files) && imageModeFiles(files).length > 0)) &&
-		(activeImageMode !== 'inpaint' || !!stableDiffusionModeOptions.mask);
+		(activeImageMode !== 'inpaint' || !!stableDiffusionModeOptions.mask) && !imageSubmissionError;
 	$: hasImageAttachment = files.some(
 		(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
 	);
+	$: hasComposerAttachmentArea = files.length > 0 || activeImageMode !== 'normal';
 
 	export let selectedToolIds: string[] = [];
 
@@ -149,55 +151,41 @@
 	export let stableDiffusionModeOptions: ImageModeOptions = imageModeDefaults();
 	$: if (stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s') void preloadImageModeThumbnails();
 	let showImageModeEditor=false;
+	$: if (responseInProgress && stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s' && stableDiffusionModeOptions.mode !== 'normal') {
+		stableDiffusionModeOptions = imageModeDefaults();
+		showImageModeDropdown = false;
+	}
 	function openImageModeEditor(){closeComposerDropdowns();showImageModeEditor=true;}
 	$: if(!imageModeHasEditor(activeImageMode)||!imageModeFiles(files).length)showImageModeEditor=false;
 	$: imageSwapActive = imageModeIsSwap(activeImageMode);
 	function submitComposer() {
 		const mode = activeImageMode;
-		const error = imageModeFileError(mode, files);
+		const error = imageSubmissionError;
 		if (error) { toast.error($i18n.t(error)); return; }
 		if (uploadPending || pendingImageAttachments || files.some(file => file.status === 'uploading')) return;
 		const submission = imageModeSubmission(mode, prompt, text => $i18n.t(text));
 		dispatch('submit', submission.imageModeDisplay ? submission : submission.prompt);
 	}
-	let emptyImageModeResetQueued = false;
-	function resetEmptyImageMode() {
-		if (emptyImageModeResetQueued) return;
-		emptyImageModeResetQueued = true;
-		// Update bindings outside this reactive pass so dependent upload policies refresh too.
-		queueMicrotask(() => {
-			emptyImageModeResetQueued = false;
-			if (stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s' && stableDiffusionModeOptions.mode !== 'normal' && !imageModeFiles(files).length && !pendingImageAttachments && !uploadPending) stableDiffusionModeOptions = imageModeDefaults();
-		});
-	}
-	$: if (stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s' && stableDiffusionModeOptions.mode !== 'normal' && !hasImageAttachment && !pendingImageAttachments && !uploadPending) resetEmptyImageMode();
 	export let stableDiffusionQuality:
 		| 'neve_image'
 		| 'neve_image_2'
 		| 'qwen_image_2s'
+		| 'moss_image_3'
 		| 'qwen_image_2_1_official' = 'neve_image_2';
 	export let stableDiffusionStyle:
 		| 'none'
 		| 'minimalist'
-		| 'polygonal'
 		| 'fantasy'
-		| 'comics'
-		| 'arcane'
 		| 'spontaneous'
 		| 'realistic'
-		| 'manga'
-		| 'pixelated' = 'none';
+		| 'manga' = 'none';
 	const imageStyleOptions = [
 		{ id: 'none', label: 'Sem estilo', image: '' },
 		{ id: 'realistic', label: 'Realista', image: '/static/realista.webp' },
 		{ id: 'spontaneous', label: 'Espontâneo', image: '/static/espontaneo.webp' },
 		{ id: 'minimalist', label: 'Minimalista', image: '/static/minimalista.webp' },
 		{ id: 'fantasy', label: 'Fantasia', image: '/static/fantasia.webp' },
-		{ id: 'manga', label: 'Mangá', image: '/static/manga.webp' },
-		{ id: 'comics', label: 'Quadrinhos', image: '/static/quadrinhos.webp' },
-		{ id: 'polygonal', label: 'Poligonal', image: '/static/poligonal.webp' },
-		{ id: 'pixelated', label: 'Pixelado', image: '/static/pixelado.webp' },
-		{ id: 'arcane', label: 'Arcano', image: '/static/arcano.webp' }
+		{ id: 'manga', label: 'Mangá', image: '/static/manga.webp' }
 	] as const;
 	const noImageStyleOption = imageStyleOptions[0];
 	const imageStyleThumbnailOptions = imageStyleOptions.filter((style) => style.image);
@@ -206,6 +194,14 @@
 	const imageStyleThumbnailCount = imageStyleThumbnailOptions.length;
 	let renderedImageStyleThumbnailCount = 0;
 	let renderedImageStyleThumbnailsReady = false;
+	let imageStyleOptionsViewport: HTMLElement;
+	const centerSelectedImageStyle = (viewport: HTMLElement) => {
+		const selected = viewport.querySelector<HTMLElement>('[aria-pressed="true"]');
+		viewport.scrollLeft = selected
+			? Math.max(0, selected.offsetLeft - (viewport.clientWidth - selected.offsetWidth) / 2)
+			: 0;
+		viewport.dispatchEvent(new Event('scroll'));
+	};
 	const preloadImageStyleThumbnails = () => {
 		if (imageStyleThumbnailPreloadPromise) return imageStyleThumbnailPreloadPromise;
 
@@ -248,6 +244,7 @@
 	const markRenderedImageStyleThumbnailReady = () => {
 		renderedImageStyleThumbnailCount += 1;
 		if (renderedImageStyleThumbnailCount >= imageStyleThumbnailCount) {
+			centerSelectedImageStyle(imageStyleOptionsViewport);
 			renderedImageStyleThumbnailsReady = true;
 		}
 	};
@@ -797,7 +794,7 @@
 	let imageStyleDropdownRequest = 0;
 	let showImageResolutionDropdown = false;
 	let dropdownChatId = $chatId;
-	$: if (['qwen_image_2s', 'qwen_image_2_1_official'].includes(stableDiffusionQuality) && hasImageAttachment)
+	$: if (['qwen_image_2s', 'qwen_image_2_1_official', 'moss_image_3'].includes(stableDiffusionQuality) && hasImageAttachment)
 		showImageResolutionDropdown = false;
 	let showVideoResolutionDropdown = false;
 	let showVideoDurationDropdown = false;
@@ -857,7 +854,6 @@
 		showImageResolutionDropdown = false;
 	}
 	$: if (stableDiffusionQuality !== 'qwen_image_2s') showImageModeDropdown = false;
-	$: if (!imageModeFiles(files).length) showImageModeDropdown = false;
 	function clearImageModeSource() {
 		stableDiffusionModeOptions = { ...stableDiffusionModeOptions, source_id: undefined, mask: null, crop: null, reference_crops: [] };
 	}
@@ -884,6 +880,7 @@
 		if (quality === 'neve_image_2') return 'neveai.imageResolution.neve_image_1_4';
 		if (quality === 'qwen_image_2s') return 'neveai.imageResolution.neve_image_2';
 		if (quality === 'qwen_image_2_1_official') return 'neveai.imageResolution.neve_image_2_1';
+		if (quality === 'moss_image_3') return 'neveai.imageResolution.moss_image_3';
 		return null;
 	};
 	const saveImageResolution = (quality: typeof stableDiffusionQuality) => {
@@ -2273,7 +2270,7 @@
 								{/if}
 
 								{#if imageSwapActive || restoreActive || imageModeHasEditor(activeImageMode)}
-									<ImageSwapSlots bind:files mode={stableDiffusionModeOptions.mode as 'outfit'|'body'|'restore'|'inpaint'|'outpaint'} options={stableDiffusionModeOptions} onEdit={openImageModeEditor} uploadFiles={inputFilesHandler} disabled={uploadPending || responseInProgress || pendingImageAttachments > 0 || files.some(file => file.status === 'uploading')} />
+									<ImageSwapSlots bind:files mode={stableDiffusionModeOptions.mode as 'outfit'|'body'|'restore'|'inpaint'|'outpaint'} options={stableDiffusionModeOptions} onEdit={openImageModeEditor} uploadFiles={inputFilesHandler} disabled={uploadPending || pendingImageAttachments > 0 || files.some(file => file.status === 'uploading')} />
 								{:else if files.length > 0}
 									<div
 										class="composer-attachment-strip attachment-strip mx-2 mt-2.5 mb-1 px-1 pt-1 pb-1 flex min-w-0 max-w-full items-start flex-nowrap gap-2 overflow-x-auto overflow-y-hidden"
@@ -2410,8 +2407,7 @@
 						<div class="composer-editor {isCompact ? 'flex-1 min-w-0 px-1 flex items-center' : 'px-2.5'}" class:hidden={imagePromptHidden} inert={imagePromptHidden}>
 								<div
 									bind:this={chatInputContainerEl}
-									class="chat-input-scroll rtl:text-right ltr:text-left bg-transparent dark:text-gray-100 outline-hidden w-full px-1 resize-none h-fit max-h-47 overflow-auto {files.length ===
-									0
+									class="chat-input-scroll rtl:text-right ltr:text-left bg-transparent dark:text-gray-100 outline-hidden w-full px-1 resize-none h-fit max-h-47 overflow-auto {!hasComposerAttachmentArea
 										? atSelectedModel !== undefined
 											? 'pt-1.5'
 											: isCompact
@@ -2613,13 +2609,13 @@
 										on:click={() => { if (responseInProgress) stopResponse(); }}
 										>
 										{#if responseInProgress}
-												<svg viewBox="0 0 24 24" fill="currentColor" class="size-5 -translate-x-[0.5px]" aria-hidden="true"><rect x="6.25" y="6.25" width="11.5" height="11.5" rx="1.15" /></svg>
+												<svg viewBox="0 0 24 24" fill="currentColor" class="composer-submit-glyph size-5" aria-hidden="true"><rect x="6.25" y="6.25" width="11.5" height="11.5" rx="1.15" /></svg>
 										{:else}
 											<svg
 												xmlns="http://www.w3.org/2000/svg"
 												viewBox="0 0 16 16"
 												fill="currentColor"
-												class="block size-5 -translate-x-[0.5px]"
+												class="composer-submit-glyph block size-5"
 											>
 												<path
 													fill-rule="evenodd"
@@ -2838,7 +2834,9 @@
 														}}
 													>
 														<span
-															>{stableDiffusionQuality === 'qwen_image_2_1_official'
+															>{stableDiffusionQuality === 'moss_image_3'
+																? 'Neve Image 3'
+																: stableDiffusionQuality === 'qwen_image_2_1_official'
 																? 'Neve Image 2.6'
 															: stableDiffusionQuality === 'qwen_image_2s'
 																? 'Neve Image 2'
@@ -2864,7 +2862,7 @@
 															class="fixed z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
 															in:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
 														>
-													{#each [{ id: 'neve_image_2', label: 'Neve Image 1.5' }, { id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.6' }] as quality}
+													{#each [{ id: 'neve_image_2', label: 'Neve Image 1.5' }, { id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.6' }, { id: 'moss_image_3', label: 'Neve Image 3' }] as quality}
 																<button
 																	type="button"
 																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -2875,6 +2873,7 @@
 																				| 'neve_image_2'
 																						| 'qwen_image_2s'
 																				| 'qwen_image_2_1_official'
+																				| 'moss_image_3'
 																		)}
 																>
 																	<span>{quality.label}</span
@@ -2886,7 +2885,40 @@
 														</div>
 													{/if}
 												</div>
-										{#if (stableDiffusionQuality === 'neve_image_2' || stableDiffusionQuality === 'qwen_image_2s' || stableDiffusionQuality === 'qwen_image_2_1_official') && !(['qwen_image_2s', 'qwen_image_2_1_official'].includes(stableDiffusionQuality) && hasImageAttachment)}
+										{#if stableDiffusionQuality === 'qwen_image_2s'}
+											<ImageModeSelector bind:options={stableDiffusionModeOptions} bind:show={showImageModeDropdown} {files} locked={responseInProgress} disabled={sendDisabled || uploadPending || pendingImageAttachments > 0} ongoing={!!history?.currentId} position={viewportDropdown} scroller={styleOptionsHorizontalScroller} onOpen={closeComposerDropdowns} />
+										{/if}
+												{#if stableDiffusionQuality === 'neve_image_2'}
+													<div
+														class="image-style-control relative shrink-0"
+														id="image-style-dropdown-container"
+													>
+														<button
+															type="button"
+															class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
+															aria-label={$i18n.t('Image style')}
+															aria-expanded={showImageStyleDropdown}
+															on:click|preventDefault={toggleImageStyleDropdown}
+														>
+															<span>{selectedImageStyleLabel}</span>
+															<svg
+																viewBox="0 0 20 20"
+																fill="currentColor"
+																class="size-3.5 transition-transform duration-150 {showImageStyleDropdown
+																	? ''
+																	: 'rotate-180'}"
+																aria-hidden="true"
+																><path
+																	fill-rule="evenodd"
+																	d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
+																	clip-rule="evenodd"
+																/></svg
+															>
+														</button>
+													</div>
+												{/if}
+
+										{#if (stableDiffusionQuality === 'neve_image_2' || stableDiffusionQuality === 'qwen_image_2s' || stableDiffusionQuality === 'qwen_image_2_1_official' || stableDiffusionQuality === 'moss_image_3') && !(stableDiffusionQuality === 'qwen_image_2s' && (hasImageAttachment || activeImageMode !== 'normal')) && !(['qwen_image_2_1_official', 'moss_image_3'].includes(stableDiffusionQuality) && hasImageAttachment)}
 													<div
 														class="image-resolution-control relative shrink-0"
 														id="image-resolution-dropdown-container"
@@ -2947,38 +2979,6 @@
 																{/each}
 															</div>
 														{/if}
-													</div>
-												{/if}
-												{#if stableDiffusionQuality === 'qwen_image_2s'}
-														<ImageModeSelector bind:options={stableDiffusionModeOptions} bind:show={showImageModeDropdown} {files} disabled={sendDisabled || responseInProgress || uploadPending || pendingImageAttachments > 0} ongoing={!!history?.currentId} position={viewportDropdown} scroller={styleOptionsHorizontalScroller} onOpen={closeComposerDropdowns} />
-												{/if}
-												{#if stableDiffusionQuality === 'neve_image_2'}
-													<div
-														class="image-style-control relative shrink-0"
-														id="image-style-dropdown-container"
-													>
-														<button
-															type="button"
-															class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-															aria-label={$i18n.t('Image style')}
-															aria-expanded={showImageStyleDropdown}
-															on:click|preventDefault={toggleImageStyleDropdown}
-														>
-															<span>{selectedImageStyleLabel}</span>
-															<svg
-																viewBox="0 0 20 20"
-																fill="currentColor"
-																class="size-3.5 transition-transform duration-150 {showImageStyleDropdown
-																	? ''
-																	: 'rotate-180'}"
-																aria-hidden="true"
-																><path
-																	fill-rule="evenodd"
-																	d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
-																	clip-rule="evenodd"
-																/></svg
-															>
-														</button>
 													</div>
 												{/if}
 											{/if}
@@ -3235,7 +3235,7 @@
 														xmlns="http://www.w3.org/2000/svg"
 														viewBox="0 0 24 24"
 														fill="currentColor"
-														class="block size-5 -translate-x-[0.5px]"
+													class="composer-submit-glyph block size-5"
 														aria-hidden="true"
 													>
 														<rect
@@ -3272,7 +3272,7 @@
 																xmlns="http://www.w3.org/2000/svg"
 																viewBox="0 0 16 16"
 																fill="currentColor"
-																class="block size-5 -translate-x-[0.5px]"
+														class="composer-submit-glyph block size-5"
 															>
 																<path
 																	fill-rule="evenodd"
@@ -3293,6 +3293,7 @@
 								<div
 									id="image-style-dropdown-panel"
 									use:viewportDropdown={{
+										immediate: true,
 										fullWidth: true,
 										positionAnchorId: 'message-input-container',
 										fitAvailableHeight: true
@@ -3329,6 +3330,7 @@
 
 										<div class="min-w-0 flex-1" use:styleOptionsHorizontalScroller>
 											<div
+												bind:this={imageStyleOptionsViewport}
 												id="image-style-options-viewport"
 												data-style-options-viewport
 								class="style-options-scrollbar scrollbar-none overflow-x-auto overflow-y-hidden overscroll-x-none"
@@ -3422,12 +3424,27 @@
 	}
 	.chat-input-scroll { overscroll-behavior-y: contain; }
 	:global(#send-message-button) {
-		min-width: 2rem;
-		min-height: 2rem;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex: 0 0 36px;
+		width: 36px;
+		height: 36px;
+		min-width: 36px;
+		min-height: 36px;
+		padding: 0;
+		border-radius: 50%;
+		box-sizing: border-box;
 		aspect-ratio: 1;
 		line-height: 1;
 	}
-	:global(#send-message-button > svg) { display: block; flex-shrink: 0; }
+	:global(#send-message-button > svg) { display: block; flex-shrink: 0; width: 20px; height: 20px; }
+	:global(#send-message-button > .composer-submit-glyph) {
+		translate: none;
+		transform: none;
+		transform-origin: center;
+		margin: 0;
+	}
 	.message-input-active-controls :global(button.group:not(:hover)),
 	.message-input-active-controls :global(button[aria-label='Available Tools']:not(:hover)) {
 		background-color: transparent;
@@ -3481,20 +3498,45 @@
 	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-active-controls::-webkit-scrollbar { display: none; }
 	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-active-controls > button { flex-shrink: 0; }
 	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-active-controls > div > button { white-space: nowrap; }
-	:global(.composer-more-trigger) { display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; }
-	:global(#send-message-button > svg) { translate: none; }
+	:global(#input-menu-button),
+	:global(.composer-more-trigger) {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		flex: 0 0 36px;
+		width: 36px;
+		height: 36px;
+		min-width: 36px;
+		min-height: 36px;
+		box-sizing: border-box;
+		line-height: 1;
+		padding: 0;
+	}
+	:global(.composer-add-icon) {
+		display: block;
+		flex: none;
+		width: 22px;
+		height: 22px;
+		translate: none;
+		transform: none;
+		margin: 0;
+	}
 	.message-input-actions-primary, .message-input-actions-secondary { align-self: center; align-items: center; }
 	.message-input-add-control { display: flex; align-items: center; }
 	.message-input-active-controls > button { translate: none; }
 	@media (max-width: 767px) {
-		:global(#message-input-container) { padding-inline: 0.5rem; border-radius: 1.5rem; }
+		:global(#message-input-container) {
+			padding-inline: 0.5rem;
+			border-radius: 1.375rem;
+			box-shadow: 0 6px 20px rgb(0 0 0 / 10%);
+		}
 		:global(#message-input-container > .composer-editor) { padding-inline: 0.375rem; }
-		:global(#input-menu-button) { width: 36px; height: 36px; }
+		:global(#input-menu-button), :global(.composer-more-trigger), :global(#send-message-button) { flex-basis: 38px; width: 38px; height: 38px; min-width: 38px; min-height: 38px; }
 		:global(.composer-add-icon) { translate: none; transform: none; }
 		:global(#input-menu-button) { flex: none; }
 		:global(#message-input-container.flex-row) {
 			display: grid;
-			grid-template-columns: 2.25rem minmax(0, 1fr);
+			grid-template-columns: 2.375rem minmax(0, 1fr);
 			align-items: center;
 			align-content: end;
 			border-radius: 1.5rem;
@@ -3527,7 +3569,7 @@
 		.chat-input-scroll { max-height: min(12rem, 35dvh); }
 		.message-input-actions {
 			display: grid;
-			grid-template-columns: 36px minmax(36px, 1fr) minmax(0, max-content);
+			grid-template-columns: 38px minmax(38px, 1fr) minmax(0, max-content);
 			column-gap: 0.25rem;
 			align-items: center;
 			margin-inline: 0;
@@ -3581,7 +3623,7 @@
 			gap: 0;
 			justify-content: center;
 		}
-		.message-input-active-controls button { min-height: 36px; white-space: nowrap; }
+		.message-input-active-controls button { min-height: 38px; white-space: nowrap; }
 		:global([data-composer-root] button.invisible) { visibility: visible; }
 		.stable-image-actions .image-quality-control,
 		.stable-image-actions .image-style-control { flex: 0 0 auto; }

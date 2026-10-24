@@ -26,6 +26,11 @@
 	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
 	import NeveUpdateToast from '$lib/components/chat/NeveUpdateToast.svelte';
 	import DownloadProgressToast from '$lib/components/chat/DownloadNeveModelsProgressToast.svelte';
+	import LocalModelRuntimeToast from '$lib/components/chat/LocalModelRuntimeToast.svelte';
+	import {
+		LOCAL_MODEL_RUNTIME_EVENT,
+		type LocalModelRuntimeEventDetail
+	} from '$lib/apis/llamacpp';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import { Shortcut, shortcuts } from '$lib/shortcuts';
@@ -42,6 +47,9 @@
 	let updateToastShownVersion = '';
 	let updateToastHeight = 0;
 	let downloadToastHeight = 0;
+	let modelRuntimeToastHeight = 0;
+	let modelRuntimeToast: LocalModelRuntimeEventDetail | null = null;
+	let modelRuntimeToastTimer: ReturnType<typeof setTimeout> | undefined;
 	let updateToastObserver: MutationObserver | undefined;
 	let unsubscribeUpdateRoute: (() => void) | undefined;
 	let unsubscribeUpdateSettings: (() => void) | undefined;
@@ -80,6 +88,45 @@
 			$neveDownloadToast ? `${Math.max(downloadToastHeight, 82) + 14}px` : '0px'
 		);
 	}
+
+	$: if (typeof document !== 'undefined') {
+		document.documentElement.style.setProperty(
+			'--neve-model-runtime-toast-offset',
+			modelRuntimeToast ? `${Math.max(modelRuntimeToastHeight, 68) + 14}px` : '0px'
+		);
+	}
+
+	const modelRuntimeName = (detail: LocalModelRuntimeEventDetail) => {
+		if (detail.displayName?.trim()) return detail.displayName.trim();
+		const filename = String(detail.filename || detail.result?.filename || '').trim();
+		const modelId = String(detail.modelId || detail.result?.id || '').trim();
+		const model = ($models ?? []).find((item) =>
+			item.id === modelId ||
+			item.id === `local/${filename}` ||
+			item.name === filename ||
+			item.info?.meta?.filename === filename
+		);
+		const fallback = filename || modelId.replace(/^local\//, '') || 'Modelo local';
+		return model?.name || fallback.replace(/\.gguf$/i, '');
+	};
+
+	const handleModelRuntime = (event: Event) => {
+		const detail = (event as CustomEvent<LocalModelRuntimeEventDetail>).detail;
+		if (!detail) return;
+		clearTimeout(modelRuntimeToastTimer);
+		modelRuntimeToast = detail;
+		if (detail.phase !== 'start') {
+			modelRuntimeToastTimer = setTimeout(
+				() => (modelRuntimeToast = null),
+				detail.phase === 'error' ? 4500 : 2200
+			);
+		}
+	};
+
+	onMount(() => {
+		window.addEventListener(LOCAL_MODEL_RUNTIME_EVENT, handleModelRuntime);
+		return () => window.removeEventListener(LOCAL_MODEL_RUNTIME_EVENT, handleModelRuntime);
+	});
 
 	const closeUpdateToast = () => {
 		updateToastDismissed = true;
@@ -418,7 +465,9 @@
 		if (typeof document !== 'undefined') {
 			document.documentElement.style.removeProperty('--neve-update-toast-offset');
 			document.documentElement.style.removeProperty('--neve-download-toast-offset');
+			document.documentElement.style.removeProperty('--neve-model-runtime-toast-offset');
 		}
+		clearTimeout(modelRuntimeToastTimer);
 	});
 </script>
 
@@ -444,6 +493,23 @@
 			label={$neveDownloadToast.label}
 			cancelling={$neveDownloadToast.cancelling}
 			onCancel={$neveDownloadToast.onCancel}
+		/>
+	</div>
+{/if}
+
+{#if modelRuntimeToast}
+	<div
+		data-neve-toast
+		role="status"
+		aria-live="polite"
+		class="fixed right-[9px] top-[calc(1.75rem+var(--neve-update-toast-offset,0px)+var(--neve-download-toast-offset,0px))] z-[1000000000] max-[600px]:left-[19px] max-[600px]:right-auto max-[600px]:top-[calc(1rem+var(--neve-update-toast-offset,0px)+var(--neve-download-toast-offset,0px))]"
+		bind:clientHeight={modelRuntimeToastHeight}
+	>
+		<LocalModelRuntimeToast
+			name={modelRuntimeName(modelRuntimeToast)}
+			action={modelRuntimeToast.action}
+			phase={modelRuntimeToast.phase}
+			error={modelRuntimeToast.error || ''}
 		/>
 	</div>
 {/if}

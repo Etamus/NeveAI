@@ -12,6 +12,15 @@ def initial_image_dimensions(quality: str, resolution: str, references: list[str
     from neveai.routers import stable_diffusion as sd
     from neveai.utils.image_memory import cpu_image_requested, cpu_image_size
 
+    if quality == sd.MOSS_IMAGE_3_QUALITY:
+        from neveai.routers.image_moss_generation import moss_image_dimensions
+        source_size = None
+        if references and resolution == "auto":
+            raw = sd._read_image_reference_bytes(references[0], user_id)
+            with Image.open(io.BytesIO(raw)) as image:
+                source_size = image.size[::-1] if image.getexif().get(274) in (5, 6, 7, 8) else image.size
+        return moss_image_dimensions(resolution, source_size=source_size)
+
     if not references or quality not in {sd.QWEN_IMAGE_21_OFFICIAL_QUALITY, "qwen_image_2s", "neve_image_2"}:
         return default
     backend = sd._preferred_sd_cpp_windows_backend() if os.name == "nt" else None

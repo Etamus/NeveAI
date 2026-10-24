@@ -42,8 +42,8 @@
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
 	export let stableDiffusionEnabled = false;
-	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2s' | 'qwen_image_2_1_official' = 'neve_image';
-	export let stableDiffusionStyle: 'none' | 'minimalist' | 'polygonal' | 'fantasy' | 'comics' | 'arcane' | 'spontaneous' | 'realistic' | 'manga' | 'pixelated' = 'none';
+	export let stableDiffusionQuality: 'neve_image' | 'neve_image_2' | 'qwen_image_2s' | 'qwen_image_2_1_official' | 'moss_image_3' = 'neve_image';
+	export let stableDiffusionStyle: 'none' | 'minimalist' | 'fantasy' | 'spontaneous' | 'realistic' | 'manga' = 'none';
 	export let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	export let stableDiffusionModeOptions: import('$lib/utils/imageModes').ImageModeOptions = { mode: 'normal' };
 	export let musicGenerationEnabled = false;

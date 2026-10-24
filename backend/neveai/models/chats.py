@@ -5,11 +5,12 @@ import uuid
 from typing import Optional
 
 from sqlalchemy.orm import Session
-from neveai.internal.db import (Base, get_db_context)
+from neveai.internal.db import Base
+from neveai.utils.db_work import transaction_context as get_db_context
 from neveai.models.tags import Tags
 from neveai.models.folders import Folders
 from neveai.models.chat_messages import ChatMessage, ChatMessages
-from neveai.utils.misc import sanitize_data_for_db, sanitize_text_for_db
+from neveai.utils.misc import sanitize_data_for_db
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import (
@@ -166,6 +167,25 @@ class ChatListResponse(BaseModel):
 
 
 class ChatTable:
+    def _sync_messages(self, chat_item, previous, db):
+        history = chat_item.chat.get("history")
+        old_history = previous.get("history")
+        messages = history.get("messages", {}) if isinstance(history, dict) else {}
+        old_messages = old_history.get("messages", {}) if isinstance(old_history, dict) else {}
+        if not isinstance(messages, dict) or not isinstance(old_messages, dict):
+            return
+        for message_id, message in messages.items():
+            if isinstance(message, dict) and message.get("role") and message != old_messages.get(message_id):
+                ChatMessages.upsert_message(
+                    message_id, chat_item.id, chat_item.user_id, message,
+                    db=db, commit=False,
+                )
+        removed = old_messages.keys() - messages.keys()
+        if removed:
+            db.query(ChatMessage).filter(
+                ChatMessage.id.in_([f"{chat_item.id}-{key}" for key in removed])
+            ).delete(synchronize_session=False)
+
     def _clean_null_bytes(self, obj):
         """Recursively remove null bytes from strings in dict/list structures."""
         return sanitize_data_for_db(obj)
@@ -216,25 +236,9 @@ class ChatTable:
 
             chat_item = Chat(**chat.model_dump())
             db.add(chat_item)
+            db.flush()
+            self._sync_messages(chat_item, {}, db)
             db.commit()
-            db.refresh(chat_item)
-
-            # Dual-write initial messages to chat_message table
-            try:
-                history = form_data.chat.get("history", {})
-                messages = history.get("messages", {})
-                for message_id, message in messages.items():
-                    if isinstance(message, dict) and message.get("role"):
-                        ChatMessages.upsert_message(
-                            message_id=message_id,
-                            chat_id=id,
-                            user_id=user_id,
-                            data=message,
-                        )
-            except Exception as e:
-                log.warning(
-                    f"Failed to write initial messages to chat_message table: {e}"
-                )
 
             return ChatModel.model_validate(chat_item) if chat_item else None
 
@@ -277,35 +281,30 @@ class ChatTable:
                 chats.append(Chat(**chat.model_dump()))
 
             db.add_all(chats)
+            db.flush()
+            for chat_obj in chats:
+                self._sync_messages(chat_obj, {}, db)
             db.commit()
-
-            # Dual-write messages to chat_message table
-            try:
-                for form_data, chat_obj in zip(chat_import_forms, chats):
-                    history = form_data.chat.get("history", {})
-                    messages = history.get("messages", {})
-                    for message_id, message in messages.items():
-                        if isinstance(message, dict) and message.get("role"):
-                            ChatMessages.upsert_message(
-                                message_id=message_id,
-                                chat_id=chat_obj.id,
-                                user_id=user_id,
-                                data=message,
-                            )
-            except Exception as e:
-                log.warning(
-                    f"Failed to write imported messages to chat_message table: {e}"
-                )
 
             return [ChatModel.model_validate(chat) for chat in chats]
 
     def update_chat_by_id(
-        self, id: str, chat: dict, db: Optional[Session] = None
+        self, id: str, chat: dict, db: Optional[Session] = None,
+        *, user_id: Optional[str] = None, merge: bool = False,
     ) -> Optional[ChatModel]:
         try:
             with get_db_context(db) as db:
-                chat_item = db.get(Chat, id)
-                chat_item.chat = self._clean_null_bytes(chat)
+                chat_item = (db.query(Chat).filter_by(id=id, user_id=user_id).first()
+                             if user_id is not None else db.get(Chat, id))
+                if chat_item is None:
+                    return None
+                if merge:
+                    chat = {**chat_item.chat, **chat}
+                cleaned = self._clean_null_bytes(chat)
+                if chat_item.chat == cleaned:
+                    return ChatModel.model_validate(chat_item)
+                previous = chat_item.chat
+                chat_item.chat = cleaned
                 chat_item.title = (
                     self._clean_null_bytes(chat["title"])
                     if "title" in chat
@@ -313,23 +312,19 @@ class ChatTable:
                 )
 
                 chat_item.updated_at = int(time.time())
-
+                self._sync_messages(chat_item, previous, db)
+                result = ChatModel.model_validate(chat_item)
                 db.commit()
-                db.refresh(chat_item)
-
-                return ChatModel.model_validate(chat_item)
+                return result
         except Exception:
             return None
 
     def update_chat_title_by_id(self, id: str, title: str) -> Optional[ChatModel]:
-        chat = self.get_chat_by_id(id)
-        if chat is None:
-            return None
-
-        chat = chat.chat
-        chat["title"] = title
-
-        return self.update_chat_by_id(id, chat)
+        with get_db_context() as db:
+            chat = db.get(Chat, id)
+            if chat is None:
+                return None
+            return self.update_chat_by_id(id, {**chat.chat, "title": title}, db=db)
 
 
     def get_chat_title_by_id(self, id: str) -> Optional[str]:
@@ -356,84 +351,67 @@ class ChatTable:
         return chat.chat.get("history", {}).get("messages", {}).get(message_id, {})
 
     def upsert_message_to_chat_by_id_and_message_id(
-        self, id: str, message_id: str, message: dict
+        self, id: str, message_id: str, message: dict, db: Optional[Session] = None
     ) -> Optional[ChatModel]:
-        chat = self.get_chat_by_id(id)
-        if chat is None:
-            return None
+        return self._mutate_message(id, message_id, lambda old: {**old, **message}, True, db)
 
-        # Sanitize message content for null characters before upserting
-        if isinstance(message.get("content"), str):
-            message["content"] = sanitize_text_for_db(message["content"])
-
-        user_id = chat.user_id
-        chat = chat.chat
-        history = chat.get("history", {})
-
-        if message_id in history.get("messages", {}):
-            history["messages"][message_id] = {
-                **history["messages"][message_id],
-                **message,
-            }
-        else:
-            history["messages"][message_id] = message
-
-        history["currentId"] = message_id
-
-        chat["history"] = history
-
-        # Dual-write to chat_message table
-        try:
-            ChatMessages.upsert_message(
-                message_id=message_id,
-                chat_id=id,
-                user_id=user_id,
-                data=history["messages"][message_id],
-            )
-        except Exception as e:
-            log.warning(f"Failed to write to chat_message table: {e}")
-
-        return self.update_chat_by_id(id, chat)
+    def _mutate_message(self, id, message_id, mutate, set_current=False, db=None):
+        with get_db_context(db) as db:
+            row = db.get(Chat, id)
+            if row is None:
+                return None
+            history = row.chat.get("history", {})
+            messages = history.get("messages", {})
+            if not set_current and message_id not in messages:
+                return ChatModel.model_validate(row)
+            message = self._clean_null_bytes(mutate(messages.get(message_id, {})))
+            updated_history = {**history, "messages": {**messages, message_id: message}}
+            if set_current:
+                updated_history["currentId"] = message_id
+            updated = {**row.chat, "history": updated_history}
+            if updated == row.chat:
+                return ChatModel.model_validate(row)
+            now = int(time.time())
+            result = ChatModel.model_validate(row).model_copy(update={"chat": updated, "updated_at": now})
+            # JSON1 avoids sending/serializing the complete history for each delta.
+            # Unusual imported IDs and non-SQLite engines use the portable snapshot.
+            if (db.bind.dialect.name == "sqlite" and isinstance(history.get("messages"), dict)
+                    and all(c not in message_id for c in ('"', '\\', '\x00'))):
+                expression = func.json_set(
+                    Chat.chat, f'$.history.messages."{message_id}"', func.json(json.dumps(message))
+                )
+                if set_current:
+                    expression = func.json_set(expression, "$.history.currentId", message_id)
+                db.query(Chat).filter_by(id=id).update(
+                    {"chat": expression, "updated_at": now}, synchronize_session=False
+                )
+                # Keep callers sharing this session from reading a stale snapshot.
+                db.expire(row, ["chat", "updated_at"])
+            else:
+                row.chat = updated
+                row.updated_at = now
+            ChatMessages.upsert_message(message_id, id, row.user_id, message, db=db, commit=False)
+            db.commit()
+            return result
 
     def add_message_status_to_chat_by_id_and_message_id(
-        self, id: str, message_id: str, status: dict
+        self, id: str, message_id: str, status: dict, db: Optional[Session] = None
     ) -> Optional[ChatModel]:
-        chat = self.get_chat_by_id(id)
-        if chat is None:
-            return None
-
-        chat = chat.chat
-        history = chat.get("history", {})
-
-        if message_id in history.get("messages", {}):
-            status_history = history["messages"][message_id].get("statusHistory", [])
-            status_history.append(status)
-            history["messages"][message_id]["statusHistory"] = status_history
-
-        chat["history"] = history
-        return self.update_chat_by_id(id, chat)
+        return self._mutate_message(
+            id, message_id,
+            lambda old: {**old, "statusHistory": [*old.get("statusHistory", []), status]},
+            db=db,
+        )
 
     def add_message_files_by_id_and_message_id(
-        self, id: str, message_id: str, files: list[dict]
+        self, id: str, message_id: str, files: list[dict], db: Optional[Session] = None
     ) -> list[dict]:
-        with get_db_context() as db:
-            chat = self.get_chat_by_id(id, db=db)
-            if chat is None:
-                return None
-
-            chat = chat.chat
-            history = chat.get("history", {})
-
-            message_files = []
-
-            if message_id in history.get("messages", {}):
-                message_files = history["messages"][message_id].get("files", [])
-                message_files = message_files + files
-                history["messages"][message_id]["files"] = message_files
-
-            chat["history"] = history
-            self.update_chat_by_id(id, chat, db=db)
-            return message_files
+        chat = self._mutate_message(
+            id, message_id, lambda old: {**old, "files": [*old.get("files", []), *files]}, db=db
+        )
+        if chat is None:
+            return None
+        return chat.chat.get("history", {}).get("messages", {}).get(message_id, {}).get("files", [])
 
 
     def delete_shared_chat_by_chat_id(

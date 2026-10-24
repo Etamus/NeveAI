@@ -19,7 +19,7 @@ const root = (...images: ReturnType<typeof image>[]) => ({
 describe('native deferred chat images with reserved dimensions', () => {
 	it.each(['lazy', 'eager'])('does not wait for reserved %s images to measure history rows', (loading) => {
 		const image = {complete: false, loading, hasAttribute: (name: string) => name === 'data-chat-image-sized'};
-		expect(isChatImageLayoutPending(image as HTMLImageElement)).toBe(false);
+		expect(isChatImageLayoutPending(image as unknown as HTMLImageElement)).toBe(false);
 	});
 	it('still waits for unsized images and stops waiting when they finish or fail', () => {
 		const image = {complete: false, hasAttribute: () => false};

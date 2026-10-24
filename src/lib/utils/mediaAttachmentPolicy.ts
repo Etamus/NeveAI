@@ -16,9 +16,9 @@ export const getMediaAttachmentPolicy = (
 	if (videoEnabled) return { kind: 'image', maxCount: 2, accept: 'image/*' };
 	if (imageEnabled) {
 		const maxCount = imageQuality === 'neve_image' ? 0 : imageQuality === 'neve_image_2' ? 1 :
+			imageQuality === 'moss_image_3' ? 4 :
 			imageQuality === 'qwen_image_2s' && ['restore', 'inpaint', 'outpaint'].includes(imageMode) ? 1 :
-			imageQuality === 'qwen_image_2s' && imageMode === 'body' ? 4 :
-			imageQuality === 'qwen_image_2s' && imageMode === 'outfit' ? 5 : 10;
+			imageQuality === 'qwen_image_2s' && (imageMode === 'outfit' || imageMode === 'body') ? 4 : 10;
 		return { kind: 'image', maxCount, accept: 'image/*' };
 	}
 	if (musicEnabled) {

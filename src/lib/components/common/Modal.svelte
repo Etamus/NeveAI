@@ -155,9 +155,14 @@
 	@media (max-width: 767px) {
 		.modal {
 			height: 100dvh;
-			padding-top: env(safe-area-inset-top, 0px);
-			padding-bottom: env(safe-area-inset-bottom, 0px);
+			padding: max(0.5rem, env(safe-area-inset-top, 0px)) 0.5rem max(0.5rem, env(safe-area-inset-bottom, 0px));
 			scrollbar-gutter: auto !important;
+		}
+		.modal > :global(div) {
+			width: 100%;
+			max-width: 100%;
+			max-height: calc(100dvh - 1rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+			margin-inline: 0;
 		}
 	}
 	.modal-content {

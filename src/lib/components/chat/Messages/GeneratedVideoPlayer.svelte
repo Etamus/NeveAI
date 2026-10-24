@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getContext } from 'svelte';
+	import { createEventDispatcher, getContext } from 'svelte';
 	import { getFileContentById } from '$lib/apis/files';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 	import GeneratedVideoPreview from './GeneratedVideoPreview.svelte';
@@ -10,8 +10,10 @@
 	export let name = 'video.mp4';
 	export let initialAspectRatio = 16 / 9;
 	export let fitContainer = false;
+	export let revealAfterMetadata = false;
 
 	const i18n = getContext('i18n');
+	const dispatch = createEventDispatcher<{ ready: { aspectRatio: number } }>();
 	let playerElement: HTMLDivElement;
 	let videoElement: HTMLVideoElement;
 	let playing = false;
@@ -25,6 +27,7 @@
 	let narrowControls = false;
 	let availableWidth = 0;
 	let availableHeight = 0;
+	let metadataSource = '';
 	const observePlayerWidth = (node: HTMLDivElement) => {
 		const update = () => {
 			narrowControls = node.clientWidth < 420;
@@ -39,6 +42,11 @@
 	};
 
 	$: resolvedSrc = src.startsWith('/') ? `${NEVEAI_BASE_URL}${src}` : src;
+	$: if (resolvedSrc !== metadataSource) {
+		metadataSource = resolvedSrc;
+		metadataLoaded = false;
+		videoAspectRatio = Math.max(0.01, Number(initialAspectRatio) || 16 / 9);
+	}
 	$: if (!metadataLoaded) {
 		videoAspectRatio = Math.max(0.01, Number(initialAspectRatio) || 16 / 9);
 	}
@@ -110,7 +118,7 @@
 	bind:this={playerElement}
 	use:observePlayerWidth
 	data-generated-visual-media
-	class="video-player relative w-full {fitContainer ? 'self-center' : 'self-start'} overflow-hidden rounded-lg bg-transparent text-gray-700 dark:text-gray-200"
+	class="video-player relative w-full {fitContainer ? 'self-center' : 'self-start'} {revealAfterMetadata && !metadataLoaded ? 'opacity-0' : 'opacity-100'} overflow-hidden rounded-[0.625rem] bg-transparent text-gray-700 dark:text-gray-200"
 	class:portrait-video={videoAspectRatio < 1 || narrowControls}
 	class:fit-container={fitContainer}
 	style={`aspect-ratio: ${videoAspectRatio}; width: min(100%, ${fitContainer && fittedWidth > 0 ? `${fittedWidth}px` : `${videoDisplayWidth}rem`}); max-height: ${fitContainer ? '100%' : '32rem'};`}
@@ -129,6 +137,7 @@
 			if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
 				videoAspectRatio = videoElement.videoWidth / videoElement.videoHeight;
 			}
+			dispatch('ready', { aspectRatio: videoAspectRatio });
 		}}
 		on:durationchange={() => (duration = mediaDuration(videoElement))}
 		on:loadeddata={() => (duration = mediaDuration(videoElement))}
@@ -217,8 +226,8 @@
 		.video-player.portrait-video .video-controls button svg { max-width: 100%; }
 	}
 	.video-player {
-		border-radius: 0.5rem;
-		clip-path: inset(0 round 0.5rem);
+		border-radius: 0.625rem;
+		clip-path: inset(0 round 0.625rem);
 	}
 
 	.video-player > video {

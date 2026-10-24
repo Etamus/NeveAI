@@ -17,7 +17,7 @@
 </script>
 
 <div
-	class="relative w-full self-start overflow-hidden rounded-lg bg-gray-100/35 backdrop-blur-sm dark:bg-gray-800/35"
+	class="relative w-full self-start overflow-hidden rounded-[0.625rem] bg-gray-100/35 backdrop-blur-sm dark:bg-gray-800/35"
 	style={`aspect-ratio: ${safeWidth} / ${safeHeight}; width: min(100%, ${displayWidth}rem); max-height: ${maxDisplaySize}rem;`}
 	role="progressbar"
 	aria-label={label}

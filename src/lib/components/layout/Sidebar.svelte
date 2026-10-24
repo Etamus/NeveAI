@@ -581,6 +581,14 @@
 		await tick();
 	};
 
+	const libraryClickHandler = async () => {
+		selectedChatId = null;
+		selectedFolder.set(null);
+		chatId.set('');
+		if ($mobile) showSidebar.set(false);
+		await tick();
+	};
+
 	const isWindows = /Windows/i.test(navigator.userAgent);
 </script>
 
@@ -714,7 +722,7 @@
 							event.stopPropagation();
 							if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
 							event.preventDefault();
-							void goto('/library');
+							void libraryClickHandler().then(() => goto('/library'));
 						}}
 					><Library /></a>
 				</Tooltip>
@@ -869,7 +877,7 @@
 				</div>
 
 				<div class="px-[0.4375rem] pb-0.5 flex text-gray-800 dark:text-gray-200">
-					<a href="/library" class="grow flex items-center gap-3 rounded-lg px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none" aria-label={$i18n.t('Library')} on:click={() => { if ($mobile) showSidebar.set(false); }}>
+					<a href="/library" class="grow flex items-center gap-3 rounded-lg px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none" aria-label={$i18n.t('Library')} on:click={libraryClickHandler}>
 						<Library /><span class="text-sm">{$i18n.t('Library')}</span>
 					</a>
 				</div>
@@ -932,6 +940,81 @@
 								/>
 							</div>
 						{/if}
+					</Folder>
+				{/if}
+
+				{#if $pinnedChats.length > 0}
+					<Folder
+						id="sidebar-pinned-chats"
+						className="px-2 mt-0.5"
+						name={$i18n.t('Pinned')}
+						chevron={true}
+						collapsible={true}
+						on:import={(e) => {
+							importChatHandler(e.detail, true);
+						}}
+						on:drop={async (e) => {
+							const { type, id, item } = e.detail;
+
+							if (type === 'chat') {
+								let chat = await getChatById(localStorage.token, id).catch((error) => {
+									return null;
+								});
+								if (!chat && item) {
+									chat = await importChats(localStorage.token, [
+										{
+											chat: item.chat,
+											meta: item?.meta ?? {},
+											pinned: false,
+											folder_id: null,
+											created_at: item?.created_at ?? null,
+											updated_at: item?.updated_at ?? null
+										}
+									]);
+								}
+
+								if (chat) {
+									if (chat.folder_id) {
+										await updateChatFolderIdById(localStorage.token, chat.id, null).catch((error) => {
+											toast.error(`${error}`);
+											return null;
+										});
+									}
+
+									if (!chat.pinned) {
+										await toggleChatPinnedStatusById(localStorage.token, chat.id);
+									}
+
+									initChatList();
+								}
+							}
+						}}
+					>
+						<div class="pt-1.5 flex flex-col overflow-y-auto scrollbar-hidden text-gray-900 dark:text-gray-200">
+							{#each $pinnedChats as chat, idx (`pinned-chat-${chat?.id ?? idx}`)}
+								<ChatItem
+									className=""
+									id={chat.id}
+									title={chat.title}
+									createdAt={chat.created_at}
+									{shiftKey}
+									selected={selectedChatId === chat.id}
+									on:select={() => {
+										selectedChatId = chat.id;
+									}}
+									on:unselect={() => {
+										selectedChatId = null;
+									}}
+									on:change={async () => {
+										initChatList();
+									}}
+									on:tag={(e) => {
+										const { type, name } = e.detail;
+										tagEventHandler(type, name, chat.id);
+									}}
+								/>
+							{/each}
+						</div>
 					</Folder>
 				{/if}
 
@@ -1005,90 +1088,6 @@
 						}
 					}}
 				>
-					{#if $pinnedChats.length > 0}
-						<div class="mb-1">
-							<div class="flex flex-col space-y-1 rounded-xl">
-								<Folder
-									id="sidebar-pinned-chats"
-									buttonClassName=" text-gray-500"
-									on:import={(e) => {
-										importChatHandler(e.detail, true);
-									}}
-									on:drop={async (e) => {
-										const { type, id, item } = e.detail;
-
-										if (type === 'chat') {
-											let chat = await getChatById(localStorage.token, id).catch((error) => {
-												return null;
-											});
-											if (!chat && item) {
-												chat = await importChats(localStorage.token, [
-													{
-														chat: item.chat,
-														meta: item?.meta ?? {},
-														pinned: false,
-														folder_id: null,
-														created_at: item?.created_at ?? null,
-														updated_at: item?.updated_at ?? null
-													}
-												]);
-											}
-
-											if (chat) {
-												console.log(chat);
-												if (chat.folder_id) {
-													const res = await updateChatFolderIdById(
-														localStorage.token,
-														chat.id,
-														null
-													).catch((error) => {
-														toast.error(`${error}`);
-														return null;
-													});
-												}
-
-												if (!chat.pinned) {
-													const res = await toggleChatPinnedStatusById(localStorage.token, chat.id);
-												}
-
-												initChatList();
-											}
-										}
-									}}
-									name={$i18n.t('Pinned')}
-								>
-									<div
-										class="ml-3 pl-1 mt-[1px] flex flex-col overflow-y-auto scrollbar-hidden border-s border-gray-100 dark:border-gray-700 text-gray-900 dark:text-gray-200"
-									>
-										{#each $pinnedChats as chat, idx (`pinned-chat-${chat?.id ?? idx}`)}
-											<ChatItem
-												className=""
-												id={chat.id}
-												title={chat.title}
-												createdAt={chat.created_at}
-												{shiftKey}
-												selected={selectedChatId === chat.id}
-												on:select={() => {
-													selectedChatId = chat.id;
-												}}
-												on:unselect={() => {
-													selectedChatId = null;
-												}}
-												on:change={async () => {
-													initChatList();
-												}}
-												on:tag={(e) => {
-													const { type, name } = e.detail;
-													tagEventHandler(type, name, chat.id);
-												}}
-											/>
-										{/each}
-									</div>
-								</Folder>
-							</div>
-						</div>
-					{/if}
-
 					<div class=" flex-1 flex flex-col overflow-y-auto scrollbar-hidden">
 						<div class="pt-1.5">
 							{#if $chats}
@@ -1215,5 +1214,19 @@
 			#000 calc(100% - 1.5rem),
 			transparent 100%
 		);
+	}
+
+	@media (max-width: 767px) {
+		#sidebar {
+			width: min(88vw, 320px);
+			max-width: calc(100vw - 2.5rem);
+			box-shadow: 16px 0 40px rgb(0 0 0 / 16%);
+		}
+		#sidebar > div { width: 100%; }
+		#sidebar :global(a),
+		#sidebar :global(button) { -webkit-tap-highlight-color: transparent; }
+		#sidebar-new-chat-button,
+		#sidebar-search-button,
+		#sidebar :global(a[aria-label='Library']) { min-height: 44px; align-items: center; }
 	}
 </style>

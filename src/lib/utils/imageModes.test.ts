@@ -1,7 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { IMAGE_MODES, imageModeDefaults, imageModeFiles, imageModeSource, imageModeSourceKey, imageModeHasEditor, imageModeHasPreview, imageSwapSlots, imageModeFileError, imageModePrompt, imageModeAvailable, imageModeAttachmentLimit, imageModeSubmission, imageModeDisplayLabel } from './imageModes';
+import { IMAGE_MODES, imageModeDefaults, imageModeFiles, imageModeSource, imageModeSourceKey, imageModeHasEditor, imageModeHasPreview, imageModeOwnsAttachmentSpacing, imageSwapSlots, imageModeFileError, imageModeSubmissionError, imageModePrompt, imageModeAvailable, imageModeAttachmentLimit, imageModeSubmission, imageModeDisplayLabel } from './imageModes';
 
 describe('Neve Image 2 modes', () => {
+	it('requires a base and a reference for swap submissions', () => {
+		for (const mode of ['outfit','body'] as const) {
+			const options=imageModeDefaults(mode);
+			expect(imageModeSubmissionError(options,[])).not.toBe('');
+			expect(imageModeSubmissionError(options,[{type:'image',id:'base'}])).not.toBe('');
+			expect(imageModeSubmissionError(options,[{type:'image',id:'base'},{type:'image',id:'reference'}])).toBe('');
+		}
+	});
+	it('only submits expansion changes applied to the current image', () => {
+		const files=[{id:'base',type:'image'}], options=imageModeDefaults('outpaint');
+		expect(imageModeSubmissionError(options,files)).not.toBe('');
+		expect(imageModeSubmissionError({...options,source_id:'base'},files)).not.toBe('');
+		expect(imageModeSubmissionError({...options,pad_left:20},files)).not.toBe('');
+		expect(imageModeSubmissionError({...options,source_id:'previous',pad_left:20},files)).not.toBe('');
+		for(const property of ['rotation','pad_left','pad_right','pad_top','pad_bottom']) {
+			expect(imageModeSubmissionError({...options,source_id:'base',[property]:20},files)).toBe('');
+		}
+		expect(imageModeSubmissionError(imageModeDefaults(),[])).toBe('');
+		expect(imageModeSubmissionError(imageModeDefaults('restore'),files)).toBe('');
+	});
 	it('only renders a composite thumbnail after a mask or expansion has been applied', () => {
 		for(const {id} of IMAGE_MODES) expect(imageModeHasPreview(imageModeDefaults(id))).toBe(false);
 		expect(imageModeHasPreview({mode:'inpaint',mask:'mask.png'})).toBe(true);
@@ -10,10 +30,10 @@ describe('Neve Image 2 modes', () => {
 		}
 		expect(imageModeHasPreview({mode:'restore',mask:'unused',pad_left:20})).toBe(false);
 	});
-	it('uses the supplied animated examples for each special mode', () => {
+	it('uses the supplied WebP examples for each special mode', () => {
 		expect(IMAGE_MODES.filter(mode=>mode.image).map(mode=>mode.image)).toEqual([
-			'/static/aprimorar.gif','/static/expandir.gif','/static/trocarobjetos.gif',
-			'/static/trocarroupas.gif','/static/trocarpessoas.gif'
+			'/static/aprimorar.webp','/static/expandir.webp','/static/trocarobjetos.webp',
+			'/static/trocarroupas.webp','/static/trocarpessoas.webp'
 		]);
 	});
 	it('separates automatic mode labels from the full generation prompt', () => {
@@ -53,6 +73,14 @@ describe('Neve Image 2 modes', () => {
 		expect(IMAGE_MODES.map(mode=>mode.id)).not.toContain('auto');
 		expect(IMAGE_MODES.map(mode=>mode.id)).not.toContain('consistent');
 	});
+	it('does not add a second transcript gap when a special-mode attachment appears', () => {
+		for (const mode of ['restore','outpaint','inpaint','outfit','body']) {
+			expect(imageModeOwnsAttachmentSpacing(true,'qwen_image_2s',mode)).toBe(true);
+		}
+		expect(imageModeOwnsAttachmentSpacing(true,'qwen_image_2s','normal')).toBe(false);
+		expect(imageModeOwnsAttachmentSpacing(true,'neve_image_2','inpaint')).toBe(false);
+		expect(imageModeOwnsAttachmentSpacing(false,'qwen_image_2s','inpaint')).toBe(false);
+	});
 	it('keeps explicit reference-first uploads out of the base slot', () => {
 		const reference={id:'ref',type:'image',image_mode_role:'reference'},base={id:'base',type:'image',image_mode_role:'base'};
 		expect(imageSwapSlots([reference]).base).toBeUndefined();
@@ -75,9 +103,9 @@ describe('Neve Image 2 modes', () => {
 		for (const mode of IMAGE_MODES) expect(imageModeDefaults(mode.id).auto_prompt).toBe(false);
 		expect(imageModeDefaults('restore').strength).toBe(0.5);
 	});
-	 it('requires images to enable editing and enforces mode-specific limits', () => {
+	 it('allows choosing an empty mode and enforces mode-specific limits once files exist', () => {
 		const images=Array.from({length:6},(_,id)=>({id:String(id),type:'image'}));
-		for(const mode of IMAGE_MODES) expect(imageModeAvailable(mode.id,[])).toBe(mode.id==='normal');
+		for(const mode of IMAGE_MODES) expect(imageModeAvailable(mode.id,[])).toBe(true);
 		expect(imageModeAvailable('inpaint',[{type:'image',status:'uploading'}])).toBe(false);
 		expect(imageModeAvailable('restore',images.slice(0,2))).toBe(false);
 		for(const mode of ['inpaint','outpaint']) {
@@ -87,7 +115,7 @@ describe('Neve Image 2 modes', () => {
 			expect(imageModeFileError(mode,images.slice(0,1))).toBe('');
 		}
 		for(const mode of ['outfit','body']) {
-			const limit=mode==='body'?4:5;
+			const limit=4;
 			expect(imageModeAttachmentLimit(mode)).toBe(limit);
 			expect(imageModeFileError(mode,images.slice(0,limit))).toBe('');
 			expect(imageModeFileError(mode,images.slice(0,limit+1))).not.toBe('');

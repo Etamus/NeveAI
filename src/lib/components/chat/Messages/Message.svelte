@@ -126,3 +126,13 @@
 		{/if}
 	{/if}
 </div>
+
+<style>
+	@media (max-width: 767px) {
+		div[role='listitem'] {
+			padding-inline: 0.875rem;
+			margin-bottom: 1rem;
+			border-radius: 0;
+		}
+	}
+</style>

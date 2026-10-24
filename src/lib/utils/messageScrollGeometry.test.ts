@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { consumeGenerationSpacerHeight, getMessagesContentHeight, hasHiddenMessageContentBelow } from './messageScrollGeometry';
+import {
+	consumeGenerationSpacerHeight,
+	getMessagesContentHeight,
+	hasHiddenMessageContentBelow
+} from './messageScrollGeometry';
 
 afterEach(() => {
 	vi.unstubAllGlobals();

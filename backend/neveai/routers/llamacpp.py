@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
+import psutil
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -572,8 +573,20 @@ class LocalModelManager:
                     "speculative_decoding": info.speculative_decoding if is_loaded else None,
                     "token_prediction": info.token_prediction if is_loaded else None,
                     "context_shift": info.context_shift if is_loaded else None,
+                    "process_rss_bytes": self._get_process_rss(model_id) if is_loaded else None,
                 })
         return results
+
+    def _get_process_rss(self, model_id: str) -> Optional[int]:
+        """Measure resident RAM of the owned server, never infer it from GGUF size."""
+        proc = self._processes.get(model_id)
+        if proc is None or proc.poll() is not None:
+            return None
+        try:
+            return psutil.Process(proc.pid).memory_info().rss
+        except (psutil.Error, OSError) as exc:
+            log.debug("Unable to measure RSS for %s: %s", model_id, exc)
+            return None
 
     def scan_mmproj_files(self) -> list[str]:
         """Return list of .gguf files found in MMPROJ_DIR (vision encoder files)."""
@@ -1268,6 +1281,11 @@ class LocalModelManager:
         if isinstance(response_format, dict):
             payload["response_format"] = response_format
 
+        log.info(
+            "chat_completion: model=%s stream=%s thinking_budget_tokens=%s "
+            "reasoning_effort=%s no_think=%s max_tokens=%s",
+            model_id, stream, thinking_budget_tokens, reasoning_effort, no_think, max_tokens,
+        )
         context_window = getattr(self._loaded.get(model_id), "n_ctx", None)
         if stream:
             return self._stream_proxy(client, payload, model_id)
@@ -1849,14 +1867,6 @@ async def generate_chat_completion(
                 "Cache-Control": "no-cache",
                 "Connection": "keep-alive",
                 "X-Accel-Buffering": "no",
-                "X-Neve-Budgeted-Reasoning": (
-                    "true"
-                    if reasoning_mode == "reasoning"
-                    and reasoning_extended is not None
-                    and not reasoning_extended_enabled
-                    and thinking_budget_tokens is not None
-                    else "false"
-                ),
             },
         )
     else:

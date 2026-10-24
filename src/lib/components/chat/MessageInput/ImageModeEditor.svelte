@@ -10,12 +10,11 @@
 	import Trash from '$lib/components/icons/Trash.svelte';
 	import Minus from '$lib/components/icons/Minus.svelte';
 	import Plus from '$lib/components/icons/Plus.svelte';
-	import Restore from '$lib/components/icons/Restore.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import ImageOutpaintEditor from './ImageOutpaintEditor.svelte';
 	import ImageEditorMoveIcon from './ImageEditorMoveIcon.svelte';
 	import {ImageMaskHistory} from '$lib/utils/imageMaskHistory';
-	import {drawImagePreview} from '$lib/utils/imagePreviewRendering';
+	import {imagePreviewSize} from '$lib/utils/imagePreviewRendering';
 	import {IMAGE_MODES,imageModeFiles,imageModeSource,imageModeSourceKey,type ImageModeOptions} from '$lib/utils/imageModes';
 	const i18n=getContext('i18n');
 	export let show=false;
@@ -24,16 +23,17 @@
 	export let disabled=false;
 	let draft:ImageModeOptions;
 	let opened=false,loading=false,busy=false,drawing=false,restoring=false;
-	let image:HTMLImageElement,preview:HTMLCanvasElement,overlay:HTMLCanvasElement,mask:HTMLCanvasElement;
+	let image:HTMLImageElement,overlay:HTMLCanvasElement,mask:HTMLCanvasElement;
 	let viewport:HTMLDivElement;
 	let viewportWidth=600,viewportHeight=480;
 	let pan:{id:number;x:number;y:number;left:number;top:number}|null=null;
 	type Tool='move'|'paint'|'erase'|'select';
 	let tool:Tool='move';
 	let brush=32,eraser=32,brushMenu=false,zoom=1,loadVersion=0,historyVersion=0,zoomVersion=0,previewAspect=1;
+	let sizePreviewTool:'paint'|'erase'|null=null;
+	let sizeHoldTimer:ReturnType<typeof setTimeout>|undefined;
+	let sizeHoldOpened:'paint'|'erase'|null=null;
 	$: activeSize=tool==='erase'?eraser:brush;
-	$: sizeLabel=tool==='erase'?'Tamanho da borracha':'Tamanho do pincel';
-	$: brushRadius=3+5*Math.sqrt(Math.max(0,Math.min(1,(activeSize-4)/156)));
 	let last:{x:number;y:number}|null=null;
 	let history=new ImageMaskHistory();
 	let positive:{x:number;y:number}[]=[],negative:{x:number;y:number}[]=[];
@@ -44,16 +44,44 @@
 	$: fittedWidth=Math.max(1,Math.min(viewportWidth-24,(viewportHeight-24)*previewAspect));
 	$: displayWidth=fittedWidth*zoom;
 	$: displayHeight=displayWidth/previewAspect;
-	$: if(show&&image&&preview)drawImagePreview(preview,image,displayWidth,displayHeight,typeof window==='undefined'?1:window.devicePixelRatio||1);
+	$: brushCursor=tool==='paint'||tool==='erase'?circleCursor(activeSize*displayWidth/Math.max(1,mask?.width??displayWidth)):'';
+	$: if(show&&overlay&&mask)renderMask(displayWidth,displayHeight);
 	$: if(tool==='select'||tool==='move')brushMenu=false;
 	function chooseTool(next:Tool,toggle=true){if(busy||loading)return;brushMenu=false;if(next==='select')exclude=tool==='select'&&toggle?!exclude:false;tool=next;}
 	function setSize(value:number){if(tool==='erase')eraser=value;else brush=value;}
+	function sizeRadius(value:number){return 3+5*Math.sqrt(Math.max(0,Math.min(1,(value-4)/156)));}
+	function circleCursor(diameter:number){
+		const visibleDiameter=Math.max(4,Math.min(96,diameter));
+		const size=Math.ceil(visibleDiameter)+4,center=size/2,radius=Math.max(1,visibleDiameter/2);
+		const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="black" stroke-width="2"/><circle cx="${center}" cy="${center}" r="${radius}" fill="none" stroke="white" stroke-width="1"/></svg>`;
+		return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${Math.floor(center)} ${Math.floor(center)}, crosshair`;
+	}
+	function beginSizeHold(next:'paint'|'erase',event:PointerEvent){
+		if(busy||loading||event.button!==0)return;
+		sizeHoldOpened=null;
+		clearTimeout(sizeHoldTimer);
+		sizeHoldTimer=setTimeout(()=>{
+			chooseTool(next);brushMenu=true;sizeHoldOpened=next;
+		},120);
+	}
+	function endSizeHold(){clearTimeout(sizeHoldTimer);}
+	function releaseSizeHold(){
+		endSizeHold();sizePreviewTool=null;
+		setTimeout(()=>sizeHoldOpened=null,0);
+	}
+	function activateSizeTool(next:'paint'|'erase'){
+		if(sizeHoldOpened===next){sizeHoldOpened=null;return;}
+		chooseTool(next);
+	}
+	function changeToolSize(next:'paint'|'erase',value:number){
+		if(next==='erase')eraser=value;else brush=value;
+	}
 	$: if(show&&!opened){
-		opened=true;draft=structuredClone(options);tool='move';zoom=1;history=new ImageMaskHistory();positive=[];negative=[];exclude=false;brushMenu=false;
+		opened=true;draft=structuredClone(options);tool='move';zoom=1;history=new ImageMaskHistory();positive=[];negative=[];exclude=false;brushMenu=false;sizePreviewTool=null;
 		if(draft.source_id&&draft.source_id!==imageModeSourceKey(images[0]))draft.mask=null;
 		loadedSource='';
 	}else if(!show&&opened){
-		opened=false;loadVersion++;historyVersion++;request?.abort();warmRequest?.abort();drawing=false;restoring=false;brushMenu=false;pan=null;
+		opened=false;loadVersion++;historyVersion++;request?.abort();warmRequest?.abort();drawing=false;restoring=false;brushMenu=false;sizePreviewTool=null;clearTimeout(sizeHoldTimer);sizeHoldOpened=null;pan=null;
 	}
 	$: if(show&&opened&&draft?.mode==='inpaint'&&imageModeSource(images[0])!==loadedSource){loadedSource=imageModeSource(images[0]);loadImage();}
 	function measureViewport(node:HTMLElement){
@@ -72,13 +100,18 @@
 			if(draft.mask)await importMask(draft.mask);
 			if(version!==loadVersion||!show)return;
 			previewAspect=image.naturalWidth/image.naturalHeight;
-			drawImagePreview(preview,image,displayWidth,displayHeight,window.devicePixelRatio||1);renderMask();history.reset(mask.toDataURL());history=history;
+			renderMask();history.reset(mask.toDataURL());history=history;
 		}catch{if(version===loadVersion&&show)toast.error($i18n.t('Não foi possível abrir a imagem.'));}
 		finally{if(version===loadVersion)loading=false;}
 	}
-	function renderMask(){
-		if(!overlay||!mask)return;overlay.width=mask.width;overlay.height=mask.height;
-		const context=overlay.getContext('2d')!;context.drawImage(mask,0,0);context.globalCompositeOperation='source-in';context.fillStyle='#3b82f6';context.fillRect(0,0,mask.width,mask.height);
+	function renderMask(width=displayWidth,height=displayHeight){
+		if(!overlay||!mask)return;
+		const size=imagePreviewSize(width,height,window.devicePixelRatio||1);
+		overlay.width=size.width;overlay.height=size.height;
+		const context=overlay.getContext('2d')!;
+		context.imageSmoothingEnabled=true;context.imageSmoothingQuality='high';
+		context.drawImage(mask,0,0,size.width,size.height);
+		context.globalCompositeOperation='source-in';context.fillStyle='#3b82f6';context.fillRect(0,0,size.width,size.height);
 	}
 	async function importMask(source:string){
 		const next=new Image();next.src=source;await next.decode();
@@ -173,7 +206,7 @@
 	}
 </script>
 
-<svelte:window on:keydown|capture={keyboard} on:pointerdown={event=>{if(brushMenu&&!(event.target as Element).closest('[data-brush-size]'))brushMenu=false;}} />
+<svelte:window on:keydown|capture={keyboard} on:pointerdown={event=>{if(brushMenu&&!(event.target as Element).closest('[data-brush-size]'))brushMenu=false;}} on:pointerup={releaseSizeHold} on:pointercancel={()=>{endSizeHold();sizePreviewTool=null;sizeHoldOpened=null;}} />
 
 <Modal bind:show size="md" animated={false}>
 	<div class="image-mode-dialog dark:text-gray-200">
@@ -186,34 +219,30 @@
 			{#if images.length&&draft.mode==='outpaint'}<ImageOutpaintEditor bind:options={draft} source={imageModeSource(images[0])} />
 			{:else if images.length}
 				<div class="region-layout">
-				<div class="region-toolbar flex flex-wrap items-center gap-1">
-						{#if tool==='paint'||tool==='erase'}<div data-brush-size class="relative">
-							<Tooltip content={$i18n.t(sizeLabel)}><button type="button" class="brush-size-button" disabled={loading} aria-disabled={busy||loading} aria-label={$i18n.t(sizeLabel)} aria-expanded={brushMenu} on:click={()=>{if(!busy)brushMenu=!brushMenu;}}>
-								<svg viewBox="0 0 20 20" class="size-5" fill="currentColor" aria-hidden="true"><circle cx="10" cy="10" r={brushRadius} /></svg>
-								<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {brushMenu?'':'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
+				<div class="region-tools flex shrink-0 flex-col gap-1" role="toolbar" aria-label={$i18n.t('Ferramentas de seleção')} data-mask-tools>
+					<Tooltip content={$i18n.t('Mover')} placement="right"><button type="button" class="tool" class:active={tool==='move'} disabled={loading} aria-disabled={busy||loading} aria-label={$i18n.t('Mover')} aria-pressed={tool==='move'} on:click={()=>chooseTool('move')}><ImageEditorMoveIcon className="size-4" /></button></Tooltip>
+					{#each [{id:'paint' as const,label:'Pincel',icon:Brush,value:brush},{id:'erase' as const,label:'Borracha',icon:Eraser,value:eraser}] as item (item.id)}
+						<div data-brush-size class="relative">
+							<Tooltip content={$i18n.t(item.label)} placement="right"><button type="button" class="tool size-tool" class:active={tool===item.id} disabled={loading} aria-disabled={busy||loading} aria-label={$i18n.t(item.label)} aria-pressed={tool===item.id} aria-expanded={tool===item.id&&brushMenu} on:pointerdown={event=>beginSizeHold(item.id,event)} on:pointerleave={endSizeHold} on:click={()=>activateSizeTool(item.id)}>
+								<span class="tool-primary-icon">{#if sizePreviewTool===item.id}<svg viewBox="0 0 20 20" class="size-preview-circle block size-5" fill="currentColor" aria-hidden="true"><circle cx="10" cy="10" r={sizeRadius(item.value)} /></svg>{:else}<svelte:component this={item.icon} className="size-4" />{/if}</span>
+								<span class="tool-corner-indicator" aria-hidden="true"></span>
 							</button></Tooltip>
-							{#if brushMenu}<div class="absolute left-0 top-full z-30 mt-1 w-48 rounded-lg bg-white p-3 shadow-md dark:bg-gray-850">
-								<div class="flex items-center gap-3"><input type="range" class="min-w-0 flex-1" style:--brush-progress={`${(activeSize-4)/156*100}%`} min="4" max="160" step="2" value={activeSize} on:input={event=>setSize(Number(event.currentTarget.value))} aria-label={$i18n.t(sizeLabel)} /><output class="w-10 text-right text-xs tabular-nums text-gray-500">{activeSize}px</output></div>
+							{#if tool===item.id&&brushMenu}<div class="size-menu absolute left-full top-0 z-30 ml-1 w-48 rounded-lg bg-white p-3 shadow-md dark:bg-gray-850">
+								<div class="flex items-center gap-3"><input type="range" class="min-w-0 flex-1" style:--brush-progress={`${(item.value-4)/156*100}%`} min="4" max="160" step="2" value={item.value} on:pointerdown={()=>sizePreviewTool=item.id} on:input={event=>changeToolSize(item.id,Number(event.currentTarget.value))} aria-label={$i18n.t(item.id==='paint'?'Tamanho do pincel':'Tamanho da borracha')} /><output class="w-10 text-right text-xs tabular-nums text-gray-500">{item.value}px</output></div>
 							</div>{/if}
 						</div>
-					<span class="mx-1 h-4 border-l border-gray-200 dark:border-gray-700"></span>{/if}
-					<Tooltip content={$i18n.t('Undo')}><button type="button" class="tool" disabled={loading||!history.canUndo} aria-disabled={busy||loading||!history.canUndo} aria-label={$i18n.t('Undo')} on:click={()=>stepHistory(-1)}><Restore className="size-4" /></button></Tooltip>
-					<Tooltip content={$i18n.t('Redo')}><button type="button" class="tool" disabled={loading||!history.canRedo} aria-disabled={busy||loading||!history.canRedo} aria-label={$i18n.t('Redo')} on:click={()=>stepHistory(1)}><span class="-scale-x-100"><Restore className="size-4" /></span></button></Tooltip>
-					<Tooltip content={$i18n.t('Limpar')}><button type="button" class="tool" disabled={loading||restoring} aria-disabled={busy||loading||restoring} aria-label={$i18n.t('Limpar')} on:click={clear}><Trash className="size-4" /></button></Tooltip>
-				</div>
-				<div class="region-tools flex shrink-0 flex-col gap-1" role="toolbar" aria-label={$i18n.t('Ferramentas de seleção')} data-mask-tools>
-					{#each [{id:'move',label:'Mover',icon:ImageEditorMoveIcon},{id:'paint',label:'Pincel',icon:Brush},{id:'erase',label:'Borracha',icon:Eraser},{id:'select',label:tool==='select'&&exclude?'Remover seleção':'Selecionar objeto',icon:SelectionBrush}] as item (item.id)}
-						<Tooltip content={$i18n.t(item.label)} placement="right"><button type="button" class="tool" class:active={tool===item.id} class:subtract={item.id==='select'&&tool==='select'&&exclude} disabled={loading} aria-disabled={busy||loading} aria-label={$i18n.t(item.label)} aria-pressed={tool===item.id} on:click={()=>chooseTool(item.id as Tool)}><svelte:component this={item.icon} className="size-4" /></button></Tooltip>
 					{/each}
+					<Tooltip content={$i18n.t(tool==='select'&&exclude?'Remover seleção':'Selecionar objeto')} placement="right"><button type="button" class="tool" class:active={tool==='select'} class:subtract={tool==='select'&&exclude} disabled={loading} aria-disabled={busy||loading} aria-label={$i18n.t(tool==='select'&&exclude?'Remover seleção':'Selecionar objeto')} aria-pressed={tool==='select'} on:click={()=>chooseTool('select')}><SelectionBrush className="size-4" /></button></Tooltip>
+					<Tooltip content={$i18n.t('Limpar')} placement="right"><button type="button" class="tool" disabled={loading||restoring} aria-disabled={busy||loading||restoring} aria-label={$i18n.t('Limpar')} on:click={clear}><Trash className="size-4" /></button></Tooltip>
 				</div>
 				<div class="region-image min-w-0">
 				<div class="mask-field relative">
 				<div bind:this={viewport} use:measureViewport role="region" aria-label={$i18n.t('Prévia da edição')} tabindex="0" class="mask-viewport relative h-[min(50dvh,480px)] min-h-32 overflow-auto overscroll-contain rounded-md" style:cursor={pan?'grabbing':tool==='move'?'grab':undefined} on:wheel|nonpassive={wheelZoom} on:pointerdown|capture={startPan} on:pointermove={movePan} on:pointerup={stopPan} on:pointercancel={stopPan} on:lostpointercapture={stopPan} on:auxclick|preventDefault>
 					<div class="grid min-h-full place-items-center p-[12px]" style:width={`${Math.max(viewportWidth,fittedWidth*zoom+24)}px`}>
 						<div class="relative" style:width={`${displayWidth}px`} style:height={`${displayHeight}px`}>
-							<canvas bind:this={preview} class="block size-full" aria-label={$i18n.t('Prévia da edição')}></canvas>
+							{#if image}<img src={image.src} alt={$i18n.t('Prévia da edição')} class="region-source-image block size-full" draggable="false" />{/if}
 							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<canvas bind:this={overlay} class="absolute inset-0 h-full w-full touch-none opacity-50" style:cursor={pan?'grabbing':tool==='move'?'grab':tool==='select'?'crosshair':'cell'} on:pointerdown={start} on:pointermove={stroke} on:pointerup={finishStroke} on:pointercancel={finishStroke}></canvas>
+							<canvas bind:this={overlay} class="absolute inset-0 h-full w-full touch-none opacity-50" style:cursor={pan?'grabbing':tool==='move'?'grab':tool==='select'?'crosshair':brushCursor} on:pointerdown={start} on:pointermove={stroke} on:pointerup={finishStroke} on:pointercancel={finishStroke}></canvas>
 						</div>
 					</div>
 					{#if loading}<div class="absolute inset-0 grid place-items-center bg-white/50 dark:bg-black/50"><Spinner className="size-5" /></div>{/if}
@@ -234,10 +263,10 @@
 
 <style>
 	.region-editor{padding-left:12px;padding-right:12px;}
-	.region-layout{display:grid;grid-template-columns:32px minmax(0,1fr);column-gap:12px;row-gap:12px;align-items:start;}
-	.region-toolbar{grid-column:2;grid-row:1;}
-	.region-tools{grid-column:1;grid-row:1 / span 2;}
-	.region-image{grid-column:2;grid-row:2;}
+	.region-layout{display:grid;grid-template-columns:32px minmax(0,1fr);column-gap:12px;align-items:start;}
+	.region-tools{grid-column:1;grid-row:1;}
+	.region-image{grid-column:2;grid-row:1;}
+	.region-source-image{width:100%;height:100%;max-width:none;margin:0;image-rendering:auto;}
 	.mask-viewport{background-color:#f5f5f5;background-image:repeating-conic-gradient(#e5e5e5 0% 25%,transparent 0% 50%);background-size:16px 16px;}
 	:global(.dark) .mask-viewport{background-color:#202020;background-image:repeating-conic-gradient(#2b2b2b 0% 25%,transparent 0% 50%);}
 	input[type='range']{appearance:none;-webkit-appearance:none;height:16px;accent-color:#3b82f6;background:transparent;border:0;outline:none;box-shadow:none;padding:0;}
@@ -246,11 +275,15 @@
 	input[type='range']::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:14px;height:14px;margin-top:-5px;border:0;border-radius:50%;background:#3b82f6;box-shadow:none;}
 	input[type='range']::-moz-range-thumb{width:14px;height:14px;border:0;border-radius:50%;background:#3b82f6;box-shadow:none;}
 	:global(.dark) input[type='range']{--brush-track:#525252;}
-	.tool,.brush-size-button{display:flex;height:32px;flex-shrink:0;align-items:center;justify-content:center;border-radius:6px;}
-	.tool{position:relative;width:32px;}.brush-size-button{gap:4px;padding:0 6px;}
-	.tool:hover,.brush-size-button:hover{background:rgb(0 0 0 / 5%);}
-	:global(.dark) .tool:hover,:global(.dark) .brush-size-button:hover{background:rgb(255 255 255 / 8%);}
-	.tool.active{color:#3b82f6;background:rgb(59 130 246 / 12%);}.tool:disabled,.brush-size-button:disabled{opacity:.35;}
+	.tool{position:relative;display:flex;width:32px;height:32px;flex-shrink:0;align-items:center;justify-content:center;border-radius:6px;}
+	.tool:hover{background:rgb(0 0 0 / 5%);}
+	:global(.dark) .tool:hover{background:rgb(255 255 255 / 8%);}
+	.tool.active{color:#3b82f6;background:rgb(59 130 246 / 12%);}.tool:disabled{opacity:.35;}
+	.size-tool{padding:0;}
+	.tool-primary-icon{display:grid;width:20px;height:20px;flex-shrink:0;place-items:center;line-height:0;}
+	.tool-primary-icon :global(svg){display:block;margin:auto;}
+	.tool-primary-icon :global(.size-preview-circle){transform:translate(-1.5px,-1.5px);}
+	.tool-corner-indicator{position:absolute;right:3px;bottom:3px;width:5px;height:5px;background:currentColor;clip-path:polygon(100% 0,100% 100%,0 100%);opacity:.65;}
 	.tool.subtract::after{content:'';position:absolute;right:4px;bottom:5px;width:6px;height:2px;background:currentColor;}
 	.mask-viewport::-webkit-scrollbar-corner{background:transparent;}
 	:global(.dark) .mask-viewport{color-scheme:dark;}

@@ -63,8 +63,13 @@
 		type LocalModel
 	} from '$lib/apis/llamacpp';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
-	import { getMessageScrollAnchor } from '$lib/utils/messageScrollAnchor';
-	import { consumeGenerationSpacerHeight, getMessagesContentHeight, hasHiddenMessageContentBelow } from '$lib/utils/messageScrollGeometry';
+	import { getMessageAnchorScrollTop, getMessageScrollAnchor } from '$lib/utils/messageScrollAnchor';
+	import { prepareUserMessageImageLayout } from '$lib/utils/userMessageImageLayout';
+	import {
+		consumeGenerationSpacerHeight,
+		getMessagesContentHeight,
+		hasHiddenMessageContentBelow
+	} from '$lib/utils/messageScrollGeometry';
 	import { SYNC_COMPOSER_LAYOUT } from '$lib/utils/animateComposerHeight';
 	import { getAccordionScrollPosition } from '$lib/utils/accordionScrollPosition';
 	import { dismissTooltipsOnMediaScroll } from '$lib/utils/mediaGenerationHover';
@@ -93,6 +98,7 @@
 
 	let loading = true;
 	let loadedChatViewportReady = !chatIdProp;
+	let deferLoadedChatMessages = false;
 
 	const eventTarget = new EventTarget();
 	let controlPane: PaneAPI | undefined;
@@ -156,20 +162,17 @@
 		| 'neve_image'
 		| 'neve_image_2'
 		| 'qwen_image_2s'
+		| 'moss_image_3'
 		| 'qwen_image_2_1_official' = 'neve_image_2';
 	let stableDiffusionStyle:
 		| 'none'
 		| 'minimalist'
-		| 'polygonal'
 		| 'fantasy'
-		| 'comics'
-		| 'arcane'
 		| 'spontaneous'
 		| 'realistic'
-		| 'manga'
-		| 'pixelated' = 'none';
+		| 'manga' = 'none';
 	let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
-	import { imageModePrompt, imageModeFileError, imageModeIsSwap, imageSwapSlots, type ImageModeDisplay } from '$lib/utils/imageModes';
+	import { imageModePrompt, imageModeSubmissionError, imageModeIsSwap, imageModeOwnsAttachmentSpacing, imageSwapSlots, type ImageModeDisplay } from '$lib/utils/imageModes';
 	let stableDiffusionModeOptions: import('$lib/utils/imageModes').ImageModeOptions = { mode: 'normal' };
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
@@ -421,7 +424,7 @@
 
 			if (currentlyLoaded) {
 				try {
-					await unloadLocalModel(localStorage.token, currentlyLoaded.id);
+					await unloadLocalModel(localStorage.token, currentlyLoaded.id, $models.find((model) => model.id === currentlyLoaded.id)?.name);
 				} catch (unloadErr) {
 					console.warn(
 						'Could not explicitly unload previous model (may already be inactive):',
@@ -454,7 +457,8 @@
 				standbyCacheType,
 				standbySpeculativeDecoding,
 				isLocalContextShiftEnabled(standbyContextShift) ? 'off' : standbyTokenPrediction,
-				standbyContextShift
+				standbyContextShift,
+				$models.find((model) => model.id === standbyModel.id)?.name ?? standbyModel.filename.replace(/\.gguf$/i, '')
 			);
 
 			stableDiffusionStandbyModel = null;
@@ -482,7 +486,7 @@
 			if (!currentlyLoaded) return;
 
 			stableDiffusionStandbyModel ??= currentlyLoaded;
-			await unloadLocalModel(localStorage.token, currentlyLoaded.id);
+			await unloadLocalModel(localStorage.token, currentlyLoaded.id, $models.find((model) => model.id === currentlyLoaded.id)?.name);
 			models.set(await getModels(localStorage.token, null, false, true));
 		} catch (err: any) {
 			console.error('Failed to put the local model in video generation standby:', err);
@@ -527,6 +531,7 @@
 		loadedChatLayoutController?.abort();
 		loading = true;
 		loadedChatViewportReady = false;
+		deferLoadedChatMessages = true;
 
 		// Save current queue to sessionStorage before navigating away
 		if (messageQueue.length > 0 && $chatId) {
@@ -578,6 +583,10 @@
 			await setDefaults();
 			// Prepare passive drafts before measuring; queued sends retain their existing order.
 			if (!sessionStorage.getItem(`chat-queue-${chatIdProp}`)) restoreInputDraft();
+			// Paint the spinner between the hidden composer and message-list mounts.
+			await new Promise<void>((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+			if (chatIdProp !== loadedChatId || $chatId !== loadedChatId) return;
+			deferLoadedChatMessages = false;
 			if (!(await prepareLoadedChatBottom(loadedChatId))) return;
 			if (chatIdProp !== loadedChatId || $chatId !== loadedChatId) return;
 			loadedChatViewportReady = true;
@@ -1823,6 +1832,7 @@
 		stableDiffusionQuality = [
 			'neve_image_2',
 			'qwen_image_2s',
+			'moss_image_3',
 			'qwen_image_2_1_official'
 		].includes(savedImageQuality ?? '')
 			? (savedImageQuality as typeof stableDiffusionQuality)
@@ -1834,7 +1844,7 @@
 		const previousImageStyle = localStorage.getItem('neveai.imageStyle');
 		const savedImageStyle =
 			(
-				{ analog: 'spontaneous', realistic_2: 'realistic', arcane_2: 'arcane' } as Record<
+				{ analog: 'spontaneous', realistic_2: 'realistic' } as Record<
 					string,
 					string
 				>
@@ -1844,11 +1854,7 @@
 			'spontaneous',
 			'fantasy',
 			'minimalist',
-			'polygonal',
-			'manga',
-			'comics',
-			'pixelated',
-			'arcane'
+			'manga'
 		].includes(savedImageStyle ?? '')
 			? (savedImageStyle as typeof stableDiffusionStyle)
 			: 'none';
@@ -1888,7 +1894,9 @@
 					? imageResolutionKeys[1]
 					: stableDiffusionQuality === 'qwen_image_2_1_official'
 						? imageResolutionKeys[2]
-						: null;
+						: stableDiffusionQuality === 'moss_image_3'
+							? 'neveai.imageResolution.moss_image_3'
+							: null;
 		const savedImageResolution = activeImageResolutionKey
 			? localStorage.getItem(activeImageResolutionKey)
 			: null;
@@ -2565,6 +2573,9 @@
 		try {
 			await tick();
 			if (controller.signal.aborted || $chatId !== expectedChatId || !messagesContainerElement) return false;
+			// The composer mounted before the transcript; synchronize its reading gap while hidden.
+			messagesContainerElement.closest('#chat-pane')?.querySelector('[data-composer-root]')
+				?.dispatchEvent(new Event(SYNC_COMPOSER_LAYOUT));
 			const ready = await prepareLoadedChatLayout(messagesContainerElement, controller.signal);
 			if (!ready || $chatId !== expectedChatId) return false;
 			updateScrollStateFromContainer({ updateAutoScroll: true });
@@ -2780,9 +2791,12 @@
 		const messageRect = getMessageScrollAnchor(messageElement).getBoundingClientRect();
 		const scrollMarginTop =
 			topOffset ?? (parseFloat(getComputedStyle(messageElement).scrollMarginTop || '0') || 0);
-		const targetTop =
-			messagesContainerElement.scrollTop + messageRect.top - containerRect.top - scrollMarginTop;
-		const nextTop = Math.max(0, targetTop);
+		const nextTop = getMessageAnchorScrollTop(
+			messagesContainerElement.scrollTop,
+			containerRect.top,
+			messageRect.top,
+			scrollMarginTop
+		);
 
 		if (Math.abs(messagesContainerElement.scrollTop - nextTop) > 1) {
 			messagesContainerElement.scrollTo({
@@ -4229,7 +4243,8 @@
 							loadPlan.cacheType,
 							loadPlan.speculativeDecoding,
 							loadPlan.tokenPrediction,
-							loadPlan.contextShift
+							loadPlan.contextShift,
+							model.name ?? model.id
 						);
 					let loadedResult;
 					try {
@@ -4307,7 +4322,7 @@
 		const requestFeatures = features ?? structuredClone(getFeatures());
 		if (requestFeatures.stable_diffusion && requestFeatures.stable_diffusion_quality === 'qwen_image_2s') {
 			const mode = requestFeatures.stable_diffusion_mode_options?.mode ?? 'normal';
-			const error = imageModeFileError(mode, files);
+			const error = imageModeSubmissionError(requestFeatures.stable_diffusion_mode_options ?? {mode:'normal'}, files);
 			if (error) { toast.error($i18n.t(error)); return; }
 			if (imageModeIsSwap(mode)) { const slots = imageSwapSlots(files); files = [slots.base, ...slots.references]; }
 			userPrompt = imageModePrompt(mode, userPrompt);
@@ -4384,7 +4399,8 @@
 									loadPlan.cacheType,
 									loadPlan.speculativeDecoding,
 									loadPlan.tokenPrediction,
-									loadPlan.contextShift
+									loadPlan.contextShift,
+									model.name ?? model.id
 								);
 							let loadedResult;
 							try {
@@ -4474,11 +4490,14 @@
 			if (lastMessage.error && !lastMessage.content) discardFailedContextTurn();
 		}
 
+		const requestChatId = $chatId;
+		const _files = structuredClone(files);
+		await prepareUserMessageImageLayout(_files);
+		if ($chatId !== requestChatId) return;
 		messageInput?.setText('');
 		prompt = '';
 
 		const messages = createMessagesList(history, history.currentId);
-		const _files = structuredClone(files);
 
 		chatFiles.push(
 			..._files.filter(
@@ -4714,10 +4733,10 @@
 						? stableDiffusionEnabled
 						: false,
 				stable_diffusion_quality: stableDiffusionQuality,
-				stable_diffusion_style: stableDiffusionStyle,
+				stable_diffusion_style: stableDiffusionQuality === 'moss_image_3' ? 'none' : stableDiffusionStyle,
 				...(stableDiffusionQuality === 'qwen_image_2s' ? { stable_diffusion_mode_options: stableDiffusionModeOptions } : {}),
 				stable_diffusion_resolution:
-					['qwen_image_2s', 'qwen_image_2_1_official'].includes(stableDiffusionQuality) &&
+					['qwen_image_2s', 'qwen_image_2_1_official', 'moss_image_3'].includes(stableDiffusionQuality) &&
 					files.some(
 						(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
 					)
@@ -5926,30 +5945,32 @@
 								}}
 							>
 								<div class="min-h-full w-full shrink-0 flex flex-col" style="padding-bottom: var(--chat-composer-height, 7rem);" use:observeMessagesContentSize>
-									<Messages
-										className="h-auto flex pt-8"
-										chatId={$chatId}
-										bind:history
-										bind:autoScroll
-										bind:prompt
-										setInputText={(text) => {
-											messageInput?.setText(text);
-										}}
-										{selectedModels}
-										{atSelectedModel}
-										{sendMessage}
-										{showMessage}
-										{submitMessage}
-										{continueResponse}
-										{regenerateResponse}
-										{mergeResponses}
-										{chatActionHandler}
-										{addMessages}
-										topPadding={true}
-										bottomPadding={files.length > 0}
-										bottomSpacerHeight={generationBottomSpacerHeight}
-										{onSelect}
-									/>
+									{#if !deferLoadedChatMessages}
+										<Messages
+											className="h-auto flex pt-8"
+											chatId={$chatId}
+											bind:history
+											bind:autoScroll
+											bind:prompt
+											setInputText={(text) => {
+												messageInput?.setText(text);
+											}}
+											{selectedModels}
+											{atSelectedModel}
+											{sendMessage}
+											{showMessage}
+											{submitMessage}
+											{continueResponse}
+											{regenerateResponse}
+											{mergeResponses}
+											{chatActionHandler}
+											{addMessages}
+											topPadding={true}
+											bottomPadding={files.length > 0 && !imageModeOwnsAttachmentSpacing(stableDiffusionEnabled, stableDiffusionQuality, stableDiffusionModeOptions.mode)}
+											bottomSpacerHeight={generationBottomSpacerHeight}
+											{onSelect}
+										/>
+									{/if}
 								</div>
 							</div>
 
@@ -6164,5 +6185,20 @@
 	::-webkit-scrollbar {
 		height: 0.5rem;
 		width: 0.5rem;
+	}
+	@media (max-width: 767px) {
+		#messages-container {
+			padding-bottom: 0.25rem;
+			scrollbar-gutter: auto !important;
+		}
+		.chat-composer-overlay {
+			padding-inline: 0.75rem;
+			padding-bottom: max(0.625rem, env(safe-area-inset-bottom, 0px));
+		}
+		.chat-composer-overlay::before {
+			inset-inline: 0;
+			inset-block-start: -24px;
+			background: linear-gradient(to bottom, rgba(var(--composer-mask), 0), rgba(var(--composer-mask), 0.72) 12px, rgba(var(--composer-mask), 1) 24px);
+		}
 	}
 </style>

@@ -14,6 +14,10 @@ def normalized_text(text):
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _normalized_font_name(name):
+    return re.sub(r"[^a-z0-9]", "", str(name).split("+")[-1].lower())
+
+
 def inspect_pdf_pages(data, inventory, add):
     import pypdfium2 as pdfium
 
@@ -162,7 +166,7 @@ def _object_edit(document, page, old, new):
     return boxes
 
 
-def _verify(data, result, expected, areas=None):
+def _verify(data, result, expected, areas=None, verify_text=True):
     import pypdfium2 as pdfium
     from PIL import ImageChops, ImageDraw
 
@@ -176,7 +180,7 @@ def _verify(data, result, expected, areas=None):
             try:
                 original = tp_before.get_text_range()
                 actual = tp_after.get_text_range()
-                if normalized_text(actual) != normalized_text(
+                if verify_text and normalized_text(actual) != normalized_text(
                     expected.get(index, original)
                 ):
                     raise GeneratedFileError(
@@ -277,8 +281,175 @@ def _reconstruct_pages(data, expected):
     return output.getvalue()
 
 
+def _edit_literal_pdf(snapshot, edits):
+    """Replace explicit text in place while retaining the original PDF page."""
+    import pymupdf as fitz
+    import pypdfium2 as pdfium
+
+    document = fitz.open(stream=snapshot.data, filetype="pdf")
+    areas, checks = {}, {}
+    try:
+        for edit in edits:
+            page_index = snapshot.references[edit["id"]][0]
+            page = document[page_index]
+            spans = [
+                span
+                for block in page.get_text("dict")["blocks"]
+                for line in block.get("lines", [])
+                for span in line["spans"]
+            ]
+            page_fonts = page.get_fonts(full=True)
+            font_xrefs = {font[3]: font[0] for font in page_fonts}
+            jobs = []
+            for replacement in edit["literal_replacements"]:
+                rectangles = page.search_for(replacement["old_text"])
+                if len(rectangles) != replacement["occurrences"]:
+                    raise GeneratedFileError(
+                        "O trecho PDF nao pode ser localizado sem ambiguidade."
+                    )
+                checks.setdefault(page_index, []).append(replacement)
+                for rectangle in rectangles:
+                    candidates = [
+                        span
+                        for span in spans
+                        if fitz.Rect(span["bbox"]).intersects(rectangle)
+                    ]
+                    if not candidates:
+                        raise GeneratedFileError(
+                            "A formatacao do trecho PDF nao pode ser identificada."
+                        )
+                    span = max(
+                        candidates,
+                        key=lambda item: (
+                            fitz.Rect(item["bbox"]) & rectangle
+                        ).get_area(),
+                    )
+                    jobs.append((rectangle, replacement["new_text"], span, font_xrefs))
+                    page.add_redact_annot(rectangle, fill=False, cross_out=False)
+
+            page.apply_redactions(
+                images=fitz.PDF_REDACT_IMAGE_NONE,
+                graphics=fitz.PDF_REDACT_LINE_ART_NONE,
+                text=fitz.PDF_REDACT_TEXT_REMOVE,
+            )
+            loaded_fonts = {}
+            fallback = None
+            for rectangle, value, span, font_xrefs in jobs:
+                font_name = span["font"]
+                xref = font_xrefs.get(font_name)
+                if not xref:
+                    wanted = _normalized_font_name(font_name)
+                    xref = next(
+                        (
+                            font[0]
+                            for font in page_fonts
+                            if wanted in _normalized_font_name(font[3])
+                            or _normalized_font_name(font[3]) in wanted
+                        ),
+                        None,
+                    )
+                if not xref:
+                    raise GeneratedFileError(
+                        "A fonte original do PDF nao esta disponivel."
+                    )
+                font = loaded_fonts.get(font_name)
+                if font is None:
+                    buffer = document.extract_font(xref)[3]
+                    font = fitz.Font(fontbuffer=buffer)
+                    resource = f"NEVE{xref}"
+                    page.insert_font(fontname=resource, fontbuffer=buffer)
+                    loaded_fonts[font_name] = (font, resource)
+                else:
+                    font, resource = font
+                if any(
+                    not font.has_glyph(ord(char))
+                    for char in value
+                    if char.isascii() or char in "\u2013\u2014"
+                ):
+                    if fallback is None:
+                        fallback_font = fitz.Font("helv")
+                        fallback_resource = "NEVEFALLBACK"
+                        page.insert_font(
+                            fontname=fallback_resource, fontbuffer=fallback_font.buffer
+                        )
+                        fallback = (fallback_font, fallback_resource)
+                    font, resource = fallback
+                size = float(span["size"])
+                width = font.text_length(value, fontsize=size)
+                x = (
+                    rectangle.x1 - width
+                    if rectangle.x0 > page.rect.width * 0.7
+                    else rectangle.x0
+                )
+                baseline = float(span["origin"][1])
+                if x < 0 or x + width > page.rect.width:
+                    raise GeneratedFileError(
+                        "O novo texto nao cabe na linha original do PDF."
+                    )
+                page.insert_text(
+                    (x, baseline),
+                    value,
+                    fontname=resource,
+                    fontsize=size,
+                    color=fitz.sRGB_to_pdf(span["color"]),
+                    overlay=True,
+                )
+                top = baseline - size * float(span["ascender"])
+                bottom = baseline - size * float(span["descender"])
+                changed = fitz.Rect(
+                    min(x, rectangle.x0), top, max(x + width, rectangle.x1), bottom
+                )
+                areas.setdefault(page_index, []).append(
+                    (
+                        changed.x0,
+                        page.rect.height - changed.y1,
+                        changed.x1,
+                        page.rect.height - changed.y0,
+                    )
+                )
+
+        result = document.tobytes(garbage=4, deflate=True)
+    finally:
+        document.close()
+
+    rendered = pdfium.PdfDocument(result)
+    try:
+        for page_index, replacements in checks.items():
+            page = rendered[page_index]
+            textpage = page.get_textpage()
+            try:
+                actual = textpage.get_text_range()
+            finally:
+                textpage.close()
+                page.close()
+            compact_actual = re.sub(r"\s+", "", actual)
+            for replacement in replacements:
+                compact_new = re.sub(r"\s+", "", replacement["new_text"])
+                compact_old = re.sub(r"\s+", "", replacement["old_text"])
+                if compact_actual.count(compact_new) < replacement["occurrences"]:
+                    raise GeneratedFileError(
+                        "A verificacao PDF nao encontrou todo o texto substituido."
+                    )
+                if compact_old not in compact_new and compact_old in compact_actual:
+                    raise GeneratedFileError(
+                        "A verificacao PDF encontrou texto original remanescente."
+                    )
+    finally:
+        rendered.close()
+    _verify(snapshot.data, result, {}, areas, verify_text=False)
+    return result
+
+
 def edit_pdf_pages(snapshot, edits):
     import pypdfium2 as pdfium
+
+    if edits and all(edit.get("literal_replacements") for edit in edits):
+        try:
+            return _edit_literal_pdf(snapshot, edits)
+        except (GeneratedFileError, ValueError, RuntimeError) as error:
+            raise GeneratedFileError(
+                "Nao foi possivel editar o PDF sem alterar seu layout; o original foi mantido intacto."
+            ) from error
 
     expected = {snapshot.references[edit["id"]][0]: edit["new_text"] for edit in edits}
     with PDF_RENDER_LOCK:
@@ -289,8 +460,9 @@ def edit_pdf_pages(snapshot, edits):
                 index = snapshot.references[edit["id"]][0]
                 page = document[index]
                 try:
-                    areas[index] = _object_edit(
-                        document, page, edit["old_text"], edit["new_text"]
+                    page_areas = areas.setdefault(index, [])
+                    page_areas.extend(
+                        _object_edit(document, page, edit["old_text"], edit["new_text"])
                     )
                 finally:
                     page.close()
@@ -300,7 +472,8 @@ def edit_pdf_pages(snapshot, edits):
             _verify(snapshot.data, result, expected, areas)
             return result
         except (GeneratedFileError, pdfium.PdfiumError, ValueError):
-            # Reconstruct from the untouched source, never from a partly mutated PDF.
+            # Semantic rewrites retain the existing, explicitly reported re-layout path.
+            # Literal replacements are handled above and never enter this fallback.
             result = _reconstruct_pages(snapshot.data, expected)
             _verify(snapshot.data, result, expected)
             snapshot.inventory["reconstructed_pages"] = [
