@@ -11,6 +11,7 @@
 
 	import { searchFiles, deleteFileById } from '$lib/apis/files';
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Loader from '$lib/components/common/Loader.svelte';
@@ -241,8 +242,8 @@
 <Modal size="md" animated={false} bind:show>
 	<div class="flex h-[33rem] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden">
 		<div class="flex shrink-0 justify-between dark:text-gray-300 px-5 pt-4 pb-1">
-			<div class="text-lg font-medium self-center">{$i18n.t('Files')}</div>
-			<button
+			<div class="text-lg font-medium self-center"><MobileModalTitle>{$i18n.t('Files')}</MobileModalTitle></div>
+			<button data-mobile-modal-close
 				class="self-center"
 				on:click={() => {
 					show = false;

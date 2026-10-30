@@ -14,6 +14,10 @@
 	import { onMount, tick, getContext, createEventDispatcher } from 'svelte';
 	import { onChatDropdownDismiss } from '$lib/utils/chatDropdownDismissal';
 	import ImageModeSelector from './MessageInput/ImageModeSelector.svelte';
+	$: if ($mobile) {
+		showImageStyleDropdown = false;
+		showImageModeDropdown = false;
+	}
 	import ImageModeEditor from './MessageInput/ImageModeEditor.svelte';
 	import ImageSwapSlots from './MessageInput/ImageSwapSlots.svelte';
 	import { imageModeDefaults, imageModeFiles, imageModeSourceKey, imageModeIsSwap, imageModeHasEditor, imageModeFileError, imageModeSubmissionError, imageModeSubmission, type ImageModeOptions } from '$lib/utils/imageModes';
@@ -55,6 +59,7 @@
 
 	import { fly } from 'svelte/transition';
 	import { animateComposerHeight } from '$lib/utils/animateComposerHeight';
+	import { composerTextViewport } from '$lib/utils/composerTextViewport';
 	import { autoUpdate, computePosition, flip, offset, shift } from '@floating-ui/dom';
 	import { NEVEAI_API_BASE_URL, PASTED_TEXT_CHARACTER_LIMIT } from '$lib/constants';
 
@@ -170,7 +175,6 @@
 		| 'neve_image'
 		| 'neve_image_2'
 		| 'qwen_image_2s'
-		| 'moss_image_3'
 		| 'qwen_image_2_1_official' = 'neve_image_2';
 	export let stableDiffusionStyle:
 		| 'none'
@@ -478,7 +482,6 @@
 		}
 	}
 
-	let showTerminalMenu = false;
 
 	export let messageQueue: {
 		id: string;
@@ -794,7 +797,7 @@
 	let imageStyleDropdownRequest = 0;
 	let showImageResolutionDropdown = false;
 	let dropdownChatId = $chatId;
-	$: if (['qwen_image_2s', 'qwen_image_2_1_official', 'moss_image_3'].includes(stableDiffusionQuality) && hasImageAttachment)
+	$: if (['qwen_image_2s', 'qwen_image_2_1_official'].includes(stableDiffusionQuality) && hasImageAttachment)
 		showImageResolutionDropdown = false;
 	let showVideoResolutionDropdown = false;
 	let showVideoDurationDropdown = false;
@@ -880,7 +883,6 @@
 		if (quality === 'neve_image_2') return 'neveai.imageResolution.neve_image_1_4';
 		if (quality === 'qwen_image_2s') return 'neveai.imageResolution.neve_image_2';
 		if (quality === 'qwen_image_2_1_official') return 'neveai.imageResolution.neve_image_2_1';
-		if (quality === 'moss_image_3') return 'neveai.imageResolution.moss_image_3';
 		return null;
 	};
 	const saveImageResolution = (quality: typeof stableDiffusionQuality) => {
@@ -910,8 +912,8 @@
 	};
 	let appliedThinkingModeKey = '';
 	const applyReasoningLevel = (level: ReasoningLevel) => {
-		reasoningLevel = level;
-		const state = getReasoningState(level);
+		reasoningLevel = $mobile && level > 0 ? 1 : level;
+		const state = getReasoningState(reasoningLevel);
 		thinkingEnabled = state.enabled;
 		thinkingExtendedEnabled = state.extended;
 		thinkingUnlimitedEnabled = state.unlimited;
@@ -920,6 +922,8 @@
 		setReasoningLevel(level);
 		applyReasoningLevel(level);
 	};
+	// Mobile exposes only Medium/off; retain the saved desktop level on resize.
+	$: applyReasoningLevel($mobile ? Math.min(getReasoningLevel(), 1) as ReasoningLevel : getReasoningLevel());
 
 	let isComposing = false;
 	// Safari has a bug where compositionend is not triggered correctly #16615
@@ -947,11 +951,9 @@
 		return false;
 	}
 
-	let chatInputContainerElement;
 	let chatInputElement;
 
 	let filesInputElement: HTMLInputElement;
-	let commandsElement;
 
 	let inputFiles;
 
@@ -1919,10 +1921,7 @@
 					class="transition-all duration-500"
 				/>
 			</svg>
-			<span
-				class="text-[14px] font-medium tabular-nums"
-				style="color: {ringColor}">{contextWindow ? `${(usageRatio * 100).toFixed(1)}%` : '--'}</span
-			>
+			<span data-token-usage-percentage class="text-[14px] font-medium tabular-nums" style="color: {ringColor}">{contextWindow ? `${(usageRatio * 100).toFixed(1)}%` : '--'}</span>
 		</div>
 
 		{#if showTokenPopup}
@@ -1934,29 +1933,6 @@
 				transition:fly={{ y: 4, duration: 150 }}
 			>
 				<div class="flex items-center gap-1.5 mb-2.5">
-					<svg width="16" height="16" viewBox="0 0 22 22" class="shrink-0">
-						<circle
-							cx="11"
-							cy="11"
-							r="9"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							class="text-gray-300 dark:text-gray-600"
-						/>
-						<circle
-							cx="11"
-							cy="11"
-							r="9"
-							fill="none"
-							stroke={ringColor}
-							stroke-width="2"
-							stroke-linecap="round"
-							stroke-dasharray={circumference}
-							stroke-dashoffset={strokeOffset}
-							transform="rotate(-90 11 11)"
-						/>
-					</svg>
 					<span
 						class="text-[14px] font-semibold text-gray-700 dark:text-gray-200"
 						>{$i18n.t('Uso de tokens')}</span
@@ -2363,7 +2339,6 @@
 									{mediaAttachmentPolicy}
 									selectedModels={atSelectedModel ? [atSelectedModel.id] : selectedModels}
 									{fileUploadCapableModels}
-									{inputFilesHandler}
 									uploadFilesHandler={() => {
 										filesInputElement.click();
 									}}
@@ -2407,6 +2382,7 @@
 						<div class="composer-editor {isCompact ? 'flex-1 min-w-0 px-1 flex items-center' : 'px-2.5'}" class:hidden={imagePromptHidden} inert={imagePromptHidden}>
 								<div
 									bind:this={chatInputContainerEl}
+									use:composerTextViewport={composerContentRevision}
 									class="chat-input-scroll rtl:text-right ltr:text-left bg-transparent dark:text-gray-100 outline-hidden w-full px-1 resize-none h-fit max-h-47 overflow-auto {!hasComposerAttachmentArea
 										? atSelectedModel !== undefined
 											? 'pt-1.5'
@@ -2650,7 +2626,6 @@
 												{mediaAttachmentPolicy}
 												selectedModels={atSelectedModel ? [atSelectedModel.id] : selectedModels}
 												{fileUploadCapableModels}
-												{inputFilesHandler}
 												uploadFilesHandler={() => {
 													filesInputElement.click();
 												}}
@@ -2834,9 +2809,7 @@
 														}}
 													>
 														<span
-															>{stableDiffusionQuality === 'moss_image_3'
-																? 'Neve Image 3'
-																: stableDiffusionQuality === 'qwen_image_2_1_official'
+															>{stableDiffusionQuality === 'qwen_image_2_1_official'
 																? 'Neve Image 2.6'
 															: stableDiffusionQuality === 'qwen_image_2s'
 																? 'Neve Image 2'
@@ -2862,7 +2835,7 @@
 															class="fixed z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
 															in:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
 														>
-													{#each [{ id: 'neve_image_2', label: 'Neve Image 1.5' }, { id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.6' }, { id: 'moss_image_3', label: 'Neve Image 3' }] as quality}
+													{#each [{ id: 'neve_image_2', label: 'Neve Image 1.5' }, { id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.6' }] as quality}
 																<button
 																	type="button"
 																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -2873,7 +2846,6 @@
 																				| 'neve_image_2'
 																						| 'qwen_image_2s'
 																				| 'qwen_image_2_1_official'
-																				| 'moss_image_3'
 																		)}
 																>
 																	<span>{quality.label}</span
@@ -2885,10 +2857,10 @@
 														</div>
 													{/if}
 												</div>
-										{#if stableDiffusionQuality === 'qwen_image_2s'}
+										{#if stableDiffusionQuality === 'qwen_image_2s' && !$mobile}
 											<ImageModeSelector bind:options={stableDiffusionModeOptions} bind:show={showImageModeDropdown} {files} locked={responseInProgress} disabled={sendDisabled || uploadPending || pendingImageAttachments > 0} ongoing={!!history?.currentId} position={viewportDropdown} scroller={styleOptionsHorizontalScroller} onOpen={closeComposerDropdowns} />
 										{/if}
-												{#if stableDiffusionQuality === 'neve_image_2'}
+												{#if stableDiffusionQuality === 'neve_image_2' && !$mobile}
 													<div
 														class="image-style-control relative shrink-0"
 														id="image-style-dropdown-container"
@@ -2918,7 +2890,7 @@
 													</div>
 												{/if}
 
-										{#if (stableDiffusionQuality === 'neve_image_2' || stableDiffusionQuality === 'qwen_image_2s' || stableDiffusionQuality === 'qwen_image_2_1_official' || stableDiffusionQuality === 'moss_image_3') && !(stableDiffusionQuality === 'qwen_image_2s' && (hasImageAttachment || activeImageMode !== 'normal')) && !(['qwen_image_2_1_official', 'moss_image_3'].includes(stableDiffusionQuality) && hasImageAttachment)}
+										{#if (stableDiffusionQuality === 'neve_image_2' || stableDiffusionQuality === 'qwen_image_2s' || stableDiffusionQuality === 'qwen_image_2_1_official') && !(stableDiffusionQuality === 'qwen_image_2s' && (hasImageAttachment || activeImageMode !== 'normal')) && !(stableDiffusionQuality === 'qwen_image_2_1_official' && hasImageAttachment)}
 													<div
 														class="image-resolution-control relative shrink-0"
 														id="image-resolution-dropdown-container"
@@ -3211,13 +3183,13 @@
 										</div>
 									</div>
 									<div
-										class="message-input-actions-secondary self-end flex mr-1 shrink-0 {history?.currentId ? 'gap-[calc(0.375rem+0.5px)]' : 'space-x-1 gap-[0.5px]'}"
+										class="message-input-actions-secondary self-end flex mr-1 shrink-0 gap-1.5"
 									>
 										{#if (selectedToolIds ?? []).length > 0 || ($terminalServers ?? []).some((s) => s.url)}
 											<TerminalMenu bind:show={showTools} />
 										{/if}
 										{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
-											<ReasoningDropdown {effortBased} ongoing={!!history?.currentId} spacious={!history?.currentId} level={reasoningLevel} bind:show={showThinkingDropdown} onLevelChange={changeReasoningLevel} position={viewportDropdown} />
+											<ReasoningDropdown {effortBased} ongoing={!!history?.currentId} level={reasoningLevel} bind:show={showThinkingDropdown} onLevelChange={changeReasoningLevel} position={viewportDropdown} />
 										{/if}
 										{@render usageIndicator()}
 										{#if responseInProgress}
@@ -3422,7 +3394,15 @@
 	:global(.dark) .image-style-card-strip::before {
 		background: rgb(0 0 0 / 72%);
 	}
-	.chat-input-scroll { overscroll-behavior-y: contain; }
+	.chat-input-scroll { overscroll-behavior-y: contain; overflow-anchor: none; }
+	:global(#message-input-container.flex-col) > .composer-editor { padding-inline-end: 0.375rem; }
+	.composer-editor:global(.composer-text-scrolled) .chat-input-scroll {
+		/* Fade into the actual composer surface without tinting it or masking the scrollbar. */
+		mask-image: linear-gradient(to bottom, transparent, #000 14px), linear-gradient(#000, #000);
+		mask-size: calc(100% - 0.45rem) 100%, 0.45rem 100%;
+		mask-position: left top, right top;
+		mask-repeat: no-repeat;
+	}
 	:global(#send-message-button) {
 		display: flex;
 		align-items: center;
@@ -3459,7 +3439,7 @@
 		color: var(--color-gray-200, #e5e7eb);
 	}
 	@media (min-width: 768px) {
-		.composer-compact-add { display: flex; align-items: center; height: 2rem; }
+		.composer-compact-add { display: flex; align-items: center; height: 36px; }
 		:global(#message-input-container.flex-row > :has(#input-menu-button)) {
 			margin-inline-start: 0.375rem;
 		}
@@ -3531,20 +3511,18 @@
 			box-shadow: 0 6px 20px rgb(0 0 0 / 10%);
 		}
 		:global(#message-input-container > .composer-editor) { padding-inline: 0.375rem; }
+		:global(#message-input-container.flex-col) > .composer-editor { padding-inline-end: 0.125rem; }
 		:global(#input-menu-button), :global(.composer-more-trigger), :global(#send-message-button) { flex-basis: 38px; width: 38px; height: 38px; min-width: 38px; min-height: 38px; }
 		:global(.composer-add-icon) { translate: none; transform: none; }
 		:global(#input-menu-button) { flex: none; }
 		:global(#message-input-container.flex-row) {
-			display: grid;
-			grid-template-columns: 2.375rem minmax(0, 1fr);
+			display: flex;
 			align-items: center;
 			align-content: end;
 			border-radius: 1.5rem;
 		}
 		:global(#message-input-container.flex-row > .composer-editor) {
-			grid-column: 1 / -1;
-			grid-row: 1;
-			padding: 0.5rem 0.625rem 0.25rem;
+			padding: 0 0.375rem;
 		}
 		:global(#message-input-container.flex-row > :has(#input-menu-button)) {
 			grid-column: 1;
@@ -3556,14 +3534,20 @@
 			justify-content: flex-end;
 			min-width: 0;
 			gap: 0.375rem;
-			padding-right: 0.25rem;
+			padding-right: 0;
 			align-items: center;
 		}
 		:global(#thinking-dropdown-container > button) {
-			min-height: 2.25rem;
+			box-sizing: border-box;
+			width: 38px;
+			height: 38px;
+			min-width: 38px;
+			max-width: 38px;
+			min-height: 38px;
+			max-height: 38px;
 			font-size: 0.75rem;
 			white-space: nowrap;
-			padding-inline: 0.375rem;
+			padding: 0;
 		}
 		:global(#chat-input) { font-size: 16px; }
 		.chat-input-scroll { max-height: min(12rem, 35dvh); }
@@ -3576,6 +3560,12 @@
 		}
 		.message-input-actions .message-input-actions-primary,
 		.stable-image-actions .message-input-actions-primary { display: contents; }
+		.message-input-actions:not(:has(.message-input-active-controls > *)) {
+			grid-template-columns: 38px minmax(0, 1fr);
+		}
+		.message-input-actions:not(:has(.message-input-active-controls > *)) .message-input-actions-secondary {
+			grid-column: 2;
+		}
 		.message-input-actions .message-input-active-controls,
 		.stable-image-actions .message-input-active-controls {
 			display: flex;
@@ -3594,8 +3584,8 @@
 		.message-input-actions .message-input-add-control { display: flex; align-items: center; }
 		.message-input-actions .message-input-active-controls > button { translate: none; }
 		.message-input-actions-secondary { grid-column: 3; grid-row: 1; justify-self: end; align-self: center; margin-right: 0.25rem; align-items: center; min-width: 0; max-width: 100%; }
-		.message-input-actions-secondary :global(#thinking-dropdown-container) { min-width: 0; }
-		.message-input-actions-secondary :global(#thinking-dropdown-container > button) { min-width: 0; max-width: 100%; }
+		.message-input-actions-secondary :global(#thinking-dropdown-container) { min-width: 38px; flex: 0 0 38px; }
+		.message-input-actions-secondary :global(#thinking-dropdown-container > button) { min-width: 38px; max-width: 38px; }
 		.message-input-actions-secondary :global(#thinking-dropdown-container > button > span:not([data-acceleration-icon])) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 		.message-input-actions-secondary :global(#thinking-dropdown-container > button > svg) { flex-shrink: 0; }
 		.message-input-actions-secondary > :global(div:has(> #send-message-button)),

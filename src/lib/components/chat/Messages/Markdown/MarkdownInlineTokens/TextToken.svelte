@@ -1,19 +1,14 @@
 <script lang="ts">
-	import { fade } from 'svelte/transition';
+	import { getContext } from 'svelte';
+	import type { StreamingPaintContext } from '$lib/utils/marked/streaming-structure';
+	import { streamingTextFade } from '$lib/utils/streamingTextFade';
+	import { stableStreamingText } from '$lib/utils/stableStreamingText';
 
 	export let token;
 	export let done = true;
+	const initialText = token?.raw ?? '';
+	const paintContext = getContext<StreamingPaintContext>('streaming-text-paint');
 
-	let texts = [];
-	$: texts = (token?.raw ?? '').split(' ');
 </script>
 
-{#if done}
-	{token?.raw}
-{:else}
-	{#each texts as text, index}
-		<span class="" in:fade={{ duration: 100 }}>
-			{text}{index < texts.length - 1 ? ' ' : ''}
-		</span>
-	{/each}
-{/if}
+<span use:stableStreamingText={token?.raw ?? ''} use:streamingTextFade={{ text: token?.raw ?? '', done, paintContext }}>{initialText}</span>

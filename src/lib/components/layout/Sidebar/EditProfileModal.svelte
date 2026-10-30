@@ -8,6 +8,7 @@
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 
 	const i18n = getContext('i18n');
@@ -133,9 +134,9 @@
 	<div>
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-1">
 			<div class=" text-lg font-medium self-center">
-				{$i18n.t('Editar perfil')}
+				<MobileModalTitle>{$i18n.t('Editar perfil')}</MobileModalTitle>
 			</div>
-			<button
+			<button data-mobile-modal-close
 				class="self-center"
 				on:click={() => {
 					show = false;

@@ -3,6 +3,7 @@
 
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import MapSelector from '$lib/components/common/Valves/MapSelector.svelte';
 
@@ -56,8 +57,8 @@
 <Modal bind:show size="md">
 	<div>
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-2">
-			<div class=" text-lg font-medium self-center">{$i18n.t('Input Variables')}</div>
-			<button
+			<div class=" text-lg font-medium self-center"><MobileModalTitle>{$i18n.t('Input Variables')}</MobileModalTitle></div>
+			<button data-mobile-modal-close
 				class="self-center"
 				on:click={() => {
 					show = false;

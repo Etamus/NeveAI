@@ -4,6 +4,7 @@ import katexExtension from './katex-extension';
 import citationExtension from './citation-extension';
 import footnoteExtension from './footnote-extension';
 import { disableSingleTilde } from './strikethrough-extension';
+import { isWithinCodeBlock } from 'remend';
 import { mentionExtension } from './mention-extension';
 
 function extensions(): MarkedExtension[] {
@@ -24,7 +25,14 @@ marked.use(...extensions());
 
 // Other consumers can mutate global marked without affecting the main lexer.
 const chatMarked = new Marked(...extensions());
-export const lexChatMarkdown = (source: string): TokensList => chatMarked.lexer(source);
+export const lexChatMarkdown = (source: string): TokensList => {
+	// Structured output is a separate block, not a lazy continuation of a list.
+	// Keep literal examples inside code untouched, including unfinished fences.
+	const separated = source.replace(/^<details\s+type="(?:reasoning|tool_calls|code_interpreter)"[^>]*>\r?\n/gm,
+		(tag, offset) => offset > 0 && !source.slice(0, offset).endsWith('\n\n') &&
+			!isWithinCodeBlock(source, offset) ? '\n' + tag : tag);
+	return chatMarked.lexer(separated);
+};
 
 function equalToken(a: unknown, b: unknown): boolean {
 	if (a === b) return true;

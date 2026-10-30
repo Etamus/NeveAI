@@ -20,29 +20,6 @@ from sqlalchemy import (
 )
 
 ####################
-# Helpers
-####################
-
-
-def _normalize_timestamp(timestamp: int) -> float:
-    """Normalize and validate timestamp. Returns current time if invalid."""
-    now = time.time()
-
-    # Convert milliseconds to seconds if needed
-    if timestamp > 10_000_000_000:
-        timestamp = timestamp / 1000
-
-    # Validate: must be after 2020 and not in the future (with 1 day tolerance)
-    min_valid = 1577836800  # 2020-01-01 00:00:00 UTC
-    max_valid = now + 86400  # 1 day in the future (clock skew tolerance)
-
-    if timestamp < min_valid or timestamp > max_valid:
-        return now
-
-    return timestamp
-
-
-####################
 # ChatMessage DB Schema
 ####################
 

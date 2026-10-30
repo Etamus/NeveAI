@@ -11,6 +11,7 @@
 	toast.message = () => {};
 
 	import { onMount, tick, setContext, onDestroy } from 'svelte';
+	import { notifyDesktopReady } from '$lib/utils/desktopWindow';
 	import {
 		config,
 		user,
@@ -722,6 +723,8 @@
 		} finally {
 			await tick();
 			loaded = true;
+			await tick();
+			await notifyDesktopReady();
 		}
 
 		return () => {
@@ -780,8 +783,17 @@
 />
 
 <style>
+	/* Only the visible notification surfaces should intercept pointer input. */
+	:global([data-neve-toast]),
+	:global([data-sonner-toaster]) { pointer-events: none; }
+	:global([data-sonner-toast][data-visible='true']:not([data-removed='true'])) { pointer-events: auto; }
+	:global([data-sonner-toast]::before),
+	:global([data-sonner-toast]::after) { pointer-events: none; }
+
 	:global(body:has(#model-settings-content) [data-sonner-toaster]),
-	:global(body:has(#model-settings-content) [data-neve-toast]) {
+	:global(body:has(#model-settings-content) [data-neve-toast]),
+	:global(body:has([data-neve-chat-more-menu][data-state='open']) [data-sonner-toaster]),
+	:global(body:has([data-neve-chat-more-menu][data-state='open']) [data-neve-toast]) {
 		z-index: 30;
 	}
 
@@ -849,13 +861,30 @@
 		color: #fff;
 	}
 
-	@media (max-width: 600px) {
+	@media (max-width: 767px) {
+		:global([data-neve-toast]) { right: 12px; left: auto; }
+		:global([data-neve-toast-kind='update']) { top: calc(56px + env(safe-area-inset-top, 0px)); }
+		:global([data-neve-toast-kind='download']) { top: calc(56px + env(safe-area-inset-top, 0px) + var(--neve-update-toast-offset, 0px)); }
+		:global([data-neve-toast-kind='runtime']) { top: calc(56px + env(safe-area-inset-top, 0px) + var(--neve-update-toast-offset, 0px) + var(--neve-download-toast-offset, 0px)); }
+		:global([data-neve-toast] > div) {
+			width: min(288px, calc(100vw - 24px));
+			max-width: calc(100vw - 24px);
+			transform: none;
+			translate: none;
+			padding: 10px 12px;
+		}
 		:global([data-sonner-toaster][data-y-position='top'][data-x-position='right']) {
-			top: calc(40px + var(--neve-update-toast-offset, 0px) + var(--neve-download-toast-offset, 0px) + var(--neve-model-runtime-toast-offset, 0px));
+			top: calc(56px + env(safe-area-inset-top, 0px) + var(--neve-update-toast-offset, 0px) + var(--neve-download-toast-offset, 0px) + var(--neve-model-runtime-toast-offset, 0px));
+			right: 12px;
+			left: auto;
+			width: min(288px, calc(100vw - 24px));
+			--width: min(288px, calc(100vw - 24px));
 		}
 
 		:global([data-sonner-toaster] [data-sonner-toast][data-styled='true']) {
-			width: calc(100% - 32px);
+			width: 100%;
+			max-width: 100%;
+			margin-left: 0;
 		}
 	}
 </style>

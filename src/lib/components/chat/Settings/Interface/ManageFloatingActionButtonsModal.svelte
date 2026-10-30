@@ -3,6 +3,7 @@
 	const i18n = getContext('i18n');
 
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import Plus from '$lib/components/icons/Plus.svelte';
 	import Minus from '$lib/components/icons/Minus.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
@@ -30,9 +31,11 @@
 	<div>
 		<div class=" flex justify-between dark:text-gray-100 px-5 pt-4 pb-1.5">
 			<h1 class="text-lg font-medium self-center font-primary">
+				<MobileModalTitle>
 				{$i18n.t('Quick Actions')}
+				</MobileModalTitle>
 			</h1>
-			<button
+			<button data-mobile-modal-close
 				class="self-center"
 				aria-label={$i18n.t('Close modal')}
 				on:click={() => {

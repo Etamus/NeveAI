@@ -18,7 +18,7 @@
 	import { saveModelFavorites } from '$lib/utils/modelFavoriteActions';
 
 	import { NEVEAI_VERSION, NEVEAI_API_BASE_URL } from '$lib/constants';
-	import { compareVersion } from '$lib/utils';
+	import { getAvailableUpdateTargets } from '$lib/utils/updateAvailability';
 
 	import { config, user, settings, models, tools, banners, showSettings, showSettingsTab, temporaryChatEnabled, toolServers, terminalServers, showSearch, showSidebar, showControls, mobile, neveDownloadToast, loadShortCodesToEmojis } from '$lib/stores';
 
@@ -444,16 +444,7 @@
 		}
 		const version = await getVersionUpdates(localStorage.token).catch(() => null);
 		if (!version) return;
-		const latest = String(version.latest_tag || version.latest || '').trim();
-		const current = String(version.current_tag || version.current || NEVEAI_VERSION).trim();
-		const available = version.neve_update_available === true ||
-			(version.neve_update_available === undefined && latest && compareVersion(latest, current));
-		if (!available || !latest) {
-			latestUpdateVersion = '';
-			syncUpdateToast();
-			return;
-		}
-		latestUpdateVersion = latest;
+		latestUpdateVersion = getAvailableUpdateTargets(version, NEVEAI_VERSION).join(' / ');
 		syncUpdateToast();
 	};
 
@@ -474,7 +465,7 @@
 <SettingsModal bind:show={$showSettings} />
 
 {#if updateToastShownVersion}
-	<div data-neve-toast role="status" aria-live="polite" class="fixed right-[9px] top-7 z-[1000000000] max-[600px]:left-[19px] max-[600px]:right-auto max-[600px]:top-4" bind:clientHeight={updateToastHeight}>
+	<div data-neve-toast data-neve-toast-kind="update" role="status" aria-live="polite" class="fixed right-[9px] top-7 z-[1000000000] max-[600px]:left-[19px] max-[600px]:right-auto max-[600px]:top-4" bind:clientHeight={updateToastHeight}>
 		<NeveUpdateToast version={updateToastShownVersion} onClose={closeUpdateToast} onOpen={openUpdateSettings} />
 	</div>
 {/if}
@@ -482,6 +473,7 @@
 {#if $neveDownloadToast}
 	<div
 		data-neve-toast
+		data-neve-toast-kind="download"
 		role="status"
 		aria-live="polite"
 		class="fixed right-[9px] top-[calc(1.75rem+var(--neve-update-toast-offset,0px))] z-[1000000000] max-[600px]:left-[19px] max-[600px]:right-auto max-[600px]:top-[calc(1rem+var(--neve-update-toast-offset,0px))]"
@@ -500,6 +492,7 @@
 {#if modelRuntimeToast}
 	<div
 		data-neve-toast
+		data-neve-toast-kind="runtime"
 		role="status"
 		aria-live="polite"
 		class="fixed right-[9px] top-[calc(1.75rem+var(--neve-update-toast-offset,0px)+var(--neve-download-toast-offset,0px))] z-[1000000000] max-[600px]:left-[19px] max-[600px]:right-auto max-[600px]:top-[calc(1rem+var(--neve-update-toast-offset,0px)+var(--neve-download-toast-offset,0px))]"

@@ -4,6 +4,7 @@
 	import { showModelSettings, user } from '$lib/stores';
 	import AdvancedParams from '$lib/components/chat/Settings/Advanced/AdvancedParams.svelte';
 	import Sidebar from '$lib/components/icons/Sidebar.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -47,14 +48,14 @@
 		>
 			<div class="min-w-0 flex-1">
 				<h2 class="text-sm font-semibold text-gray-900 dark:text-white truncate leading-snug">
-					{selectedModelName || $i18n.t('Controles')}
+					<MobileModalTitle onBack={close} contentClass="truncate">{selectedModelName || $i18n.t('Controles')}</MobileModalTitle>
 				</h2>
 				<p class="text-xs text-gray-400 dark:text-gray-500 mt-0.5 leading-normal">
 					{$i18n.t('Ajuste os parâmetros para esta conversa')}
 				</p>
 			</div>
 
-			<button
+			<button data-mobile-modal-close
 				id="close-chat-parameters-button"
 				class="absolute top-1 right-[calc(0.5rem+1px)] max-md:right-1.5 flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 transition text-gray-600 dark:text-gray-400"
 				on:click={close}

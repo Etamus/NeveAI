@@ -23,6 +23,7 @@
 	import ChevronUpDown from '$lib/components/icons/ChevronUpDown.svelte';
 	import CommandLine from '$lib/components/icons/CommandLine.svelte';
 	import Cube from '$lib/components/icons/Cube.svelte';
+	import CodeBracket from '$lib/components/icons/CodeBracket.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 
 	const i18n = getContext('i18n');
@@ -51,6 +52,18 @@
 
 	$: isReasoningCodeBlock = hideToolbar || attributes?.type === 'reasoning';
 
+	function handleCodeWheel(event: WheelEvent) {
+		const target = event.target instanceof Element ? event.target : null;
+		const scroller = target?.closest<HTMLElement>('.code-scroll, .cm-scroller');
+		if (scroller && (
+			(event.deltaY !== 0 && !event.shiftKey && scroller.scrollHeight > scroller.clientHeight) ||
+			((event.deltaX !== 0 || event.shiftKey) && scroller.scrollWidth > scroller.clientWidth)
+		)) {
+			// Keep the chat's bottom/spacer wheel handler out of this independent viewport.
+			event.stopPropagation();
+		}
+	}
+
 	let pyodideWorker = null;
 	let executionTimeout: ReturnType<typeof setTimeout>;
 	const displayResult = (value: unknown): string => typeof value === 'string' ? value : JSON.stringify(value) ?? String(value);
@@ -70,7 +83,6 @@
 	let renderError = null;
 	let pendingRenders = 0;
 
-	let highlightedCode = null;
 	let executing = false;
 
 	let stdout = null;
@@ -81,9 +93,6 @@
 	let copied = false;
 	let saved = false;
 
-	const collapseCodeBlock = () => {
-		collapsed = !collapsed;
-	};
 
 	const saveCode = () => {
 		saved = true;
@@ -438,7 +447,7 @@
 
 <div data-chat-layout-pending={pendingRenders > 0 ? 'true' : undefined}>
 	<div
-		class="relative {className} flex flex-col rounded-lg border border-gray-200/50 dark:border-gray-700/40 my-0.5"
+		class="code-shell relative {className} flex min-w-0 flex-col my-0.5"
 		dir="ltr"
 	>
 		{#if ['mermaid', 'vega', 'vega-lite'].includes(lang)}
@@ -457,15 +466,16 @@
 							{renderError}
 						</div>
 					{/if}
-					<pre>{code}</pre>
+					<pre class="code-scroll" on:wheel={handleCodeWheel}>{code}</pre>
 				</div>
 			{/if}
 		{:else}
 			{#if !isReasoningCodeBlock}
 			<div
-				class="sticky {stickyButtonsClassName} left-0 right-0 py-1.5 px-3 gap-2 flex items-center justify-end w-full z-10 text-xs text-gray-500 dark:text-gray-400 bg-[#f8f9fa] dark:bg-[#1a1a1a] rounded-t-lg"
+				class="code-toolbar {stickyButtonsClassName} gap-2 flex items-center justify-end w-full text-xs text-gray-500 dark:text-gray-400"
 			>
-				<div class="flex-1 truncate">
+				<div class="flex min-w-0 flex-1 items-center gap-2">
+					<CodeBracket className="size-4 shrink-0" />
 					<Tooltip content={lang} placement="top-start">
 						<span class="truncate text-ellipsis font-bold">
 							{lang}
@@ -485,6 +495,7 @@
 						{:else if run}
 							<Tooltip content={$i18n.t('Run')} placement="top">
 								<button
+									aria-label={$i18n.t('Run')}
 									class="flex items-center justify-center run-code-button bg-none border-none transition rounded-md p-1 hover:bg-gray-200 dark:hover:bg-gray-700"
 									on:click={async () => {
 										code = _code;
@@ -501,6 +512,7 @@
 					<Tooltip content={copied ? $i18n.t('Copied') : $i18n.t('Copy')} placement="top">
 						<button
 							class="copy-code-button flex items-center justify-center bg-none border-none transition rounded-md p-1 hover:bg-gray-200 dark:hover:bg-gray-700"
+							aria-label={copied ? $i18n.t('Copied') : $i18n.t('Copy')}
 							on:click={copyCode}
 						>
 							{#if copied}
@@ -514,6 +526,7 @@
 					<Tooltip content={$i18n.t('Download')} placement="top">
 						<button
 							class="flex items-center justify-center bg-none border-none transition rounded-md p-1 hover:bg-gray-200 dark:hover:bg-gray-700"
+							aria-label={$i18n.t('Download')}
 							on:click={() => {
 								const ext = lang || 'txt';
 								const blob = new Blob([code], { type: 'text/plain' });
@@ -533,6 +546,7 @@
 						<Tooltip content={$i18n.t('Preview')} placement="top">
 							<button
 								class="flex items-center justify-center run-code-button bg-none border-none transition rounded-md p-1 hover:bg-gray-200 dark:hover:bg-gray-700"
+								aria-label={$i18n.t('Preview')}
 								on:click={previewCode}
 							>
 								<Cube className="size-4" />
@@ -544,7 +558,8 @@
 			{/if}
 
 			<div
-				class="language-{lang} {editorClassName
+				on:wheel={handleCodeWheel}
+				class="code-body language-{lang} {editorClassName
 					? editorClassName
 					: executing || stdout || stderr || result
 						? ''
@@ -567,7 +582,7 @@
 						/>
 					{:else}
 						<pre
-							class=" hljs p-4 px-5 overflow-x-auto"
+							class="code-scroll hljs p-4 px-5"
 					style="{!isReasoningCodeBlock
 						? 'border-top-left-radius: 0px; border-top-right-radius: 0px;'
 						: ''} {(executing ||
@@ -645,3 +660,51 @@
 		{/if}
 	</div>
 </div>
+
+<style>
+	.code-shell {
+		border-radius: 22px;
+		overflow: hidden;
+		background: #f8f9fa;
+	}
+	:global(.dark) .code-shell { background: #1a1a1a; }
+	.code-toolbar { min-height: 52px; padding: 12px 24px; }
+	.code-body { min-width: 0; padding-right: 4px; }
+	.code-body :global(.cm-scroller::-webkit-scrollbar-thumb) { visibility: visible; }
+	.code-scroll {
+		font-size: 13px;
+		line-height: 22px;
+		white-space: pre;
+		max-height: 366px;
+		overflow: auto;
+		margin: 0;
+		border-radius: 0;
+		padding: 18px 24px 24px;
+	}
+	.code-body :global(.cm-editor) { background: transparent; }
+	.code-body :global(.cm-scroller) { max-height: 366px; overflow: auto; font-size: 13px; line-height: 22px; }
+	.code-body :global(.cm-content) { padding-block: 18px 24px; }
+	.code-scroll, .code-body :global(.cm-scroller) {
+		overscroll-behavior: contain;
+	}
+	.code-scroll::-webkit-scrollbar-track,
+	.code-body :global(.cm-scroller::-webkit-scrollbar-track) {
+		margin-block: 0.625rem;
+	}
+	.code-scroll::-webkit-scrollbar-corner,
+	.code-body :global(.cm-scroller::-webkit-scrollbar-corner) {
+		background: transparent;
+	}
+	.code-scroll code { display: block; overflow: visible; font-size: 13px; line-height: 22px; }
+	:global(html:not(.dark)) .code-scroll :global(.hljs-string) { color: #0a3069; }
+	:global(html:not(.dark)) .code-scroll :global(.hljs-built_in),
+	:global(html:not(.dark)) .code-scroll :global(.hljs-title) { color: #6639ba; }
+	:global(html:not(.dark)) .code-scroll :global(.hljs-keyword) { color: #cf222e; }
+	:global(html:not(.dark)) .code-scroll :global(.hljs-number),
+	:global(html:not(.dark)) .code-scroll :global(.hljs-literal) { color: #0550ae; }
+	@media (max-width: 600px) {
+		.code-toolbar { padding-inline: 16px; }
+		.code-scroll { padding-inline: 16px; max-height: 320px; }
+		.code-body :global(.cm-scroller) { max-height: 320px; }
+	}
+</style>

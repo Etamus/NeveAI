@@ -16,7 +16,6 @@
 	export let onKeydown = (e) => {};
 
 	let selectedIdx = 0;
-	let selectedOption = null;
 
 	let lastWord = '';
 	$: lastWord = value ? value.split(' ').at(-1) : value;

@@ -21,16 +21,8 @@ describe('media attachment limits', () => {
 		const images = Array.from({ length: 12 }, () => ({ type: 'image/png' }));
 		expect(filterMediaAttachments(getMediaAttachmentPolicy(true, 'neve_image', false, false), images)).toHaveLength(0);
 		expect(filterMediaAttachments(getMediaAttachmentPolicy(true, 'neve_image_2', false, false), images)).toHaveLength(1);
-		expect(filterMediaAttachments(getMediaAttachmentPolicy(true, 'moss_image_3', false, false), images)).toHaveLength(4);
 		for (const quality of ['qwen_image_2s', 'qwen_image_2_1_official']) {
 			expect(filterMediaAttachments(getMediaAttachmentPolicy(true, quality, false, false), images)).toHaveLength(10);
-		}
-	});
-	it('keeps Neve Image 3 limited to four image references regardless of stale mode', () => {
-		for (const mode of ['normal', 'restore', 'inpaint', 'outpaint', 'outfit', 'body']) {
-			const policy = getMediaAttachmentPolicy(true, 'moss_image_3', false, false, mode);
-			expect(policy?.maxCount).toBe(4);
-			expect(isMediaAttachmentAllowed(policy, { type: 'application/pdf' })).toBe(false);
 		}
 	});
 

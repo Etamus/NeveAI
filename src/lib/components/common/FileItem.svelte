@@ -92,8 +92,8 @@
 			showModal = !showModal;
 		} else if (url) {
 			if (type === 'file') {
-				window.open(url.startsWith('http') ? `${url}/content` : `${NEVEAI_API_BASE_URL}/files/${url}/content`, '_blank').focus();
-			} else window.open(url, '_blank').focus();
+				window.open(url.startsWith('http') ? `${url}/content` : `${NEVEAI_API_BASE_URL}/files/${url}/content`, '_blank')?.focus();
+			} else window.open(url, '_blank')?.focus();
 		}
 		dispatch('click');
 	};

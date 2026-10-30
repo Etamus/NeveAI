@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Markdown from '$lib/components/chat/Messages/Markdown.svelte';
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
@@ -98,6 +99,7 @@
 	<div>
 		<div class=" flex justify-between dark:text-gray-300 px-4.5 pt-3 pb-2">
 			<div class=" text-lg font-medium self-center flex items-center">
+				<MobileModalTitle>
 				{#if citation?.source?.name}
 					{@const document = mergedDocuments?.[0]}
 					{#if document?.metadata?.file_id || document.source?.url?.includes('http')}
@@ -127,8 +129,9 @@
 				{:else}
 					{$i18n.t('Citation')}
 				{/if}
+				</MobileModalTitle>
 			</div>
-			<button
+			<button data-mobile-modal-close
 				class="self-center"
 				aria-label={$i18n.t('Close citation modal')}
 				on:click={() => {

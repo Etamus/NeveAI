@@ -1,16 +1,19 @@
 <script>
-	import { onDestroy } from 'svelte';
+	import { onDestroy, setContext } from 'svelte';
 	import { replaceTokens, processResponseContent } from '$lib/utils';
 	import { user } from '$lib/stores';
 
 	import { createChatMarkdownParser } from '$lib/utils/marked/chat-lexer';
 	import { createStreamingMarkdownScheduler } from '$lib/utils/marked/streaming-parser';
+	import { prepareStreamingMarkdown, stabilizeStreamingBlocks } from '$lib/utils/marked/streaming-display';
+	import { changesVisibleStructure } from '$lib/utils/marked/streaming-structure';
 
 	import MarkdownTokens from './Markdown/MarkdownTokens.svelte';
 
 	export let id = '';
 	export let content;
 	export let done = true;
+	export let streaming = null;
 	export let model = null;
 	export let save = false;
 	export let preview = false;
@@ -35,23 +38,41 @@
 	let snapshot = '';
 	let modelName;
 	let userName;
+	let streamActive = false;
+	let completedSnapshot = null;
+	let repairActive = false;
+	const paintContext = { suppress: false };
+	setContext('streaming-text-paint', paintContext);
 	const scheduler = createStreamingMarkdownScheduler(() => {
 		const processed = replaceTokens(processResponseContent(snapshot), modelName, userName);
-		tokens = parse(processed);
+		const parsed = parse(repairActive ? prepareStreamingMarkdown(processed) : processed);
+		const next = repairActive ? stabilizeStreamingBlocks(parsed) : parsed;
+		paintContext.suppress = repairActive && changesVisibleStructure(tokens, next);
+		tokens = next;
 	});
 
-	const updateHandler = (value, isDone, messageId, nextModelName, nextUserName) => {
+	const updateHandler = (value, isDone, isStreaming, messageId, nextModelName, nextUserName) => {
 		const changedId = context[0] !== messageId;
 		const changedContext = changedId || context[1] !== nextModelName || context[2] !== nextUserName;
-		if (changedId) parse = createChatMarkdownParser();
+		if (changedId) {
+			parse = createChatMarkdownParser();
+			completedSnapshot = null;
+		}
 		context = [messageId, nextModelName, nextUserName];
 		snapshot = value ?? '';
 		modelName = nextModelName;
 		userName = nextUserName;
-		scheduler.update(isDone || changedContext || snapshot.length === 0, snapshot.length > 0);
+		const finished = streamActive && !isStreaming;
+		streamActive = isStreaming;
+		if (!isStreaming) completedSnapshot = snapshot;
+		// Continuing has not produced a new snapshot yet; keep the completed Markdown intact.
+		const waitingForContinuation = isStreaming && snapshot === completedSnapshot;
+		if (isStreaming && !waitingForContinuation) completedSnapshot = null;
+		repairActive = isStreaming && !waitingForContinuation;
+		scheduler.update(!isStreaming || finished || changedContext || snapshot.length === 0, snapshot.length > 0);
 	};
 
-	$: updateHandler(content, done, id, model?.name, $user?.name);
+	$: updateHandler(content, done, streaming ?? !done, id, model?.name, $user?.name);
 	onDestroy(() => scheduler.destroy());
 </script>
 

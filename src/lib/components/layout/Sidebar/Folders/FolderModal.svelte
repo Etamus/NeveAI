@@ -2,6 +2,7 @@
 	import { getContext, tick } from 'svelte';
 
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 
 	import { toast } from 'svelte-sonner';
@@ -109,13 +110,15 @@
 	<div>
 		<div class="flex justify-between items-center px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20">
 			<div class="text-lg font-semibold dark:text-gray-100">
+				<MobileModalTitle>
 				{#if edit}
 					{$i18n.t('Editar projeto')}
 				{:else}
 					{$i18n.t('Criar projeto')}
 				{/if}
+				</MobileModalTitle>
 			</div>
-			<button
+			<button data-mobile-modal-close
 				class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
 				on:click={() => {
 					show = false;

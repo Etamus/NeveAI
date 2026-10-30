@@ -2,22 +2,18 @@
 	import { getContext } from 'svelte';
 	const i18n = getContext('i18n');
 	import WebSearchResults from '../WebSearchResults.svelte';
-	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
-	import Atom02 from '$lib/components/icons/Atom02.svelte';
-	import Photo from '$lib/components/icons/Photo.svelte';
+	import ImageIcon from '$lib/components/icons/Image.svelte';
+	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 	import Video from '$lib/components/icons/Video.svelte';
-	import Github from '$lib/components/icons/Github.svelte';
-	import DocumentPage from '$lib/components/icons/DocumentPage.svelte';
-	import { t } from 'i18next';
 	import { getWebSearchDisplayQueries } from '$lib/utils/webSearchDisplayQueries';
 
 	export let status = null;
 	export let done = false;
+	export let expanded = null;
 
 	$: statusAction = String(status?.action ?? '').toLowerCase();
-	$: statusDescription = String(status?.description ?? '').toLowerCase();
 	$: statusLabel =
 		status?.description === 'Imagem gerada'
 			? $i18n.t('Imagem criada')
@@ -26,32 +22,18 @@
 				: status?.description
 					? $i18n.t(status.description)
 					: '';
-	$: isGitHubStatus =
-		statusAction.includes('github_repository') || status?.source_type === 'github_repository';
-	$: isFileSourceStatus = status?.source_type === 'file';
 	$: isDeepSearchStatus = Boolean(status?.deep_search) || statusAction.includes('deep_search');
 	$: searchDisplayQueries = getWebSearchDisplayQueries(status?.queries, isDeepSearchStatus);
 	$: searchedCount =
 		status?.searched_count ??
 		(status?.items?.length ? status.items.length : (status?.urls || []).length);
-	$: isImageStatus =
-		statusAction.includes('image') ||
-		statusAction.includes('stable_diffusion') ||
-		statusDescription.includes('image') ||
-		statusDescription.includes('imagem');
-	$: isMusicStatus =
-		statusAction.includes('music_generation') ||
-		statusDescription.includes('música') ||
-		statusDescription.includes('musica');
-	$: isVideoStatus =
-		statusAction.includes('video_generation') ||
-		statusDescription.includes('vídeo') ||
-		statusDescription.includes('video');
-	$: isFileGenerationStatus = statusAction.includes('file_generation');
+	$: isImageStatus = statusAction.includes('stable_diffusion') || statusAction.includes('image_generation');
+	$: isMusicStatus = statusAction.includes('music_generation');
+	$: isVideoStatus = statusAction.includes('video_generation');
 </script>
 
 {#if !status?.hidden}
-	<div class="status-description flex items-center gap-2 py-0.5 w-full text-left">
+	<div class="status-description flex min-w-0 w-full items-center gap-2 text-left text-sm font-normal text-gray-600 dark:text-gray-300">
 		{#if status?.action === 'web_search' && (status?.urls || status?.items)}
 			<WebSearchResults {status} done={done || status?.done}>
 				<span class="text-sm">
@@ -70,28 +52,12 @@
 			</WebSearchResults>
 		{:else if status?.action === 'web_search'}
 			<div
-				class="-ml-3 mb-2 w-[calc(100%+0.75rem)] overflow-hidden rounded-xl text-sm transition-all duration-200"
+				class="mb-2 w-full min-w-0 overflow-hidden text-sm"
 			>
-				<div class="flex items-center justify-between gap-3 px-3 py-2">
+				<div class="flex items-center gap-2 pt-1 pb-2">
 					<div
-						class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors dark:text-gray-300"
+						class="flex min-w-0 items-center gap-2 text-sm font-normal text-gray-600 transition-colors dark:text-gray-300"
 					>
-						<span
-							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
-						>
-							{#if isVideoStatus}
-								<Video className="size-3.5" strokeWidth="1.6" />
-							{:else if isMusicStatus}
-								<MusicNote className="size-3.5" strokeWidth="1.6" />
-							{:else if isImageStatus}
-								<Photo className="size-3.5" strokeWidth="1.6" />
-							{:else if isDeepSearchStatus}
-								<Atom02 className="size-3.5" />
-							{:else}
-								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
-							{/if}
-						</span>
-
 						<span
 							class="relative min-w-0 truncate text-sm leading-5 {(done || status?.done) === false
 								? 'shimmer'
@@ -111,6 +77,9 @@
 							{statusLabel}
 							{/if}
 						</span>
+						{#if expanded !== null}
+							<ChevronDown strokeWidth="2.4" className="size-3.5 shrink-0 translate-y-px text-gray-400 transition-transform duration-200 dark:text-gray-500 {expanded ? 'rotate-180' : 'rotate-0'}" />
+						{/if}
 					</div>
 				</div>
 			</div>
@@ -121,44 +90,34 @@
 						? 'shimmer'
 						: ''} text-gray-500 dark:text-gray-400 line-clamp-1 text-wrap"
 				>
-					<Search className="size-4 shrink-0" />
-					{$i18n.t(`Searching Knowledge for "{{searchQuery}}"`, {
+					<span class="min-w-0">{$i18n.t(`Searching Knowledge for "{{searchQuery}}"`, {
 						searchQuery: status.query
-					})}
+					})}</span>
+					{#if expanded !== null}
+						<ChevronDown strokeWidth="2.4" className="size-3.5 shrink-0 text-gray-400 dark:text-gray-500 {expanded ? 'rotate-180' : 'rotate-0'}" />
+					{/if}
 				</div>
 			</div>
 		{:else if status?.action === 'web_search_queries_generated' && status?.queries}
 			<div
-				class="-ml-3 mb-2 w-[calc(100%+0.75rem)] overflow-hidden rounded-xl text-sm transition-all duration-200"
+				class="mb-2 w-full min-w-0 overflow-hidden text-sm"
 			>
-				<div class="flex items-center justify-between gap-3 px-3 py-2">
+				<div class="flex items-center gap-2 pt-1 pb-2">
 					<div
-						class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors dark:text-gray-300"
+						class="flex min-w-0 items-center gap-2 text-sm font-normal text-gray-600 transition-colors dark:text-gray-300"
 					>
-						<span
-							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
-						>
-							{#if isVideoStatus}
-								<Video className="size-3.5" strokeWidth="1.6" />
-							{:else if isMusicStatus}
-								<MusicNote className="size-3.5" strokeWidth="1.6" />
-							{:else if isImageStatus}
-								<Photo className="size-3.5" strokeWidth="1.6" />
-							{:else if isDeepSearchStatus}
-								<Atom02 className="size-3.5" />
-							{:else}
-								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
-							{/if}
-						</span>
 						<span
 							class="relative min-w-0 truncate text-sm leading-5 {(done || status?.done) === false
 								? 'shimmer'
 								: ''}">{$i18n.t(`Searching`)}</span
 						>
+						{#if expanded !== null}
+							<ChevronDown strokeWidth="2.4" className="size-3.5 shrink-0 translate-y-px text-gray-400 transition-transform duration-200 dark:text-gray-500 {expanded ? 'rotate-180' : 'rotate-0'}" />
+						{/if}
 					</div>
 				</div>
 
-				<div class="flex flex-wrap gap-1.5 px-3 pb-2.5 pt-1">
+				<div class="ml-[7px] flex flex-wrap gap-1.5 border-l border-[#dedede] dark:border-[#292929] px-4 pb-2.5 pt-1">
 					{#each searchDisplayQueries as query (query)}
 						<div
 							class="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700/60 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-600 dark:text-gray-300"
@@ -171,30 +130,24 @@
 			</div>
 		{:else if status?.action === 'queries_generated' && status?.queries}
 			<div
-				class="-ml-3 mb-2 w-[calc(100%+0.75rem)] overflow-hidden rounded-xl text-sm transition-all duration-200"
+				class="mb-2 w-full min-w-0 overflow-hidden text-sm"
 			>
-				<div class="flex items-center justify-between gap-3 px-3 py-2">
+				<div class="flex items-center gap-2 pt-1 pb-2">
 					<div
-						class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors dark:text-gray-300"
+						class="flex min-w-0 items-center gap-2 text-sm font-normal text-gray-600 transition-colors dark:text-gray-300"
 					>
-						<span
-							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
-						>
-							{#if isDeepSearchStatus}
-								<Atom02 className="size-3.5" />
-							{:else}
-								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
-							{/if}
-						</span>
 						<span
 							class="relative min-w-0 truncate text-sm leading-5 {(done || status?.done) === false
 								? 'shimmer'
 								: ''}">{$i18n.t(`Querying`)}</span
 						>
+						{#if expanded !== null}
+							<ChevronDown strokeWidth="2.4" className="size-3.5 shrink-0 translate-y-px text-gray-400 transition-transform duration-200 dark:text-gray-500 {expanded ? 'rotate-180' : 'rotate-0'}" />
+						{/if}
 					</div>
 				</div>
 
-				<div class="flex flex-wrap gap-1.5 px-3 pb-2.5 pt-1">
+				<div class="ml-[7px] flex flex-wrap gap-1.5 border-l border-[#dedede] dark:border-[#292929] px-4 pb-2.5 pt-1">
 					{#each searchDisplayQueries as query (query)}
 						<div
 							class="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700/60 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-600 dark:text-gray-300"
@@ -207,26 +160,12 @@
 			</div>
 		{:else if status?.action === 'sources_retrieved' && status?.count !== undefined}
 			<div
-				class="-ml-3 mb-2 w-[calc(100%+0.75rem)] overflow-hidden rounded-xl text-sm transition-all duration-200"
+				class="mb-2 w-full min-w-0 overflow-hidden text-sm"
 			>
-				<div class="flex items-center justify-between gap-3 px-3 py-2">
+				<div class="flex items-center gap-2 pt-1 pb-2">
 					<div
-						class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors dark:text-gray-300"
+						class="flex min-w-0 items-center gap-2 text-sm font-normal text-gray-600 transition-colors dark:text-gray-300"
 					>
-						<span
-							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
-						>
-							{#if isGitHubStatus}
-								<Github className="size-3.5" />
-							{:else if isFileSourceStatus || isFileGenerationStatus}
-								<DocumentPage className="size-3.5" strokeWidth="1.6" />
-							{:else if isDeepSearchStatus}
-								<Atom02 className="size-3.5" />
-							{:else}
-								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
-							{/if}
-						</span>
-
 						<span
 							class="relative min-w-0 truncate text-sm leading-5 {(done || status?.done) === false
 								? 'shimmer'
@@ -246,36 +185,33 @@
 								})}
 							{/if}
 						</span>
+						{#if expanded !== null}
+							<ChevronDown strokeWidth="2.4" className="size-3.5 shrink-0 translate-y-px text-gray-400 transition-transform duration-200 dark:text-gray-500 {expanded ? 'rotate-180' : 'rotate-0'}" />
+						{/if}
 					</div>
 				</div>
 			</div>
 		{:else}
 			<div
-				class="-ml-3 mb-2 w-[calc(100%+0.75rem)] overflow-hidden rounded-xl text-sm transition-all duration-200"
+				class="mb-2 w-full min-w-0 overflow-hidden text-sm"
 			>
-				<div class="flex items-center justify-between gap-3 px-3 py-2">
+				<div class="flex items-center gap-2 pt-1 pb-2">
 					<div
-						class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors dark:text-gray-300"
+						class="flex min-w-0 items-center gap-2 text-sm font-normal text-gray-600 transition-colors dark:text-gray-300"
 					>
+						{#if isVideoStatus || isMusicStatus || isImageStatus}
 						<span
 							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
 						>
-							{#if isGitHubStatus}
-								<Github className="size-3.5" />
-							{:else if isFileSourceStatus || isFileGenerationStatus}
-								<DocumentPage className="size-3.5" strokeWidth="1.6" />
-							{:else if isVideoStatus}
+							{#if isVideoStatus}
 								<Video className="size-3.5" strokeWidth="1.6" />
 							{:else if isMusicStatus}
 								<MusicNote className="size-3.5" strokeWidth="1.6" />
 							{:else if isImageStatus}
-								<Photo className="size-3.5" strokeWidth="1.6" />
-							{:else if isDeepSearchStatus}
-								<Atom02 className="size-3.5" />
-							{:else}
-								<GlobeAlt className="size-3.5" strokeWidth="1.6" />
+								<ImageIcon className="size-3.5" strokeWidth="1.6" />
 							{/if}
 						</span>
+						{/if}
 						<span
 							class="relative min-w-0 truncate text-sm leading-5 {(done || status?.done) === false
 								? 'shimmer'
@@ -296,6 +232,9 @@
 							{statusLabel}
 							{/if}
 						</span>
+						{#if expanded !== null}
+							<ChevronDown strokeWidth="2.4" className="size-3.5 shrink-0 translate-y-px text-gray-400 transition-transform duration-200 dark:text-gray-500 {expanded ? 'rotate-180' : 'rotate-0'}" />
+						{/if}
 					</div>
 				</div>
 			</div>

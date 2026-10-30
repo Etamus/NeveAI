@@ -16,6 +16,7 @@
 	const i18n = getContext('i18n');
 
 	import Modal from './Modal.svelte';
+	import MobileModalTitle from './MobileModalTitle.svelte';
 	import XMark from '../icons/XMark.svelte';
 	import Switch from './Switch.svelte';
 	import Tooltip from './Tooltip.svelte';
@@ -338,14 +339,16 @@ $: if (show) {
 			<div class="flex items-start justify-between">
 				<div class="min-w-0 flex-1 pr-3">
 					<div class=" font-medium text-lg dark:text-gray-100">
+						<MobileModalTitle>
 						<div class="line-clamp-1 cursor-default" title={item?.name ?? 'File'}>
 							{truncateFileName(item?.name ?? 'File')}
 						</div>
+						</MobileModalTitle>
 					</div>
 				</div>
 
 				<div>
-					<button
+					<button data-mobile-modal-close
 						aria-label={$i18n.t('Close')}
 						class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
 						on:click={() => {
@@ -358,7 +361,7 @@ $: if (show) {
 			</div>
 
 			<div>
-				<div class="flex flex-col items-center md:flex-row gap-1 justify-between w-full">
+				<div class="file-viewer-metadata flex flex-col items-center md:flex-row gap-1 justify-between w-full">
 					<div class="flex flex-wrap gap-x-2 gap-y-1 text-xs text-gray-500">
 						{#if item?.type === 'collection'}
 							{#if item?.type}
@@ -377,7 +380,7 @@ $: if (show) {
 						{/if}
 
 						{#if item.size}
-							<div class="capitalize shrink-0">{formatFileSize(item.size)}</div>
+							<div class="file-viewer-size capitalize shrink-0">{formatFileSize(item.size)}</div>
 						{/if}
 
 						{#if item?.knowledge}
@@ -615,6 +618,9 @@ $: if (show) {
 </Modal>
 
 <style>
+	@media (max-width: 767px) {
+		.file-viewer-metadata { align-items: flex-start; padding-left: 44px; }
+	}
 	@media (max-width: 767px) {
 		.file-viewer-content { padding: 0.75rem; }
 		.file-viewer-content button[aria-label] { min-height: 36px; }

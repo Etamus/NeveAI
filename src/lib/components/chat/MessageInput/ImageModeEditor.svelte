@@ -2,6 +2,7 @@
 	import {getContext,tick} from 'svelte';
 	import {toast} from 'svelte-sonner';
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Brush from '$lib/components/icons/Brush.svelte';
@@ -211,8 +212,8 @@
 <Modal bind:show size="md" animated={false}>
 	<div class="image-mode-dialog dark:text-gray-200">
 		<div class="flex justify-between px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20">
-			<h2 class="self-center text-lg font-medium dark:text-gray-100">{$i18n.t(title)}</h2>
-			<button type="button" class="self-center text-gray-500 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white" aria-label={$i18n.t('Close')} on:click={()=>show=false}><XMark className="size-5" /></button>
+			<h2 class="self-center text-lg font-medium dark:text-gray-100"><MobileModalTitle>{$i18n.t(title)}</MobileModalTitle></h2>
+			<button data-mobile-modal-close type="button" class="self-center text-gray-500 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white" aria-label={$i18n.t('Close')} on:click={()=>show=false}><XMark className="size-5" /></button>
 		</div>
 		{#if draft}
 		<div class="mode-editor max-h-[min(65dvh,620px)] overflow-y-auto overscroll-contain px-5 py-4" class:region-editor={draft.mode==='inpaint'}>

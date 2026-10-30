@@ -24,6 +24,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from neveai.config import CACHE_DIR
+from neveai.utils.comfy_runtime import COMFY_COMMIT as COMFYUI_COMMIT, install_comfy_source
 from neveai.constants import ERROR_MESSAGES
 from neveai.utils.access_control import has_permission
 from neveai.utils.auth import get_verified_user
@@ -33,10 +34,9 @@ router = APIRouter()
 
 ProgressCallback = Callable[[str, Optional[int]], Awaitable[None]]
 
-COMFYUI_COMMIT = "6b747c0428c343e1417219641db93a4fb7cb69ae"
 CLIPPROJ_COMMIT = "c01ba8fb8f41b4f2094dbd0b185cdc238fb6134c"
 TURBO_NODE_COMMIT = "4274783a23afcfdbea3b4876cb79effd6c510785"
-VIDEO_RUNTIME_REVISION = "neve-minimax-h3-fl2va-w4a8-v2-comfy-0.38"
+VIDEO_RUNTIME_REVISION = "neve-minimax-h3-fl2va-w4a8-v2-comfy-0.43"
 
 VIDEO_ROOT = CACHE_DIR / "video_generation"
 COMFYUI_DIR = VIDEO_ROOT / "ComfyUI"
@@ -343,11 +343,7 @@ class MiniMaxH3Runtime:
             VIDEO_ROOT.mkdir(parents=True, exist_ok=True)
             await progress("Preparando o gerador de video...")
             await self._ensure_uv()
-            await asyncio.to_thread(
-                _replace_source_from_archive,
-                f"https://github.com/Comfy-Org/ComfyUI/archive/{COMFYUI_COMMIT}.zip",
-                COMFYUI_DIR,
-            )
+            await asyncio.to_thread(install_comfy_source, COMFYUI_DIR, COMFYUI_COMMIT)
             await asyncio.to_thread(
                 _replace_source_from_archive,
                 f"https://github.com/nicolab28/ComfyUI-ClipProj/archive/{CLIPPROJ_COMMIT}.zip",
@@ -360,18 +356,18 @@ class MiniMaxH3Runtime:
             )
 
             await progress("Instalando o ambiente isolado de video...")
-            await self._run_command(
-                [
-                    sys.executable,
-                    "-m",
-                    "uv",
-                    "venv",
-                    str(COMFYUI_ENV),
-                    "--python",
-                    sys.executable,
-                    "--clear",
-                ]
-            )
+            if not _runtime_python().is_file():
+                await self._run_command(
+                    [
+                        sys.executable,
+                        "-m",
+                        "uv",
+                        "venv",
+                        str(COMFYUI_ENV),
+                        "--python",
+                        sys.executable,
+                    ]
+                )
             runtime_python = str(_runtime_python())
             await self._run_command(
                 [
@@ -400,6 +396,7 @@ class MiniMaxH3Runtime:
                     runtime_python,
                     "-r",
                     str(COMFYUI_DIR / "requirements.txt"),
+                    "torch==2.11.0",
                     "huggingface_hub>=0.34,<2",
                 ]
             )

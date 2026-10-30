@@ -4,8 +4,6 @@
 	const i18n = getContext('i18n');
 
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
-	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
-	import Atom02 from '$lib/components/icons/Atom02.svelte';
 
 	import { slide } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
@@ -40,7 +38,6 @@
 			: [];
 
 	$: isSearching = !done && !status?.done;
-	$: isDeepSearchStatus = Boolean(status?.deep_search);
 
 	// Auto-open while searching, auto-close when done
 	$: if (isSearching && items.length > 0) {
@@ -54,12 +51,12 @@
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <div
-	class="web-search-block -ml-3 mb-2 w-[calc(100%+0.75rem)] overflow-hidden text-sm"
+	class="web-search-block mb-2 w-full min-w-0 overflow-hidden text-sm"
 	data-message-expanded={open}
 >
 	<!-- Trigger -->
 	<div
-		class="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer group/ws-trigger select-none"
+		class="flex items-center gap-2 pt-1 pb-2 cursor-pointer group/ws-trigger select-none"
 		on:pointerup|stopPropagation={(event) => {
 			notifyChatLayout(event.currentTarget, 200, !open);
 			open = !open;
@@ -67,18 +64,8 @@
 		on:click|stopPropagation
 	>
 		<div
-			class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100"
+			class="flex min-w-0 items-center gap-2 text-sm font-normal text-gray-600 transition-colors hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100"
 		>
-			<span
-				class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
-			>
-				{#if isDeepSearchStatus}
-					<Atom02 className="size-3.5" />
-				{:else}
-					<GlobeAlt className="size-3.5" strokeWidth="1.6" />
-				{/if}
-			</span>
-
 			<span class="relative min-w-0 truncate text-sm leading-5">
 				{#if isSearching}
 					<span class="shimmer text-sm leading-5">
@@ -96,8 +83,8 @@
 			<ChevronDown
 				strokeWidth="2.5"
 				className="size-3.5 shrink-0 translate-y-px text-gray-400 transition-transform duration-200 dark:text-gray-500 {open
-					? 'rotate-0'
-					: '-rotate-90'}"
+					? 'rotate-180'
+					: 'rotate-0'}"
 			/>
 		</div>
 	</div>
@@ -105,7 +92,7 @@
 	<!-- Results content -->
 	{#if open && items.length > 0}
 		<div
-			class="px-3 pb-2.5 pt-1 select-text"
+			class="ml-[7px] border-l border-[#dedede] dark:border-[#292929] px-4 pb-2.5 pt-1 select-text"
 			transition:slide={{ duration: 200, easing: quintOut, axis: 'y' }}
 		>
 			<div class="flex flex-wrap gap-1.5">

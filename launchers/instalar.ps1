@@ -518,6 +518,8 @@ $script:InstallerPtToEn = [ordered]@{
     'Baixando llama.cpp' = 'Downloading llama.cpp'
     'Baixando CUDA Runtime' = 'Downloading CUDA Runtime'
     'Preparando ferramentas de instalação' = 'Preparing installation tools'
+    'Preparando janela WebView2 Fixed' = 'Preparing the WebView2 Fixed window'
+    'Atualizando janela WebView2 Fixed' = 'Updating the WebView2 Fixed window'
     'Preparando geração de imagem local' = 'Preparing local image generation'
     'Instalando dependências do backend (~5-15 min)' = 'Installing backend dependencies (~5-15 min)'
     'Instalando onnxruntime-gpu opcional' = 'Installing optional onnxruntime-gpu'
@@ -1078,6 +1080,10 @@ function Stop-NeveRunningApp([string]$Reason = 'operação') {
                 $isTarget = $true
             }
             if ($cmdLower.Contains('neve_window.py')) {
+                $isTarget = $true
+            }
+            $desktopRoot = (Join-Path $ROOT '.desktop\').ToLowerInvariant()
+            if (($nameLower -eq 'neveai.window.exe' -or $nameLower -eq 'msedgewebview2.exe') -and $cmdLower.Contains($desktopRoot)) {
                 $isTarget = $true
             }
             if ($browserProfile -and ($cmdLower.Contains($browserProfile) -or $cmdLower.Contains($browserProfileAlt))) {
@@ -2290,6 +2296,12 @@ $ctl.BtnPrimary.Add_Click({
                 'backend\neveai\models\users.py',
                 'backend\neveai\models\models.py',
                 'backend\neveai\utils\auth.py'
+                'desktop\setup_runtime.py'
+                'desktop\runtime.json'
+                'desktop\NeveWindow.cs'
+                'desktop\app.manifest'
+                'desktop\verify-runtime.ps1'
+                'desktop\profile_migration.py'
             )
             $missingAppFiles = @()
             foreach ($relativeAppFile in $requiredAppFiles) {
@@ -2825,6 +2837,13 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             }
             [void](Refresh-InstalledPackageCache)
             Log "[OK] Etapa de dependências do backend concluída"
+
+            P 77 'Preparando janela WebView2 Fixed'
+            Set-InstallState 'installing_webview2_fixed'
+            $desktopSetup = Join-Path $ROOT 'desktop\setup_runtime.py'
+            if (-not (Test-Path -LiteralPath $desktopSetup)) { throw 'Preparador da janela WebView2 ausente no pacote.' }
+            $rc = Run $VENV_PY @($desktopSetup) 'WebView2 Fixed e janela nativa'
+            if ($rc -ne 0) { throw "Falha ao preparar WebView2 Fixed (exit $rc)." }
 
             P 77 'Validando dependências Python'
             Set-InstallState 'pip_check'
@@ -3720,7 +3739,13 @@ function Test-NeveAppIntegrity([string]$root) {
         @{ Path = 'backend\neveai\models\models.py'; Label = 'backend\neveai\models\models.py' },
         @{ Path = 'backend\neveai\models\auths.py'; Label = 'backend\neveai\models\auths.py' },
         @{ Path = 'backend\neveai\routers\auths.py'; Label = 'backend\neveai\routers' },
-        @{ Path = 'backend\neveai\utils\auth.py'; Label = 'backend\neveai\utils' }
+        @{ Path = 'backend\neveai\utils\auth.py'; Label = 'backend\neveai\utils' },
+        @{ Path = 'desktop\runtime.json'; Label = 'WebView2 manifest' },
+        @{ Path = 'desktop\setup_runtime.py'; Label = 'WebView2 setup' },
+        @{ Path = 'desktop\NeveWindow.cs'; Label = 'WebView2 host' },
+        @{ Path = 'desktop\app.manifest'; Label = 'WebView2 DPI manifest' },
+        @{ Path = 'desktop\verify-runtime.ps1'; Label = 'WebView2 verification' },
+        @{ Path = 'desktop\profile_migration.py'; Label = 'WebView2 profile migration' }
     )
 
     $missing = @()
@@ -5006,7 +5031,13 @@ $ctl.BtnPrimary.Add_Click({
                 @{ Path = 'backend\neveai\models\models.py'; Label = 'backend\neveai\models\models.py' },
                 @{ Path = 'backend\neveai\models\auths.py'; Label = 'backend\neveai\models\auths.py' },
                 @{ Path = 'backend\neveai\routers\auths.py'; Label = 'backend\neveai\routers' },
-                @{ Path = 'backend\neveai\utils\auth.py'; Label = 'backend\neveai\utils' }
+                @{ Path = 'backend\neveai\utils\auth.py'; Label = 'backend\neveai\utils' },
+                @{ Path = 'desktop\runtime.json'; Label = 'WebView2 manifest' },
+                @{ Path = 'desktop\setup_runtime.py'; Label = 'WebView2 setup' },
+                @{ Path = 'desktop\NeveWindow.cs'; Label = 'WebView2 host' },
+                @{ Path = 'desktop\app.manifest'; Label = 'WebView2 DPI manifest' },
+                @{ Path = 'desktop\verify-runtime.ps1'; Label = 'WebView2 verification' },
+                @{ Path = 'desktop\profile_migration.py'; Label = 'WebView2 profile migration' }
             )
             $missing = @()
             foreach ($item in $required) {
@@ -5526,7 +5557,7 @@ $ctl.BtnPrimary.Add_Click({
             $rollbackRequirement = $null
             $versionExisted = Test-Path -LiteralPath $VERSION_FILE
             $previousVersion = if ($versionExisted) { Get-Content -LiteralPath $VERSION_FILE -Raw -EA SilentlyContinue } else { $null }
-            $excludeDirs = @('backend\neveai\venv','backend\neveai\frontend','backend\neveai\data','backend\data','backend\__pycache__','models','mmproj','llamacpp-server','node_modules','build','logs','tools\nodejs','.git','.vscode','.svelte-kit')
+            $excludeDirs = @('backend\neveai\venv','backend\neveai\frontend','backend\neveai\data','backend\data','backend\__pycache__','models','mmproj','llamacpp-server','node_modules','build','logs','tools\nodejs','.desktop','.git','.vscode','.svelte-kit')
             $excludeFiles = @('.env', 'version.txt', 'instalar.bat', 'instalar.ps1', 'instalar.vbs', 'iniciar.ps1', 'iniciar.vbs')
 
             try {
@@ -5560,6 +5591,12 @@ $ctl.BtnPrimary.Add_Click({
                     L '[OK] .env preservado'
                 }
                 New-ReleaseRollbackSnapshot $destinationRoot $rollbackRoot $excludeDirs $excludeFiles
+                $desktopState = Join-Path $ROOT '.desktop\installed.json'
+                if (Test-Path -LiteralPath $desktopState) {
+                    $desktopBackupFolder = Join-Path $rollbackRoot '.desktop'
+                    New-Item -ItemType Directory -Force -Path $desktopBackupFolder | Out-Null
+                    Copy-Item -LiteralPath $desktopState -Destination (Join-Path $desktopBackupFolder 'installed.json') -Force
+                }
                 L '[OK] Ponto de restauração criado'
 
                 PN 38 'Aplicando arquivos do NeveAI'
@@ -5581,6 +5618,14 @@ $ctl.BtnPrimary.Add_Click({
                     Copy-Item -LiteralPath $envBackup -Destination $envFile -Force -EA Stop
                 }
                 L '[OK] Integridade dos arquivos essenciais validada'
+
+                if ($canBuildAndDeploy) {
+                    PN 46 'Atualizando janela WebView2 Fixed'
+                    $desktopSetup = Join-Path $ROOT 'desktop\setup_runtime.py'
+                    $desktopPython = Join-Path $ROOT 'backend\neveai\venv\Scripts\python.exe'
+                    $rc = Run $desktopPython @($desktopSetup) 'WebView2 Fixed e janela nativa' 1800
+                    if ($rc -ne 0) { throw "Falha ao atualizar WebView2 Fixed (codigo $rc)." }
+                }
 
                 if ($canBuildAndDeploy) {
                     $requirementRelative = if (Test-Path -LiteralPath (Join-Path $ROOT 'backend\requirements-runtime.txt')) { 'backend\requirements-runtime.txt' } else { 'backend\requirements.txt' }
@@ -5688,6 +5733,10 @@ $ctl.BtnPrimary.Add_Click({
                             }
                         }
                         Restore-ReleaseRollbackSnapshot $rollbackRoot $ROOT $excludeDirs $excludeFiles
+                        $desktopStateBackup = Join-Path $rollbackRoot '.desktop\installed.json'
+                        if (Test-Path -LiteralPath $desktopStateBackup) {
+                            Copy-Item -LiteralPath $desktopStateBackup -Destination (Join-Path $ROOT '.desktop\installed.json') -Force
+                        }
                         if ($backendDependenciesChanged -and $rollbackRequirement -and (Test-Path -LiteralPath $rollbackRequirement)) {
                             $venvPython = Join-Path $ROOT 'backend\neveai\venv\Scripts\python.exe'
                             if (Test-Path -LiteralPath $venvPython) {

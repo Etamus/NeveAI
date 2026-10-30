@@ -1,4 +1,4 @@
-"""Local music generation powered by ACE-Step 1.5 Turbo.
+"""Local music generation powered by ACE-Step 1.5 XL Turbo.
 
 ACE-Step runs in its own uv-managed environment so its pinned PyTorch and
 Transformers dependencies never mix with the NeveAI backend environment.
@@ -37,7 +37,11 @@ log = logging.getLogger(__name__)
 router = APIRouter()
 
 ACE_STEP_VERSION = "v0.1.8"
-ACE_STEP_MODEL = "acestep-v15-turbo"
+ACE_STEP_MODEL = "acestep-v15-xl-turbo"
+ACE_STEP_MODEL_REPO = "ACE-Step/acestep-v15-xl-turbo"
+ACE_STEP_MODEL_REVISION = "d4a0b288b83ebb7e25a8c0b32c573c22e134e8ee"
+# ACE-Step 0.1.8 checks these bootstrap components even for an alternate DiT.
+ACE_STEP_BOOTSTRAP_COMPONENTS = ("acestep-v15-turbo", "acestep-5Hz-lm-1.7B")
 ACE_STEP_MAIN_REPO = "ACE-Step/Ace-Step1.5"
 ACE_STEP_ARCHIVE_URL = (
     f"https://github.com/ace-step/ACE-Step-1.5/archive/refs/tags/{ACE_STEP_VERSION}.zip"
@@ -443,7 +447,25 @@ class AceStepRuntime:
             "pytorch_model.bin",
             "pytorch_model.bin.index.json",
         )
-        return any((model_dir / name).is_file() for name in weight_names)
+        for name in weight_names:
+            path = model_dir / name
+            if not path.is_file() or path.stat().st_size == 0:
+                continue
+            if name.endswith(".index.json"):
+                try:
+                    shards = set(json.loads(path.read_text(encoding="utf-8"))["weight_map"].values())
+                    if shards and all(
+                        (model_dir / shard).resolve().is_relative_to(model_dir.resolve())
+                        and (model_dir / shard).is_file()
+                        and (model_dir / shard).stat().st_size > 0
+                        for shard in shards
+                    ):
+                        return True
+                except (OSError, ValueError, KeyError, TypeError, AttributeError):
+                    continue
+            else:
+                return True
+        return False
 
     @classmethod
     def _generation_component_ready(cls, model_dir: Path) -> bool:
@@ -492,6 +514,7 @@ class AceStepRuntime:
             ACE_STEP_SOURCE_DIR / "checkpoints" / "Qwen3-Embedding-0.6B",
             ACE_STEP_SOURCE_DIR / "checkpoints" / "vae",
         ]
+        required_dirs.extend(ACE_STEP_SOURCE_DIR / "checkpoints" / name for name in ACE_STEP_BOOTSTRAP_COMPONENTS)
         if lm_model:
             required_dirs.append(ACE_STEP_SOURCE_DIR / "checkpoints" / lm_model)
         if all(self._generation_component_ready(path) for path in required_dirs):
@@ -499,20 +522,27 @@ class AceStepRuntime:
 
         await progress("Baixando o modelo...")
         checkpoints_dir = ACE_STEP_SOURCE_DIR / "checkpoints"
-        patterns = [
-            "config.json",
-            f"{ACE_STEP_MODEL}/*",
-            "Qwen3-Embedding-0.6B/*",
-            "vae/*",
-        ]
+        common_components = ["Qwen3-Embedding-0.6B", "vae", *ACE_STEP_BOOTSTRAP_COMPONENTS]
         if lm_model:
-            patterns.append(f"{lm_model}/*")
-        download_script = (
-            "from huggingface_hub import snapshot_download; "
-            f"snapshot_download(repo_id={ACE_STEP_MAIN_REPO!r}, "
-            f"local_dir={str(checkpoints_dir)!r}, "
-            f"allow_patterns={patterns!r})"
-        )
+            if lm_model not in common_components:
+                common_components.append(lm_model)
+        patterns = [
+            f"{name}/*" for name in common_components
+            if not self._generation_component_ready(checkpoints_dir / name)
+        ]
+        commands = ["from huggingface_hub import snapshot_download"]
+        if patterns:
+            commands.append(
+                f"snapshot_download(repo_id={ACE_STEP_MAIN_REPO!r}, "
+                f"local_dir={str(checkpoints_dir)!r}, allow_patterns={patterns!r})"
+            )
+        if not self._generation_component_ready(checkpoints_dir / ACE_STEP_MODEL):
+            commands.append(
+                f"snapshot_download(repo_id={ACE_STEP_MODEL_REPO!r}, "
+                f"revision={ACE_STEP_MODEL_REVISION!r}, "
+                f"local_dir={str(checkpoints_dir / ACE_STEP_MODEL)!r})"
+            )
+        download_script = "; ".join(commands)
         initial_size = await asyncio.to_thread(self._directory_size, checkpoints_dir)
         download_task = asyncio.create_task(
             self._run_setup_command([str(_runtime_python()), "-c", download_script])
@@ -628,7 +658,7 @@ class AceStepRuntime:
             }
         )
 
-        await progress("Iniciando o criador de música...")
+        await progress("Iniciando a criação de música...")
         self._process = await asyncio.create_subprocess_exec(
             str(_runtime_python()),
             "-m",

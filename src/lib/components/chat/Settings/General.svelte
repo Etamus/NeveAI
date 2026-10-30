@@ -46,7 +46,6 @@
 
 	let system = '';
 
-	let showAdvanced = false;
 
 	let params: Record<string, any> = {
 		// Advanced

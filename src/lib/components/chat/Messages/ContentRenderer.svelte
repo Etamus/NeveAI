@@ -169,6 +169,7 @@
 		{save}
 		preview={artifactsPreviewEnabled}
 		{done}
+		streaming={!messageDone}
 		{editCodeBlock}
 		{topPadding}
 		{sourceIds}

@@ -3,6 +3,7 @@
 	import { toolServers, tools } from '$lib/stores';
 
 	import Modal from '../common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import Link from '../icons/Link.svelte';
 	import Collapsible from '../common/Collapsible.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
@@ -20,8 +21,8 @@
 <Modal bind:show size="md">
 	<div>
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-0.5">
-			<div class=" text-lg font-medium self-center">{$i18n.t('Available Tools')}</div>
-			<button
+			<div class=" text-lg font-medium self-center"><MobileModalTitle>{$i18n.t('Available Tools')}</MobileModalTitle></div>
+			<button data-mobile-modal-close
 				class="self-center"
 				aria-label={$i18n.t('Close')}
 				on:click={() => {

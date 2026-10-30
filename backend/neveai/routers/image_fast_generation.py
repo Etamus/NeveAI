@@ -22,6 +22,7 @@ import aiohttp
 import httpx
 
 from neveai.config import CACHE_DIR
+from neveai.utils.comfy_runtime import COMFY_COMMIT, install_comfy_source
 from neveai.utils.image_memory import cpu_image_requested, cpu_image_size, is_image_memory_error, monotonic_progress, worker_error
 
 log = logging.getLogger(__name__)
@@ -38,8 +39,7 @@ INPUT_DIR = IMAGE_ROOT / "input"
 OUTPUT_DIR = IMAGE_ROOT / "output"
 TEMP_DIR = IMAGE_ROOT / "temp"
 MARKER = IMAGE_ROOT / ".neve-image-2s-ready"
-RUNTIME_REVISION = "neve-image-2-turbo-8step-v1-comfy-0.38"
-COMFY_COMMIT = "6b747c0428c343e1417219641db93a4fb7cb69ae"
+RUNTIME_REVISION = "neve-image-2-turbo-8step-v1-comfy-0.43"
 GGUF_COMMIT = "373048b8403a7820620065210a691263d4da0a61"
 MODEL_REPO = "Comfy-Org/Qwen-Image-2.1"
 MODEL_REVISION = "a8342359c61979b06a8dafb1a47991fe1f30e994"
@@ -142,9 +142,7 @@ class NeveImage2SRuntime:
     def is_installed(self) -> bool:
         try:
             return (
-                MARKER.read_text(encoding="utf-8").strip() in {
-                    RUNTIME_REVISION, "neve-image-2s-viggle-0.2.1-v3-comfy-0.38"
-                }
+                MARKER.read_text(encoding="utf-8").strip() == RUNTIME_REVISION
                 and (COMFY_DIR / "main.py").is_file()
                 and _python().is_file()
                 and (CUSTOM_NODES_DIR / "ComfyUI-GGUF" / "__init__.py").is_file()
@@ -197,12 +195,7 @@ class NeveImage2SRuntime:
         )
         if await check.wait():
             await self._command([sys.executable, "-m", "pip", "install", "uv>=0.8,<1"])
-        if not (COMFY_DIR / "main.py").is_file():
-            await asyncio.to_thread(
-                _replace_archive,
-                f"https://github.com/Comfy-Org/ComfyUI/archive/{COMFY_COMMIT}.zip",
-                COMFY_DIR,
-            )
+        await asyncio.to_thread(install_comfy_source, COMFY_DIR, COMFY_COMMIT)
         await progress(5)
         gguf_revision_file = CUSTOM_NODES_DIR / "ComfyUI-GGUF" / ".neve-revision"
         if not gguf_revision_file.is_file() or gguf_revision_file.read_text(encoding="utf-8").strip() != GGUF_COMMIT:
@@ -222,7 +215,7 @@ class NeveImage2SRuntime:
         ])
         await self._command([
             sys.executable, "-m", "uv", "pip", "install", "--python", str(_python()),
-            "-r", str(COMFY_DIR / "requirements.txt"), "gguf>=0.17,<1", "huggingface_hub>=0.34,<2",
+            "-r", str(COMFY_DIR / "requirements.txt"), "torch==2.11.0", "gguf>=0.17,<1", "huggingface_hub>=0.34,<2",
         ])
         await self._command([
             str(_python()), "-c",

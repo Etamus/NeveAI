@@ -1,0 +1,9 @@
+{
+  "architecture": "x64",
+  "runtime_version": "156.0.4314.42",
+  "runtime_url": "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/074c0930-36ad-4756-9d04-dfe0e503bd94/Microsoft.WebView2.FixedVersionRuntime.156.0.4314.42.x64.cab",
+  "runtime_sha256": "cb4612ce79a62a0be094301a72f73cf91bb250f5e83dc51886f66a083fc0694f",
+  "sdk_version": "1.0.4314.35",
+  "sdk_url": "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/1.0.4314.35/microsoft.web.webview2.1.0.4314.35.nupkg",
+  "sdk_sha256": "90778deb1b77e36292828b4b5833c9255c27533f40e0ddd55891ae718944edc4"
+}

@@ -11,6 +11,7 @@
 	import { flyAndScale } from '$lib/utils/transitions';
 	import { marked } from 'marked';
 	import SensitiveInput from './SensitiveInput.svelte';
+	import MobileModalTitle from './MobileModalTitle.svelte';
 
 	export let title = '';
 	export let message = '';
@@ -61,6 +62,7 @@
 		await onConfirm();
 		dispatch('confirm', inputValue);
 	};
+	const cancelHandler = () => { show = false; dispatch('cancel'); };
 
 	onMount(() => {
 		mounted = true;
@@ -116,11 +118,13 @@
 		>
 			<div class="px-[1.75rem] py-6 flex flex-col">
 				<div class=" text-lg font-medium dark:text-gray-200 mb-2.5">
+					<MobileModalTitle onBack={cancelHandler}>
 					{#if title !== ''}
 						{title}
 					{:else}
 						{$i18n.t('Confirm your action')}
 					{/if}
+					</MobileModalTitle>
 				</div>
 
 				<slot>

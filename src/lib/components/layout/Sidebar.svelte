@@ -3,7 +3,7 @@
 	import { v4 as uuidv4 } from 'uuid';
 
 	import { goto } from '$app/navigation';
-	import { user, chats, settings, chatId, tags, folders as _folders, showSidebar, showSearch, mobile, pinnedChats, scrollPaginationEnabled, currentChatPage, temporaryChatEnabled, socket, config, isApp, models, selectedFolder, NEVEAI_NAME, sidebarWidth, activeChatIds } from '$lib/stores';
+	import { user, chats, chatId, tags, folders as _folders, showSidebar, showSearch, mobile, pinnedChats, scrollPaginationEnabled, currentChatPage, temporaryChatEnabled, socket, config, isApp, selectedFolder, NEVEAI_NAME, sidebarWidth, activeChatIds } from '$lib/stores';
 	import { onMount, getContext, tick } from 'svelte';
 
 	const i18n = getContext('i18n');
@@ -37,7 +37,6 @@
 	import Sidebar from '../icons/Sidebar.svelte';
 	import HotkeyHint from '../common/HotkeyHint.svelte';
 
-	const BREAKPOINT = 768;
 
 	let scrollTop = 0;
 

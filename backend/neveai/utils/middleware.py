@@ -2526,18 +2526,17 @@ async def chat_stable_diffusion_handler(
         qwen_image_dimensions,
         QWEN_IMAGE_21_OFFICIAL_QUALITY,
         QWEN_IMAGE_21_OFFICIAL_STEPS,
-        MOSS_IMAGE_3_QUALITY,
     )
 
     quality = normalize_image_quality(image_features.get("stable_diffusion_quality"))
-    if quality in {QWEN_IMAGE_21_OFFICIAL_QUALITY, MOSS_IMAGE_3_QUALITY}:
+    if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
         image_prompt = _collect_stable_diffusion_prompt(
             messages, metadata.get("parent_message"), preserve_formatting=True,
         )
     resolution = normalize_qwen_image_resolution(
         image_features.get("stable_diffusion_resolution")
     )
-    if quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY, MOSS_IMAGE_3_QUALITY} and init_image_references:
+    if quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY} and init_image_references:
         resolution = "auto"
     if quality == "neve_image":
         resolution = "1:1"
@@ -2587,7 +2586,7 @@ async def chat_stable_diffusion_handler(
     try:
         _validate_media_attachments(
             messages, metadata.get("parent_message"), "image",
-            max_images=0 if quality == "neve_image" else 1 if quality == "neve_image_2" else 4 if quality == MOSS_IMAGE_3_QUALITY else 10,
+            max_images=0 if quality == "neve_image" else 1 if quality == "neve_image_2" else 10,
             references=init_image_references,
         )
         from neveai.utils.image_progress import initial_image_dimensions
@@ -2655,26 +2654,7 @@ async def chat_stable_diffusion_handler(
         try:
             # Generate image directly and skip the LLM response path.
             generation_details = {}
-            if quality == MOSS_IMAGE_3_QUALITY:
-                from neveai.routers.image_moss_generation import neve_image_3_runtime
-
-                try:
-                    data_uri = await neve_image_3_runtime.run(
-                        prompt=image_prompt,
-                        resolution=resolution,
-                        references=init_image_references,
-                        user_id=getattr(user, "id", None),
-                        progress=emit_image_progress,
-                        dimensions=emit_image_dimensions,
-                        details=generation_details,
-                    )
-                except asyncio.CancelledError:
-                    try:
-                        await neve_image_3_runtime.cancel()
-                    except Exception as exc:
-                        log.warning("MOSS: failed to cancel runtime: %s", exc)
-                    raise
-            elif quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
+            if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
                 from neveai.routers.image_quality_generation import neve_image_21_runtime
 
                 runtime = neve_image_21_runtime
@@ -2746,7 +2726,6 @@ async def chat_stable_diffusion_handler(
                     "source": (
                         "qwen-image-2s" if quality == "qwen_image_2s"
                         else "neve-image-2.6" if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
-                        else "neve-image-3" if quality == MOSS_IMAGE_3_QUALITY
                         else "z-image-turbo"
                     ),
                     "generated": True,
@@ -2818,24 +2797,13 @@ async def chat_stable_diffusion_handler(
         finally:
             # Unload SD primeiro (libera VRAM para o LLM)
             try:
-                if quality != MOSS_IMAGE_3_QUALITY:
-                    await _sd_pipeline.unload()
+                await _sd_pipeline.unload()
             except Exception as e:
                 log.warning(f"SD handler: failed to unload SD: {e}")
             if llm_standby_info:
                 log.info("LLM mantido em standby apos geracao de imagem.")
 
     except asyncio.CancelledError:
-        if quality == MOSS_IMAGE_3_QUALITY:
-            metadata["skip_llm"] = True
-            await __event_emitter__({
-                "type": "status",
-                "data": {"action": "stable_diffusion", "description": "Geracao cancelada",
-                         "quality": quality, "style": style, "done": True, "cancelled": True},
-            })
-            await __event_emitter__({
-                "type": "chat:completion", "data": {"done": True, "content": ""},
-            })
         raise
     except Exception as e:
         log.exception(e)
@@ -3063,7 +3031,7 @@ async def chat_music_generation_handler(
 async def chat_video_generation_handler(
     request: Request, form_data: dict, extra_params: dict, user
 ):
-    """Generate a local MiniMax H3 video without entering the normal LLM response path."""
+    """Generate with the selected video runtime, outside the normal LLM response path."""
     metadata = extra_params.get("__metadata__", {})
     __event_emitter__ = extra_params.get("__event_emitter__")
     if not __event_emitter__:
@@ -6992,8 +6960,13 @@ async def process_chat_payload(request, form_data, user, metadata, model):
     chat_id = metadata.get("chat_id")
     parent_message_id = metadata.get("parent_message_id")
 
-    if chat_id and parent_message_id and not chat_id.startswith("local:"):
-        db_messages = load_messages_from_db(chat_id, parent_message_id)
+    # Continuing includes the target assistant in the context, without changing its tree parent.
+    context_message_id = (
+        metadata.get("message_id") if metadata.get("continue_response") else parent_message_id
+    )
+
+    if chat_id and context_message_id and not chat_id.startswith("local:"):
+        db_messages = load_messages_from_db(chat_id, context_message_id)
         if db_messages:
             file_generation_scope_from_db = True
             current_turn_files, previous_turn_files = _get_file_generation_message_scope(
@@ -7029,8 +7002,31 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 # Strip files field â€” it's been incorporated into content
                 message.pop("files", None)
 
+    if metadata.get("continue_response"):
+        context_messages = form_data.get("messages", [])
+        last_context_message = context_messages[-1] if context_messages else {}
+        if last_context_message.get("role") == "assistant" and isinstance(
+            last_context_message.get("output"), list
+        ):
+            # Temporary chats have no DB row to recover the existing reasoning/tool structure.
+            metadata["continuation_output"] = last_context_message["output"]
+
     # Process messages with OR-aligned output items for clean LLM messages
     form_data["messages"] = process_messages_with_output(form_data.get("messages", []))
+
+    if metadata.get("continue_response"):
+        # A completed assistant prefill can immediately emit EOS. Request a new turn
+        # without adding this control message to the saved/displayed conversation.
+        form_data["messages"].append({
+            "role": "user",
+            "content": (
+                "Continue your previous response directly, without repeating the existing text. "
+                "If it was interrupted, resume exactly where it stopped; if it already ended, extend it "
+                "with the next relevant part. Do not discuss whether it is complete, announce the "
+                "continuation or ask what to do next. Preserve its language, formatting and topic. "
+                "Continue unfinished code blocks, tables or lists in place instead of starting them over."
+            ),
+        })
 
     system_message = get_system_message(form_data.get("messages", []))
     if system_message:  # Chat Controls/User Settings
@@ -8812,10 +8808,16 @@ async def streaming_chat_response_handler(response, ctx):
             content = (
                 message.get("content", "")
                 if message
-                else last_assistant_message if last_assistant_message else ""
+                else (
+                    metadata.get("continuation_content")
+                    if metadata.get("continue_response") and isinstance(metadata.get("continuation_content"), str)
+                    else last_assistant_message if last_assistant_message else ""
+                )
             )
             # Initialize output: use existing from message if continuing, else create new
-            existing_output = message.get("output") if message else None
+            existing_output = (message.get("output") if message else None) or (
+                metadata.get("continuation_output") if metadata.get("continue_response") else None
+            )
             if existing_output:
                 output = existing_output
             else:
@@ -8891,6 +8893,7 @@ async def streaming_chat_response_handler(response, ctx):
                     pending_output = False
                     pending_response_output = False
                     first_output = True
+                    continuation_prefix = list(output) if metadata.get("continue_response") else []
                     last_response_delta_key = None
                     last_flush = time.monotonic()
                     hide_reasoning = should_hide_reasoning_output(form_data, metadata)
@@ -8990,9 +8993,13 @@ async def streaming_chat_response_handler(response, ctx):
                                             data.get("type"), data.get("output_index", 0),
                                             data.get("content_index", 0), data.get("summary_index", 0),
                                         )
-                                        output, response_metadata = (
-                                            handle_responses_streaming_event(data, output)
+                                        response_output, response_metadata = (
+                                            handle_responses_streaming_event(
+                                                data,
+                                                output[len(continuation_prefix):] if continuation_prefix else output,
+                                            )
                                         )
+                                        output = continuation_prefix + response_output if continuation_prefix else response_output
 
                                         pending_output = True
                                         pending_response_output = True
@@ -9219,6 +9226,7 @@ async def streaming_chat_response_handler(response, ctx):
                                             if (
                                                 not output
                                                 or output[-1].get("type") != "reasoning"
+                                                or output[-1].get("status") == "completed"
                                             ):
                                                 reasoning_item = {
                                                     "type": "reasoning",

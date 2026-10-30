@@ -3,24 +3,11 @@
 </script>
 
 <script lang="ts">
-	import { slide } from 'svelte/transition';
 	import { Pane, PaneResizer, type PaneAPI } from 'paneforge';
 	import { v4 as uuidv4 } from 'uuid';
 
-	import { onDestroy, onMount, tick, getContext } from 'svelte';
-	import {
-		config,
-		terminalServers,
-		mobile,
-		showControls,
-		showCallOverlay,
-		showArtifacts,
-		showEmbeds,
-		settings,
-		showFileNavPath,
-		selectedTerminalId,
-		user
-	} from '$lib/stores';
+	import { onMount, tick, getContext } from 'svelte';
+	import { showControls, showCallOverlay, showArtifacts, showEmbeds, showFileNavPath, selectedTerminalId } from '$lib/stores';
 
 	import { uploadFile } from '$lib/apis/files';
 	import { toast } from 'svelte-sonner';

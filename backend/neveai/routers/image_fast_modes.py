@@ -12,6 +12,7 @@ from PIL import Image, ImageChops, ImageFilter, ImageOps
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from neveai.routers import image_fast_generation as fast
+from neveai.utils.image_memory import ImageGenerationError
 
 _MODE_LOCK = asyncio.Lock()
 _VERIFIED_MODE_ASSETS = {}
@@ -113,6 +114,13 @@ class NeveImage2ModeRuntime(fast.NeveImage2SRuntime):
         self.box = None
         self.final_size = None
         self._mask_path = None
+        self._legacy_memory = False
+
+    def _comfy_command(self):
+        command = super()._comfy_command()
+        if self._legacy_memory:
+            command.append("--disable-dynamic-vram")
+        return command
 
     async def _models(self, progress):
         await super()._models(progress)
@@ -287,10 +295,23 @@ class NeveImage2ModeRuntime(fast.NeveImage2SRuntime):
     async def _run_once(self, *args, **kwargs):
         import httpx
         try:
-            return await super()._run_once(*args, **kwargs)
+            try:
+                return await super()._run_once(*args, **kwargs)
+            except ImageGenerationError as exc:
+                if "RuntimeError: Fault failed: 2" not in str(exc):
+                    raise
+                # Windows/Blackwell VBAR driver faults are not OOM. Retry once
+                # with the same graph/seed, without switching model or precision.
+                if self._mask_path is not None:
+                    self._mask_path.unlink(missing_ok=True)
+                    self._mask_path = None
+                fast.log.warning("Retrying image mode after VBAR fault with conventional VRAM loading")
+                self._legacy_memory = True
+                return await super()._run_once(*args, **kwargs)
         except httpx.HTTPStatusError as exc:
             raise RuntimeError("Workflow de edicao: " + exc.response.text[:4000]) from exc
         finally:
+            self._legacy_memory = False
             if self._mask_path is not None:
                 self._mask_path.unlink(missing_ok=True)
                 self._mask_path = None

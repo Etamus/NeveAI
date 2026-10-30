@@ -4,6 +4,7 @@
 	import { getContext } from 'svelte';
 
 	import Modal from '../../common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import { getToolValvesById, getToolValvesSpecById, updateToolValvesById } from '$lib/apis/tools';
 
 	import {
@@ -114,8 +115,8 @@
 <Modal size="sm" bind:show>
 	<div>
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-2">
-			<div class=" text-lg font-medium self-center">{$i18n.t('Valves')}</div>
-			<button
+			<div class=" text-lg font-medium self-center"><MobileModalTitle>{$i18n.t('Valves')}</MobileModalTitle></div>
+			<button data-mobile-modal-close
 				class="self-center"
 				on:click={() => {
 					show = false;

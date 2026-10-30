@@ -26,14 +26,12 @@
 
 <script lang="ts">
 	import { onMount, onDestroy, getContext, tick } from 'svelte';
-	import { fade, slide } from 'svelte/transition';
+	import { slide } from 'svelte/transition';
 	import { marked } from 'marked';
-	import fileSaver from 'file-saver';
-	const { saveAs } = fileSaver;
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
 
-	import { config, models as _models, settings, user, showSettingsModelId } from '$lib/stores';
+	import { config, models as _models, settings, showSettingsModelId, mobile } from '$lib/stores';
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import { page } from '$app/stores';
 
@@ -53,18 +51,10 @@
 		type LocalVramInfo
 	} from '$lib/apis/llamacpp';
 
-	import {
-		createNewModel,
-		getBaseModels,
-		toggleModelById,
-		updateModelById,
-		importModels
-	} from '$lib/apis/models';
+	import { createNewModel, getBaseModels, toggleModelById, updateModelById } from '$lib/apis/models';
 	import { getModels } from '$lib/apis';
 	import { toggleModelFavorite } from '$lib/utils/modelFavoriteActions';
 	import { toast } from 'svelte-sonner';
-	import { DropdownMenu } from 'bits-ui';
-	import { flyAndScale } from '$lib/utils/transitions';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
 	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
 	import {
@@ -74,6 +64,7 @@
 
 	import ModelSettingsModal from '$lib/components/admin/Settings/Models/ModelSettingsModal.svelte';
 	import DownloadNeveModelsModal from '$lib/components/chat/DownloadNeveModelsModal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import ModelEditor from '$lib/components/workspace/Models/ModelEditor.svelte';
 	import Pagination from '$lib/components/common/Pagination.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -87,11 +78,9 @@
 	import Bookmark from '$lib/components/icons/Bookmark.svelte';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import Minus from '$lib/components/icons/Minus.svelte';
-	import XMark from '$lib/components/icons/XMark.svelte';
 
 	export let preload: UnifiedModelsPreload | null = null;
 	export let show = false;
-	export let onClose: () => void = () => {};
 
 	// ─── LOCAL MODEL STATE ───────────────────────────────────────────────────
 	let localModels: LocalModel[] = [];
@@ -228,14 +217,13 @@
 	}
 
 	// ─── ADMIN MODEL STATE ───────────────────────────────────────────────────
-	let modelsImportInProgress = false;
-	let importFiles: FileList;
-	let modelsImportInputElement: HTMLInputElement;
 
 	let adminModels: any[] = [];
 	let workspaceModels: any[] | null = null;
 	let baseModels: any[] | null = null;
 	let selectedModelId: string | null = null;
+	export let mobileStep = '';
+	$: mobileStep = selectedModelId ?? '';
 	let showConfigModal = false;
 	let showDownloadModal = false;
 	let viewOption = '';
@@ -421,7 +409,6 @@
 			actions: { ...state.actions, [filename]: 'unload' }
 		}));
 	};
-	const isLocalModelLoading = (filename: string) => localModelActions[filename] === 'load';
 	const isLocalModelUnloading = (filename: string) =>
 		localModelActions[filename] === 'unload' || settlingUnloadModels.has(filename);
 	const isLocalModelUnloadPinned = (model: LocalModel) =>
@@ -890,7 +877,7 @@
 	$: hasCollapsibleModelsBelow = hasHighlightedLoadedModel && scrollableMergedModels.length > 0;
 	$: modelListPageSize = perPage;
 	$: modelListPaginationCount = filteredScrollableMergedModels.length;
-	$: visibleMergedModels = hasHighlightedLoadedModel && modelsBelowLoadedCollapsed
+	$: visibleMergedModels = $mobile ? filteredScrollableMergedModels : hasHighlightedLoadedModel && modelsBelowLoadedCollapsed
 		? []
 		: filteredScrollableMergedModels.slice((currentPage - 1) * modelListPageSize, currentPage * modelListPageSize);
 	$: modelListVisibleRows = hasHighlightedLoadedModel ? HIGHLIGHTED_LIST_VISIBLE_ROWS : NORMAL_LIST_VISIBLE_ROWS;
@@ -1434,24 +1421,8 @@
 		await initAdmin();
 	};
 
-	const enableAllHandler = async () => {
-		const toEnable = filteredAdminModels.filter((m) => !(m.is_active ?? true));
-		toEnable.forEach((m) => (m.is_active = true));
-		adminModels = adminModels;
-		await Promise.all(toEnable.map((m) => toggleModelById(localStorage.token, m.id)));
-	};
 
-	const disableAllHandler = async () => {
-		const toDisable = filteredAdminModels.filter((m) => m.is_active ?? true);
-		toDisable.forEach((m) => (m.is_active = false));
-		adminModels = adminModels;
-		await Promise.all(toDisable.map((m) => toggleModelById(localStorage.token, m.id)));
-	};
 
-	const exportModelHandler = async (model: any) => {
-		const blob = new Blob([JSON.stringify([model])], { type: 'application/json' });
-		saveAs(blob, `${model.id}-${Date.now()}.json`);
-	};
 
 	const favoriteModelHandler = (modelId: string) => toggleModelFavorite(modelId)
 		.catch(() => toast.error($i18n.t('Failed to save favorites')));
@@ -1614,6 +1585,7 @@
 {#snippet modelRow(item, isHighlighted)}
 	{@const gm = item.gguf}
 	{@const am = item.admin}
+	{@const modelName = am?.name ?? gm?.filename?.replace('.gguf', '') ?? ''}
 	{@const isUnloadVisualProcessing = gm && isHighlighted && (isLocalModelUnloading(gm.filename) || visualUnloadModels.has(gm.filename) || reopenedUnloadVisualModels.has(gm.filename))}
 	{@const isLoadProcessing = gm && localModelActions[gm.filename] === 'load' && loadingModels.has(gm.filename)}
 	{@const isProcessing = gm && (isLoadProcessing || isUnloadVisualProcessing)}
@@ -1624,7 +1596,7 @@
 		id={am ? `model-item-${am.id}` : undefined}
 	>
 		<div
-			class="flex h-full min-w-0 gap-1.5 sm:gap-3 w-full overflow-hidden px-1 sm:px-2 py-2 rounded-lg transition-colors cursor-pointer {(gm?.is_loaded || isProcessing) ? 'border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30' : 'hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
+			class="unified-model-card flex h-full min-w-0 gap-1.5 sm:gap-3 w-full overflow-hidden px-1 sm:px-2 py-2 rounded-lg transition-colors cursor-pointer {(gm?.is_loaded || isProcessing) ? 'border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30' : 'hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
 			on:click={(e) => {
 				if (am && (am?.is_active ?? true) && !(e.target as HTMLElement).closest('button') && !(e.target as HTMLElement).closest('[data-melt-dropdown-menu]')) {
 					selectedModelId = am.id;
@@ -1665,11 +1637,11 @@
 			<div class="flex-1 min-w-0 self-center">
 				<div class="w-full text-left">
 					<div class="flex items-center gap-1.5 min-w-0">
-						<span class="min-w-0 truncate font-medium text-sm">
-							{am?.name ?? gm?.filename?.replace('.gguf', '') ?? ''}
+						<span class="unified-model-name min-w-0 truncate font-medium text-sm" title={modelName}>
+							{$mobile && Array.from(modelName).length > 26 ? Array.from(modelName).slice(0, 23).join('') + '...' : modelName}
 						</span>
 					</div>
-					<div class="text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible scrollbar-none items-center gap-1.5 [&>span]:shrink-0">
+					<div class="unified-model-meta text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible scrollbar-none items-center gap-1.5 [&>span]:shrink-0">
 						{#if gm}
 							{#if gm.is_loaded}
 								{#if gm.n_ctx !== null}
@@ -1779,14 +1751,13 @@
 
 {#if true}
 	{#if selectedModelId === null}
-		<div class="flex max-h-[90vh] min-h-0 w-full flex-col overflow-hidden">
+		<div class="unified-models-shell flex max-h-[90vh] min-h-0 w-full flex-col overflow-hidden">
 
 			<!-- Header -->
 			<div class="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 pb-2 shrink-0">
 				<div class="flex items-center gap-2 text-xl font-medium px-0.5">
-					<span>{$i18n.t('Models')}</span>
+					<MobileModalTitle><span>{$i18n.t('Models')}</span></MobileModalTitle>
 				</div>
-				<button type="button" class="mobile-model-close hidden" aria-label={$i18n.t('Close')} on:click={onClose}><XMark className="size-5" /></button>
 
 				<div class="unified-model-actions flex items-center gap-1.5">
 					<button
@@ -1797,7 +1768,7 @@
 						<span>{$i18n.t('Baixar modelos')}</span>
 					</button>
 					<button
-						class="flex text-xs items-center gap-1 px-3 py-1.5 rounded-lg bg-black hover:bg-gray-900 text-white dark:bg-white dark:hover:bg-gray-100 dark:text-black transition font-medium"
+						class="unified-global-settings flex text-xs items-center gap-1 px-3 py-1.5 rounded-lg bg-black hover:bg-gray-900 text-white dark:bg-white dark:hover:bg-gray-100 dark:text-black transition font-medium"
 						type="button"
 						on:click={() => (showConfigModal = true)}
 					>
@@ -1807,13 +1778,13 @@
 			</div>
 
 			<!-- Fixed controls + scrollable models -->
-			<div class="min-h-0 overflow-hidden px-3.5 pb-2">
-				<div class="flex max-h-full min-h-0 flex-col overflow-hidden rounded-3xl bg-white py-2 dark:bg-gray-900">
+			<div class="unified-models-body min-h-0 overflow-hidden px-3.5 pb-2">
+				<div class="unified-model-catalog flex max-h-full min-h-0 flex-col overflow-hidden rounded-3xl bg-white py-2 dark:bg-gray-900">
 					{#if !hasHighlightedLoadedModel}
 						{@render searchBar()}
 					{/if}
 
-					{@render vramMeter()}
+					{#if !$mobile}{@render vramMeter()}{/if}
 
 					{#if highlightedLoadedItem}
 						<div class="shrink-0 mb-2">
@@ -1821,11 +1792,11 @@
 						</div>
 					{/if}
 
-					{#if !hasHighlightedLoadedModel || !modelsBelowLoadedCollapsed}
-						<div class="min-h-0 overflow-hidden" transition:slide={{ duration: collapseAnimationEnabled ? 180 : 0 }}>
+					{#if $mobile || !hasHighlightedLoadedModel || !modelsBelowLoadedCollapsed}
+						<div class="unified-model-list-section min-h-0 overflow-hidden" transition:slide={{ duration: collapseAnimationEnabled ? 180 : 0 }}>
 							<div
-								class="min-h-0 snap-y snap-mandatory overscroll-contain pb-0 {modelListPaginationCount === 0 ? 'mr-0 overflow-hidden pr-0' : 'mr-1 overflow-y-auto pr-1'}"
-								style={modelListViewportStyle}
+								class="unified-model-list min-h-0 pb-0 {$mobile ? 'overflow-visible' : `snap-y snap-mandatory overscroll-contain ${modelListPaginationCount === 0 ? 'mr-0 overflow-hidden pr-0' : 'mr-1 overflow-y-auto pr-1'}`}"
+								style={$mobile ? undefined : modelListViewportStyle}
 							>
 								{#if localLoading && localModels.length === 0 && (adminModels?.length ?? 0) === 0}
 									<div class="py-8"></div>
@@ -1847,14 +1818,14 @@
 									{/each}
 								{/if}
 
-								{#if !modelsBelowLoadedCollapsed && modelListPaginationCount > modelListPageSize}
+								{#if !$mobile && !modelsBelowLoadedCollapsed && modelListPaginationCount > modelListPageSize}
 									<Pagination bind:page={currentPage} count={modelListPaginationCount} perPage={modelListPageSize} />
 								{/if}
 							</div>
 						</div>
 						{/if}
 
-					{#if hasCollapsibleModelsBelow}
+					{#if !$mobile && hasCollapsibleModelsBelow}
 						<div class="flex shrink-0 justify-center px-3 pt-2 pb-1">
 							<Tooltip content={modelsBelowLoadedCollapsed ? 'Mostrar modelos' : 'Ocultar modelos'}>
 								<button
@@ -1878,7 +1849,7 @@
 
 	{:else}
 		<!-- ─── Model Editor ──────────────────────────────────────────────── -->
-		<div style="height: min(600px, calc(100dvh - 3rem)); min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
+		<div class="unified-model-editor" style="height: min(600px, calc(100dvh - 3rem)); min-height: 0; width: 100%; display: flex; flex-direction: column; overflow: hidden;">
 			<ModelEditor
 				edit
 				model={adminModels?.find((m) => m.id === selectedModelId)}
@@ -1903,7 +1874,15 @@
 
 <style>
 	@media (max-width: 767px) {
-		.mobile-model-close { display: grid; place-items: center; width: 36px; height: 36px; margin-left: auto; color: var(--color-gray-400); }
+		.unified-models-shell { height: 100%; max-height: 100%; }
+		.unified-model-editor { height: 100% !important; }
+		.unified-models-body { flex: 1; overflow-y: auto; }
+		.unified-model-catalog { max-height: none; overflow: visible; }
+		.unified-model-list-section { flex-shrink: 0; overflow: visible; }
+		.unified-global-settings { display: none; }
+		.unified-model-name { max-width: 22ch; }
+		.unified-model-meta { margin-top: 3px; }
+		.unified-model-card { padding-inline: 10px; column-gap: 14px; }
 		.unified-model-actions { flex-wrap: wrap; }
 		.unified-model-actions button { min-height: 36px; padding-inline: 0.5rem; }
 		.model-avatar { width: 2.25rem; height: 2.25rem; overflow: hidden; }

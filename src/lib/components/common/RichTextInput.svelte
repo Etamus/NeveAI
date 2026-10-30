@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
+	import { scrollComposerSelectionToEnd } from '$lib/utils/composerTextViewport';
 
 	marked.use({
 		breaks: true,
@@ -898,6 +899,7 @@
 			},
 			editorProps: {
 				attributes: { id, spellcheck: 'false' },
+				handleScrollToSelection: messageInput ? scrollComposerSelectionToEnd : undefined,
 				handlePaste: (view, event) => {
 					const pastedText = (event.clipboardData?.getData('text/plain') ?? '').replace(
 						/\r\n/g,

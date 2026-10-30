@@ -194,7 +194,6 @@
 	let editedContent = '';
 	let editTextAreaElement: HTMLTextAreaElement;
 
-	let messageIndexEdit = false;
 
 	let speaking = false;
 	let speakingIdx: number | undefined;
@@ -218,6 +217,10 @@
 	);
 	$: isGeneratedMediaResponse =
 		isGeneratedImageResponse || isGeneratedMusicResponse || isGeneratedVideoResponse;
+	$: reserveTextActionSpace = !readOnly && Boolean(message?.content?.trim()) &&
+		!isGeneratedMediaResponse && !(message?.statusHistory ?? []).some((status) =>
+			['stable_diffusion', 'video_generation', 'music_generation'].includes(status?.action)
+		);
 	$: latestVisualGenerationStatus = [...(message?.statusHistory ?? [])]
 		.reverse()
 		.find((status) => ['stable_diffusion', 'video_generation'].includes(status?.action));
@@ -816,6 +819,7 @@
 					<div
 						bind:this={buttonsContainerElement}
 						class="flex items-center gap-1 buttons text-gray-600 dark:text-gray-500 mt-1"
+						class:text-response-actions={reserveTextActionSpace}
 					>
 						{#if message.done || siblings.length > 1}
 							{#if siblings.length > 1}
@@ -1043,6 +1047,10 @@
 {/key}
 
 <style>
+	/* Reserve the existing completed toolbar, not extra chat padding. */
+	.text-response-actions {
+		min-height: 1.5rem;
+	}
 	/* Keep the entire document reply on one raster origin, including hovered controls. */
 	.document-response {
 		transform: translateZ(0);

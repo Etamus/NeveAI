@@ -8,12 +8,8 @@
 	import { slide } from 'svelte/transition';
 	import { quintOut } from 'svelte/easing';
 
-	import ChevronUp from '../icons/ChevronUp.svelte';
 	import ChevronDown from '../icons/ChevronDown.svelte';
-	import Spinner from './Spinner.svelte';
 	import Markdown from '../chat/Messages/Markdown.svelte';
-	import WrenchSolid from '../icons/WrenchSolid.svelte';
-	import CheckCircle from '../icons/CheckCircle.svelte';
 	import Image from './Image.svelte';
 	import FullHeightIframe from './FullHeightIframe.svelte';
 	import { settings } from '$lib/stores';
@@ -39,7 +35,7 @@
 
 	$: if (!open) expandedResult = false;
 	export let buttonClassName =
-		'w-fit text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 transition';
+		'w-fit text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100 transition';
 
 	const componentId = id || uuidv4();
 
@@ -90,12 +86,12 @@
 <div {id} class={className} data-message-expanded={open}>
 	{#if embeds && Array.isArray(embeds) && embeds.length > 0}
 		<!-- Embed Mode: Show iframes without collapsible behavior -->
-		<div class="py-1 w-full cursor-pointer">
-			<div class="w-full text-xs text-gray-500 select-none">
+		<div class="py-1 w-full">
+			<div class="w-full pb-2 text-sm font-normal text-gray-600 dark:text-gray-300 select-none">
 				{attributes.name}
 			</div>
 			{#each embeds as embed, idx}
-				<div class="my-2" id={`${componentId}-tool-call-embed-${idx}`}>
+				<div class="my-2 ml-[7px] border-l border-[#dedede] dark:border-[#292929] pl-4" id={`${componentId}-tool-call-embed-${idx}`}>
 					<FullHeightIframe
 						src={embed}
 						{args}
@@ -111,36 +107,21 @@
 		<!-- Tool call display -->
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<div
-			class="{buttonClassName} cursor-pointer select-none"
+			class="{buttonClassName} max-w-full py-1 pb-2 cursor-pointer select-none"
 			on:pointerup={(event) => {
 				notifyChatLayout(event.currentTarget, 300, !open);
 				open = !open;
 			}}
 		>
 			<div
-				class="w-full max-w-full font-medium flex items-center gap-1.5 {isExecuting
+				class="tool-call-heading w-full max-w-full text-sm font-normal flex items-center gap-2 {isExecuting
 					? 'shimmer'
 					: ''}"
 			>
-				<!-- Status icon -->
-				{#if isExecuting}
-					<div>
-						<Spinner className="size-4" />
-					</div>
-				{:else if isDone}
-					<div class="text-emerald-500 dark:text-emerald-400">
-						<CheckCircle className="size-4" strokeWidth="2" />
-					</div>
-				{:else}
-					<div class="text-gray-400 dark:text-gray-500">
-						<WrenchSolid className="size-3.5" />
-					</div>
-				{/if}
-
 				<!-- Label -->
-				<div class="flex-1 line-clamp-1">
+				<div class="min-w-0 line-clamp-1">
 					<!-- Short label (below md) -->
-					<span class="@md:hidden font-semibold text-black dark:text-white">{attributes.name}</span>
+					<span class="@md:hidden">{attributes.name}</span>
 					<!-- Full label (md and above) -->
 					<span class="hidden @md:inline">
 						{#if isDone}
@@ -163,18 +144,14 @@
 
 				<!-- Chevron -->
 				<div class="flex shrink-0 self-center translate-y-[1px]">
-					{#if open}
-						<ChevronUp strokeWidth="3.5" className="size-3.5" />
-					{:else}
-						<ChevronDown strokeWidth="3.5" className="size-3.5" />
-					{/if}
+					<ChevronDown strokeWidth="2.4" className="size-3.5 text-gray-400 dark:text-gray-500 transition-transform duration-200 {open ? 'rotate-180' : 'rotate-0'}" />
 				</div>
 			</div>
 		</div>
 
 		{#if open}
 			<div transition:slide={{ duration: 300, easing: quintOut, axis: 'y' }}>
-				<div class="border border-gray-50 dark:border-gray-850/30 rounded-2xl my-1.5 p-3 space-y-3">
+				<div class="ml-[7px] border-l border-[#dedede] dark:border-[#292929] px-4 space-y-3">
 					<!-- Input -->
 					{#if args}
 						<div>
@@ -268,3 +245,7 @@
 		{/if}
 	{/if}
 </div>
+
+<style>
+	.tool-call-heading :global(strong) { font-weight: 400; }
+</style>

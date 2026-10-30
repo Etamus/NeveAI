@@ -3,6 +3,7 @@
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
 	import XMark from '$lib/components/icons/XMark.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 
 	export let show = false;
 	export let src = '';
@@ -82,7 +83,8 @@
 		aria-label={$i18n.t('Video preview')}
 	>
 		<div class="absolute inset-x-0 top-0 z-20 flex items-center justify-between">
-			<button type="button" class="p-5 text-white" aria-label={$i18n.t('Close')} title={$i18n.t('Close')} on:click={close}>
+			<div class="mobile-video-preview-title"><MobileModalTitle onBack={close}>{$i18n.t('Video preview')}</MobileModalTitle></div>
+			<button data-mobile-modal-close type="button" class="video-preview-close p-5 text-white" aria-label={$i18n.t('Close')} title={$i18n.t('Close')} on:click={close}>
 				<XMark className="size-6" />
 			</button>
 			<button
@@ -148,6 +150,11 @@
 {/if}
 
 <style>
+	.mobile-video-preview-title { display: none; }
+	@media (max-width: 767px) {
+		.mobile-video-preview-title { display: block; padding-left: 16px; }
+		.video-preview-close { display: none; }
+	}
 	.preview-progress { height: 0.875rem; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; }
 	.preview-progress::-webkit-slider-runnable-track { height: 0.2rem; border-radius: 9999px; background: linear-gradient(to right, white 0, white var(--preview-progress), rgb(107 114 128) var(--preview-progress), rgb(107 114 128) 100%); }
 	.preview-progress::-webkit-slider-thumb { width: 0.75rem; height: 0.75rem; margin-top: -0.275rem; appearance: none; -webkit-appearance: none; border: 2px solid white; border-radius: 9999px; background: white; }

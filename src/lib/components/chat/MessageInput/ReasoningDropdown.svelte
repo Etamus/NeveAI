@@ -4,6 +4,7 @@
 	import type { I18nStore } from '$lib/i18n';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import Gauge from '$lib/components/icons/Gauge.svelte';
+	import { mobile } from '$lib/stores';
 	import Restore from '$lib/components/icons/Restore.svelte';
 	import Bolt from '$lib/components/icons/Bolt.svelte';
 	import {
@@ -66,6 +67,13 @@
 />
 
 <div class="relative flex items-center self-center" class:mr-1.5={spacious} id="thinking-dropdown-container">
+	{#if $mobile}
+		<button type="button" class="mobile-reasoning-toggle" class:enabled={level > 0}
+			aria-label={levelLabel} aria-pressed={level > 0}
+			on:click|preventDefault={() => { show = false; chooseLevel(level > 0 ? 0 : 1); }}>
+			<Gauge className="size-[26px]" />
+		</button>
+	{:else}
 	<button
 		type="button"
 		aria-label={levelLabel}
@@ -98,7 +106,8 @@
 			/></svg
 		>
 	</button>
-	{#if show}
+	{/if}
+	{#if show && !$mobile}
 		<div
 			id="reasoning-dropdown"
 			use:position
@@ -192,6 +201,17 @@
 </div>
 
 <style>
+	.mobile-reasoning-toggle {
+		display: grid; place-items: center; width: 38px; height: 38px;
+		box-sizing: border-box; aspect-ratio: 1; min-width: 38px; min-height: 38px;
+		max-width: 38px; max-height: 38px;
+		padding: 0; flex: 0 0 38px; border-radius: 50%;
+		color: rgb(107 114 128); background: transparent;
+	}
+	.mobile-reasoning-toggle:hover { background: rgb(0 0 0 / 6%); }
+	:global(.dark) .mobile-reasoning-toggle:hover { background: rgb(255 255 255 / 6%); }
+	.mobile-reasoning-toggle.enabled { color: rgb(59 130 246); background: rgb(59 130 246 / 12%); }
+	.mobile-reasoning-toggle.enabled:hover { background: rgb(59 130 246 / 18%); }
 	.reasoning-tool {
 		position: relative;
 		/* The raised effort label must not cover the buttons' hit areas. */

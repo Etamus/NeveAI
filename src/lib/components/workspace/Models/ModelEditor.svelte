@@ -14,12 +14,19 @@
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import DefaultFeatures from './DefaultFeatures.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import LockClosed from '$lib/components/icons/LockClosed.svelte';
 
 	const i18n = getContext('i18n');
 
 	export let onSubmit: Function;
 	export let onBack: null | Function = null;
+	const closeEditor = async () => {
+		savingOnClose = true;
+		if (autoSaveTimer) { clearTimeout(autoSaveTimer); autoSaveTimer = null; }
+		if (initialized && edit) await submitHandler();
+		onBack?.();
+	};
 
 	export let model: any = null;
 	export let edit = false;
@@ -32,7 +39,6 @@
 	let filesInputElement: HTMLInputElement;
 	let inputFiles: FileList | null;
 
-	let showAdvanced = false;
 
 	let loaded = false;
 	let autoSaveTimer: any = null;
@@ -113,7 +119,6 @@
 
 	$: name, scheduleModelNameFieldMeasure();
 
-	let enableDescription = true;
 
 	$: if (!edit) {
 		if (name) {
@@ -413,22 +418,12 @@
 		{#if onBack}
 		<div class="flex justify-between items-center dark:text-gray-100 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20 shrink-0">
 			<div class="text-lg font-semibold font-primary">
-				{$i18n.t('Editar modelo')}
+				<MobileModalTitle onBack={closeEditor}>{$i18n.t('Editar modelo')}</MobileModalTitle>
 			</div>
-			<button
+			<button data-mobile-modal-close
 				class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
 				type="button"
-				on:click={async () => {
-					savingOnClose = true;
-					if (autoSaveTimer) {
-						clearTimeout(autoSaveTimer);
-						autoSaveTimer = null;
-					}
-					if (initialized && edit) {
-						await submitHandler();
-					}
-					onBack();
-				}}
+				on:click={closeEditor}
 			>
 				<XMark className="size-5" />
 			</button>
@@ -522,7 +517,7 @@
 			>
 				<div class="w-full px-4 sm:pl-8 sm:pr-4" on:scroll={() => tippyHideAll()}>
 					<!-- Profile Image + Name/ID Header -->
-					<div class="flex min-w-0 flex-row gap-2 sm:gap-4 md:gap-6 w-full">
+					<div class="model-editor-profile flex min-w-0 flex-row gap-2 sm:gap-4 md:gap-6 w-full">
 						<div class="self-start flex justify-center my-2 shrink-0">
 							<div class="self-center">
 								<div class="relative inline-flex">
@@ -589,7 +584,7 @@
 							</div>
 						</div>
 
-						<div class="flex min-w-0 flex-col w-full flex-1">
+						<div class="model-editor-identity flex min-w-0 flex-col w-full flex-1">
 							<div class="relative flex flex-col w-full max-w-full min-w-0 mt-2">
 								<span
 									bind:this={modelNameSizerElement}
@@ -668,10 +663,10 @@
 				</div>
 
 				<!-- Params (scrollable) + Features (static) side by side -->
-				<div class="flex-1 min-h-0 overflow-y-auto sm:overflow-hidden px-4 pb-4 border-t border-gray-200/30 dark:border-gray-700/20 mt-2 pt-6">
-					<div class="flex flex-col sm:flex-row gap-4 sm:gap-0 w-full sm:pl-2 sm:h-full min-h-0">
+				<div class="model-editor-params-scroll flex-1 min-h-0 overflow-y-auto sm:overflow-hidden px-4 pb-4 border-t border-gray-200/30 dark:border-gray-700/20 mt-2 pt-6">
+					<div class="model-editor-params-layout flex flex-col sm:flex-row gap-4 sm:gap-0 w-full sm:pl-2 sm:h-full min-h-0">
 						<!-- Left: advanced params + system prompt (only this scrolls) -->
-						<div class="w-full sm:w-[55%] min-w-0 sm:h-full flex flex-col sm:pr-1">
+						<div class="model-editor-advanced-column w-full sm:w-[55%] min-w-0 sm:h-full flex flex-col sm:pr-1">
 							<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2 py-0 pl-2 pr-5 shrink-0">
 								{$i18n.t('Par\u00e2metros avan\u00e7ados')}
 							</div>
@@ -720,8 +715,8 @@
 						</div>
 
 						<!-- Right: Capacidades (static, does not scroll) -->
-						<div class="hidden sm:block border-l border-gray-300/50 dark:border-gray-600/30"></div>
-						<div class="w-full sm:w-[45%] min-w-0 sm:pl-6 sm:h-full sm:overflow-hidden">
+						<div class="model-editor-features-divider hidden sm:block border-l border-gray-300/50 dark:border-gray-600/30"></div>
+						<div class="model-editor-features w-full sm:w-[45%] min-w-0 sm:pl-6 sm:h-full sm:overflow-hidden">
 							<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2">
 								{$i18n.t('Capacidades padrão')}
 							</div>
@@ -751,6 +746,14 @@
 {/if}
 
 <style>
+	@media (max-width: 767px) {
+		.model-editor-profile { gap: 20px; }
+		.model-editor-features, .model-editor-features-divider { display: none; }
+		.model-editor-params-layout { flex-direction: column; height: auto; }
+		.model-editor-params-scroll { overflow-y: auto; }
+		.model-editor-advanced-column { width: 100%; height: auto; padding-right: 0; }
+		.model-editor-advanced-column .model-editor-advanced-params-window { max-height: none; overflow: visible; }
+	}
 	.model-editor-advanced-params-window {
 		overflow-y: auto;
 		overflow-x: hidden;

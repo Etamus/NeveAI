@@ -2,6 +2,7 @@
 	import { getContext } from 'svelte';
 	import CodeBlock from './CodeBlock.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Badge from '$lib/components/common/Badge.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
@@ -28,6 +29,7 @@
 				{/if}
 
 				<div class="flex gap-2 items-center">
+					<MobileModalTitle contentClass="flex items-center gap-2">
 					{#if !codeExecution?.result}
 						<div>
 							<Spinner className="size-4" />
@@ -41,9 +43,10 @@
 							{$i18n.t('Code execution')}
 						{/if}
 					</div>
+					</MobileModalTitle>
 				</div>
 			</div>
-			<button
+			<button data-mobile-modal-close
 				class="self-center"
 				on:click={() => {
 					show = false;

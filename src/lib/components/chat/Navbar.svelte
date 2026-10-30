@@ -52,12 +52,12 @@
 
 	let closedBannerIds = [];
 
-	let showDownloadChatModal = false;
 	let unifiedModelsPreload: UnifiedModelsPreload | null = null;
 	let unifiedModelsPreloadPromise: Promise<void> | null = null;
 	let unifiedModelsVramInfo: LocalVramInfo | null = null;
 	let unifiedModelsVramPromise: Promise<void> | null = null;
 	let unifiedModels: UnifiedModels | null = null;
+	let unifiedModelMobileStep = '';
 	const unifiedModelsVramCacheKey = 'neveai.unifiedModels.vramInfo';
 	const unifiedModelsPreloadCacheKey = 'neveai.unifiedModels.preload';
 
@@ -238,12 +238,15 @@
 {#if unifiedModelsPreload?.loaded}
 	<Modal
 		size="md"
+		mobileFullscreen
+		mobileStep={unifiedModelMobileStep}
+		onMobileStepBack={() => unifiedModels?.handleOutsideClick()}
 		className="bg-white dark:bg-gray-900 rounded-xl w-[36rem]!"
 		bind:show={$showLocalModelsModal}
 		keepMounted
 		onOutsideClick={() => unifiedModels?.handleOutsideClick() ?? false}
 	>
-		<UnifiedModels bind:this={unifiedModels} preload={unifiedModelsPreload} show={$showLocalModelsModal} onClose={() => showLocalModelsModal.set(false)} />
+		<UnifiedModels bind:this={unifiedModels} bind:mobileStep={unifiedModelMobileStep} preload={unifiedModelsPreload} show={$showLocalModelsModal} />
 	</Modal>
 {/if}
 
@@ -262,7 +265,7 @@
 			id="navbar-bg-gradient-to-b"
 			class="{chat?.id
 				? 'visible'
-				: 'invisible'} bg-linear-to-b from-white via-white/80 to-transparent dark:from-black dark:via-black/80 dark:to-transparent pointer-events-none absolute inset-0 -bottom-7 z-[-1]"
+				: 'invisible'} chat-navbar-fade pointer-events-none absolute inset-0 -bottom-7 z-[-1]"
 		></div>
 
 		<div class=" flex max-w-full w-full mx-auto px-1.5 md:px-2 pt-0.5 bg-transparent">
@@ -387,7 +390,7 @@
 					{/if}
 
 					{#if $user?.role === 'admin'}
-						<Tooltip content={$i18n.t('Models')}>
+						<Tooltip content={$i18n.t('Models')} touch={!$mobile}>
 							<button
 								class="flex cursor-pointer px-2 py-2 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-850 transition"
 								on:click={() => {
@@ -452,6 +455,8 @@
 </nav>
 
 <style>
+	.chat-navbar-fade { background-image: linear-gradient(to bottom, #fff, rgb(255 255 255 / 80%), rgb(255 255 255 / 0%)); }
+	:global(.dark) .chat-navbar-fade { background-image: linear-gradient(to bottom, #000, rgb(0 0 0 / 80%), rgb(0 0 0 / 0%)); }
 	@media (max-width: 767px) {
 		.chat-navbar {
 			min-height: calc(3rem + env(safe-area-inset-top, 0px));
@@ -464,7 +469,7 @@
 		.chat-navbar-sidebar { align-self: center; margin: 0; transform: none; }
 		.chat-navbar-sidebar :global(button) { width: 38px; height: 38px; justify-content: center; align-items: center; padding: 0; }
 		.chat-navbar :global(button) { min-height: 38px; }
-		.chat-navbar :global(button[id^='model-selector-']) { padding-inline: 0.375rem; font-size: 14px; }
+		.chat-navbar :global(button[id^='model-selector-']) { padding-inline: 0.375rem; font-size: 16px; }
 		.chat-navbar :global(button[aria-label='New Chat']) { display: none; }
 		.chat-navbar :global(#chat-context-menu-button),
 		.chat-navbar :global(button[aria-label='Models']),

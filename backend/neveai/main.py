@@ -11,6 +11,7 @@ import webbrowser
 import random
 import re
 from uuid import uuid4
+from pathlib import Path
 
 
 from contextlib import asynccontextmanager
@@ -1003,6 +1004,8 @@ async def chat_completion(
             "message_id": form_data.pop("id", None),
             "parent_message": form_data.pop("parent_message", None),
             "parent_message_id": form_data.pop("parent_id", None),
+            "continue_response": form_data.pop("continue_response", False) is True,
+            "continuation_content": form_data.pop("continuation_content", None),
             "session_id": form_data.pop("session_id", None),
             "tool_ids": form_data.get("tool_ids", None),
             "tool_servers": form_data.pop("tool_servers", None),
@@ -1502,13 +1505,15 @@ async def shutdown_app(background_tasks: BackgroundTasks, user=Depends(get_admin
                     proc.kill()
             except (psutil.NoSuchProcess, psutil.AccessDenied):
                 pass
-        # Encerra a janela do navegador (browser-app) lançada pelo neve_window
+        # Close this installation's WebView2 host and legacy app profiles.
+        desktop_root = str(Path(__file__).resolve().parents[2] / ".desktop").lower() + os.sep
         for proc in psutil.process_iter(["pid", "name"]):
             try:
                 cmdline = proc.cmdline()
                 joined = " ".join(cmdline).lower()
                 if (
-                    "logs\\browser-app" in joined
+                    (proc.info["name"] and proc.info["name"].lower() in {"neveai.window.exe", "msedgewebview2.exe"} and desktop_root in joined)
+                    or "logs\\browser-app" in joined
                     or "logs/browser-app" in joined
                     or "--app=http://localhost:8080" in joined
                 ):

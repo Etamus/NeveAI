@@ -25,13 +25,22 @@
 
 
 	let showEditProfileModal = false;
+	let triggerElement: HTMLButtonElement;
+	let mobileMenuWidth = 0;
+	const measureMobileMenu = () => {
+		const sidebar = triggerElement?.closest('#sidebar');
+		mobileMenuWidth = Math.max(0, (sidebar?.getBoundingClientRect().width ?? 0) - 16);
+	};
 
 	const dispatch = createEventDispatcher();
 
 	const handleDropdownChange = (state: boolean) => {
+		if (state && $mobile) measureMobileMenu();
 		dispatch('change', state);
 	};
 </script>
+
+<svelte:window on:resize={() => { if (show && $mobile) measureMobileMenu(); }} />
 
 <EditProfileModal
 	bind:show={showEditProfileModal}
@@ -44,17 +53,17 @@
 
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <DropdownMenu.Root bind:open={show} onOpenChange={handleDropdownChange}>
-	<DropdownMenu.Trigger>
+	<DropdownMenu.Trigger bind:el={triggerElement}>
 		<slot />
 	</DropdownMenu.Trigger>
 
 	<slot name="content">
 		<DropdownMenu.Content
 				class="w-full {className} rounded-md px-1 py-0.5 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-md text-sm"
-			style="width: {Math.max(224, $sidebarWidth - 16)}px; max-width: calc(100vw - 16px);"
+			style="width: {$mobile && mobileMenuWidth ? mobileMenuWidth : Math.max(224, $sidebarWidth - 16)}px; max-width: calc(100vw - 16px);"
 			sideOffset={4}
 			side="top"
-			align="start"
+			align={$mobile ? 'center' : 'start'}
 			avoidCollisions={true}
 			fitViewport={true}
 			transition={(e) => fade(e, { duration: 100 })}

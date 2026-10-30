@@ -1,12 +1,39 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	consumeGenerationSpacerHeight,
+	getActiveGenerationScrollLimit,
 	getMessagesContentHeight,
-	hasHiddenMessageContentBelow
+	hasHiddenMessageContentBelow,
+	hasScrollableChatContent
 } from './messageScrollGeometry';
 
 afterEach(() => {
 	vi.unstubAllGlobals();
+});
+
+describe('Scrollbar excludes non-navigable generation filler', () => {
+	it.each([
+		[0, 172, 128, false], [172.8, 172, 128, false],
+		[174, 172, 128, true], [0, 172, -20, true],
+		[0, 0, 128, false], [500, 500, -500, true],
+	])('natural %s, current %s, first top %s => %s', (natural, top, firstTop, expected) => {
+		const row = { hasAttribute: () => false, getBoundingClientRect: () => ({ top: firstTop }) };
+		const viewport = { scrollTop: top, querySelector: () => row, getBoundingClientRect: () => ({ top: 32 }) };
+		expect(hasScrollableChatContent(viewport as unknown as HTMLElement, natural)).toBe(expected);
+	});
+});
+
+describe('Active generation scroll boundary', () => {
+	it.each([
+		[172, 0, 173, 172],
+		[172, 100, 400, 172],
+		[172, 500, 600, 500],
+		[172, 100, 120, 120],
+		[0, 0, 1, 0],
+		[0, 300.25, 301, 300.25]
+	])('limits anchor %s, natural %s, actual %s to %s', (anchor, natural, actual, expected) => {
+		expect(getActiveGenerationScrollLimit(anchor, natural, actual)).toBe(expected);
+	});
 });
 
 describe('Scroll-to-bottom button visibility', () => {

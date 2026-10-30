@@ -2,6 +2,18 @@ export function consumeGenerationSpacerHeight(height: number, upwardDistance: nu
 	return Math.max(0, height - Math.max(0, upwardDistance));
 }
 
+export function getActiveGenerationScrollLimit(anchorTop: number, naturalMax: number, actualMax: number): number {
+	return Math.max(0, Math.min(actualMax, Math.max(anchorTop, naturalMax)));
+}
+
+export function hasScrollableChatContent(container: HTMLElement, naturalMax: number): boolean {
+	if (naturalMax > container.scrollTop + 1) return true;
+	const row = container.querySelector<HTMLElement>('[role="log"] > :first-child');
+	const first = row?.hasAttribute('data-message-window')
+		? row.querySelector<HTMLElement>('[role="listitem"]') ?? row : row;
+	return !!first && first.getBoundingClientRect().top < container.getBoundingClientRect().top - 1;
+}
+
 export function hasHiddenMessageContentBelow(container: HTMLElement, visibleBottom: number): boolean {
 	const lastRow = container.querySelector<HTMLElement>('[role="log"] > :last-child');
 	if (!lastRow) return false;

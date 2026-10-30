@@ -80,7 +80,6 @@ QWEN_IMAGE_21_LLM_REPO = "mradermacher/Qwen3-VL-8B-Instruct-Heretic-GGUF"
 QWEN_IMAGE_21_LLM_FILE = "Qwen3-VL-8B-Instruct-heretic.Q4_K_M.gguf"
 QWEN_IMAGE_21_VISION_FILE = "Qwen3-VL-8B-Instruct-heretic.mmproj-Q8_0.gguf"
 QWEN_IMAGE_21_OFFICIAL_QUALITY = "qwen_image_2_1_official"
-MOSS_IMAGE_3_QUALITY = "moss_image_3"
 QWEN_IMAGE_2_FAST_AMD_QUALITY = "_qwen_image_2_fast_amd"
 QWEN_IMAGE_TURBO_REPO = "unsloth/Qwen-Image-2.1-Turbo-GGUF"
 QWEN_IMAGE_TURBO_FILE = "qwen-image-2.1-turbo-Q4_K_M.gguf"
@@ -219,7 +218,7 @@ def normalize_image_quality(value: Optional[str]) -> str:
         return "qwen_image_2s"
     if value == "qwen_image_2_2_experimental":
         return QWEN_IMAGE_21_OFFICIAL_QUALITY
-    return value if value in {"neve_image_2", "qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY, QWEN_IMAGE_2_FAST_AMD_QUALITY, MOSS_IMAGE_3_QUALITY} else "neve_image_2"
+    return value if value in {"neve_image_2", "qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY, QWEN_IMAGE_2_FAST_AMD_QUALITY} else "neve_image_2"
 
 
 def normalize_qwen_image_resolution(value: Optional[str]) -> str:
@@ -1832,65 +1831,6 @@ async def get_sd_status(request: Request, user=Depends(get_verified_user)):
     }
 
 
-async def _generate_moss_image(request: Request, form_data: GenerateForm, user):
-    references = list(form_data.init_images or [])
-    if form_data.init_image and form_data.init_image not in references:
-        references.insert(0, form_data.init_image)
-    if len(references) > 4:
-        raise HTTPException(status_code=400, detail="Neve Image 3 aceita ate quatro imagens de referencia.")
-    from neveai.routers.image_moss_generation import neve_image_3_runtime
-    from neveai.routers.llamacpp import model_manager
-    from neveai.utils.middleware import _acquire_media_generation_slot, _release_media_generation_slot
-
-    resolution = "auto" if references else normalize_qwen_image_resolution(form_data.resolution)
-    acquired = False
-    standby = None
-
-    async def generate():
-        nonlocal acquired, standby
-        await _acquire_media_generation_slot(lambda: asyncio.sleep(0))
-        acquired = True
-        try:
-            standby = await model_manager.standby()
-        except Exception as exc:
-            log.warning("MOSS: failed to put LLM in standby: %s", exc)
-        try:
-            return {"url": await neve_image_3_runtime.run(
-                prompt=form_data.prompt, resolution=resolution, references=references,
-                user_id=getattr(user, "id", None), progress=lambda _: asyncio.sleep(0),
-            )}
-        except asyncio.CancelledError:
-            try:
-                await neve_image_3_runtime.cancel()
-            except Exception as exc:
-                log.warning("MOSS: failed to cancel runtime: %s", exc)
-            raise
-
-    task = asyncio.create_task(generate())
-
-    async def cancel_on_disconnect():
-        while not task.done():
-            await asyncio.sleep(0.2)
-            if await request.is_disconnected():
-                task.cancel()
-                return
-
-    watcher = asyncio.create_task(cancel_on_disconnect())
-    try:
-        return await task
-    finally:
-        watcher.cancel()
-        await asyncio.gather(watcher, return_exceptions=True)
-        try:
-            if standby is not None:
-                try:
-                    await model_manager.resume(standby)
-                except Exception as exc:
-                    log.warning("MOSS: failed to restore LLM from standby: %s", exc)
-        finally:
-            _release_media_generation_slot(acquired)
-
-
 @router.post("/generate")
 async def generate_image(request: Request, form_data: GenerateForm, user=Depends(get_verified_user)):
     if not request.app.state.config.ENABLE_STABLE_DIFFUSION:
@@ -1900,8 +1840,6 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
 
     model_id = normalize_sd_model_id(request.app.state.config.STABLE_DIFFUSION_MODEL)
     quality = normalize_image_quality(form_data.quality)
-    if quality == MOSS_IMAGE_3_QUALITY:
-        return await _generate_moss_image(request, form_data, user)
     quality_mode = quality == "neve_image_2"
     qwen_image_mode = quality in {QWEN_IMAGE_2_FAST_AMD_QUALITY, QWEN_IMAGE_21_OFFICIAL_QUALITY}
     max_width = QUALITY_IMAGE_WIDTH if quality_mode else MAX_IMAGE_WIDTH

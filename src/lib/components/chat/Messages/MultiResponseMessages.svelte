@@ -16,7 +16,7 @@
 	import ProfileImage from './ProfileImage.svelte';
 	const i18n = getContext('i18n');
 	const isRestoringWindow = getContext<() => boolean>('message-window-restoring') ?? (() => false);
-	const branchNavigation = getContext<{begin: () => number; restore: (top: number) => Promise<void>; active: () => boolean}>('branch-navigation');
+	const branchNavigation = getContext<{begin: (id: string) => number; restore: (top: number) => Promise<void>; active: () => boolean}>('branch-navigation');
 	dayjs.extend(localizedFormat);
 
 	export let chatId;
@@ -70,7 +70,7 @@
 	}
 
 	const gotoMessage = async (modelIdx, messageIdx) => {
-		const scrollTop = branchNavigation.begin();
+		const scrollTop = branchNavigation.begin(message.id);
 		// Clamp messageIdx to ensure it's within valid range
 		groupedMessageIdsIdx[modelIdx] = Math.max(
 			0,
@@ -98,7 +98,7 @@
 	};
 
 	const showPreviousMessage = async (modelIdx) => {
-		const scrollTop = branchNavigation.begin();
+		const scrollTop = branchNavigation.begin(message.id);
 		groupedMessageIdsIdx[modelIdx] = Math.max(0, groupedMessageIdsIdx[modelIdx] - 1);
 
 		let messageId = groupedMessageIds[modelIdx].messageIds[groupedMessageIdsIdx[modelIdx]];
@@ -119,7 +119,7 @@
 	};
 
 	const showNextMessage = async (modelIdx) => {
-		const scrollTop = branchNavigation.begin();
+		const scrollTop = branchNavigation.begin(message.id);
 		groupedMessageIdsIdx[modelIdx] = Math.min(
 			groupedMessageIds[modelIdx].messageIds.length - 1,
 			groupedMessageIdsIdx[modelIdx] + 1
@@ -202,7 +202,7 @@
 
 	const onGroupClick = async (_messageId, modelIdx) => {
 		if (messageId != _messageId) {
-			const scrollTop = branchNavigation.begin();
+			const scrollTop = branchNavigation.begin(message.id);
 			let currentMessageId = _messageId;
 			let messageChildrenIds = history.messages[currentMessageId].childrenIds;
 			while (messageChildrenIds.length !== 0) {

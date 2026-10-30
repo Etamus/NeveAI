@@ -1,5 +1,5 @@
 // Helper function to find matching closing tag
-function findMatchingClosingTag(src: string, openTag: string, closeTag: string): number {
+export function findMatchingClosingTag(src: string, openTag: string, closeTag: string): number {
 	let depth = 1;
 	let index = openTag.length;
 	while (depth > 0 && index < src.length) {

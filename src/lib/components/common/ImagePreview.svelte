@@ -6,6 +6,8 @@
 	const { saveAs } = fileSaver;
 
 	import XMark from '$lib/components/icons/XMark.svelte';
+	import ChevronLeft from '$lib/components/icons/ChevronLeft.svelte';
+	import { mobile } from '$lib/stores';
 
 	export let show = false;
 	export let src = '';
@@ -19,7 +21,6 @@
 
 	let instance: PanZoom;
 
-	let sceneParentElement: HTMLElement;
 	let sceneElement: HTMLElement;
 
 	$: if (sceneElement) {
@@ -77,6 +78,7 @@
 			<div>
 				<button
 					class=" p-5"
+					aria-label={$i18n.t($mobile ? 'Back' : 'Close')}
 					on:pointerdown={(e) => {
 						e.stopImmediatePropagation();
 						e.preventDefault();
@@ -86,7 +88,7 @@
 						show = false;
 					}}
 				>
-					<XMark className={'size-6'} />
+					{#if $mobile}<ChevronLeft className="size-6" />{:else}<XMark className={'size-6'} />{/if}
 				</button>
 			</div>
 

@@ -91,7 +91,6 @@
 
 	export let favoriteModelHandler: (modelId: string) => void = () => {};
 
-	let tagsContainerElement;
 
 	let show = false;
 	onMount(() => onChatDropdownDismiss(() => { show = false; }));
@@ -512,8 +511,8 @@
 					<span class="min-w-0 -translate-y-px truncate">{placeholder}</span>
 				{/if}
 			</span>
-			{#if selectedModel}
-				<span aria-hidden="true" use:alignModelChevron={selectedModel.label} class="pointer-events-none flex shrink-0 items-center text-gray-500 dark:text-gray-400 transition-[rotate,transform] duration-200 {show ? 'rotate-180' : ''}">
+			{#if selectedModel || $mobile}
+				<span aria-hidden="true" use:alignModelChevron={selectedModel ? selectedModel.label : placeholder} class="pointer-events-none flex shrink-0 items-center text-gray-500 dark:text-gray-400 transition-[rotate,transform] duration-200 {show ? 'rotate-180' : ''}">
 					<ChevronDown className="size-3" pixelSize={modelChevronSize} />
 				</span>
 			{/if}
@@ -522,7 +521,7 @@
 
 	<DropdownMenu.Content
 		data-model-selector-content="true"
-		class="z-40 {$mobile
+		class="{$mobile ? 'z-[1000000001]' : 'z-40'} {$mobile
 			? `w-full`
 			: `${className}`} max-w-[calc(100vw-1rem)] justify-start rounded-lg backdrop-blur-2xl bg-white/95 dark:bg-gray-850/95 dark:text-white border border-gray-200/50 dark:border-gray-700/50 shadow-xl outline-hidden"
 		transition={modelMenuTransition}

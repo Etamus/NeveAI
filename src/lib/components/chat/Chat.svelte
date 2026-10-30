@@ -67,8 +67,10 @@
 	import { prepareUserMessageImageLayout } from '$lib/utils/userMessageImageLayout';
 	import {
 		consumeGenerationSpacerHeight,
+		getActiveGenerationScrollLimit,
 		getMessagesContentHeight,
-		hasHiddenMessageContentBelow
+		hasHiddenMessageContentBelow,
+		hasScrollableChatContent
 	} from '$lib/utils/messageScrollGeometry';
 	import { SYNC_COMPOSER_LAYOUT } from '$lib/utils/animateComposerHeight';
 	import { getAccordionScrollPosition } from '$lib/utils/accordionScrollPosition';
@@ -128,7 +130,6 @@
 	let textGenerationAnchorUserMoved = false;
 	let messagesBottomWheelLockUntil = 0;
 	let messagesBottomWheelLockRAF: ReturnType<typeof requestAnimationFrame> | null = null;
-	let processing = '';
 	let messagesContainerElement: HTMLDivElement;
 
 	let navbarElement;
@@ -162,7 +163,6 @@
 		| 'neve_image'
 		| 'neve_image_2'
 		| 'qwen_image_2s'
-		| 'moss_image_3'
 		| 'qwen_image_2_1_official' = 'neve_image_2';
 	let stableDiffusionStyle:
 		| 'none'
@@ -1832,7 +1832,6 @@
 		stableDiffusionQuality = [
 			'neve_image_2',
 			'qwen_image_2s',
-			'moss_image_3',
 			'qwen_image_2_1_official'
 		].includes(savedImageQuality ?? '')
 			? (savedImageQuality as typeof stableDiffusionQuality)
@@ -1894,9 +1893,7 @@
 					? imageResolutionKeys[1]
 					: stableDiffusionQuality === 'qwen_image_2_1_official'
 						? imageResolutionKeys[2]
-						: stableDiffusionQuality === 'moss_image_3'
-							? 'neveai.imageResolution.moss_image_3'
-							: null;
+						: null;
 		const savedImageResolution = activeImageResolutionKey
 			? localStorage.getItem(activeImageResolutionKey)
 			: null;
@@ -2612,60 +2609,6 @@
 		await waitForAnimationFrame();
 	};
 
-	const scrollToContentBottom = async (behavior: ScrollBehavior = 'auto') => {
-		await tick();
-		if (!messagesContainerElement) return;
-
-		const activeMessageElement = anchoredGeneratingMessageId
-			? document.getElementById(`message-${anchoredGeneratingMessageId}`)
-			: null;
-
-		if (activeMessageElement) {
-			const bottomPadding = getGenerationBottomReadingPadding();
-			let containerRect = messagesContainerElement.getBoundingClientRect();
-			let messageRect = activeMessageElement.getBoundingClientRect();
-			let targetTop =
-				messagesContainerElement.scrollTop +
-				messageRect.bottom -
-				containerRect.bottom +
-				bottomPadding;
-			const maxScrollTop =
-				messagesContainerElement.scrollHeight - messagesContainerElement.clientHeight;
-
-			if (targetTop > maxScrollTop) {
-				const requestedSpacerHeight =
-					generationBottomSpacerHeight + Math.ceil(targetTop - maxScrollTop) + 4;
-				generationBottomSpacerHeight =
-					activeGenerationSpacerHeightLimit === null
-						? requestedSpacerHeight
-						: Math.min(requestedSpacerHeight, activeGenerationSpacerHeightLimit);
-				await tick();
-				containerRect = messagesContainerElement.getBoundingClientRect();
-				messageRect = activeMessageElement.getBoundingClientRect();
-				targetTop =
-					messagesContainerElement.scrollTop +
-					messageRect.bottom -
-					containerRect.bottom +
-					bottomPadding;
-			}
-
-			messagesContainerElement.scrollTo({
-				top: Math.max(0, targetTop),
-				behavior
-			});
-			scheduleScrollStateUpdate({ updateAutoScroll: false });
-			return;
-		}
-
-		const effectiveScrollHeight = Math.max(
-			messagesContainerElement.clientHeight,
-			getMessagesContentHeight(messagesContainerElement, generationBottomSpacerHeight)
-		);
-		messagesContainerElement.scrollTo({
-			top: effectiveScrollHeight,
-			behavior
-		});
-	};
 
 	const isMessagesContainerAtBottom = () => {
 		if (!messagesContainerElement) return true;
@@ -2687,6 +2630,7 @@
 			showScrollToBottomButton = false;
 			return;
 		}
+		updateMessageScrollbar();
 
 		const composer = messagesContainerElement.closest('#chat-pane')?.querySelector<HTMLElement>('#message-input-container');
 		showScrollToBottomButton = hasHiddenMessageContentBelow(
@@ -2947,14 +2891,8 @@
 		scheduleScrollStateUpdate({ updateAutoScroll: false });
 	};
 
-	const anchorGeneratingMessageBottom = async (messageId: string) => {
-		anchoredGeneratingMessageId = messageId;
-		generationBottomSpacerHeight = 0;
-		generationSpacerScrollLimit = null;
-		generationSpacerScrollAllowance = null;
-		autoScroll = false;
-		await tick();
-		await scrollToContentBottom('auto');
+	const anchorContinuingMessage = (messageId: string) => {
+		primeGeneratingMessageAnchor(messageId);
 		activeGenerationSpacerHeightLimit = generationBottomSpacerHeight;
 		lastMessagesScrollTop = messagesContainerElement?.scrollTop ?? 0;
 		textGenerationAnchorScrollTop = messagesContainerElement?.scrollTop ?? null;
@@ -3216,6 +3154,15 @@
 		if (messagesContainerElement?.hasAttribute(RESIDUAL_CHAT_SCROLL_ATTRIBUTE)) return;
 		cancelBottomNavigation?.();
 		if (!messagesContainerElement) return;
+		if (event.defaultPrevented || event.ctrlKey) return;
+		if (anchoredGeneratingMessageId && visualMediaGenerationAnchorId !== anchoredGeneratingMessageId) {
+			// A code/reasoning block retains its own scrolling, including its boundary behavior.
+			for (const target of event.composedPath()) {
+				if (target === messagesContainerElement) break;
+				if (target instanceof HTMLElement && target.scrollHeight > target.clientHeight + 1 &&
+					/^(auto|scroll)$/.test(getComputedStyle(target).overflowY)) return;
+			}
+		}
 		if (anchoredGeneratingMessageId) {
 			textGenerationAnchorUserMoved = true;
 			cancelGenerationAnchorRAF();
@@ -3269,6 +3216,20 @@
 
 		if (anchoredGeneratingMessageId) {
 			cancelMessagesBottomWheelLock();
+			if (visualMediaGenerationAnchorId !== anchoredGeneratingMessageId && textGenerationAnchorScrollTop !== null) {
+				const limit = getActiveGenerationScrollLimit(
+					textGenerationAnchorScrollTop, getMaxScrollWithoutGenerationSpacer(), getMessagesMaxScrollTop()
+				);
+				const distance = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? messagesContainerElement.clientHeight : 1);
+				if (messagesContainerElement.scrollTop + distance > limit) {
+					event.preventDefault();
+					if (Math.abs(messagesContainerElement.scrollTop - limit) > 0.5) messagesContainerElement.scrollTop = limit;
+					// Observers must see the same position, before the asynchronous scroll event.
+					lastMessagesScrollTop = messagesContainerElement.scrollTop;
+					scheduleScrollStateUpdate({ updateAutoScroll: false });
+				}
+				return;
+			}
 			// Spacer sizing rounds up to whole pixels; do not scroll into that rounding remainder.
 			if (
 				visualMediaGenerationAnchorId === anchoredGeneratingMessageId &&
@@ -3292,6 +3253,12 @@
 	};
 
 	let reasoningScrollbarSuppressed = false;
+	let messageScrollbarHidden = true;
+	const updateMessageScrollbar = () => {
+		if (messagesContainerElement) messageScrollbarHidden = !hasScrollableChatContent(
+			messagesContainerElement, getMaxScrollWithoutGenerationSpacer()
+		);
+	};
 	let accordionNavigationActive = false;
 	const observeMessagesContentSize = (node: HTMLElement) => {
 		if (typeof ResizeObserver === 'undefined') {
@@ -3455,6 +3422,7 @@
 		node.addEventListener('pointerdown', cancelReasoningLayout);
 		node.addEventListener('keydown', cancelReasoningLayout);
 		const preserveGenerationPosition = () => {
+			updateMessageScrollbar();
 			if (applyReasoningLayout()) return;
 			if (!anchoredGeneratingMessageId || visualMediaGenerationAnchorId === anchoredGeneratingMessageId || textGenerationAnchorScrollTop === null || !messagesContainerElement || cancelBottomNavigation) return;
 			const desiredTop = textGenerationAnchorUserMoved ? lastMessagesScrollTop : textGenerationAnchorScrollTop;
@@ -4038,7 +4006,7 @@
 			await tick();
 			if (wasAnchored) {
 				updateScrollStateFromContainer({ updateAutoScroll: false });
-			} else if (autoScroll && !isVisualMediaCompletion) {
+			} else if (autoScroll && !isVisualMediaCompletion && !isMessagesContainerAtBottom()) {
 				scrollToBottom();
 			}
 
@@ -4580,6 +4548,10 @@
 				? [atSelectedModel.id]
 				: selectedModels;
 
+		if (requestFeatures?.music_generation && !(await ensureLocalModelsReady(selectedModelIds, { textOnly: true }))) {
+			return;
+		}
+
 		// Create response messages for each selected model
 		for (const [_modelIdx, modelId] of selectedModelIds.entries()) {
 			const model = $models.filter((m) => m.id === modelId).at(0);
@@ -4733,10 +4705,10 @@
 						? stableDiffusionEnabled
 						: false,
 				stable_diffusion_quality: stableDiffusionQuality,
-				stable_diffusion_style: stableDiffusionQuality === 'moss_image_3' ? 'none' : stableDiffusionStyle,
+				stable_diffusion_style: stableDiffusionStyle,
 				...(stableDiffusionQuality === 'qwen_image_2s' ? { stable_diffusion_mode_options: stableDiffusionModeOptions } : {}),
 				stable_diffusion_resolution:
-					['qwen_image_2s', 'qwen_image_2_1_official', 'moss_image_3'].includes(stableDiffusionQuality) &&
+					['qwen_image_2s', 'qwen_image_2_1_official'].includes(stableDiffusionQuality) &&
 					files.some(
 						(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
 					)
@@ -4902,7 +4874,8 @@
 		_history,
 		responseMessageId,
 		_chatId,
-		requestFeatures: Record<string, any> | null = null
+		requestFeatures: Record<string, any> | null = null,
+		continuing = false
 	) => {
 		const responseMessage = _history.messages[responseMessageId];
 		const userMessage = _history.messages[responseMessage.parentId];
@@ -5023,6 +4996,7 @@
 
 				return {
 					role: message.role,
+					...(continuing && idx === arr.length - 1 && message.output ? { output: message.output } : {}),
 					...(message.role === 'user' && imageFiles.length > 0
 						? {
 								content: [
@@ -5154,6 +5128,7 @@
 				id: responseMessageId,
 				parent_id: userMessage?.id ?? null,
 				parent_message: userMessage,
+				...(continuing ? { continue_response: true, continuation_content: responseMessage.content } : {}),
 
 				background_tasks: {
 					...(!$temporaryChatEnabled &&
@@ -5426,9 +5401,12 @@
 					musicGenerationEnabled = generatedAction === 'music_generation';
 					videoGenerationEnabled = generatedAction === 'video_generation';
 					if (generatedAction === 'stable_diffusion') {
-						stableDiffusionQuality =
-							message?.statusHistory?.find((status: any) => status.action === 'stable_diffusion')
-								?.quality ?? stableDiffusionQuality;
+						const generatedQuality = message?.statusHistory?.find(
+							(status: any) => status.action === 'stable_diffusion'
+						)?.quality;
+						if (['neve_image', 'neve_image_2', 'qwen_image_2s', 'qwen_image_2_1_official'].includes(generatedQuality)) {
+							stableDiffusionQuality = generatedQuality;
+						}
 						stableDiffusionStyle =
 							message?.statusHistory?.find((status: any) => status.action === 'stable_diffusion')
 								?.style ?? stableDiffusionStyle;
@@ -5569,16 +5547,18 @@
 					return;
 				}
 
+				anchorContinuingMessage(responseMessage.id);
 				responseMessage.done = false;
 				await tick();
-				await anchorGeneratingMessageBottom(responseMessage.id);
 
 				await sendMessageSocket(
 					model,
 					createMessagesList(history, responseMessage.id),
 					history,
 					responseMessage.id,
-					_chatId
+					_chatId,
+					null,
+					true
 				);
 			} else {
 				toast.error(
@@ -5918,9 +5898,9 @@
 					>
 						{#if ($settings?.landingPageMode === 'chat' && !$selectedFolder) || createMessagesList(history, history.currentId).length > 0}
 							<div
-								class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10 scrollbar-hidden"
+								class=" pb-2.5 flex flex-col justify-between w-full flex-auto overflow-auto h-0 max-w-full z-10"
 								id="messages-container"
-								class:reasoning-layout-no-scroll={reasoningScrollbarSuppressed}
+								class:reasoning-layout-no-scroll={reasoningScrollbarSuppressed || messageScrollbarHidden}
 								bind:this={messagesContainerElement}
 								use:stabilizeResidualChatScroll={!generating && !anchoredGeneratingMessageId && generationBottomSpacerHeight === 0 && !accordionNavigationActive}
 							style="overflow-anchor: none; scrollbar-gutter: stable both-edges; clip-path: inset(0 0 0.5rem 0);"
@@ -6156,6 +6136,16 @@
 </div>
 
 <style>
+	/* Keep hover repaints on the same raster origin as scrolled chat content. */
+	#messages-container {
+		contain: paint;
+	}
+	#messages-container::-webkit-scrollbar-thumb {
+		visibility: visible;
+	}
+	#messages-container::-webkit-scrollbar-corner {
+		background: transparent;
+	}
 	#messages-container:global([data-chat-residual-scroll]) {
 		overflow-y: hidden;
 	}

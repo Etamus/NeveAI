@@ -246,6 +246,8 @@ function Test-NeveInstallReady {
 		(Join-Path $Backend 'neveai\frontend\index.html'),
 		(Join-Path $Backend 'neveai\models\users.py'),
 		$WindowScript
+		(Join-Path $Root '.desktop\installed.json')
+		(Join-Path $Root 'desktop\setup_runtime.py')
 	)
 	foreach ($path in $required) {
 		if (-not (Test-Path -LiteralPath $path)) {
@@ -254,6 +256,11 @@ function Test-NeveInstallReady {
 		}
 	}
 	$frontendIndex = Join-Path $Backend 'neveai\frontend\index.html'
+	$desktopCheck = Start-Process -FilePath $VenvPy -ArgumentList @("`"$(Join-Path $Root 'desktop\setup_runtime.py')`"", '--check') -WorkingDirectory $Root -WindowStyle Hidden -Wait -PassThru
+	if ($desktopCheck.ExitCode -ne 0) {
+		Write-StartLog 'WebView2 Fixed ausente ou desatualizado; reparacao pelo instalador necessaria.'
+		return $false
+	}
 	if ((Get-Item -LiteralPath $frontendIndex).Length -le 0) {
 		Write-StartLog "instalação indisponível: frontend publicado está vazio: $frontendIndex"
 		return $false
@@ -413,13 +420,15 @@ try {
 		$env:NEVE_WINDOW_READY_FILE = $previousReadyFile
 	}
 
-	$readyDeadline = [DateTime]::UtcNow.AddSeconds(12)
+	$readyDeadline = [DateTime]::UtcNow.AddSeconds(90)
 	while (-not (Test-Path -LiteralPath $readyFile) -and [DateTime]::UtcNow -lt $readyDeadline) {
 		if ($frontendProcess.HasExited) { break }
 		Pump-Ui
 		Start-Sleep -Milliseconds 40
 	}
+	$frontendReady = Test-Path -LiteralPath $readyFile
 	Remove-Item -LiteralPath $readyFile -Force -ErrorAction SilentlyContinue
+	if (-not $frontendReady) { throw 'A janela WebView2 nao concluiu a abertura. Consulte logs\webview2-window.log e logs\webview2-launcher.log.' }
 
 	$window.Close()
 	$window = $null

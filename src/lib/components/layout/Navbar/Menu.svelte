@@ -256,7 +256,7 @@
 	<div slot="content">
 		<DropdownMenu.Content
 			data-neve-chat-more-menu
-			class="select-none w-full max-w-[200px] rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 z-50 bg-white dark:bg-gray-850 dark:text-white shadow-md"
+			class="select-none w-full max-w-[200px] rounded-md px-1 py-1 border border-gray-100 dark:border-gray-800 z-[10060] bg-white dark:bg-gray-850 dark:text-white shadow-md"
 			sideOffset={8}
 			side="bottom"
 			align="end"
@@ -301,7 +301,7 @@
 					<div class="flex items-center">{$i18n.t('Download')}</div>
 				</DropdownMenu.SubTrigger>
 				<DropdownMenu.SubContent
-					class="select-none w-full rounded-md p-1 z-50 bg-white dark:bg-gray-850 dark:text-white border border-gray-100 dark:border-gray-800 shadow-md max-h-52 overflow-y-auto scrollbar-hidden"
+					class="select-none w-full rounded-md p-1 z-[10060] bg-white dark:bg-gray-850 dark:text-white border border-gray-100 dark:border-gray-800 shadow-md max-h-52 overflow-y-auto scrollbar-hidden"
 					transition={(e) => fade(e, { duration: 100 })}
 					sideOffset={8}
 				>
@@ -362,7 +362,7 @@
 							<div class="flex items-center">{$i18n.t('Move')}</div>
 						</DropdownMenu.SubTrigger>
 						<DropdownMenu.SubContent
-							class="select-none w-full max-w-[200px] rounded-md p-1 z-50 bg-white dark:bg-gray-850 dark:text-white border border-gray-100 dark:border-gray-800 shadow-md max-h-52 overflow-y-auto scrollbar-hidden"
+							class="select-none w-full max-w-[200px] rounded-md p-1 z-[10060] bg-white dark:bg-gray-850 dark:text-white border border-gray-100 dark:border-gray-800 shadow-md max-h-52 overflow-y-auto scrollbar-hidden"
 						transition={(e) => fade(e, { duration: 100 })}
 							sideOffset={8}
 						>

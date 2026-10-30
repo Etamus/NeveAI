@@ -19,6 +19,7 @@
 	const i18n = getContext<I18nStore>('i18n');
 
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import SearchInput from './Sidebar/SearchInput.svelte';
 	import { getChatById, getChatList, getChatListBySearchText } from '$lib/apis/chats';
 
@@ -27,7 +28,7 @@
 	import calendar from 'dayjs/plugin/calendar';
 	import Loader from '../common/Loader.svelte';
 	import { createMessagesList } from '$lib/utils';
-	import { config, user } from '$lib/stores';
+	import { user } from '$lib/stores';
 	import Messages from '../chat/Messages.svelte';
 	import { goto } from '$app/navigation';
 	import PencilSquare from '../icons/PencilSquare.svelte';
@@ -274,11 +275,12 @@
 	});
 </script>
 
-<Modal size="w-[60rem]" bind:show containerClassName="p-2 sm:p-3 outline-none" initialFocus="#search-input" keepMounted>
+<Modal size="w-[60rem]" bind:show mobileFullscreen containerClassName="p-2 sm:p-3 outline-none" initialFocus="#search-input" keepMounted>
 	<div
-		class="py-3 dark:text-gray-300 text-gray-700 flex flex-col"
+		class="search-modal-shell py-3 dark:text-gray-300 text-gray-700 flex flex-col"
 		style="height: min(39rem, calc(100dvh - 1.5rem));"
 	>
+		<div class="mobile-search-title"><MobileModalTitle>{$i18n.t('Sidebar Search')}</MobileModalTitle></div>
 		<div class="px-4 pb-1.5 flex items-center gap-2">
 			<div class="min-w-0 flex-1">
 				<SearchInput
@@ -315,9 +317,9 @@
 					}}
 				/>
 			</div>
-			<button
+			<button data-mobile-modal-close
 				aria-label={$i18n.t('Close search modal')}
-				class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
+				class="search-modal-close text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
 				on:click={() => {
 					show = false;
 					onClose();
@@ -484,3 +486,12 @@
 		</div>
 	</div>
 </Modal>
+
+<style>
+	.mobile-search-title { display: none; }
+	@media (max-width: 767px) {
+		.mobile-search-title { display: block; padding: 0 16px 8px; font-size: 18px; font-weight: 600; }
+		.search-modal-shell { height: 100% !important; min-height: 0; }
+		.search-modal-close { display: none; }
+	}
+</style>

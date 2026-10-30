@@ -663,6 +663,7 @@ export const getVersionUpdates = async (token: string) => {
 
 	const res = await fetch(`${NEVEAI_BASE_URL}/api/version/updates`, {
 		method: 'GET',
+		cache: 'no-store',
 		headers: {
 			'Content-Type': 'application/json',
 			Authorization: `Bearer ${token}`

@@ -6,6 +6,7 @@
 	const dispatch = createEventDispatcher();
 
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import AddMemoryModal from './AddMemoryModal.svelte';
 	import { deleteMemoriesByUserId, deleteMemoryById, getMemories } from '$lib/apis/memories';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -53,7 +54,7 @@
 <Modal size="md" animated={false} bind:show>
 	<div>
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-1">
-			<div class=" text-lg font-medium self-center">{$i18n.t('Memory')}</div>
+			<div class=" text-lg font-medium self-center"><MobileModalTitle>{$i18n.t('Memory')}</MobileModalTitle></div>
 			<div class="flex items-center gap-1.5">
 				<button
 					class="px-4 py-1.5 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg"

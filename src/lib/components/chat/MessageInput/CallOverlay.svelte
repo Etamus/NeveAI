@@ -147,7 +147,6 @@
 	};
 
 	const MIN_DECIBELS = -55;
-	const VISUALIZER_BUFFER_LENGTH = 300;
 
 	const transcribeHandler = async (audioBlob) => {
 		// Create a blob from the audio chunks

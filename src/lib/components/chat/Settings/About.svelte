@@ -21,6 +21,7 @@
 	let updateAvailable = false;
 	let latestProjectVersion = '';
 	let startingUpdater = false;
+	let checkingUpdates = false;
 
 	$: if ($NEVEAI_VERSION && $NEVEAI_VERSION !== projectVersion) {
 		projectVersion = $NEVEAI_VERSION;
@@ -52,9 +53,12 @@
 			return;
 		}
 
-		const data = await getVersionUpdates(localStorage.token).catch(() => null);
+		if (checkingUpdates) return;
+		checkingUpdates = true;
+		const data = await getVersionUpdates(localStorage.token)
+			.catch(() => null)
+			.finally(() => { checkingUpdates = false; });
 		if (!data) {
-			updateAvailable = false;
 			return;
 		}
 
@@ -103,10 +107,12 @@
 		checkForUpdateStatus();
 		versionRefreshInterval = setInterval(loadProjectVersion, 5000);
 		updateRefreshInterval = setInterval(checkForUpdateStatus, 60000);
+		window.addEventListener('focus', checkForUpdateStatus);
 
 		return () => {
 			clearInterval(versionRefreshInterval);
 			clearInterval(updateRefreshInterval);
+			window.removeEventListener('focus', checkForUpdateStatus);
 		};
 	});
 </script>

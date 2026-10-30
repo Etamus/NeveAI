@@ -13,6 +13,7 @@
 	import { getModels } from '$lib/apis';
 
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
@@ -26,7 +27,6 @@
 	let config = null;
 	let initializedForOpen = false;
 
-	let selectedTab = 'defaults';
 
 	let defaultModelIds = [];
 
@@ -281,9 +281,9 @@
 	<div class="flex h-full min-h-0 flex-col">
 		<div class="flex justify-between items-center dark:text-gray-100 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20 shrink-0">
 			<div class="text-lg font-semibold font-primary">
-				{$i18n.t('Configura\u00e7\u00f5es globais')}
+				<MobileModalTitle onBack={closeHandler}>{$i18n.t('Configura\u00e7\u00f5es globais')}</MobileModalTitle>
 			</div>
-			<button
+			<button data-mobile-modal-close
 				class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
 				on:click={closeHandler}
 			>

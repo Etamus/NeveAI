@@ -77,7 +77,7 @@
 				</div>
 			{:else}
 				<button
-					class="w-full select-none"
+					class="w-full select-none text-left"
 					aria-label={$i18n.t('Toggle status history')}
 					aria-expanded={showHistory}
 					on:click={(event) => {
@@ -85,8 +85,8 @@
 						showHistory = !showHistory;
 					}}
 				>
-					<div class="flex items-start gap-2">
-						<StatusItem {status} />
+					<div class="flex min-w-0 w-full items-start gap-2">
+						<StatusItem {status} expanded={showHistory} />
 					</div>
 				</button>
 			{/if}
@@ -94,20 +94,9 @@
 			{#if showHistory && !isMediaStatus}
 				<div class="flex flex-row select-text" transition:slide={{ duration: 200, easing: quintOut }}>
 					{#if visibleHistory.length > 1}
-						<div class="w-full">
-							{#each visibleHistory as status, idx}
-								<div class="flex items-stretch gap-2 mb-1">
-									<div class="relative w-3 shrink-0">
-										<span
-											class="absolute left-1/2 top-[17px] flex size-1.5 -translate-x-1/2 items-center justify-center rounded-full bg-gray-500 dark:bg-gray-400"
-										></span>
-										{#if idx !== visibleHistory.length - 1}
-											<div
-												class="absolute bottom-[-20px] left-1/2 top-[24px] w-px -translate-x-1/2 bg-gray-300 dark:bg-gray-700"
-											></div>
-										{/if}
-									</div>
-
+						<div class="ml-[7px] min-w-0 w-full border-l border-[#dedede] dark:border-[#292929] px-4">
+							{#each visibleHistory as status}
+								<div class="flex min-w-0 items-stretch mb-1">
 									<StatusItem {status} done={true} />
 								</div>
 							{/each}

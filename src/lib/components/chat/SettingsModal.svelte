@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { getContext, onMount, tick } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { config, models, settings, user, showSettingsTab } from '$lib/stores';
+	import { config, models, settings, user, showSettingsTab, mobile } from '$lib/stores';
 	import { updateUserSettings } from '$lib/apis/users';
 	import { getModels as _getModels } from '$lib/apis';
 
 	import Modal from '../common/Modal.svelte';
+	import MobileModalTitle from '../common/MobileModalTitle.svelte';
 	import General from './Settings/General.svelte';
 	import DataControls from './Settings/DataControls.svelte';
 	import Personalization from './Settings/Personalization.svelte';
@@ -18,19 +19,30 @@
 	import Face from '../icons/Face.svelte';
 	import UserBadgeCheck from '../icons/UserBadgeCheck.svelte';
 	import Info from '../icons/Info.svelte';
+	import ChevronRight from '../icons/ChevronRight.svelte';
 
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
 
 	export let show = false;
+	let wasShown = false;
+	let mobileSettingsPage = false;
+	const selectTab = (tab: string) => {
+		selectedTab = tab;
+		if ($mobile) mobileSettingsPage = true;
+	};
 
 	$: if (show) {
+		if (!wasShown) { wasShown = true; mobileSettingsPage = false; }
 		addScrollListener();
 		if ($showSettingsTab) {
 			selectedTab = $showSettingsTab;
+			if ($mobile) mobileSettingsPage = true;
 			showSettingsTab.set('');
 		}
 	} else {
+		wasShown = false;
+		mobileSettingsPage = false;
 		removeScrollListener();
 	}
 
@@ -216,6 +228,7 @@
 
 	// Function to handle sideways scrolling
 	const scrollHandler = (event) => {
+		if ($mobile) return;
 		const settingsTabsContainer = document.getElementById('settings-tabs-container');
 		if (settingsTabsContainer) {
 			event.preventDefault(); // Prevent default vertical scrolling
@@ -250,15 +263,15 @@
 	});
 </script>
 
-<Modal size="md" bind:show keepMounted>
-	<div class="text-gray-700 dark:text-gray-100">
+<Modal size="md" bind:show keepMounted mobileFullscreen mobileStep={mobileSettingsPage ? selectedTab : ''} onMobileStepBack={() => mobileSettingsPage = false}>
+	<div class="settings-shell text-gray-700 dark:text-gray-100" class:mobile-settings-detail={mobileSettingsPage}>
 		<div class="flex justify-between items-center px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20">
-			<div class="text-lg font-semibold dark:text-gray-100">
-				{$i18n.t('Settings')}
+			<div class="flex min-w-0 items-center gap-2 text-lg font-semibold dark:text-gray-100">
+				<MobileModalTitle>{$mobile && mobileSettingsPage ? $i18n.t(selectedTab === 'about' ? 'About' : allSettings.find(tab => tab.id === selectedTab)?.title ?? 'Settings') : $i18n.t('Settings')}</MobileModalTitle>
 			</div>
-			<button
+			<button data-mobile-modal-close
 				aria-label={$i18n.t('Close settings modal')}
-				class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
+				class="settings-close text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
 				on:click={() => {
 					show = false;
 				}}
@@ -267,7 +280,7 @@
 			</button>
 		</div>
 
-		<div class="flex min-w-0 flex-col md:flex-row w-full">
+		<div class="settings-body flex min-w-0 flex-col md:flex-row w-full">
 			<div
 				role="tablist"
 				id="settings-tabs-container"
@@ -286,11 +299,12 @@
 									? 'font-semibold text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800'
 									: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50'}"
 								on:click={() => {
-									selectedTab = 'general';
+									selectTab('general');
 								}}
 							>
 								<SettingsAlt strokeWidth="2" />
 								<span>{$i18n.t('General')}</span>
+								<span class="mobile-settings-chevron hidden"><ChevronRight /></span>
 							</button>
 						{:else if tabId === 'personalization'}
 							<button
@@ -302,11 +316,12 @@
 									? 'font-semibold text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800'
 									: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50'}"
 								on:click={() => {
-									selectedTab = 'personalization';
+									selectTab('personalization');
 								}}
 							>
 								<Face strokeWidth="2" />
 								<span>{$i18n.t('Personalization')}</span>
+								<span class="mobile-settings-chevron hidden"><ChevronRight /></span>
 							</button>
 						{:else if tabId === 'data_controls'}
 							<button
@@ -318,11 +333,12 @@
 									? 'font-semibold text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800'
 									: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50'}"
 								on:click={() => {
-									selectedTab = 'data_controls';
+									selectTab('data_controls');
 								}}
 							>
 								<DatabaseSettings strokeWidth="2" />
 								<span>{$i18n.t('Data Controls')}</span>
+								<span class="mobile-settings-chevron hidden"><ChevronRight /></span>
 							</button>
 						{:else if tabId === 'about'}
 							<button
@@ -334,11 +350,12 @@
 									? 'font-semibold text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800'
 									: 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50'}"
 								on:click={() => {
-									selectedTab = 'about';
+									selectTab('about');
 								}}
 							>
 								<Info strokeWidth="2" />
 								<span>{$i18n.t('About')}</span>
+								<span class="mobile-settings-chevron hidden"><ChevronRight /></span>
 							</button>
 						{/if}
 					{/each}
@@ -377,12 +394,17 @@
 
 <style>
 	@media (max-width: 767px) {
-		.tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0.5rem; gap: 0.25rem; }
-		.tabs :global(button) { min-width: 0; min-height: 40px; padding: 0.5rem 0.375rem; font-size: 12px; gap: 6px; }
-		.tabs :global(button svg) { flex-shrink: 0; width: 16px; height: 16px; }
+		.settings-shell { height: 100%; display: flex; flex-direction: column; }
+		.settings-close { display: none; }
+		.settings-body { flex: 1; min-height: 0; }
+		.tabs { display: flex; flex-direction: column; padding: 12px; gap: 4px; overflow-y: auto; }
+		.tabs :global(button) { min-width: 0; min-height: 56px; width: 100%; padding: 12px; font-size: 15px; gap: 12px; color: inherit; background: transparent; font-weight: 500; }
+		.tabs :global(button svg) { flex-shrink: 0; width: 20px; height: 20px; }
 		.tabs :global(button span) { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-		.settings-content { padding-inline: 0.875rem; }
-		.settings-content { max-height: min(22rem, calc(100dvh - 12rem)); }
+		.mobile-settings-chevron { display: flex; margin-left: auto; color: var(--color-gray-400); }
+		.settings-content { display: none; padding: 16px 20px; min-height: 0; max-height: none; }
+		.mobile-settings-detail .tabs { display: none; }
+		.mobile-settings-detail .settings-content { display: block; }
 		.settings-content :global(.flex.w-full.justify-between) { gap: 0.75rem; }
 		.settings-content :global(.flex.w-full.justify-between > :first-child) { min-width: 0; overflow-wrap: anywhere; }
 		.settings-content :global(.flex.w-full.justify-between > :last-child) { flex-shrink: 0; }

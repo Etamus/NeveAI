@@ -16,11 +16,8 @@
 
 	import ChevronUp from '../icons/ChevronUp.svelte';
 	import ChevronDown from '../icons/ChevronDown.svelte';
-	import Lightbulb from '../icons/LightBulb.svelte';
-	import Terminal from '../icons/Terminal.svelte';
 	import Spinner from './Spinner.svelte';
 
-	import { copyToClipboard } from '$lib/utils';
 	import { notifyChatLayout } from '$lib/utils/notifyChatLayout';
 
 	export let open = false;
@@ -54,7 +51,6 @@
 	$: isStreaming = isReasoning && !isDone;
 	$: isCodeInterpreterRunning = isCodeInterpreter && attributes?.done !== 'true';
 	$: showReasoningContent = isReasoning && !hide && open;
-	$: showActivityChrome = isReasoning ? showReasoningContent : isCodeInterpreter && open && !hide;
 	let activityElement: HTMLDivElement;
 	function notifyReasoningLayout(automatic = false) {
 		if (isReasoning) activityElement?.dispatchEvent(new CustomEvent('neve:reasoning-layout', {
@@ -71,20 +67,6 @@
 			if (open) notifyReasoningLayout(true);
 			open = false;
 			wasStreamingReasoning = false;
-		}
-	}
-
-	let copied = false;
-	let copyTimeout: ReturnType<typeof setTimeout>;
-
-	function handleCopy(event: MouseEvent) {
-		event.stopPropagation();
-		const contentEl = document.getElementById(`reasoning-content-${collapsibleId}`);
-		if (contentEl) {
-			copyToClipboard(contentEl.innerText);
-			copied = true;
-			clearTimeout(copyTimeout);
-			copyTimeout = setTimeout(() => (copied = false), 2000);
 		}
 	}
 
@@ -163,25 +145,21 @@
 
 	onDestroy(() => {
 		stopObserving();
-		clearTimeout(copyTimeout);
 	});
 </script>
 
 {#if isActivityBlock}
-	<!-- LM Studio-inspired reasoning block -->
 	<div
 		{id}
 		bind:this={activityElement}
 		data-message-expanded={open && !hide}
-		class="reasoning-block mb-4 w-full overflow-hidden rounded-xl border transition-colors duration-150 {showActivityChrome
-			? 'border-gray-200/80 bg-gray-50/70 shadow-[0_1px_2px_rgba(15,23,42,0.04)] dark:border-white/10 dark:bg-white/[0.035] dark:shadow-none'
-			: 'border-transparent'} {className}"
+		class="reasoning-block mb-4 w-full overflow-hidden {isReasoning ? 'reasoning-minimal' : 'code-interpreter-minimal'} transition-colors duration-150 border-transparent {className}"
 		on:wheel|nonpassive={handleReasoningWheel}
 	>
 		<!-- svelte-ignore a11y-no-static-element-interactions -->
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
 		<div
-			class="flex select-none items-center justify-between gap-3 px-3 py-2 {disabled ? '' : 'cursor-pointer'}"
+			class="reasoning-header flex select-none items-center justify-between gap-3 px-3 py-2 {disabled ? '' : 'cursor-pointer'}"
 			on:pointerup={() => {
 				if (!disabled) {
 					notifyReasoningLayout();
@@ -192,16 +170,6 @@
 			<div
 				class="flex min-w-0 flex-1 items-center gap-2 text-sm font-medium text-gray-600 transition-colors hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100"
 			>
-				<span
-					class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
-				>
-					{#if isReasoning}
-						<Lightbulb className="size-3.5" strokeWidth="1.6" />
-					{:else}
-						<Terminal className="size-3.5" strokeWidth="1.7" />
-					{/if}
-				</span>
-
 				<span class="relative min-w-0 truncate pr-1 leading-5">
 					{#if isReasoning}
 						{#if isStreaming}
@@ -235,57 +203,11 @@
 				{#if !disabled}
 					<ChevronDown
 						strokeWidth="2.4"
-						className="size-3.5 shrink-0 translate-y-px text-gray-400 transition-transform duration-200 dark:text-gray-500 {open
-							? 'rotate-0'
-							: '-rotate-90'}"
+						className="size-3.5 shrink-0 translate-y-px text-gray-400 transition-transform duration-200 dark:text-gray-500 {open ? 'rotate-180' : 'rotate-0'}"
 					/>
 				{/if}
 			</div>
 
-			<!-- Copy button - only show when open and done -->
-			{#if isReasoning && open && isDone}
-				<button
-					class="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-gray-500 transition-colors hover:bg-gray-200/70 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-white/10 dark:hover:text-gray-100"
-					on:pointerup|stopPropagation={handleCopy}
-					aria-label="Copy reasoning"
-				>
-					{#if copied}
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke-width="2"
-							stroke="currentColor"
-							class="size-3"
-							aria-hidden="true"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="m4.5 12.75 6 6 9-13.5"
-							/>
-						</svg>
-						{$i18n.t('Copied')}
-					{:else}
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							fill="none"
-							viewBox="0 0 24 24"
-							stroke-width="2"
-							stroke="currentColor"
-							class="size-3"
-							aria-hidden="true"
-						>
-							<path
-								stroke-linecap="round"
-								stroke-linejoin="round"
-								d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184"
-							/>
-						</svg>
-						{$i18n.t('Copy')}
-					{/if}
-				</button>
-			{/if}
 		</div>
 
 		<!-- Reasoning content -->
@@ -299,37 +221,27 @@
 			>
 				<div class="min-h-0 overflow-hidden">
 					<div
-						class="reasoning-content relative border-t border-gray-200/70 bg-white/55 text-sm text-gray-600 dark:border-white/10 dark:bg-black/10 dark:text-gray-300"
-					>
-						{#if isStreaming}
-							<div
-								class="reasoning-fade-top pointer-events-none absolute inset-x-0 top-0 z-10 h-5 bg-gradient-to-b from-white/90 to-transparent dark:from-gray-950/70"
-							></div>
-						{/if}
-
+						class="reasoning-content relative text-sm text-gray-600 dark:text-gray-400"
+						>
 						<div
 							id="reasoning-content-{collapsibleId}"
 							bind:this={reasoningScrollEl}
 							on:scroll={handleReasoningScroll}
-							class="reasoning-text scrollbar-hidden relative z-0 overflow-y-auto px-3 py-2.5 leading-relaxed text-gray-600 dark:text-gray-300 {isStreaming
+							class="reasoning-text scrollbar-hidden relative z-0 overflow-y-auto leading-relaxed text-gray-600 dark:text-gray-400 {isStreaming
 									? 'h-40'
 									: 'max-h-72'}"
 						>
 							<slot name="content" />
 						</div>
-
-						<div
-							class="reasoning-fade pointer-events-none absolute inset-x-0 bottom-0 z-10 h-7 bg-gradient-to-t from-white/95 to-transparent dark:from-gray-950/80"
-						></div>
 					</div>
 				</div>
 			</div>
 		{:else if isCodeInterpreter && open && !hide}
 			<div
-				class="border-t border-gray-200/70 bg-white/55 text-sm text-gray-600 dark:border-white/10 dark:bg-black/10 dark:text-gray-300"
+				class="ml-[7px] border-l border-[#dedede] text-sm text-gray-600 dark:border-[#292929] dark:text-gray-400"
 				transition:slide={{ duration: 200, easing: quintOut, axis: 'y' }}
 			>
-				<div class="px-3 py-2.5 leading-relaxed">
+				<div class="px-4 leading-relaxed">
 					<slot name="content" />
 				</div>
 			</div>
@@ -446,6 +358,16 @@
 {/if}
 
 <style>
+	.code-interpreter-minimal { border: 0; background: transparent; box-shadow: none; }
+	.code-interpreter-minimal .reasoning-header { padding: 4px 0 8px; }
+	.code-interpreter-minimal .reasoning-header > div { font-weight: 400; }
+	.reasoning-minimal { border: 0; background: transparent; box-shadow: none; }
+	.reasoning-minimal .reasoning-header { padding: 4px 0 8px; }
+	.reasoning-minimal .reasoning-header > div { font-weight: 400; }
+	.reasoning-content { margin: 0 0 0 7px; border-left: 1px solid #dedede; }
+	:global(.dark) .reasoning-content { border-color: #292929; }
+	.reasoning-text { padding: 0 16px; }
+	.reasoning-text :global(blockquote) { border: 0; padding: 0; margin: 0; color: inherit; }
 	.reasoning-text {
 		font-size: 0.875rem !important;
 	}

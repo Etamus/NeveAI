@@ -3,7 +3,7 @@
 	import { getContext, tick, onMount } from 'svelte';
 	import { fly, fade } from 'svelte/transition';
 
-	import { user, tools as _tools, toolServers } from '$lib/stores';
+	import { user, tools as _tools, toolServers, mobile } from '$lib/stores';
 
 	import { getOAuthClientAuthorizationUrl } from '$lib/apis/configs';
 	import { getTools } from '$lib/apis/tools';
@@ -37,7 +37,6 @@
 	export let fileUploadCapableModels: string[] = [];
 
 	export let uploadFilesHandler: Function;
-	export let inputFilesHandler: Function;
 
 	export let onUpload: Function;
 	export let onClose: Function;
@@ -71,9 +70,9 @@
 		if (!composer) return;
 		const bounds = composer.getBoundingClientRect();
 		const anchor = triggerElement.getBoundingClientRect();
-		menuWidth = Math.min(bounds.width, window.innerWidth - 16);
+		menuWidth = Math.min($mobile ? 260 : bounds.width, bounds.width, window.innerWidth - 16);
 		menuAlignOffset = bounds.left - anchor.left;
-		menuSideOffset = 3 + (above ? anchor.top - bounds.top : bounds.bottom - anchor.bottom);
+		menuSideOffset = $mobile ? 6 : 3 + (above ? anchor.top - bounds.top : bounds.bottom - anchor.bottom);
 	};
 	onMount(() => {
 		const closeOnResize = () => { show = false; };
@@ -226,29 +225,7 @@
 		files = [];
 	}
 
-	const handleFileChange = (event) => {
-		const inputFiles = Array.from(event.target?.files);
-		if (inputFiles && inputFiles.length > 0) {
-			console.log(inputFiles);
-			inputFilesHandler(inputFiles);
-		}
-	};
 
-	const onSelect = (item) => {
-		if (mediaAttachmentPolicy) return;
-		if (files.find((f) => f.id === item.id)) {
-			return;
-		}
-		files = [
-			...files,
-			{
-				...item,
-				status: 'processed'
-			}
-		];
-
-		show = false;
-	};
 </script>
 
 <svelte:window
@@ -276,9 +253,10 @@
 			style="font-family: 'Segoe UI', sans-serif; width: {menuWidth}px; max-width: calc(100vw - 16px); max-height: min(calc(100dvh - 16px), var(--bits-dropdown-menu-content-available-height, calc(100dvh - 16px)));"
 			strategy="fixed"
 			fitViewport={true}
+			avoidCollisions={!$mobile}
 			sideOffset={menuSideOffset}
 			alignOffset={menuAlignOffset}
-			side={above ? 'top' : 'bottom'}
+			side={$mobile || above ? 'top' : 'bottom'}
 			align="start"
 			transition={(e) => fade(e, { duration: 100 })}
 		>
@@ -426,7 +404,7 @@
 						</Tooltip>
 					{/if}
 
-					{#if showFileGenerationButton}
+					{#if showFileGenerationButton && !$mobile}
 						<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[96%]" />
 						<Tooltip content="" placement="top-start">
 							<button
@@ -543,5 +521,9 @@
 	}
 	:global(.dark .composer-integrations-menu) {
 		border-color: rgba(255, 255, 255, 0.22) !important;
+	}
+	@media (max-width: 767px) {
+		:global(.composer-integrations-menu) { border: 0 !important; scrollbar-width: none; }
+		:global(.composer-integrations-menu::-webkit-scrollbar) { display: none; }
 	}
 </style>

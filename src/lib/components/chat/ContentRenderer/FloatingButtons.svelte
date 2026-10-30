@@ -6,8 +6,8 @@
 	const prepareModel = getContext<((modelId: string) => Promise<{params: Record<string, unknown>} | null>) | undefined>('prepare-text-model');
 
 	import { chatCompletion } from '$lib/apis/openai';
-	import { createOpenAITextStream } from '$lib/apis/streaming';
-	import { getSelectionActionLabel } from '$lib/utils/selectionActions';
+	import { getSelectionActionLabel, getSelectionActionParams } from '$lib/utils/selectionActions';
+	import { createSelectionActionStream, formatSelectionActionResponse } from '$lib/utils/selectionActionResponse';
 	import { removeReasoningControlTokens } from '$lib/utils';
 
 	import ChatBubble from '$lib/components/icons/ChatBubble.svelte';
@@ -32,6 +32,8 @@
 
 	let content = '';
 	let responseContent = null;
+	let responseReasoning = '';
+	$: responseMarkdown = formatSelectionActionResponse(responseContent ?? '', responseReasoning, responseDone);
 	let responseDone = false;
 	let controller = null;
 	let requestVersion = 0;
@@ -119,6 +121,7 @@
 
 		content = prompt;
 		responseContent = '';
+		responseReasoning = '';
 		responseDone = false;
 		responseError = '';
 		const requestModel = model;
@@ -127,7 +130,7 @@
 		const requestController = new AbortController();
 		controller = requestController;
 		try {
-			const prepared = prepareModel ? await prepareModel(requestModel) : {};
+			const prepared = prepareModel ? await prepareModel(requestModel) : {params: {}};
 			if (!prepared) {
 				if (version === requestVersion) responseError = $i18n.t('Could not load the selected model.');
 				return;
@@ -136,6 +139,7 @@
 			const [res] = await chatCompletion(localStorage.token, {
 			...prepared,
 			model: requestModel,
+			params: getSelectionActionParams(prepared.params, $models.find((m) => m.id === requestModel) ?? {id: requestModel}),
 			model_item: $models.find((m) => m.id === requestModel),
 			session_id: $socket?.id,
 			chat_id: $chatId,
@@ -161,18 +165,18 @@
 			stream: true
 		}, undefined, requestController);
 			if (!res?.ok || !res.body) throw new Error($i18n.t('An error occurred while fetching the explanation'));
-			const stream = await createOpenAITextStream(res.body, false);
+			const stream = createSelectionActionStream(res.body);
 			for await (const update of stream) {
 				if (version !== requestVersion || requestController.signal.aborted) break;
-				if (update.error) throw new Error(update.error.message ?? String(update.error));
 				const follow = !responseContainer || responseContainer.scrollHeight - responseContainer.clientHeight <= responseContainer.scrollTop + 50;
 				responseContent += update.value;
+				responseReasoning += update.reasoning;
 				await tick();
 				if (follow) await autoScroll();
 				if (update.done) break;
 			}
 			if (version === requestVersion && !requestController.signal.aborted) {
-				if (!removeReasoningControlTokens(responseContent).trim()) throw new Error($i18n.t('An error occurred while fetching the explanation'));
+				if (!responseMarkdown.trim()) throw new Error($i18n.t('An error occurred while fetching the explanation'));
 				const follow = !responseContainer || responseContainer.scrollHeight - responseContainer.clientHeight <= responseContainer.scrollTop + 50;
 				responseDone = true;
 				await tick();
@@ -196,7 +200,7 @@
 			},
 			{
 				role: 'assistant',
-				content: responseContent
+				content: removeReasoningControlTokens(responseMarkdown)
 			}
 		];
 
@@ -216,6 +220,7 @@
 		selectedAction = null;
 		selectedText = '';
 		responseContent = null;
+		responseReasoning = '';
 		responseDone = false;
 		responseError = '';
 		controller = null;
@@ -342,13 +347,13 @@
 				>
 					{#if responseError}
 						<div role="alert">{responseError}</div>
-					{:else if !responseContent || responseContent?.trim() === ''}
+					{:else if !responseMarkdown.trim()}
 						<Skeleton size="sm" />
 					{:else}
-						<Markdown id={`${id}-float-response`} content={removeReasoningControlTokens(responseContent)} />
+						<Markdown id={`${id}-float-response`} content={removeReasoningControlTokens(responseMarkdown)} done={responseDone} model={$models.find((m) => m.id === responseModel)} />
 					{/if}
 
-					{#if responseDone && !responseError && responseContent?.trim()}
+					{#if responseDone && !responseError && responseMarkdown.trim()}
 						<div class="flex justify-end pt-3 text-sm font-medium">
 							<button
 								class="px-3.5 py-1.5 text-sm font-medium bg-black hover:bg-gray-900 text-white dark:bg-white dark:text-black dark:hover:bg-gray-100 transition rounded-lg"

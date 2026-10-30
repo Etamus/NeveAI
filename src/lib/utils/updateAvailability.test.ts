@@ -32,4 +32,14 @@ describe('About update availability', () => {
 		expect(getAvailableUpdateTargets({ latest: '2.8.83', current: '2.8.83' }, '')).toEqual([]);
 		expect(getAvailableUpdateTargets(null, '')).toEqual([]);
 	});
+	it('reports a runtime update even when the project itself is current', () => {
+		expect(getAvailableUpdateTargets({ current_tag: 'v3.0.20', latest_tag: 'v3.0.20', neve_update_available: false,
+			llama_cpp: { current_tag: 'b11719', latest_tag: 'b11857', update_available: true } }, 'v3.0.20'))
+			.toEqual(['llama.cpp b11857']);
+	});
+	it('reports both update targets without relying on the aggregate flag', () => {
+		expect(getAvailableUpdateTargets({ current_tag: 'v3.0.20', latest_tag: 'v3.0.21', neve_update_available: true,
+			llama_cpp: { current_tag: 'b11719', latest_tag: 'b11857', update_available: true } }, 'v3.0.20'))
+			.toEqual(['NeveAI v3.0.21', 'llama.cpp b11857']);
+	});
 });

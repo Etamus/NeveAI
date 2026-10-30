@@ -61,24 +61,56 @@ class ReasoningStreamTests(unittest.IsolatedAsyncioTestCase):
         }, self.scope)
         tag_handler = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "tag_output_handler")
         handler = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == "stream_body_handler")
-        factory = ast.parse("def make_handler():\n    content = ''\n    usage = {}\n    output = []\n").body[0]
+        factory = ast.parse("def make_handler(initial_output=None):\n    content = ''\n    usage = {}\n    output = initial_output if initial_output is not None else []\n").body[0]
         factory.body.extend([tag_handler, handler, ast.Return(value=ast.Tuple(elts=[ast.Name(id="stream_body_handler", ctx=ast.Load()), ast.Name(id="output", ctx=ast.Load())], ctx=ast.Load()))])
         exec(compile(ast.fix_missing_locations(ast.Module(body=[factory], type_ignores=[])), "stream-test", "exec"), self.scope)
 
-    async def run_stream(self, deltas, on_chunk=None):
+    async def run_stream(self, deltas, on_chunk=None, initial_output=None):
         async def body():
             for delta in deltas:
                 yield "data: " + json.dumps({"choices": [{"delta": delta}]}) + "\n\n"
                 if on_chunk:
                     on_chunk()
             yield "data: [DONE]\n\n"
-        handler, output = self.scope["make_handler"]()
+        handler, output = self.scope["make_handler"](copy.deepcopy(initial_output))
         response = SimpleNamespace(body_iterator=body(), background=None,
                                    headers={"X-Neve-Budgeted-Reasoning": "true"})
         await handler(response, {"messages": [], "reasoning_mode": "reasoning"})
         self.scope["log"].debug.assert_not_called()
         self.scope["generate_chat_completion"].assert_not_awaited()
         return output
+
+    async def test_continuing_completed_reasoning_starts_a_new_block(self):
+        old = {"type": "reasoning", "id": "old-reasoning", "status": "completed",
+               "attributes": {"type": "reasoning_content"}, "started_at": time.time() - 60,
+               "ended_at": time.time() - 55, "duration": 5,
+               "content": [{"type": "output_text", "text": "Old thought"}]}
+        output = await self.run_stream([
+            {"reasoning_content": "New thought"}, {"content": "Visible continuation"},
+        ], initial_output=[old])
+        self.assertEqual([item["type"] for item in output], ["reasoning", "reasoning", "message"])
+        self.assertEqual(output[0], old)
+        self.assertEqual(output[1]["content"][0]["text"], "New thought")
+        self.assertEqual(output[1]["status"], "completed")
+        rendered = self.scope["serialize_output"](output)
+        self.assertEqual(rendered.count('<details type="reasoning"'), 2)
+        self.assertTrue(rendered.endswith("Visible continuation"))
+
+    async def test_continuation_keeps_the_previous_answer_and_contains_raw_reasoning(self):
+        old = {"type": "message", "id": "old-answer", "status": "completed", "role": "assistant",
+               "content": [{"type": "output_text", "text": "Previous answer."}]}
+        output = await self.run_stream([
+            {"content": "<thi"}, {"content": "nk>New private thought"},
+            {"content": "</think>Continued answer."},
+        ], initial_output=[old])
+        self.assertEqual([item["type"] for item in output], ["message", "reasoning", "message"])
+        self.assertEqual(output[0]["content"][0]["text"], "Previous answer.")
+        # The outer response handler releases an ambiguous short post-reasoning tail at EOF.
+        output[-1].pop('_reasoning_boundary_pending', None)
+        rendered = self.scope["serialize_output"](output)
+        self.assertIn('New private thought', rendered.split('</details>')[0])
+        self.assertNotIn('New private thought', rendered.split('</details>')[-1])
+        self.assertTrue(rendered.endswith('Continued answer.'))
 
     async def test_short_answer_is_emitted_immediately_without_second_generation(self):
         frames = []
@@ -148,12 +180,13 @@ class StreamingBatchTests(ReasoningStreamTests):
         return [frame["data"]["content"] for frame in self.frames
                 if frame.get("type") == "chat:completion" and "content" in frame.get("data", {})]
 
-    async def consume_outer(self, body):
-        self.scope["Chats"].get_message_by_id_and_message_id = lambda *args: None
+    async def consume_outer(self, body, message=None, messages=None):
+        self.scope["Chats"].get_message_by_id_and_message_id = lambda *args: copy.deepcopy(message)
         self.scope["Chats"].get_chat_title_by_id = lambda *args: "Test"
         self.scope.update(
-            form_data={"messages": [], "model": "test"}, model={}, ctx={},
+            form_data={"messages": messages or [], "model": "test"}, model={}, ctx={},
             get_last_user_message=lambda *args: "test",
+            get_last_assistant_message=lambda messages: messages[-1]["content"],
             get_system_message=lambda *args: None,
             CHAT_RESPONSE_MAX_TOOL_CALL_RETRIES=0,
             publish_pending_generated_files=AsyncMock(), background_tasks_handler=AsyncMock(),
@@ -165,6 +198,61 @@ class StreamingBatchTests(ReasoningStreamTests):
                      "outer-stream-test", "exec"), self.scope)
         await self.scope["response_handler"](SimpleNamespace(body_iterator=body, background=None), [])
         self.scope["log"].debug.assert_not_called()
+
+    async def test_temporary_continuation_preserves_old_blocks_and_normalizes_new_reasoning(self):
+        old_output = [
+            {"type": "reasoning", "id": "old-r", "status": "completed", "duration": 3,
+             "attributes": {"type": "reasoning_content"},
+             "content": [{"type": "output_text", "text": "Old private thought"}]},
+            {"type": "message", "id": "old-m", "status": "completed", "role": "assistant",
+             "content": [{"type": "output_text", "text": "Old visible answer."}]},
+        ]
+        self.scope["metadata"].update(continue_response=True, continuation_output=copy.deepcopy(old_output))
+        async def body():
+            yield self.sse({"choices": [{"delta": {"reasoning_content": "New private thought"}}]})
+            yield self.delta("New visible answer.")
+        await self.consume_outer(body(), messages=[{"role": "assistant", "content": "Old visible answer."}])
+        final = self.saved[-1]
+        self.assertEqual(final["output"][:2], old_output)
+        self.assertEqual([item["type"] for item in final["output"]], ["reasoning", "message", "reasoning", "message"])
+        self.assertEqual(final["content"].count('<details type="reasoning"'), 2)
+        self.assertIn('Old visible answer.', final["content"])
+        self.assertNotIn('private thought', final["content"].split('</details>')[-1])
+
+    async def test_legacy_temporary_continuation_keeps_existing_display_content(self):
+        display = '<details type="reasoning" done="true">\n<summary>Thought</summary>\n&gt; Old thought\n</details>\nOld answer.'
+        self.scope["metadata"].update(continue_response=True, continuation_content=display)
+        async def body():
+            yield self.delta(" More answer.")
+        await self.consume_outer(body(), messages=[{"role": "assistant", "content": "Old answer."}])
+        self.assertIn(display, self.saved[-1]["content"])
+        self.assertIn('More answer.', self.saved[-1]["content"])
+
+    async def test_responses_api_continuation_keeps_previous_output_and_uses_new_indices(self):
+        old = {"type": "message", "id": "old-m", "status": "completed", "role": "assistant",
+               "content": [{"type": "output_text", "text": "Old answer."}]}
+        self.scope["metadata"].update(continue_response=True, continuation_output=[copy.deepcopy(old)])
+        reason = {"type": "reasoning", "id": "new-r", "status": "completed",
+                  "summary": [{"type": "summary_text", "text": "New private thought"}]}
+        answer = {"type": "message", "id": "new-m", "status": "completed", "role": "assistant",
+                  "content": [{"type": "output_text", "text": "New answer."}]}
+        async def body():
+            yield self.sse({"type": "response.output_item.added", "item": {
+                **reason, "status": "in_progress", "summary": []}})
+            yield self.sse({"type": "response.reasoning_summary_part.added", "output_index": 0,
+                            "part": {"type": "summary_text", "text": ""}})
+            yield self.sse({"type": "response.reasoning_summary_text.delta", "output_index": 0,
+                            "summary_index": 0, "delta": "New private thought"})
+            yield self.sse({"type": "response.output_item.done", "output_index": 0, "item": reason})
+            yield self.sse({"type": "response.output_item.added", "item": {
+                **answer, "status": "in_progress", "content": [{"type": "output_text", "text": ""}]}})
+            yield self.sse({"type": "response.output_text.delta", "output_index": 1, "delta": "New answer."})
+            yield self.sse({"type": "response.completed", "response": {"output": [reason, answer]}})
+        await self.consume_outer(body(), messages=[{"role": "assistant", "content": "Old answer."}])
+        self.assertEqual(self.saved[-1]["output"], [old, reason, answer])
+        self.assertIn('Old answer.', self.saved[-1]["content"])
+        self.assertIn('New private thought', self.saved[-1]["content"].split('</details>')[0])
+        self.assertNotIn('New private thought', self.saved[-1]["content"].split('</details>')[-1])
 
     async def test_outer_final_state_is_saved_even_with_realtime_enabled(self):
         self.scope["ENABLE_REALTIME_CHAT_SAVE"] = True

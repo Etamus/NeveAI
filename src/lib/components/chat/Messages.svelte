@@ -5,21 +5,12 @@
 
 <script lang="ts">
 	import { v4 as uuidv4 } from 'uuid';
-	import {
-		chats,
-		config,
-		settings,
-		user as _user,
-		mobile,
-		currentChatPage,
-		temporaryChatEnabled
-	} from '$lib/stores';
-	import { tick, getContext, setContext, onMount, onDestroy, createEventDispatcher } from 'svelte';
+	import { chats, user as _user, currentChatPage, temporaryChatEnabled } from '$lib/stores';
+	import { tick, getContext, setContext, onDestroy, createEventDispatcher } from 'svelte';
 	const dispatch = createEventDispatcher();
 
 	import { toast } from 'svelte-sonner';
 	import { getChatList, updateChatById } from '$lib/apis/chats';
-	import { copyToClipboard, extractCurlyBraceWords } from '$lib/utils';
 	import { lockHistoryScroll, observeHistoryBoundary, waitForHistoryLayout } from '$lib/utils/historyScrollLock';
 
 	import Message from './Messages/Message.svelte';
@@ -242,22 +233,63 @@
 
 	let branchNavigating = false;
 	let branchRestoreFrame = 0;
-	const beginBranchNavigation = () => {
+	let branchAnchor: { id: string; parentId: string | null; role: string; offset: number } | null = null;
+	let branchWindowIds = new Set<string>();
+	const beginBranchNavigation = (messageId: string) => {
 		cancelAnimationFrame(branchRestoreFrame);
 		branchNavigating = true;
 		autoScroll = false;
-		return getMessagesContainer()?.scrollTop ?? 0;
+		branchWindowIds = new Set(messages.map((message) => message.id));
+		const viewport = getMessagesContainer();
+		const element = document.getElementById(`message-${messageId}`);
+		const source = history.messages[messageId];
+		branchAnchor = viewport && element && source ? {
+			id: messageId, parentId: source.parentId, role: source.role,
+			offset: element.getBoundingClientRect().top - viewport.getBoundingClientRect().top
+		} : null;
+		return viewport?.scrollTop ?? 0;
 	};
 	const restoreBranchScroll = async (scrollTop: number) => {
+		const anchor = branchAnchor;
+		let anchorId: string | null = null;
+		let message = history.messages[history.currentId];
+		let distance = 0;
+		let requiredCount = 0;
+		const visited = new Set<string>();
+		while (message && !visited.has(message.id)) {
+			visited.add(message.id);
+			if (branchWindowIds.has(message.id)) requiredCount = distance;
+			if (!anchorId && anchor && (message.id === anchor.id ||
+				(message.parentId === anchor.parentId && message.role === anchor.role))) {
+				anchorId = message.id;
+				requiredCount = Math.max(requiredCount, distance);
+			}
+			distance++;
+			message = history.messages[message.parentId];
+		}
+		// Keep the shared, already loaded prefix when the new branch has a longer tail.
+		if (anchorId && messagesCount !== null && requiredCount !== messagesCount) {
+			messagesCount = requiredCount;
+			buildMessages();
+		}
 		await tick();
-		const viewport = getMessagesContainer();
-		if (viewport) viewport.scrollTop = Math.min(scrollTop, Math.max(0, viewport.scrollHeight - viewport.clientHeight));
-		branchRestoreFrame = requestAnimationFrame(() => { branchNavigating = false; });
+		// Multi-model groups initialize their selected response in a nested mount update.
+		await tick();
+		const align = () => {
+			const viewport = getMessagesContainer();
+			if (!viewport) return;
+			const element = anchorId ? document.getElementById(`message-${anchorId}`) : null;
+			viewport.scrollTop = anchor && element
+				? viewport.scrollTop + element.getBoundingClientRect().top - viewport.getBoundingClientRect().top - anchor.offset
+				: Math.min(scrollTop, Math.max(0, viewport.scrollHeight - viewport.clientHeight));
+		};
+		align();
+		branchRestoreFrame = requestAnimationFrame(() => { align(); branchNavigating = false; branchAnchor = null; branchWindowIds.clear(); });
 	};
 	setContext('branch-navigation', { begin: beginBranchNavigation, restore: restoreBranchScroll, active: () => branchNavigating });
 
 	const gotoMessage = async (message: any, idx: number) => {
-		const scrollTop = beginBranchNavigation();
+		const scrollTop = beginBranchNavigation(message.id);
 		// Determine the correct sibling list (either parent's children or root messages)
 		let siblings;
 		if (message.parentId !== null) {
@@ -289,7 +321,7 @@
 	};
 
 	const showPreviousMessage = async (message) => {
-		const scrollTop = beginBranchNavigation();
+		const scrollTop = beginBranchNavigation(message.id);
 		if (message.parentId !== null) {
 			let messageId =
 				history.messages[message.parentId].childrenIds[
@@ -328,7 +360,7 @@
 	};
 
 	const showNextMessage = async (message) => {
-		const scrollTop = beginBranchNavigation();
+		const scrollTop = beginBranchNavigation(message.id);
 		if (message.parentId !== null) {
 			let messageId =
 				history.messages[message.parentId].childrenIds[

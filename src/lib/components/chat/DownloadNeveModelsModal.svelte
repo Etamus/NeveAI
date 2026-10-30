@@ -95,13 +95,14 @@
 	import { toast } from 'svelte-sonner';
 
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 	import { getModels } from '$lib/apis';
-	import { models, neveDownloadToast, showArtifacts } from '$lib/stores';
+	import { models, neveDownloadToast, showArtifacts, mobile } from '$lib/stores';
 
 	import {
 		cancelNeveDownload,
@@ -601,16 +602,17 @@
 
 <Modal
 	bind:show
+	mobileFullscreen
 	animated={false}
 	size="w-[min(40rem,calc(100vw-1rem))]"
 	containerClassName="p-2 sm:p-3"
 	className="bg-white dark:bg-gray-900 rounded-xl max-h-[calc(100dvh-1rem)] overflow-hidden"
 >
-	<div class="flex max-h-[calc(100dvh-1rem)] flex-col">
+	<div class="download-models-shell flex max-h-[calc(100dvh-1rem)] flex-col">
 		<div
 			class="flex h-[60px] min-h-[60px] shrink-0 items-center justify-between border-b border-gray-200/30 px-5 dark:border-gray-700/20 dark:text-gray-300"
 		>
-			<div class="self-center text-lg font-medium text-black dark:text-[#eee]">{$i18n.t('Baixar modelos')}</div>
+			<div class="self-center text-lg font-medium text-black dark:text-[#eee]"><MobileModalTitle>{$i18n.t('Baixar modelos')}</MobileModalTitle></div>
 			<div class="flex items-center gap-1.5">
 				{#if downloading}
 					<Dropdown
@@ -686,8 +688,8 @@
 						</div>
 					</Dropdown>
 				{/if}
-				<button
-					class="self-center"
+				<button data-mobile-modal-close
+					class="download-models-close self-center"
 					on:click={() => {
 						show = false;
 					}}
@@ -697,8 +699,8 @@
 			</div>
 		</div>
 
-		<div class="flex min-h-0 w-full flex-col px-5 pt-4 pb-1 dark:text-gray-200">
-			<div class="flex h-[min(490px,calc(100dvh-164px))] min-h-[192px] flex-col gap-1 overflow-y-auto pr-1">
+		<div class="download-models-body flex min-h-0 w-full flex-col px-5 pt-4 pb-1 dark:text-gray-200">
+			<div class="download-models-list flex h-[min(490px,calc(100dvh-164px))] min-h-[192px] flex-col gap-1 overflow-y-auto pr-1">
 				{#if loading && catalog.length === 0}
 					<div class="flex h-full items-center justify-center">
 						<Spinner className="size-5" />
@@ -725,7 +727,7 @@
 						{@const isQueuedDownload = queuedModelIds.includes(item.id)}
 						{@const isDownloadMarked = selected || isCurrentDownload || isQueuedDownload}
 						<div
-							class="relative box-border h-[66px] min-h-[66px] max-h-[66px] shrink-0 rounded-lg border transition-colors {item.installed
+							class="catalog-model-card relative box-border h-[66px] min-h-[66px] max-h-[66px] shrink-0 rounded-lg border transition-colors {item.installed
 								? 'opacity-70 border-transparent'
 								: selected || isCurrentDownload || isQueuedDownload
 								? `${downloading ? 'cursor-default' : ''} border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-850`
@@ -760,11 +762,11 @@
 								/>
 
 								<div class="grid h-10 min-w-0 grid-rows-[1.25rem_1.25rem] self-center">
-									<div class="flex h-5 min-w-0 items-center gap-1.5 overflow-hidden">
-									<span class="shrink-0 text-sm font-semibold leading-none">
+									<div class="catalog-model-heading flex h-5 min-w-0 items-center gap-1.5 overflow-hidden">
+									<span class="catalog-model-name shrink-0 text-sm font-semibold leading-none" title={$mobile ? item.name : undefined}>
 										{item.name}
 									</span>
-									<div class="flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden">
+									<div class="catalog-model-badges flex min-w-0 flex-nowrap items-center gap-1 overflow-hidden">
 										{#each modelBadges[item.id] ?? [] as badge}
 											<span class="inline-flex h-5 items-center rounded-md bg-gray-100 px-1.5 text-[10px] font-medium leading-none text-gray-600 dark:bg-gray-800 dark:text-gray-300">
 												{badge}
@@ -773,10 +775,11 @@
 									</div>
 									</div>
 									<div
-										class="relative top-[4px] h-5 overflow-hidden whitespace-nowrap text-gray-500 dark:text-gray-400"
+										class="catalog-model-description relative top-[4px] h-5 overflow-hidden whitespace-nowrap text-gray-500 dark:text-gray-400"
+										title={item.description}
 										style="font-size: 14px !important; line-height: 1.08rem; transform: scale(1.04); transform-origin: left center; width: calc(100% / 1.04);"
 									>
-										{item.description}
+										{$mobile && Array.from(item.description ?? '').length > 42 ? Array.from(item.description).slice(0, 39).join('') + '...' : item.description}
 									</div>
 								</div>
 
@@ -829,7 +832,7 @@
 						{#if !downloading}
 							<button
 								type="button"
-								class="shrink-0 text-xs font-medium text-gray-400 transition hover:text-gray-700 disabled:cursor-default disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-200"
+								class="catalog-selection-toggle shrink-0 text-xs font-medium text-gray-400 transition hover:text-gray-700 disabled:cursor-default disabled:opacity-50 dark:text-gray-500 dark:hover:text-gray-200"
 								disabled={loading}
 								on:click={selectedDownloadCount > 0 ? clearSelections : selectAllModels}
 							>
@@ -848,27 +851,8 @@
 							{/if}
 						{/if}
 				</div>
-					{#if false}
-						<div class="hidden">
-							<button
-								type="button"
-								class="px-1 text-sm leading-none text-gray-400 transition hover:text-gray-900 dark:text-gray-500 dark:hover:text-gray-100"
-								aria-label="Limpar seleção"
-								on:click={() => {}}
-							>
-								-
-							</button>
-							<span class="whitespace-nowrap">
-								{selectedDownloadCount}
-								{selectedDownloadCount === 1 ? 'item selecionado' : 'itens selecionados'}
-							</span>
-							<span class="whitespace-nowrap font-medium text-gray-600 dark:text-gray-300">
-								{selectedDownloadSizeLabel}
-							</span>
-						</div>
-					{/if}
 				<button
-						class="ml-2 px-4 py-1.5 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg disabled:opacity-40 flex items-center gap-2"
+						class="catalog-download-button ml-2 px-4 py-1.5 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg disabled:opacity-40 flex items-center gap-2"
 						disabled={selectedDownloadCount === 0 || loading || downloading}
 						on:click={handleDownload}
 					>
@@ -893,12 +877,24 @@
 />
 
 <style>
-	@media (max-width: 640px) {
-		.catalog-model-row { grid-template-columns: auto auto minmax(0, 1fr) 3.5rem; gap: 0.25rem; padding-inline: 0.25rem; }
-		.catalog-model-row > img { width: 1.5rem; height: 1.5rem; }
+	@media (max-width: 767px) {
+		.download-models-shell { height: 100%; max-height: 100%; }
+		.download-models-close { display: none; }
+		.catalog-model-description { max-width: min(33ch, 100%); text-overflow: ellipsis; }
+		.catalog-selection-toggle { margin-left: 10px; }
+		.catalog-download-button { margin-right: 6px; }
+		.download-models-body { flex: 1; padding-inline: 12px; }
+		.download-models-list { flex: 1; height: auto; min-height: 0; }
+		.catalog-model-row { grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 14px; padding-inline: 8px; }
+		.catalog-model-row > img { width: 2rem; height: 2rem; }
+		.catalog-model-card { height: 88px; min-height: 88px; max-height: 88px; }
+		.catalog-model-row > div:nth-child(3) { height: auto; grid-template-rows: auto auto; row-gap: 4px; }
+		.catalog-model-heading { height: 20px; flex-wrap: nowrap; }
+		.catalog-model-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+		.catalog-model-badges { flex-shrink: 0; }
+		.catalog-model-row > div:nth-child(3) > div:first-child > div > span { height: 18px; flex-shrink: 0; white-space: nowrap; }
 		.catalog-model-row > div:last-child { width: 100%; }
 		.catalog-model-row > div:last-child :global(button),
 		.catalog-model-row > div:last-child > span { padding-inline: 0; font-size: 10px; }
-		.catalog-model-row > div:nth-child(3) > div:first-child > span { min-width: 0; flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	}
 </style>

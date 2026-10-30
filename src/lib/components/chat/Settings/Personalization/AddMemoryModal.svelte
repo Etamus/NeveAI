@@ -2,6 +2,7 @@
 	import { createEventDispatcher, getContext } from 'svelte';
 
 	import Modal from '$lib/components/common/Modal.svelte';
+	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import { addNewMemory } from '$lib/apis/memories';
 	import { toast } from 'svelte-sonner';
 	import Spinner from '$lib/components/common/Spinner.svelte';
@@ -40,9 +41,9 @@
 	<div>
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20">
 			<div class=" text-lg font-medium self-center">
-				{$i18n.t('Add Memory')}
+				<MobileModalTitle>{$i18n.t('Add Memory')}</MobileModalTitle>
 			</div>
-			<button
+			<button data-mobile-modal-close
 				class="self-center"
 				on:click={() => {
 					show = false;
