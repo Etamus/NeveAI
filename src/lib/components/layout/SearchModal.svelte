@@ -14,7 +14,7 @@
 
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { getContext, onDestroy, onMount, tick } from 'svelte';
+	import { getContext, onDestroy, tick } from 'svelte';
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
 
@@ -61,6 +61,8 @@
 
 	let searchDebounceTimeout;
 	let searchRequestId = 0;
+	let previewRequestId = 0;
+	let searchShell: HTMLDivElement;
 	let wasShown = false;
 
 	let selectedIdx = null;
@@ -71,11 +73,12 @@
 	let history = null;
 	let messages = null;
 
-	$: if (!chatListLoading && chatList) {
+	$: if (show && !chatListLoading && chatList) {
 		loadChatPreview(selectedIdx);
 	}
 
 	const loadChatPreview = async (selectedIdx) => {
+		const requestId = ++previewRequestId;
 		if (!chatList || chatList.length === 0 || selectedIdx === null) {
 			selectedChat = null;
 			messages = null;
@@ -98,8 +101,10 @@
 		const chat = await getChatById(localStorage.token, chatId).catch(async (error) => {
 			return null;
 		});
+		if (requestId !== previewRequestId || !show || chatList?.[selectedChatIdx]?.id !== chatId) return;
 
 		if (chat) {
+			selectedChat = chat;
 			if (chat?.chat?.history) {
 				selectedModels =
 					(chat?.chat?.models ?? undefined) !== undefined
@@ -135,7 +140,7 @@
 		searchModalCache.allChatsLoaded = allChatsLoaded;
 	};
 
-	const searchHandler = async () => {
+	const searchHandler = async (immediate = false) => {
 		if (!show) {
 			return;
 		}
@@ -147,6 +152,10 @@
 		page = 1;
 		const currentQuery = query;
 		const requestId = ++searchRequestId;
+		previewRequestId += 1;
+		chatListLoading = true;
+		selectedIdx = null;
+		keyboardSelection = false;
 		selectedChat = null;
 		messages = null;
 		history = null;
@@ -157,14 +166,20 @@
 			try {
 				const nextChatList =
 					currentQuery === ''
-						? await getChatList(localStorage.token, page)
-						: await getChatListBySearchText(localStorage.token, currentQuery, page);
+						? await getChatList(localStorage.token, 1)
+						: await getChatListBySearchText(localStorage.token, currentQuery, 1);
 
-				if (requestId !== searchRequestId || currentQuery !== query) return;
+				if (!show || requestId !== searchRequestId || currentQuery !== query) return;
 
 				chatList = nextChatList;
 				allChatsLoaded = (chatList ?? []).length === 0;
 				persistSearchCache();
+			} catch (error) {
+				if (show && requestId === searchRequestId) {
+					chatList = [];
+					allChatsLoaded = true;
+					toast.error(`${error}`);
+				}
 			} finally {
 				if (requestId === searchRequestId) {
 					chatListLoading = false;
@@ -172,7 +187,7 @@
 			}
 		};
 
-		if (currentQuery === '') {
+		if (immediate || currentQuery === '') {
 			await runSearch();
 		} else {
 			searchDebounceTimeout = setTimeout(runSearch, 500);
@@ -180,26 +195,25 @@
 	};
 
 	const loadMoreChats = async () => {
+		if (!show || chatListLoading || allChatsLoaded) return;
+		const requestId = searchRequestId;
+		const currentQuery = query;
+		const nextPage = page + 1;
 		chatListLoading = true;
-		page += 1;
-
-		let newChatList = [];
-
-		if (query) {
-			newChatList = await getChatListBySearchText(localStorage.token, query, page);
-		} else {
-			newChatList = await getChatList(localStorage.token, page);
-		}
-
-		// once the bottom of the list has been reached (no results) there is no need to continue querying
-		allChatsLoaded = newChatList.length === 0;
-
-		if (newChatList.length > 0) {
-			chatList = [...(chatList ?? []), ...newChatList];
+		try {
+			const newChatList = currentQuery
+				? await getChatListBySearchText(localStorage.token, currentQuery, nextPage)
+				: await getChatList(localStorage.token, nextPage);
+			if (!show || requestId !== searchRequestId || currentQuery !== query) return;
+			page = nextPage;
+			allChatsLoaded = newChatList.length === 0;
+			if (newChatList.length > 0) chatList = [...(chatList ?? []), ...newChatList];
 			persistSearchCache();
+		} catch (error) {
+			if (show && requestId === searchRequestId) toast.error(`${error}`);
+		} finally {
+			if (requestId === searchRequestId) chatListLoading = false;
 		}
-
-		chatListLoading = false;
 	};
 
 	$: if (show && !wasShown) {
@@ -209,74 +223,52 @@
 		searchHandler();
 	} else if (!show && wasShown) {
 		wasShown = false;
+		clearTimeout(searchDebounceTimeout);
+		searchRequestId += 1;
+		previewRequestId += 1;
+		chatListLoading = false;
 	}
 
-	const onKeyDown = (e) => {
-		const searchOptions = document.getElementById('search-options-container');
-		if (searchOptions || !show) {
-			return;
-		}
-		if (e.code === 'ArrowDown' || e.code === 'ArrowUp') keyboardSelection = true;
-
-		if (e.code === 'Escape') {
+	const onKeyDown = (event: KeyboardEvent) => {
+		if (!show || event.isComposing || !['Enter', 'Escape', 'ArrowDown', 'ArrowUp'].includes(event.key)) return;
+		event.stopPropagation();
+		if (event.key === 'Enter' && (event.target as HTMLElement).closest('a, button')) return;
+		event.preventDefault();
+		if (event.key === 'Escape') {
 			show = false;
 			onClose();
-		} else if (e.code === 'Enter') {
-			const item = document.querySelector(`[data-arrow-selected="true"]`);
-			if (item) {
-				(item as HTMLElement).click();
-				show = false;
-			}
-
 			return;
-		} else if (e.code === 'ArrowDown') {
-			const searchInput = document.getElementById('search-input');
-
-			if (searchInput) {
-				// check if focused on the search input
-				if (document.activeElement === searchInput) {
-					searchInput.blur();
-					selectedIdx = 0;
-					return;
-				}
-			}
-
-			selectedIdx = Math.min(selectedIdx + 1, (chatList ?? []).length - 1 + actions.length);
-		} else if (e.code === 'ArrowUp') {
-			if (selectedIdx === 0) {
-				const searchInput = document.getElementById('search-input');
-
-				if (searchInput) {
-					// check if focused on the search input
-					if (document.activeElement !== searchInput) {
-						searchInput.focus();
-						selectedIdx = 0;
-						return;
-					}
-				}
-			}
-
-			selectedIdx = Math.max(selectedIdx - 1, 0);
 		}
-
-		const item = document.querySelector(`[data-arrow-selected="true"]`);
-		item?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+		if (event.key === 'Enter') {
+			const selected = keyboardSelection && !chatListLoading
+				? searchShell?.querySelector<HTMLElement>('[data-arrow-selected="true"]') : null;
+			if (selected) selected.click();
+			else void searchHandler(true);
+			return;
+		}
+		if (chatListLoading) return;
+		keyboardSelection = true;
+		const lastIndex = actions.length + (chatList?.length ?? 0) - 1;
+		selectedIdx = selectedIdx === null
+			? event.key === 'ArrowDown' ? (query && chatList?.length ? actions.length : 0) : lastIndex
+			: Math.min(lastIndex, Math.max(0, selectedIdx + (event.key === 'ArrowDown' ? 1 : -1)));
+		void tick().then(() => searchShell?.querySelector<HTMLElement>('[data-arrow-selected="true"]')?.scrollIntoView({block: 'nearest'}));
 	};
-
-	onMount(() => {
-		document.addEventListener('keydown', onKeyDown);
-	});
 
 	onDestroy(() => {
 		if (searchDebounceTimeout) {
 			clearTimeout(searchDebounceTimeout);
 		}
-		document.removeEventListener('keydown', onKeyDown);
+		searchRequestId += 1;
+		previewRequestId += 1;
 	});
 </script>
 
 <Modal size="w-[60rem]" bind:show mobileFullscreen containerClassName="p-2 sm:p-3 outline-none" initialFocus="#search-input" keepMounted>
+	<!-- svelte-ignore a11y_no_static_element_interactions (Delegates keyboard events from the search controls.) -->
 	<div
+		bind:this={searchShell}
+		on:keydown={onKeyDown}
 		class="search-modal-shell py-3 dark:text-gray-300 text-gray-700 flex flex-col"
 		style="height: min(39rem, calc(100dvh - 1.5rem));"
 	>
@@ -285,35 +277,13 @@
 			<div class="min-w-0 flex-1">
 				<SearchInput
 					bind:value={query}
-					on:input={searchHandler}
+					on:input={(event) => { query = event.detail; void searchHandler(); }}
 					placeholder={$i18n.t('Search')}
 					showClearButton={false}
 					onFocus={() => {
 						selectedIdx = null;
 						keyboardSelection = false;
 						messages = null;
-					}}
-					onKeydown={(e) => {
-						if (e.code === 'ArrowDown' || e.code === 'ArrowUp') keyboardSelection = true;
-
-						if (e.code === 'Enter' && (chatList ?? []).length > 0) {
-							const item = document.querySelector(`[data-arrow-selected="true"]`);
-							if (item) {
-								(item as HTMLElement).click();
-							}
-
-							show = false;
-							return;
-						} else if (e.code === 'ArrowDown') {
-							selectedIdx = Math.min(selectedIdx + 1, (chatList ?? []).length - 1 + actions.length);
-						} else if (e.code === 'ArrowUp') {
-							selectedIdx = Math.max(selectedIdx - 1, 0);
-						} else {
-							selectedIdx = 0;
-						}
-
-						const item = document.querySelector(`[data-arrow-selected="true"]`);
-						item?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
 					}}
 				/>
 			</div>
@@ -416,7 +386,7 @@
 								keyboardSelection = false;
 								selectedIdx = idx + actions.length;
 							}}
-							on:click={async () => {
+							on:click|preventDefault={async () => {
 								await goto(`/c/${chat.id}`);
 								show = false;
 								onClose();

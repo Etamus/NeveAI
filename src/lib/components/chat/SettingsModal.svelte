@@ -3,6 +3,7 @@
 	import { toast } from 'svelte-sonner';
 	import { config, models, settings, user, showSettingsTab, mobile } from '$lib/stores';
 	import { updateUserSettings } from '$lib/apis/users';
+	import { memoryListCache } from '$lib/utils/memoryList';
 	import { getModels as _getModels } from '$lib/apis';
 
 	import Modal from '../common/Modal.svelte';
@@ -25,6 +26,9 @@
 	const i18n = getContext<I18nStore>('i18n');
 
 	export let show = false;
+	$: if (show && $user?.id && $config?.features?.enable_memories) {
+		void memoryListCache.load($user.id, localStorage.token).catch(() => {});
+	}
 	let wasShown = false;
 	let mobileSettingsPage = false;
 	const selectTab = (tab: string) => {

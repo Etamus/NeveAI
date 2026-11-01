@@ -32,6 +32,7 @@
 	const i18n = getContext<I18nStore>('i18n');
 
 	import { config, models as _models, settings, showSettingsModelId, mobile } from '$lib/stores';
+	import { modelAvailability, projectAvailableModels, refreshModelAvailability } from '$lib/stores/modelAvailability';
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import { page } from '$app/stores';
 
@@ -62,7 +63,6 @@
 		type UnifiedModelsPreload
 	} from '$lib/utils/unifiedModelsData';
 
-	import ModelSettingsModal from '$lib/components/admin/Settings/Models/ModelSettingsModal.svelte';
 	import DownloadNeveModelsModal from '$lib/components/chat/DownloadNeveModelsModal.svelte';
 	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import ModelEditor from '$lib/components/workspace/Models/ModelEditor.svelte';
@@ -83,9 +83,9 @@
 	export let show = false;
 
 	// ─── LOCAL MODEL STATE ───────────────────────────────────────────────────
-	let localModels: LocalModel[] = [];
-	let mmProjFiles: string[] = [];
-	let localLoading = false;
+	let localModels: LocalModel[] = preload?.loaded ? (preload.localModels ?? []) : [];
+	let mmProjFiles: string[] = preload?.loaded ? (preload.mmProjFiles ?? []) : [];
+	let localLoading = !preload?.loaded;
 	let loadingModels: Set<string> = new Set();
 	let settlingUnloadModels: Set<string> = new Set();
 	let pinnedUnloadModels: Set<string> = new Set();
@@ -94,7 +94,7 @@
 	let localModelActions: Record<string, 'load' | 'unload'> = {};
 	let localError = '';
 	let localSuccess = '';
-	let vramInfo: LocalVramInfo | null = null;
+	let vramInfo: LocalVramInfo | null = preload?.loaded ? (preload.vramInfo ?? null) : null;
 	let llamacppStatus: LlamaCppStatus | null = null;
 	let vramPreviewModel: LocalModel | null = null;
 	const unsubscribeLocalModelProcessing = localModelProcessingStore.subscribe((state) => {
@@ -187,8 +187,11 @@
 		if (vramPreviewModel?.filename === model.filename) vramPreviewModel = null;
 	};
 
-	$: loadedLocalModel = localModels.find((model) => model.is_loaded) ?? null;
-	$: localModelActionInProgress = loadingModels.size > 0 || settlingUnloadModels.size > 0;
+	let manualRuntimeUpdatedAt = 0;
+	$: modelsBlocked = !$modelAvailability.known || $modelAvailability.busy;
+	$: visibleLocalModels = projectAvailableModels(localModels, $modelAvailability, localModelsSnapshotAt, manualRuntimeUpdatedAt);
+	$: loadedLocalModel = visibleLocalModels.find((model) => model.is_loaded) ?? null;
+	$: localModelActionInProgress = modelsBlocked || loadingModels.size > 0 || settlingUnloadModels.size > 0;
 	$: vramTotalBytes = vramInfo?.total ?? 0;
 	$: vramActualUsed = vramInfo?.used ?? 0;
 	$: vramPreviewBytes = vramPreviewModel ? estimateModelVramBytes(vramPreviewModel) : 0;
@@ -218,13 +221,12 @@
 
 	// ─── ADMIN MODEL STATE ───────────────────────────────────────────────────
 
-	let adminModels: any[] = [];
-	let workspaceModels: any[] | null = null;
-	let baseModels: any[] | null = null;
+	let adminModels: any[] = preload?.loaded ? (preload.adminModels ?? []) : [];
+	let workspaceModels: any[] | null = preload?.loaded ? (preload.workspaceModels ?? []) : null;
+	let baseModels: any[] | null = preload?.loaded ? (preload.baseModels ?? []) : null;
 	let selectedModelId: string | null = null;
 	export let mobileStep = '';
 	$: mobileStep = selectedModelId ?? '';
-	let showConfigModal = false;
 	let showDownloadModal = false;
 	let viewOption = '';
 	let preloadApplied = false;
@@ -783,7 +785,7 @@
 		const adminById = new Map((adminModels ?? []).map((m: any) => [m.id, m]));
 		const ggufIds = new Set(localModels.map((gm) => gm.id).filter(Boolean));
 
-		const ggufItems = localModels
+		const ggufItems = visibleLocalModels
 			.map((gm) => ({ key: `gguf:${gm.id ?? gm.filename}`, gguf: gm, admin: adminById.get(gm.id) ?? null }));
 
 		// Sort GGUFs: loaded/unloading first, then unloaded. Loading stays in place.
@@ -814,7 +816,7 @@
 		return [...ggufItems, ...adminOnlyItems];
 	})();
 
-	$: unloadingLocalModel = localModels.find((model) => isLocalModelUnloadPinned(model)) ?? null;
+	$: unloadingLocalModel = modelsBlocked ? null : visibleLocalModels.find((model) => isLocalModelUnloadPinned(model)) ?? null;
 	$: activeHighlightedModelKey = loadedLocalModel?.filename ?? unloadingLocalModel?.filename ?? null;
 	$: if (activeHighlightedModelKey && activeHighlightedModelKey !== highlightedLoadedModelId) {
 		disableCollapseAnimation();
@@ -831,6 +833,7 @@
 		const closingModal = !show && previousShow;
 		previousShow = show;
 		if (openingModal) {
+			void refreshModelAvailability();
 			selectedModelId = null;
 			guardReopenedUnloadVisuals();
 			disableCollapseAnimation();
@@ -851,7 +854,7 @@
 		mergedModels.find(
 			(item) =>
 				item.gguf?.is_loaded ||
-				(item.gguf && isLocalModelUnloadPinned(item.gguf))
+				(!modelsBlocked && item.gguf && isLocalModelUnloadPinned(item.gguf))
 		) ?? null;
 	$: if (reopenedUnloadVisualModels.size > 0) {
 		const highlightedFilename = highlightedLoadedItem?.gguf?.filename ?? null;
@@ -1025,6 +1028,7 @@
 		}
 
 		if (detail.phase === 'success') {
+			manualRuntimeUpdatedAt = detail.timestamp;
 			let runtimeStatePatched = false;
 			if (detail.action === 'load') {
 				const model = localModels.find(
@@ -1252,6 +1256,7 @@
 	};
 
 	async function performUnifiedModelRefresh(initial: boolean): Promise<LocalModel[] | null> {
+		void refreshModelAvailability();
 		const runtimeUpdatedAt = Date.now();
 		if (initial) localLoading = true;
 		try {
@@ -1283,7 +1288,7 @@
 			return null;
 		} finally {
 			if (!destroyed) await refreshLocalVram();
-			if (initial) localLoading = false;
+			localLoading = false;
 		}
 	}
 
@@ -1506,14 +1511,13 @@
 	};
 </script>
 
-<ModelSettingsModal bind:show={showConfigModal} initHandler={initAdmin} />
 <DownloadNeveModelsModal
 	bind:show={showDownloadModal}
 	on:modelsChanged={refreshAfterCatalogChange}
 />
 
 {#snippet searchBar()}
-	<div class="px-3.5 flex shrink-0 items-center w-full space-x-2 py-0.5 pb-2">
+	<div class="px-3.5 flex shrink-0 items-center w-full space-x-2 py-0.5 pb-2 {modelsBlocked ? 'opacity-50 grayscale' : ''}">
 		<div class="flex flex-1 items-center">
 			<div class="self-center ml-1 mr-3">
 				<Search className="size-3.5" />
@@ -1528,7 +1532,7 @@
 {/snippet}
 
 {#snippet vramMeter()}
-	<div class="px-3.5 pb-2 shrink-0">
+	<div data-vram-meter class="px-3.5 pb-2 shrink-0">
 		{#if vramInfo === null}
 			<div class="rounded-xl border border-gray-200/70 dark:border-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
 				<div class="flex items-center justify-between gap-3">
@@ -1588,7 +1592,7 @@
 	{@const modelName = am?.name ?? gm?.filename?.replace('.gguf', '') ?? ''}
 	{@const isUnloadVisualProcessing = gm && isHighlighted && (isLocalModelUnloading(gm.filename) || visualUnloadModels.has(gm.filename) || reopenedUnloadVisualModels.has(gm.filename))}
 	{@const isLoadProcessing = gm && localModelActions[gm.filename] === 'load' && loadingModels.has(gm.filename)}
-	{@const isProcessing = gm && (isLoadProcessing || isUnloadVisualProcessing)}
+	{@const isProcessing = !modelsBlocked && gm && (isLoadProcessing || isUnloadVisualProcessing)}
 	{@const rowHeight = HIGHLIGHTED_MODEL_ROW_HEIGHT_PX}
 	<div
 		class="flex w-full snap-start shrink-0 overflow-hidden px-1 sm:px-3 py-1 {(am?.meta?.hidden || (am && !(am?.is_active ?? true))) ? 'opacity-50' : ''}"
@@ -1685,6 +1689,7 @@
 					{:else if gm.is_loaded}
 						<Tooltip content="Descarregar">
 							<button
+								aria-label="Descarregar"
 								class="flex items-center justify-center p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-500 dark:text-gray-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
 								disabled={localModelActionInProgress}
 								on:click={() => {
@@ -1700,6 +1705,7 @@
 					{:else}
 						<Tooltip content="Carregar">
 							<button
+								aria-label="Carregar"
 								class="flex items-center justify-center p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-500 dark:text-gray-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
 								disabled={localModelActionInProgress}
 								on:mouseenter={() => showVramPreview(gm)}
@@ -1767,19 +1773,13 @@
 					>
 						<span>{$i18n.t('Baixar modelos')}</span>
 					</button>
-					<button
-						class="unified-global-settings flex text-xs items-center gap-1 px-3 py-1.5 rounded-lg bg-black hover:bg-gray-900 text-white dark:bg-white dark:hover:bg-gray-100 dark:text-black transition font-medium"
-						type="button"
-						on:click={() => (showConfigModal = true)}
-					>
-						<span>{$i18n.t('Configura\u00e7\u00f5es globais')}</span>
-					</button>
 				</div>
 			</div>
 
 			<!-- Fixed controls + scrollable models -->
 			<div class="unified-models-body min-h-0 overflow-hidden px-3.5 pb-2">
-				<div class="unified-model-catalog flex max-h-full min-h-0 flex-col overflow-hidden rounded-3xl bg-white py-2 dark:bg-gray-900">
+					<div inert={modelsBlocked} aria-disabled={modelsBlocked} data-models-blocked={modelsBlocked}
+						class="unified-model-catalog flex max-h-full min-h-0 flex-col overflow-hidden rounded-3xl bg-white py-2 dark:bg-gray-900">
 					{#if !hasHighlightedLoadedModel}
 						{@render searchBar()}
 					{/if}
@@ -1793,7 +1793,7 @@
 					{/if}
 
 					{#if $mobile || !hasHighlightedLoadedModel || !modelsBelowLoadedCollapsed}
-						<div class="unified-model-list-section min-h-0 overflow-hidden" transition:slide={{ duration: collapseAnimationEnabled ? 180 : 0 }}>
+						<div class="unified-model-list-section min-h-0 overflow-hidden {modelsBlocked ? 'opacity-50 grayscale' : ''}" transition:slide={{ duration: collapseAnimationEnabled ? 180 : 0 }}>
 							<div
 								class="unified-model-list min-h-0 pb-0 {$mobile ? 'overflow-visible' : `snap-y snap-mandatory overscroll-contain ${modelListPaginationCount === 0 ? 'mr-0 overflow-hidden pr-0' : 'mr-1 overflow-y-auto pr-1'}`}"
 								style={$mobile ? undefined : modelListViewportStyle}
@@ -1826,7 +1826,7 @@
 						{/if}
 
 					{#if !$mobile && hasCollapsibleModelsBelow}
-						<div class="flex shrink-0 justify-center px-3 pt-2 pb-1">
+						<div class="flex shrink-0 justify-center px-3 pt-2 pb-1 {modelsBlocked ? 'opacity-50 grayscale' : ''}">
 							<Tooltip content={modelsBelowLoadedCollapsed ? 'Mostrar modelos' : 'Ocultar modelos'}>
 								<button
 									type="button"
@@ -1879,7 +1879,6 @@
 		.unified-models-body { flex: 1; overflow-y: auto; }
 		.unified-model-catalog { max-height: none; overflow: visible; }
 		.unified-model-list-section { flex-shrink: 0; overflow: visible; }
-		.unified-global-settings { display: none; }
 		.unified-model-name { max-width: 22ch; }
 		.unified-model-meta { margin-top: 3px; }
 		.unified-model-card { padding-inline: 10px; column-gap: 14px; }

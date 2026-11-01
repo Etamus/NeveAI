@@ -13,6 +13,24 @@ async function setup(){
 	return import('./attachmentThumbnails');
 }
 describe('attachment preview cache',()=>{
+	it('cancels unreferenced queued work, but not a shared or immediately remounted preview',async()=>{
+		const {acquireAttachmentThumbnail}=await setup();
+		const first=acquireAttachmentThumbnail('/cancel.png');
+		const shared=acquireAttachmentThumbnail('/cancel.png');
+		const worker=state.workers[0];
+		first.release();await Promise.resolve();
+		expect(worker.postMessage).toHaveBeenCalledTimes(1);
+		shared.release();
+		const remount=acquireAttachmentThumbnail('/cancel.png');
+		await Promise.resolve();expect(worker.postMessage).toHaveBeenCalledTimes(1);
+		remount.release();await Promise.resolve();
+		expect(worker.postMessage).toHaveBeenLastCalledWith({cancel:1});
+		expect(await remount.ready).toBe('/cancel.png');
+		const next=acquireAttachmentThumbnail('/cancel.png');
+		expect(worker.postMessage).toHaveBeenLastCalledWith({id:2,source:'/cancel.png'});
+		worker.onmessage({data:{id:2,blob:new Blob(['valid'])}});
+		expect(await next.ready).toMatch(/^blob:/);next.release();
+	});
 	it('shares one decode across mounts and keeps referenced previews alive',async()=>{
 		const {acquireAttachmentThumbnail}=await setup();
 		const first=acquireAttachmentThumbnail('/image.png'),second=acquireAttachmentThumbnail('/image.png');

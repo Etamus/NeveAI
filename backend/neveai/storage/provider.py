@@ -13,15 +13,21 @@ class LocalStorageProvider:
     @staticmethod
     def upload_file(
         file: BinaryIO, filename: str, tags: Dict[str, str]
-    ) -> Tuple[bytes, str]:
-        contents = file.read()
-        if not contents:
-            raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)
-
+    ) -> Tuple[int, str]:
         file_path = f"{UPLOAD_DIR}/{filename}"
-        with open(file_path, "wb") as output:
-            output.write(contents)
-        return contents, file_path
+        size = 0
+        try:
+            with open(file_path, "wb") as output:
+                while chunk := file.read(1024 * 1024):
+                    output.write(chunk)
+                    size += len(chunk)
+            if not size:
+                raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)
+        except BaseException:
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+            raise
+        return size, file_path
 
     @staticmethod
     def get_file(file_path: str) -> str:

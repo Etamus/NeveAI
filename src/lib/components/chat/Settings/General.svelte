@@ -4,6 +4,7 @@
 	const dispatch = createEventDispatcher();
 
 	import { settings, theme, user } from '$lib/stores';
+	import { updateNotificationsEnabled } from '$lib/utils/updateToast';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import ManageFloatingActionButtonsModal from './Interface/ManageFloatingActionButtonsModal.svelte';
 	import { changeLanguage } from '$lib/i18n';
@@ -33,6 +34,8 @@
 
 	let enableMessageQueue = true;
 	let temporaryChatByDefault = false;
+	let showUpdateToast = true;
+	$: showUpdateToast = updateNotificationsEnabled($settings);
 	let showFloatingActionButtons = true;
 	let floatingActionButtons = null;
 	let showManageFloatingActionButtonsModal = false;
@@ -40,9 +43,6 @@
 	let widescreenMode = false;
 	let streamResponse = true;
 	let chatBubble = true;
-	let backgroundImageUrl: string | null = null;
-	let filesInputElement: HTMLInputElement;
-	let inputFiles: FileList | null = null;
 
 	let system = '';
 
@@ -125,7 +125,6 @@
 		widescreenMode = $settings?.widescreenMode ?? false;
 		streamResponse = $settings?.streamResponse ?? true;
 		chatBubble = $settings?.chatBubble ?? true;
-		backgroundImageUrl = $settings?.backgroundImageUrl ?? null;
 
 		system = $settings.system ?? '';
 
@@ -376,60 +375,21 @@
 				</div>
 			{/if}
 
-
-
-			<input
-				bind:this={filesInputElement}
-				bind:files={inputFiles}
-				type="file"
-				hidden
-				accept="image/*"
-				on:change={() => {
-					let reader = new FileReader();
-					reader.onload = (event) => {
-						let originalImageUrl = `${event.target.result}`;
-						backgroundImageUrl = originalImageUrl;
-						saveSettings({ backgroundImageUrl });
-					};
-
-					if (
-						inputFiles &&
-						inputFiles.length > 0 &&
-						['image/gif', 'image/webp', 'image/jpeg', 'image/png'].includes(inputFiles[0]['type'])
-					) {
-						reader.readAsDataURL(inputFiles[0]);
-					} else {
-						console.log(`Unsupported File Type '${inputFiles[0]['type']}'.`);
-						inputFiles = null;
-					}
-				}}
-			/>
-
-			<div>
-				<div class=" py-0.5 flex w-full justify-between">
-					<div id="chat-background-label" class=" self-center text-sm">
-						{$i18n.t('Chat Background Image')}
-					</div>
-
-					<button
-						aria-labelledby="chat-background-label background-image-url-state"
-						class="p-1 px-3 text-sm flex rounded-sm transition"
-						on:click={() => {
-							if (backgroundImageUrl !== null) {
-								backgroundImageUrl = null;
-								saveSettings({ backgroundImageUrl });
-							} else {
-								filesInputElement.click();
-							}
+			<div class="py-0.5 flex w-full justify-between gap-2">
+				<div id="update-notifications-label" class="self-center text-sm">
+					{$i18n.t('Allow update notifications')}
+				</div>
+				<div class="flex shrink-0 items-center gap-2 p-1">
+					<Switch
+						ariaLabelledbyId="update-notifications-label"
+						bind:state={showUpdateToast}
+						on:change={() => {
+							saveSettings({ showUpdateToast });
 						}}
-						type="button"
-					>
-						<span class="ml-2 self-center" id="background-image-url-state"
-							>{backgroundImageUrl !== null ? $i18n.t('Reset') : $i18n.t('Upload')}</span
-						>
-					</button>
+					/>
 				</div>
 			</div>
+
 
 		</div>
 

@@ -32,6 +32,72 @@ def element_batches(elements, max_chars=8_000, max_batches=32):
     return batches
 
 
+def planning_elements(elements, max_chars=8_000):
+    """Split oversized text for planning only; published edits still use original IDs."""
+    planned, fragments = [], {}
+    occupied = {element["id"] for element in elements}
+    for element in elements:
+        if not element.get("editable", True) or len(json.dumps(element, ensure_ascii=False)) <= max_chars:
+            planned.append(element)
+            continue
+        if element.get("is_formula") or not isinstance(element.get("text"), str):
+            planned.append(element)
+            continue
+        text, start = element["text"], 0
+        while start < len(text):
+            part_id = f"{element['id']}:fragment:{start}"
+            while part_id in occupied:
+                part_id += ":part"
+            occupied.add(part_id)
+            part = {**element, "id": part_id, "text": ""}
+            low, high = 0, len(text) - start
+            while low < high:
+                mid = (low + high + 1) // 2
+                part["text"] = text[start:start + mid]
+                if len(json.dumps(part, ensure_ascii=False)) <= max_chars:
+                    low = mid
+                else:
+                    high = mid - 1
+            if low == 0:
+                raise DocumentEditError("Os metadados do elemento excedem o contexto seguro.")
+            end = start + low
+            # Prefer a word/line boundary but never drop whitespace or any source text.
+            if end < len(text):
+                boundary = max(text.rfind("\n", start, end), text.rfind(" ", start, end))
+                if boundary > start + low // 2:
+                    end = boundary + 1
+            part["text"] = text[start:end]
+            planned.append(part)
+            fragments[part_id] = (element, start, end)
+            start = end
+    return planned, fragments
+
+
+def restore_fragment_edits(edits, fragments):
+    restored, grouped = [], {}
+    for edit in edits:
+        target = fragments.get(edit.get("id"))
+        if target is None:
+            restored.append(edit)
+            continue
+        element, start, end = target
+        if edit.get("old_text") != element["text"][start:end] or edit.get("value_type") != "text" or any(
+            key in edit for key in ("style", "style_text", "style_occurrence")
+        ):
+            raise DocumentEditError("A edicao de um trecho precisa preservar seu tipo e texto original.")
+        grouped.setdefault(element["id"], []).append((start, end, edit["new_text"], element))
+    for identifier, parts in grouped.items():
+        ordered = sorted(parts, key=lambda item: item[0])
+        if any(left[1] > right[0] for left, right in zip(ordered, ordered[1:])):
+            raise DocumentEditError("A proposta repetiu ou sobrepos trechos do mesmo elemento.")
+        original = parts[0][3]["text"]
+        new = original
+        for start, end, replacement, _ in reversed(ordered):
+            new = new[:start] + replacement + new[end:]
+        restored.append({"id": identifier, "old_text": original, "new_text": new, "value_type": "text"})
+    return restored
+
+
 def parse_quoted_replacement(objective):
     match = re.fullmatch(
         r'\s*(?:troque|substitua|replace)\b[^"\u201c]*["\u201c](.+?)["\u201d]\s*(?:por|com|by|with)\s*["\u201c](.*?)["\u201d][.\s]*',
@@ -41,6 +107,83 @@ def parse_quoted_replacement(objective):
     if not match:
         return None
     return match.groups() if match.group(1).strip() else None
+
+
+def requests_last_paragraph_removal(objective):
+    text = unicodedata.normalize("NFKD", str(objective)).encode("ascii", "ignore").decode().lower()
+    return bool(re.fullmatch(
+        r"\s*(?:por favor[, ]+)?(?:remova|remover|exclua|excluir|apague|retire|delete|remove)\s+"
+        r"(?:(?:o|the)\s+)?(?:ultimo paragrafo|last paragraph)"
+        r"(?:\s+(?:do (?:documento|arquivo|pdf|texto)|from (?:the )?(?:document|file|pdf|text)))?"
+        r"(?:[, ]+por favor)?[.!\s]*", text
+    ))
+
+
+def last_paragraph_removal(snapshot, objective):
+    """Resolve an explicit deletion when paragraph boundaries are available."""
+    if not requests_last_paragraph_removal(objective):
+        return None
+    if snapshot.format == "docx":
+        items = [item for item in snapshot.elements
+                 if snapshot.references[item["id"]][0] == "word/document.xml"
+                 and snapshot.references[item["id"]][2].getparent().tag.endswith("}body")
+                 and item.get("editable", True) and item["text"].strip()]
+        if items:
+            item = items[-1]
+            return [{"id": item["id"], "old_text": item["text"], "new_text": ""}]
+    if snapshot.format != "pdf":
+        return None
+
+    import pymupdf
+
+    with pymupdf.open(stream=snapshot.data, filetype="pdf") as document:
+        for index in range(len(document) - 1, -1, -1):
+            all_blocks = [block for block in document[index].get_text("blocks", sort=True) if block[6] == 0]
+            positions = [position for position, block in enumerate(all_blocks) if block[4].strip()]
+            if not positions:
+                continue
+            # A lone block may continue a paragraph from the previous page.
+            # Leave ambiguous layouts to the ordinary edit planner.
+            if len(positions) < 2:
+                return None
+            position = positions[-1]
+            block = all_blocks[position]
+            if re.fullmatch(r"[\d\s/.-]+", block[4]):
+                return None
+            selected = [block]
+            # Some PDF writers expose each visual line as a separate block.
+            # Join adjacent lines, stopping at a blank block or paragraph-sized gap.
+            for previous in reversed(all_blocks[:position]):
+                first = selected[0]
+                if not previous[4].strip():
+                    break
+                height = min((first[3]-first[1]) / max(1, len(first[4].splitlines())),
+                             (previous[3]-previous[1]) / max(1, len(previous[4].splitlines())))
+                gap = first[1]-previous[3]
+                if gap < 0:
+                    return None
+                if gap > height * 0.8:
+                    break
+                if previous[2] <= first[0] or first[2] <= previous[0]:
+                    return None
+                selected.insert(0, previous)
+            if index > 0 and selected[0] is all_blocks[0]:
+                return None
+            item = next((item for item in snapshot.elements
+                         if snapshot.references[item["id"]][0] == index), None)
+            if item is None or item.get("ocr"):
+                return None
+            paragraph = "\n".join(block[4] for block in selected)
+            pattern = re.compile(r"\s+".join(re.escape(word) for word in paragraph.split()))
+            matches = list(pattern.finditer(item["text"]))
+            if len(matches) != 1:
+                return None
+            match = matches[0]
+            target = match.group()
+            return [{"id": item["id"], "old_text": item["text"],
+                     "new_text": item["text"][:match.start()] + item["text"][match.end():],
+                     "literal_replacements": [{"old_text": target, "new_text": "", "occurrences": 1}]}]
+    return None
 
 
 def _replacement_value_type(snapshot, item, new):
@@ -261,10 +404,41 @@ async def _complete_proposal(complete, messages, schema):
         }
 
 
+def resolve_exact_edit_targets(proposal, allowed, all_elements=None):
+    """Repair representation errors only; never fuzzy-match or invent an edit."""
+    if not isinstance(proposal, list):
+        return proposal
+    resolved = []
+    for item in proposal:
+        if not isinstance(item, dict):
+            resolved.append(item)
+            continue
+        edit = dict(item)
+        old, new = edit.get("old_text"), edit.get("new_text")
+        if isinstance(old, str) and old and isinstance(new, str):
+            target = allowed.get(edit.get("id"))
+            if target is None:
+                matches = [element for element in (all_elements if all_elements is not None else allowed.values()) if element["text"] == old]
+                if len(matches) == 1 and matches[0]["id"] in allowed:
+                    target = matches[0]
+                    edit["id"] = target["id"]
+            if (target is not None and not target.get("cell") and not edit.get("style")
+                    and edit.get("value_type") == "text"
+                    and target["text"] != old and target["text"].count(old) == 1):
+                edit["old_text"] = target["text"]
+                edit["new_text"] = target["text"].replace(old, new, 1)
+        resolved.append(edit)
+    return resolved
+
+
 async def propose_document_edits(
     snapshot, objective, complete, progress=None, conversation_context=None
 ):
-    literal = listed_replacements(snapshot, objective)
+    import asyncio
+
+    literal = await asyncio.to_thread(last_paragraph_removal, snapshot, objective)
+    if literal is None:
+        literal = listed_replacements(snapshot, objective)
     if literal is None:
         literal = quoted_replacement(snapshot, objective)
     if literal:
@@ -305,7 +479,12 @@ async def propose_document_edits(
     partial_style = formatting and bool(
         re.search(r"\b(?:(?:a|essa|esta) palavra|the word|substring)\b", normalized)
     )
-    batches = element_batches(snapshot.elements)
+    # Formatting operates on native runs; do not invent fragment-wide styling.
+    def prepare_batches():
+        elements, fragments = (snapshot.elements, {}) if formatting else planning_elements(snapshot.elements)
+        return elements, fragments, element_batches(elements)
+
+    elements, fragments, batches = await asyncio.to_thread(prepare_batches)
     if not batches:
         raise DocumentEditError(
             "Nao foi encontrado um elemento editavel por este metodo; isso nao significa que o documento esteja sem texto."
@@ -415,7 +594,7 @@ async def propose_document_edits(
                     raise DocumentEditError("A proposta precisa ser um objeto JSON.")
                 if answer.get("proposal_error"):
                     raise DocumentEditError(answer["proposal_error"])
-                proposal = answer.get("edits")
+                proposal = resolve_exact_edit_targets(answer.get("edits"), allowed, elements)
                 if not isinstance(proposal, list):
                     raise DocumentEditError(
                         "A proposta precisa conter uma lista de alteracoes."
@@ -454,7 +633,7 @@ async def propose_document_edits(
                     # Check all changes against the original, never a partially edited file.
                     import asyncio
 
-                    await asyncio.to_thread(apply_document_edits, snapshot, proposal)
+                    await asyncio.to_thread(apply_document_edits, snapshot, restore_fragment_edits(proposal, fragments))
                 changes.extend(proposal)
                 break
             except (DocumentEditError, ValueError, TypeError) as error:
@@ -467,4 +646,8 @@ async def propose_document_edits(
         raise DocumentEditError(
             "Nao foi encontrada uma alteracao aplicavel ao pedido; o original foi mantido intacto."
         )
+    changes = restore_fragment_edits(changes, fragments)
+    # Fragments from different batches must be checked together on the native element.
+    if fragments:
+        await asyncio.to_thread(apply_document_edits, snapshot, changes)
     return changes

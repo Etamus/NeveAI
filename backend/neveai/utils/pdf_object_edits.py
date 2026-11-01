@@ -303,7 +303,9 @@ def _edit_literal_pdf(snapshot, edits):
             jobs = []
             for replacement in edit["literal_replacements"]:
                 rectangles = page.search_for(replacement["old_text"])
-                if len(rectangles) != replacement["occurrences"]:
+                deleting = replacement["new_text"] == ""
+                occurrences = normalized_text(page.get_text()).casefold().count(normalized_text(replacement["old_text"]).casefold()) if deleting else len(rectangles)
+                if not rectangles or occurrences != replacement["occurrences"]:
                     raise GeneratedFileError(
                         "O trecho PDF nao pode ser localizado sem ambiguidade."
                     )
@@ -335,6 +337,12 @@ def _edit_literal_pdf(snapshot, edits):
             loaded_fonts = {}
             fallback = None
             for rectangle, value, span, font_xrefs in jobs:
+                if not value:
+                    areas.setdefault(page_index, []).append((
+                        rectangle.x0, page.rect.height - rectangle.y1,
+                        rectangle.x1, page.rect.height - rectangle.y0,
+                    ))
+                    continue
                 font_name = span["font"]
                 xref = font_xrefs.get(font_name)
                 if not xref:
@@ -426,7 +434,7 @@ def _edit_literal_pdf(snapshot, edits):
             for replacement in replacements:
                 compact_new = re.sub(r"\s+", "", replacement["new_text"])
                 compact_old = re.sub(r"\s+", "", replacement["old_text"])
-                if compact_actual.count(compact_new) < replacement["occurrences"]:
+                if compact_new and compact_actual.count(compact_new) < replacement["occurrences"]:
                     raise GeneratedFileError(
                         "A verificacao PDF nao encontrou todo o texto substituido."
                     )
@@ -436,7 +444,9 @@ def _edit_literal_pdf(snapshot, edits):
                     )
     finally:
         rendered.close()
-    _verify(snapshot.data, result, {}, areas, verify_text=False)
+    deleting_only = all(not replacement["new_text"] for edit in edits for replacement in edit["literal_replacements"])
+    expected = {snapshot.references[edit["id"]][0]: edit["new_text"] for edit in edits} if deleting_only else {}
+    _verify(snapshot.data, result, expected, areas, verify_text=deleting_only)
     return result
 
 

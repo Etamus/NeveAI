@@ -48,6 +48,7 @@
 	export let stableDiffusionModeOptions: import('$lib/utils/imageModes').ImageModeOptions = { mode: 'normal' };
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
+	export let videoGenerationModel: import('$lib/utils/videoGeneration').VideoGenerationModel = 'minimax_h3';
 	export let videoGenerationResolution: '480p' | '672p' = '480p';
 	export let videoGenerationDuration: '5s' | '8s' = '5s';
 	export let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
@@ -137,6 +138,7 @@
 					bind:stableDiffusionModeOptions
 					bind:musicGenerationEnabled
 					bind:videoGenerationEnabled
+					bind:videoGenerationModel
 					bind:videoGenerationResolution
 					bind:videoGenerationDuration
 					bind:videoGenerationAspectRatio

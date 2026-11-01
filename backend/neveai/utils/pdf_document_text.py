@@ -53,9 +53,21 @@ def _read_pdf(path: str, modified: int, size: int) -> dict:
                     bitmap = None
                     try:
                         width, height = page.get_size()
-                        scale = min(2, 2000 / max(width, height))
-                        bitmap = page.render(scale=scale)
-                        result, _ = engine(np.array(bitmap.to_pil().convert("RGB")))
+                        result, best_confidence = None, -1
+                        # Retry only degraded pages; do not lower the publication threshold.
+                        for max_scale, max_dimension in ((2, 2000), (3, 3000)):
+                            scale = min(max_scale, max_dimension / max(width, height))
+                            bitmap = page.render(scale=scale)
+                            try:
+                                candidate, _ = engine(np.array(bitmap.to_pil().convert("RGB")))
+                            finally:
+                                bitmap.close()
+                                bitmap = None
+                            confidence = min(float(item[2]) for item in candidate) if candidate else -1
+                            if confidence > best_confidence:
+                                result, best_confidence = candidate, confidence
+                            if best_confidence >= 0.6:
+                                break
                         if not result:
                             raise GeneratedFileError(
                                 f"Nao foi possivel ler a pagina digitalizada {index + 1}; envie uma copia mais nitida."

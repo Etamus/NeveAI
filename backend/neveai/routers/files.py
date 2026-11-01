@@ -262,7 +262,7 @@ def upload_file_handler(
         id = str(uuid.uuid4())
         name = filename
         filename = f"{id}_{filename}"
-        contents, file_path = Storage.upload_file(
+        content_size, file_path = Storage.upload_file(
             file.file,
             filename,
             {
@@ -290,7 +290,7 @@ def upload_file_handler(
                             if isinstance(file.content_type, str)
                             else None
                         ),
-                        "size": len(contents),
+                        "size": content_size,
                         "data": file_metadata,
                     },
                 }
@@ -374,7 +374,7 @@ def list_generated_files(
     kind: str = Query("all", pattern="^(all|image|video|audio|document)$"),
     query: str = Query("", max_length=200),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=1000),
     user=Depends(get_verified_user),
     db: Session = Depends(get_session),
 ):

@@ -120,10 +120,11 @@
 				<div class="ml-[7px] flex flex-wrap gap-1.5 border-l border-[#dedede] dark:border-[#292929] px-4 pb-2.5 pt-1">
 					{#each searchDisplayQueries as query (query)}
 						<div
-							class="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700/60 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-600 dark:text-gray-300"
+							class="search-query-pill inline-flex min-w-0 items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700/60 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-600 dark:text-gray-300"
+							style="max-width: min(100%, 22rem)"
 						>
-							<Search className="size-3" />
-							<span class="line-clamp-1">{query}</span>
+							<Search className="size-3 shrink-0" />
+							<span class="min-w-0 truncate" title={query}>{query}</span>
 						</div>
 					{/each}
 				</div>
@@ -150,10 +151,11 @@
 				<div class="ml-[7px] flex flex-wrap gap-1.5 border-l border-[#dedede] dark:border-[#292929] px-4 pb-2.5 pt-1">
 					{#each searchDisplayQueries as query (query)}
 						<div
-							class="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700/60 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-600 dark:text-gray-300"
+							class="search-query-pill inline-flex min-w-0 items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700/60 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-600 dark:text-gray-300"
+							style="max-width: min(100%, 22rem)"
 						>
-							<Search className="size-3" />
-							<span class="line-clamp-1">{query}</span>
+							<Search className="size-3 shrink-0" />
+							<span class="min-w-0 truncate" title={query}>{query}</span>
 						</div>
 					{/each}
 				</div>

@@ -153,8 +153,6 @@ def native_arch():
 
 def environment():
     env = os.environ.copy()
-    env.pop("WEBUI_SECRET_KEY", None)
-    env.pop("WEBUI_SECRET_KEY_FILE", None)
     env.update(
         {
             "PYTHONPATH": str(APP / "backend"),
@@ -563,7 +561,7 @@ def _install(images=True, music=True, emit=print):
     config = APP / ".env"
     if not config.exists():
         config.write_text(
-            "WEBUI_AUTH=True\nENABLE_SIGNUP=True\nWEBUI_SECRET_KEY="
+            "NEVE_SECRET_KEY="
             + os.urandom(32).hex()
             + "\n",
             encoding="utf-8",

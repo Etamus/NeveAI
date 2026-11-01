@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { createServer } from 'vite';
+import { installMobileOfflineApi } from './fixtures/mobile-offline-api.mjs';
 import { chromium } from '../logs/ui-image-26/node_modules/playwright/index.mjs';
 import utils from '../logs/ui-image-26/node_modules/playwright-core/lib/utilsBundle.js';
 const {PNG}=utils;
@@ -20,6 +21,7 @@ try {
 	browser = await chromium.launch({ignoreDefaultArgs:['--hide-scrollbars']});
 	for (const [name,viewport] of [['desktop',{width:1440,height:1000}],['mobile',{width:390,height:844}]]) {
 		const page = await browser.newPage({viewport, permissions:['clipboard-read','clipboard-write']});
+		await installMobileOfflineApi(page);
 		page.setDefaultTimeout(15000);
 		const errors = [];
 		page.on('pageerror', e => errors.push(e.message));
@@ -60,6 +62,9 @@ try {
 			await page.screenshot({path:`logs/code-reasoning-${name}-${mode}.png`});
 			results.push({name,mode,metrics,corner});
 		}
+		// Target the wrapper's empty strip, not the mobile toast card itself.
+		const toastTop = await page.locator('[data-neve-toast] > div').evaluate(el => el.getBoundingClientRect().top);
+		await page.locator('#navbar-hit').evaluate((el, top) => el.style.top = `${top - 20}px`, toastTop);
 		await page.locator('#navbar-hit').click();
 		assert((await page.locator('#navbar-hit').innerText()).endsWith('1'));
 		await page.locator('[data-neve-toast]').evaluate(el => el.remove());

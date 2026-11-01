@@ -14,6 +14,7 @@ def search_duckduckgo(
     concurrent_requests: Optional[int] = None,
     backend: Optional[str] = "auto",
     timeout: Optional[float] = None,
+    time_range: str = "",
 ) -> list[SearchResult]:
     """
     Search using DuckDuckGo's Search API and return the results as a list of SearchResult objects.
@@ -51,6 +52,8 @@ def search_duckduckgo(
                         max_results=count,
                         backend=search_backend,
                         page=page,
+                        **({"timelimit": {"day": "d", "week": "w", "month": "m", "year": "y"}[time_range]}
+                           if time_range in {"day", "week", "month", "year"} else {}),
                     )
                 except Exception:
                     if collected:

@@ -12,6 +12,7 @@
 
 	import { onMount, tick, setContext, onDestroy } from 'svelte';
 	import { notifyDesktopReady } from '$lib/utils/desktopWindow';
+	import { applyModelAvailability, invalidateModelAvailability, refreshModelAvailability } from '$lib/stores/modelAvailability';
 	import {
 		config,
 		user,
@@ -139,12 +140,15 @@
 			auth: { token: localStorage.token }
 		});
 		await socket.set(_socket);
+		_socket.on('model:availability', applyModelAvailability);
+		void refreshModelAvailability();
 
 		_socket.on('connect_error', (err) => {
 			console.log('connect_error', err);
 		});
 
 		_socket.on('connect', async () => {
+			void refreshModelAvailability();
 			console.log('connected', _socket.id);
 			const res = await getVersion(localStorage.token);
 
@@ -199,6 +203,7 @@
 		});
 
 		_socket.on('disconnect', (reason, details) => {
+			invalidateModelAvailability();
 			console.log(`Socket ${_socket.id} disconnected due to ${reason}`);
 
 			if (heartbeatInterval) {

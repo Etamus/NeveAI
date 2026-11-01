@@ -3,6 +3,7 @@ import { runInNewContext } from 'node:vm';
 import { resolve } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
+import { getVideoGenerationFeatures, snapshotVideoRequestFeatures } from './videoGeneration';
 
 function sourceFunction(file: string, name: string, prefix = false) {
 	const source = Array.from(readFileSync(resolve(file), 'utf8').matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g), match => match[1]).join('\n');
@@ -23,7 +24,7 @@ function sourceFunction(file: string, name: string, prefix = false) {
 
 function compile(source: string, globals: Record<string, unknown>) {
 	const js = ts.transpile(`const action = ${source};`, {target: ts.ScriptTarget.ES2022});
-	return runInNewContext(js + '\naction;', {structuredClone, ...globals});
+	return runInNewContext(js + '\naction;', {structuredClone, getVideoGenerationFeatures, snapshotVideoRequestFeatures, ...globals});
 }
 
 const sendSource = sourceFunction('src/lib/components/chat/Chat.svelte', 'sendMessage', true);
@@ -36,6 +37,7 @@ function setup(features: Record<string, boolean>, ensure: ReturnType<typeof vi.f
 	}};
 	const sent = vi.fn();
 	const send = compile(sendSource, {
+		$mobile: false,
 		normalizeExclusiveFeatureToggles() {}, getFeatures: () => features,
 		$chatId: 'local:music-edit-test', atSelectedModel: undefined, selectedModels: ['local/qwen'],
 		ensureLocalModelsReady: ensure

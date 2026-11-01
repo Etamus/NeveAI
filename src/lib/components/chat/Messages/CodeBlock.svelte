@@ -1,5 +1,6 @@
 <script lang="ts">
-	import hljs from 'highlight.js';
+	import { createCodeBlockHighlighter } from '$lib/utils/codeBlockHighlight';
+	const highlightCode = createCodeBlockHighlighter();
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount, tick, onDestroy } from 'svelte';
 	import { config } from '$lib/stores';
@@ -591,7 +592,7 @@
 						result) &&
 						'border-bottom-left-radius: 0px; border-bottom-right-radius: 0px;'}"><code
 						class="language-{lang} rounded-t-none whitespace-pre text-sm"
-								>{@html hljs.highlightAuto(code, hljs.getLanguage(lang)?.aliases).value ||
+								>{@html highlightCode(code, lang) ||
 									code}</code
 							></pre>
 					{/if}

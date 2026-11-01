@@ -12,6 +12,7 @@
 	import NotebookView from './NotebookView.svelte';
 	import SqliteView from './SqliteView.svelte';
 	import FileCodeEditor from './FileCodeEditor.svelte';
+	import SheetTabs from '$lib/components/common/SheetTabs.svelte';
 
 	let pdfViewerRef: PDFViewer;
 	let fileCodeEditorRef: FileCodeEditor;
@@ -279,7 +280,7 @@
 </script>
 
 <div
-	class="flex-1 {fileImageUrl !== null || (fileOfficeSlides !== null && fileOfficeSlides.length > 0)
+	class="flex-1 {fileImageUrl !== null || fileOfficeHtml !== null || (fileOfficeSlides !== null && fileOfficeSlides.length > 0)
 		? 'overflow-hidden'
 		: 'overflow-y-auto'} min-h-0 min-w-0 relative h-full"
 >
@@ -313,30 +314,16 @@
 	{:else if fileSqliteData !== null}
 		<SqliteView data={fileSqliteData} />
 	{:else if fileOfficeHtml !== null}
-		<div class="flex flex-col h-full">
+		<div class="flex min-h-0 min-w-0 flex-col h-full">
 			<div class="office-preview overflow-auto flex-1 min-h-0">
 				{@html fileOfficeHtml}
 			</div>
 			{#if excelSheetNames.length > 1}
-				<div
-					class="flex items-center gap-1 py-1.5 px-3 border-t border-gray-100 dark:border-gray-800 overflow-x-auto"
-				>
-					{#each excelSheetNames as sheet}
-						<button
-							class="shrink-0 px-3 py-1 text-xs rounded-md transition-colors
-								{selectedExcelSheet === sheet
-								? 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-medium'
-								: 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}"
-							on:click={() => onSheetChange?.(sheet)}
-						>
-							{sheet}
-						</button>
-					{/each}
-				</div>
+				<SheetTabs sheets={excelSheetNames} selected={selectedExcelSheet} onSelect={(sheet) => onSheetChange?.(sheet)} />
 			{/if}
 		</div>
 	{:else if fileOfficeSlides !== null && fileOfficeSlides.length > 0}
-		<div class="flex flex-col h-full">
+		<div class="presentation-preview flex min-h-0 flex-col h-full">
 			<div
 				class="w-full flex-1 min-h-0 flex items-center justify-center overflow-hidden"
 				use:initImagePanzoom
@@ -344,13 +331,13 @@
 				<img
 					src={fileOfficeSlides[currentSlide]}
 					alt="Slide {currentSlide + 1}"
-					class="max-w-full max-h-full object-contain p-3"
+					class="h-full w-full min-h-0 object-contain p-3"
 					draggable="false"
 				/>
 			</div>
 			{#if fileOfficeSlides.length > 1}
 				<div
-					class="flex items-center justify-center gap-3 py-2 px-3 border-t border-gray-100 dark:border-gray-800 text-xs text-gray-500"
+					class="slide-navigation flex shrink-0 items-center justify-center gap-3 py-2 px-3 border-t border-gray-100 dark:border-gray-800 text-xs text-gray-500"
 				>
 					<button
 						class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"

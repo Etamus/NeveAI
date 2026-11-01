@@ -54,7 +54,8 @@
 			String(status?.action ?? '').trim().toLowerCase()
 		);
 
-	$: if (isMediaStatus) {
+	$: isPreparingFile = status?.action === 'file_generation' && !status?.done;
+	$: if (isMediaStatus || isPreparingFile) {
 		showHistory = false;
 	}
 
@@ -69,7 +70,7 @@
 {#if visibleHistory.length > 0 && status}
 	{#if status?.hidden !== true}
 		<div class="flex flex-col w-full">
-			{#if isMediaStatus}
+			{#if isMediaStatus || isPreparingFile}
 				<div class="w-full cursor-default select-none">
 					<div class="flex items-start gap-2">
 						<StatusItem {status} />
@@ -91,7 +92,7 @@
 				</button>
 			{/if}
 
-			{#if showHistory && !isMediaStatus}
+			{#if showHistory && !isMediaStatus && !isPreparingFile}
 				<div class="flex flex-row select-text" transition:slide={{ duration: 200, easing: quintOut }}>
 					{#if visibleHistory.length > 1}
 						<div class="ml-[7px] min-w-0 w-full border-l border-[#dedede] dark:border-[#292929] px-4">

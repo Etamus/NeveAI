@@ -590,13 +590,20 @@ for repo_id, filename, local_dir in items:
             self._log_tail.append(decoded)
             log.debug("MiniMax H3: %s", decoded)
 
+    def _worker_paths(self) -> tuple[Path, Path, Path, Path, Path]:
+        return VIDEO_ROOT, COMFYUI_INPUT, COMFYUI_OUTPUT, COMFYUI_TEMP, VIDEO_HF_CACHE
+
+    def _worker_extra_arguments(self) -> list[str]:
+        return []
+
     async def _start_server(self, progress: ProgressCallback) -> str:
         await self.stop()
         self._cancel_requested = False
         self._thermal_error = None
         self._log_tail.clear()
         self._port = self._available_port()
-        for directory in (COMFYUI_INPUT, COMFYUI_OUTPUT, COMFYUI_TEMP, VIDEO_HF_CACHE):
+        root, input_dir, output_dir, temp_dir, hf_cache = self._worker_paths()
+        for directory in (input_dir, output_dir, temp_dir, hf_cache):
             directory.mkdir(parents=True, exist_ok=True)
 
         await progress("Iniciando a criação de video...", 3)
@@ -605,7 +612,7 @@ for repo_id, filename, local_dir in items:
         env.update(
             {
                 "PYTHONIOENCODING": "utf-8",
-                "HF_HOME": str(VIDEO_HF_CACHE),
+                "HF_HOME": str(hf_cache),
                 "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
             }
         )
@@ -617,13 +624,13 @@ for repo_id, filename, local_dir in items:
             "--port",
             str(self._port),
             "--base-directory",
-            str(VIDEO_ROOT),
+            str(root),
             "--output-directory",
-            str(COMFYUI_OUTPUT),
+            str(output_dir),
             "--temp-directory",
-            str(COMFYUI_TEMP),
+            str(temp_dir),
             "--input-directory",
-            str(COMFYUI_INPUT),
+            str(input_dir),
             "--disable-auto-launch",
             "--preview-method",
             "none",
@@ -633,6 +640,7 @@ for repo_id, filename, local_dir in items:
             "0.75",
             "--use-sage-attention",
             "--disable-metadata",
+            *self._worker_extra_arguments(),
             cwd=str(COMFYUI_DIR),
             env=env,
             stdout=asyncio.subprocess.PIPE,
@@ -1112,12 +1120,17 @@ minimax_h3_runtime = MiniMaxH3Runtime()
 
 @router.get("/status")
 async def get_video_generation_status(request: Request, user=Depends(get_verified_user)):
+    from neveai.routers.video_vdn_generation import vdn_h3_runtime
     return {
         "enabled": request.app.state.config.ENABLE_VIDEO_GENERATION,
         "installed": minimax_h3_runtime.is_installed,
         "models_ready": minimax_h3_runtime.models_ready,
-        "running": minimax_h3_runtime.is_running,
+        "running": minimax_h3_runtime.is_running or vdn_h3_runtime.is_running,
         "model": "MiniMax H3 FL2VA W4A8",
+        "models": {
+            "minimax_h3": {"name": "Neve Video 1", "ready": minimax_h3_runtime.models_ready},
+            "vdn_h3": {"name": "Neve Video 1.5", "ready": vdn_h3_runtime.models_ready},
+        },
     }
 
 
@@ -1130,4 +1143,6 @@ async def cancel_video_generation(request: Request, user=Depends(get_verified_us
     ):
         raise HTTPException(status_code=403, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
     await minimax_h3_runtime.cancel()
+    from neveai.routers.video_vdn_generation import vdn_h3_runtime
+    await vdn_h3_runtime.cancel()
     return {"success": True}

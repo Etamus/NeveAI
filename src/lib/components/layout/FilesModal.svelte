@@ -354,7 +354,7 @@
 						</div>
 					{/if}
 
-					<div class="min-h-0 flex-1 text-left text-sm w-full mb-3 overflow-y-auto">
+					<div class="files-list-scroll min-h-0 flex-1 text-left text-sm mb-3 overflow-y-auto -mr-3 pr-3">
 						{#if files.length === 0}
 							<div
 								class="text-xs text-gray-500 dark:text-gray-400 text-center px-5 min-h-20 w-full h-full flex justify-center items-center"

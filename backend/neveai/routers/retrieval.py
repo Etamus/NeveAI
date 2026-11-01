@@ -117,15 +117,30 @@ def get_ef(
         from sentence_transformers import SentenceTransformer
 
         try:
+            model_path = get_model_path(embedding_model, auto_update)
             ef = SentenceTransformer(
-                get_model_path(embedding_model, auto_update),
+                model_path,
                 device=DEVICE_TYPE,
                 trust_remote_code=RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE,
                 backend=SENTENCE_TRANSFORMERS_BACKEND,
                 model_kwargs=SENTENCE_TRANSFORMERS_MODEL_KWARGS,
             )
+            if SENTENCE_TRANSFORMERS_BACKEND == "torch":
+                from neveai.retrieval.onnx_embeddings import accelerate_cached_encoder
+
+                ef = accelerate_cached_encoder(ef, embedding_model, model_path)
         except Exception as e:
-            log.debug(f"Error loading SentenceTransformer: {e}")
+            log.warning("Unable to load embedding backend %s: %s", SENTENCE_TRANSFORMERS_BACKEND, e)
+            if SENTENCE_TRANSFORMERS_BACKEND != "torch":
+                try:
+                    ef = SentenceTransformer(
+                        get_model_path(embedding_model, auto_update), device="cpu",
+                        trust_remote_code=RAG_EMBEDDING_MODEL_TRUST_REMOTE_CODE,
+                        backend="torch",
+                    )
+                    log.warning("Using CPU/PyTorch fallback with the same embedding model")
+                except Exception:
+                    log.exception("Unable to load the fallback embedding model")
 
     return ef
 
@@ -310,6 +325,7 @@ def save_docs_to_vector_db(
     add: bool = False,
     user=None,
 ) -> bool:
+    started = time.monotonic()
     from langchain_text_splitters import (
         MarkdownHeaderTextSplitter,
         RecursiveCharacterTextSplitter,
@@ -358,6 +374,11 @@ def save_docs_to_vector_db(
                     raise ValueError(ERROR_MESSAGES.DUPLICATE_CONTENT)
 
     if split:
+        from neveai.retrieval.attachment_processing import subtitle_documents
+
+        if request.app.state.config.TEXT_SPLITTER in ["", "character"]:
+            docs = subtitle_documents(docs, request.app.state.config.CHUNK_SIZE,
+                                      request.app.state.config.CHUNK_OVERLAP)
         if request.app.state.config.ENABLE_MARKDOWN_HEADER_TEXT_SPLITTER:
             log.info("Using markdown header text splitter")
             # Define headers to split on - covering most common markdown header levels
@@ -418,6 +439,7 @@ def save_docs_to_vector_db(
         raise ValueError(ERROR_MESSAGES.EMPTY_CONTENT)
 
     texts = [sanitize_text_for_db(doc.page_content) for doc in docs]
+    prepared_at = time.monotonic()
     metadatas = [
         {
             **doc.metadata,
@@ -444,25 +466,34 @@ def save_docs_to_vector_db(
                 return True
 
         log.info(f"generating embeddings for {collection_name}")
-        embedding_function = get_embedding_function(
-            request.app.state.ef,
-            request.app.state.config.RAG_EMBEDDING_BATCH_SIZE,
-        )
+        embedding_function = getattr(request.app.state, "EMBEDDING_FUNCTION", None)
+        if embedding_function is None:
+            embedding_function = get_embedding_function(
+                request.app.state.ef,
+                request.app.state.config.RAG_EMBEDDING_BATCH_SIZE,
+            )
 
         # Run async embedding in sync context using the main event loop
         # This allows the main loop to stay responsive to health checks during long operations
         embedding_timeout = RAG_EMBEDDING_TIMEOUT
+        from neveai.retrieval.attachment_processing import embedding_text
 
         future = asyncio.run_coroutine_threadsafe(
             embedding_function(
-                list(map(lambda x: x.replace("\n", " "), texts)),
+                [embedding_text(text, doc.metadata)
+                 for text, doc in zip(texts, docs)],
                 prefix=RAG_EMBEDDING_CONTENT_PREFIX,
                 user=user,
             ),
             request.app.state.main_loop,
         )
-        embeddings = future.result(timeout=embedding_timeout)
+        try:
+            embeddings = future.result(timeout=embedding_timeout)
+        except BaseException:
+            future.cancel()
+            raise
         log.info(f"embeddings generated {len(embeddings)} for {len(texts)} items")
+        encoded_at = time.monotonic()
 
         items = [
             {
@@ -480,7 +511,11 @@ def save_docs_to_vector_db(
             items=items,
         )
 
-        log.info(f"added {len(items)} items to collection {collection_name}")
+        log.info("Attachment index ready: collection=%s chunks=%s elapsed=%.3fs",
+                 collection_name, len(items), time.monotonic() - started)
+        log.info("Attachment stages: collection=%s prepare=%.3fs embed=%.3fs insert=%.3fs",
+                 collection_name, prepared_at - started, encoded_at - prepared_at,
+                 time.monotonic() - encoded_at)
         return True
     except Exception as e:
         log.exception(e)
@@ -506,6 +541,7 @@ def process_file(
     Note: granular session management is used to prevent connection pool exhaustion.
     The session is committed before external API calls, and updates use a fresh session.
     """
+    processing_started = time.monotonic()
     if user.role == "admin":
         file = Files.get_file_by_id(form_data.file_id, db=db)
     else:
@@ -621,7 +657,8 @@ def process_file(
                     ]
                 text_content = " ".join([doc.page_content for doc in docs])
 
-            log.debug(f"text_content: {text_content}")
+            log.info("Attachment extracted: file_id=%s characters=%s elapsed=%.3fs",
+                     file.id, len(text_content), time.monotonic() - processing_started)
             Files.update_file_data_by_id(
                 file.id,
                 {"content": text_content},
@@ -938,6 +975,7 @@ def search_web(
     query: str,
     user=None,
     result_count: Optional[int] = None,
+    time_range: str = "",
 ) -> list[SearchResult]:
     """Search through SearXNG with the local DDGS fallback."""
 
@@ -1018,6 +1056,7 @@ def search_web(
                 language=request.app.state.config.SEARXNG_LANGUAGE,
                 engines=profile["engines"],
                 timeout=profile["searxng_timeout"],
+                time_range=time_range,
             )
 
         if query_urls:
@@ -1058,6 +1097,7 @@ def search_web(
             concurrent_requests=request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS,
             backend=request.app.state.config.DDGS_BACKEND,
             timeout=profile["ddgs_timeout"],
+            time_range=time_range,
         )
         if searxng_errors and not ddgs_results:
             log.warning(
@@ -1089,6 +1129,7 @@ def search_web(
         request.app.state.config.WEB_SEARCH_DOMAIN_FILTER_LIST,
         concurrent_requests=request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS,
         backend=request.app.state.config.DDGS_BACKEND,
+        time_range=time_range,
         timeout=DDGS_DEEP_TIMEOUT
         if bool(getattr(request.state, "deep_search_enabled", False))
         else DDGS_FAST_TIMEOUT,
@@ -1112,7 +1153,7 @@ async def process_web_search(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    from neveai.retrieval.web.research import research
+    from neveai.retrieval.web.research import research, requested_time_range
 
     deep = bool(getattr(request.state, "deep_search_enabled", False))
     configured_limit = request.app.state.config.WEB_SEARCH_CONCURRENT_REQUESTS
@@ -1123,7 +1164,8 @@ async def process_web_search(
             try:
                 async with semaphore:
                     return await asyncio.wait_for(
-                        run_in_threadpool(search_web, request, engine, query, user, count),
+                        run_in_threadpool(search_web, request, engine, query, user, count,
+                                          time_range=requested_time_range(form_data.question)),
                         timeout=20,
                     )
             except Exception as error:
@@ -1181,6 +1223,7 @@ class QueryDocForm(BaseModel):
     k_reranker: Optional[int] = None
     r: Optional[float] = None
     hybrid: Optional[bool] = None
+    hybrid_bm25_weight: Optional[float] = None
 
 
 @router.post("/query/doc")
@@ -1220,12 +1263,12 @@ async def query_doc_handler(
                 or request.app.state.config.TOP_K_RERANKER,
                 r=(
                     form_data.r
-                    if form_data.r
+                    if form_data.r is not None
                     else request.app.state.config.RELEVANCE_THRESHOLD
                 ),
                 hybrid_bm25_weight=(
                     form_data.hybrid_bm25_weight
-                    if form_data.hybrid_bm25_weight
+                    if form_data.hybrid_bm25_weight is not None
                     else request.app.state.config.HYBRID_BM25_WEIGHT
                 ),
                 user=user,
@@ -1291,12 +1334,12 @@ async def query_collection_handler(
                 or request.app.state.config.TOP_K_RERANKER,
                 r=(
                     form_data.r
-                    if form_data.r
+                    if form_data.r is not None
                     else request.app.state.config.RELEVANCE_THRESHOLD
                 ),
                 hybrid_bm25_weight=(
                     form_data.hybrid_bm25_weight
-                    if form_data.hybrid_bm25_weight
+                    if form_data.hybrid_bm25_weight is not None
                     else request.app.state.config.HYBRID_BM25_WEIGHT
                 ),
                 enable_enriched_texts=(

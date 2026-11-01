@@ -19,6 +19,7 @@
 
 	import { NEVEAI_VERSION, NEVEAI_API_BASE_URL } from '$lib/constants';
 	import { getAvailableUpdateTargets } from '$lib/utils/updateAvailability';
+	import { createUpdateToastManager } from '$lib/utils/updateToast';
 
 	import { config, user, settings, models, tools, banners, showSettings, showSettingsTab, temporaryChatEnabled, toolServers, terminalServers, showSearch, showSidebar, showControls, mobile, neveDownloadToast, loadShortCodesToEmojis } from '$lib/stores';
 
@@ -42,8 +43,7 @@
 	let localDBChats = [];
 
 	let updateCheckInterval: ReturnType<typeof setInterval>;
-	let updateToastDismissed = false;
-	let latestUpdateVersion = '';
+	const updateToastManager = createUpdateToastManager();
 	let updateToastShownVersion = '';
 	let updateToastHeight = 0;
 	let downloadToastHeight = 0;
@@ -53,6 +53,7 @@
 	let updateToastObserver: MutationObserver | undefined;
 	let unsubscribeUpdateRoute: (() => void) | undefined;
 	let unsubscribeUpdateSettings: (() => void) | undefined;
+	let unsubscribeUpdatePreferences: (() => void) | undefined;
 
 	const hasVisibleModal = () =>
 		Array.from(document.querySelectorAll<HTMLElement>('.modal, [role="dialog"][aria-modal="true"]'))
@@ -66,13 +67,9 @@
 	const syncUpdateToast = () => {
 		const pathname = $page.url.pathname;
 		const isChat = pathname === '/' || /^\/c\/[^/]+\/?$/.test(pathname);
-		const shouldShow = latestUpdateVersion && !updateToastDismissed &&
-			$settings?.showUpdateToast !== false && isChat && !$showSettings && !hasVisibleModal();
-		if (!shouldShow) {
-			updateToastShownVersion = '';
-			return;
-		}
-		updateToastShownVersion = latestUpdateVersion;
+		updateToastShownVersion = updateToastManager.visibleVersion(
+			isChat && !$showSettings && !hasVisibleModal()
+		);
 	};
 
 	$: if (typeof document !== 'undefined') {
@@ -129,7 +126,7 @@
 	});
 
 	const closeUpdateToast = () => {
-		updateToastDismissed = true;
+		updateToastManager.dismiss();
 		updateToastShownVersion = '';
 	};
 
@@ -417,6 +414,10 @@
 			localStorage.removeItem('neveai.dismissedUpdateVersion');
 			unsubscribeUpdateRoute = page.subscribe(syncUpdateToast);
 			unsubscribeUpdateSettings = showSettings.subscribe(syncUpdateToast);
+			unsubscribeUpdatePreferences = settings.subscribe((value) => {
+				updateToastManager.setSettings(value);
+				syncUpdateToast();
+			});
 			updateToastObserver = new MutationObserver(syncUpdateToast);
 			updateToastObserver.observe(document.body, {
 				childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'aria-hidden']
@@ -437,14 +438,9 @@
 	});
 
 	const checkForVersionUpdates = async () => {
-		if ($settings?.showUpdateToast === false) {
-			latestUpdateVersion = '';
-			syncUpdateToast();
-			return;
-		}
 		const version = await getVersionUpdates(localStorage.token).catch(() => null);
 		if (!version) return;
-		latestUpdateVersion = getAvailableUpdateTargets(version, NEVEAI_VERSION).join(' / ');
+		updateToastManager.setVersion(getAvailableUpdateTargets(version, NEVEAI_VERSION).join(' • '));
 		syncUpdateToast();
 	};
 
@@ -453,6 +449,7 @@
 		updateToastObserver?.disconnect();
 		unsubscribeUpdateRoute?.();
 		unsubscribeUpdateSettings?.();
+		unsubscribeUpdatePreferences?.();
 		if (typeof document !== 'undefined') {
 			document.documentElement.style.removeProperty('--neve-update-toast-offset');
 			document.documentElement.style.removeProperty('--neve-download-toast-offset');

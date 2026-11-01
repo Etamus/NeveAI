@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import dayjs from 'dayjs';
-	import { getContext, createEventDispatcher } from 'svelte';
+	import { getContext, createEventDispatcher, onMount } from 'svelte';
+	import { user } from '$lib/stores';
+	import { memoryListCache, type SavedMemory } from '$lib/utils/memoryList';
 
 	const dispatch = createEventDispatcher();
 
 	import Modal from '$lib/components/common/Modal.svelte';
 	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import AddMemoryModal from './AddMemoryModal.svelte';
-	import { deleteMemoriesByUserId, deleteMemoryById, getMemories } from '$lib/apis/memories';
+	import { deleteMemoriesByUserId, deleteMemoryById } from '$lib/apis/memories';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import { error } from '@sveltejs/kit';
 	import EditMemoryModal from './EditMemoryModal.svelte';
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
@@ -20,8 +21,11 @@
 
 	export let show = false;
 
-	let memories = [];
-	let loading = true;
+	let memories: SavedMemory[] = [];
+	let hasLoaded = false;
+	let loadFailed = false;
+	let opened = false;
+	let loadRequest = 0;
 
 	let showAddMemoryModal = false;
 	let showEditMemoryModal = false;
@@ -29,6 +33,66 @@
 	let selectedMemory = null;
 
 	let showClearConfirmDialog = false;
+	let showDeleteConfirmDialog = false;
+	let pendingDeleteMemory = null;
+	let deleting = false;
+
+	const loadMemories = async (refresh = false) => {
+		const requestId = ++loadRequest;
+		const owner = $user?.id;
+		if (!owner) return;
+		loadFailed = false;
+		try {
+			const result = await memoryListCache.load(owner, localStorage.token, refresh);
+			if (requestId === loadRequest && $user?.id === owner) {
+				memories = result;
+				hasLoaded = true;
+			}
+		} catch (error) {
+			if (requestId === loadRequest) {
+				loadFailed = true;
+				toast.error(`${error}`);
+			}
+		}
+	};
+
+	export const open = async () => {
+		const cached = memoryListCache.read($user?.id ?? '');
+		if (cached !== null) {
+			memories = cached;
+			hasLoaded = true;
+			show = true;
+			void loadMemories(true);
+		} else {
+			await loadMemories();
+			show = true;
+		}
+	};
+	onMount(() => { void loadMemories(); });
+	const onSaved = (event: CustomEvent<SavedMemory>) => {
+		loadRequest += 1;
+		memories = memoryListCache.save($user?.id ?? '', event.detail);
+		hasLoaded = true;
+		loadFailed = false;
+	};
+
+	const onDeleteConfirmed = async () => {
+		if (!pendingDeleteMemory || deleting) return;
+		const id = pendingDeleteMemory.id;
+		pendingDeleteMemory = null;
+		deleting = true;
+		try {
+			if (await deleteMemoryById(localStorage.token, id)) {
+				loadRequest += 1;
+				memories = memoryListCache.remove($user?.id ?? '', id);
+				toast.success($i18n.t('Memory deleted successfully'));
+			}
+		} catch (error) {
+			toast.error(`${error}`);
+		} finally {
+			deleting = false;
+		}
+	};
 
 	let onClearConfirmed = async () => {
 		const res = await deleteMemoriesByUserId(localStorage.token).catch((error) => {
@@ -38,16 +102,17 @@
 
 		if (res && memories.length > 0) {
 			toast.success($i18n.t('Memory cleared successfully'));
-			memories = [];
+			loadRequest += 1;
+			memories = memoryListCache.remove($user?.id ?? '');
 		}
 		showClearConfirmDialog = false;
 	};
 
-	$: if (show && memories.length === 0 && loading) {
-		(async () => {
-			memories = await getMemories(localStorage.token);
-			loading = false;
-		})();
+	$: if (show && !opened) {
+		opened = true;
+		if (!hasLoaded) void loadMemories();
+	} else if (!show) {
+		opened = false;
 	}
 </script>
 
@@ -79,7 +144,9 @@
 			<div
 				class=" flex flex-col w-full sm:flex-row sm:justify-center sm:space-x-6 h-[20rem] max-h-screen rounded-xl mb-2 mt-1"
 			>
-				{#if memories.length > 0}
+				{#if loadFailed && !hasLoaded}
+					<div class="flex h-full w-full items-center justify-center text-sm text-gray-500">{$i18n.t('Failed to load memories')}</div>
+				{:else if memories.length > 0}
 					<div class="text-left text-sm w-full mb-4 overflow-y-scroll">
 						<div class="relative overflow-x-auto">
 							<table class="w-full text-sm text-left text-gray-600 dark:text-gray-400 table-auto">
@@ -111,6 +178,7 @@
 												<div class="flex justify-end w-full">
 													<Tooltip content="Editar">
 														<button
+															aria-label={$i18n.t('Edit')}
 															class="self-center w-fit text-sm px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
 															on:click={() => {
 																selectedMemory = memory;
@@ -138,22 +206,14 @@
 														</button>
 													</Tooltip>
 
-													<Tooltip content="Deletar">
+													<Tooltip content={$i18n.t('Delete')}>
 														<button
+															aria-label={$i18n.t('Delete')}
+															disabled={deleting}
 															class="self-center w-fit text-sm px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl"
-															on:click={async () => {
-																const res = await deleteMemoryById(
-																	localStorage.token,
-																	memory.id
-																).catch((error) => {
-																	toast.error(`${error}`);
-																	return null;
-																});
-
-																if (res) {
-																	toast.success($i18n.t('Memory deleted successfully'));
-																	memories = await getMemories(localStorage.token);
-																}
+															on:click={() => {
+																pendingDeleteMemory = memory;
+																showDeleteConfirmDialog = true;
 															}}
 														>
 															<svg
@@ -180,7 +240,7 @@
 							</table>
 						</div>
 					</div>
-				{:else}
+				{:else if hasLoaded}
 					<div class="text-center flex h-full text-sm w-full">
 						<div class=" my-auto pb-10 px-4 w-full text-gray-500">
 							{$i18n.t('Memories accessible by LLMs will be shown here.')}
@@ -193,9 +253,20 @@
 </Modal>
 
 <ConfirmDialog
+	title={$i18n.t('Delete memory')}
+	message={$i18n.t('Are you sure you want to delete this memory? This action cannot be undone.')}
+	confirmLabel={$i18n.t('Delete')}
+	bind:show={showDeleteConfirmDialog}
+	animated={false}
+	on:confirm={onDeleteConfirmed}
+	on:cancel={() => { pendingDeleteMemory = null; }}
+/>
+
+<ConfirmDialog
 	title={$i18n.t('Limpar memória')}
 	message={$i18n.t('Are you sure you want to clear all memories? This action cannot be undone.')}
 	bind:show={showClearConfirmDialog}
+	animated={false}
 	on:confirm={onClearConfirmed}
 	on:cancel={() => {
 		showClearConfirmDialog = false;
@@ -204,15 +275,11 @@
 
 <AddMemoryModal
 	bind:show={showAddMemoryModal}
-	on:save={async () => {
-		memories = await getMemories(localStorage.token);
-	}}
+	on:save={onSaved}
 />
 
 <EditMemoryModal
 	bind:show={showEditMemoryModal}
 	memory={selectedMemory}
-	on:save={async () => {
-		memories = await getMemories(localStorage.token);
-	}}
+	on:save={onSaved}
 />

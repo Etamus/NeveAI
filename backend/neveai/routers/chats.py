@@ -205,7 +205,7 @@ def search_user_chats(
     chat_list = [
         ChatTitleIdResponse(**chat.model_dump())
         for chat in Chats.get_chats_by_user_id_and_search_text(
-            user.id, text, skip=skip, limit=limit, db=db
+            user.id, text, skip=skip, limit=limit, db=db, summaries_only=True
         )
     ]
 

@@ -1,6 +1,6 @@
 import ThumbnailWorker from '$lib/workers/attachment-thumbnail.worker?worker';
 
-type Entry = { references: number; ready: Promise<string>; url?: string };
+type Entry = { references: number; ready: Promise<string>; url?: string; cancel?: () => void };
 const cache = new Map<string, Entry>();
 const pending = new Map<number, (blob?: Blob) => void>();
 let worker: Worker | undefined;
@@ -15,11 +15,11 @@ function trim() {
 	}
 }
 
-function createPreview(source: string): Promise<string> {
-	if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return Promise.resolve(source);
-	if (/^https?:/i.test(source) && new URL(source).origin !== location.origin) return Promise.resolve(source);
-	return new Promise(resolve => {
-		const id = ++sequence;
+function createPreview(source: string): { ready: Promise<string>; cancel?: () => void } {
+	if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') return { ready: Promise.resolve(source) };
+	if (/^https?:/i.test(source) && new URL(source).origin !== location.origin) return { ready: Promise.resolve(source) };
+	const id = ++sequence;
+	const ready = new Promise<string>(resolve => {
 		try {
 			if (!worker) {
 				worker = new ThumbnailWorker();
@@ -36,6 +36,13 @@ function createPreview(source: string): Promise<string> {
 			worker.postMessage({ id, source });
 		} catch { pending.delete(id);resolve(source); }
 	});
+	return { ready, cancel() {
+		const finish = pending.get(id);
+		if (!finish) return;
+		pending.delete(id);
+		worker?.postMessage({ cancel: id });
+		finish();
+	} };
 }
 
 export function acquireAttachmentThumbnail(source: string) {
@@ -43,13 +50,27 @@ export function acquireAttachmentThumbnail(source: string) {
 	if (!entry) {
 		entry = { references: 0, ready: Promise.resolve(source) };
 		const created = entry;
-		entry.ready = createPreview(source).then(url => { created.url = url; trim(); return url; });
+		const preview = createPreview(source);
+		entry.cancel = preview.cancel;
+		entry.ready = preview.ready.then(url => { created.url = url; trim(); return url; });
 		cache.set(source, entry);
 	} else { cache.delete(source); cache.set(source, entry); }
 	entry.references++;
 	let released = false;
 	return {
 		ready: entry.ready,
-		release() { if (!released) { released = true; entry!.references--; trim(); } }
+		release() {
+			if (released) return;
+			released = true;
+			entry!.references--;
+			trim();
+			// A keyed remount in the same update may immediately acquire this source again.
+			queueMicrotask(() => {
+				if (!entry!.references && !entry!.url && cache.get(source) === entry) {
+					cache.delete(source);
+					entry!.cancel?.();
+				}
+			});
+		}
 	};
 }

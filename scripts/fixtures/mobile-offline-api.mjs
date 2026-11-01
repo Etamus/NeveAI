@@ -19,7 +19,7 @@ export async function installMobileOfflineApi(page) {
  });
  await page.route('**/llamacpp/**',route=>{
   const path=new URL(route.request().url()).pathname;
-  const json=path.endsWith('/status')?{server_binary_exists:true}:path.endsWith('/vram')?{available:false}:path.includes('/models')?{models:[]}:{};
+  const json=path.endsWith('/media-state')?{epoch:'offline-fixture',revision:0,busy:false,loaded_models:[]}:path.endsWith('/status')?{server_binary_exists:true}:path.endsWith('/vram')?{available:false}:path.includes('/models')?{models:[]}:{};
   return route.fulfill({json});
  });
  await page.route('**/ws/**',route=>route.fulfill({status:503,body:''}));

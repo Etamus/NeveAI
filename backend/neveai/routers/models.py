@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from neveai.models.groups import Groups
+from neveai.utils.db_work import session_route
 from neveai.models.models import (ModelForm, ModelModel, ModelResponse, ModelAccessListResponse, ModelAccessResponse, Models)
 from neveai.models.access_grants import AccessGrants
 from neveai.routers import llamacpp
@@ -155,7 +156,8 @@ PAGE_ITEM_COUNT = 30
 @router.get(
     "/list", response_model=ModelAccessListResponse
 )  # do NOT use "/" as path, conflicts with main.py
-async def get_models(
+@session_route
+def get_models(
     query: Optional[str] = None,
     view_option: Optional[str] = None,
     tag: Optional[str] = None,
@@ -228,7 +230,8 @@ async def get_models(
 
 
 @router.get("/base", response_model=list[ModelResponse])
-async def get_base_models(
+@session_route
+def get_base_models(
     user=Depends(get_admin_user), db: Session = Depends(get_session)
 ):
     return Models.get_base_models(db=db)
@@ -240,7 +243,8 @@ async def get_base_models(
 
 
 @router.get("/tags", response_model=list[str])
-async def get_model_tags(
+@session_route
+def get_model_tags(
     user=Depends(get_verified_user), db: Session = Depends(get_session)
 ):
     if user.role == "admin" and BYPASS_ADMIN_ACCESS_CONTROL:
@@ -266,7 +270,8 @@ async def get_model_tags(
 
 
 @router.post("/create", response_model=Optional[ModelModel])
-async def create_new_model(
+@session_route
+def create_new_model(
     request: Request,
     form_data: ModelForm,
     user=Depends(get_verified_user),
@@ -310,7 +315,8 @@ async def create_new_model(
 
 
 @router.get("/export", response_model=list[ModelModel])
-async def export_models(
+@session_route
+def export_models(
     request: Request,
     user=Depends(get_verified_user),
     db: Session = Depends(get_session),
@@ -342,7 +348,8 @@ class ModelsImportForm(BaseModel):
 
 
 @router.post("/import", response_model=bool)
-async def import_models(
+@session_route
+def import_models(
     request: Request,
     user=Depends(get_verified_user),
     form_data: ModelsImportForm = (...),
@@ -415,7 +422,8 @@ class SyncModelsForm(BaseModel):
 
 
 @router.post("/sync", response_model=list[ModelModel])
-async def sync_models(
+@session_route
+def sync_models(
     request: Request,
     form_data: SyncModelsForm,
     user=Depends(get_admin_user),
@@ -435,7 +443,8 @@ class ModelIdForm(BaseModel):
 
 # Note: We're not using the typical url path param here, but instead using a query parameter to allow '/' in the id
 @router.get("/model", response_model=Optional[ModelAccessResponse])
-async def get_model_by_id(
+@session_route
+def get_model_by_id(
     request: Request,
     id: str,
     raw: bool = False,
@@ -562,7 +571,8 @@ def get_model_profile_image(id: str, user=Depends(get_verified_user)):
 
 
 @router.post("/model/toggle", response_model=Optional[ModelResponse])
-async def toggle_model_by_id(
+@session_route
+def toggle_model_by_id(
     id: str, user=Depends(get_verified_user), db: Session = Depends(get_session)
 ):
     model = Models.get_model_by_id(id, db=db)
@@ -605,7 +615,8 @@ async def toggle_model_by_id(
 
 
 @router.post("/model/update", response_model=Optional[ModelModel])
-async def update_model_by_id(
+@session_route
+def update_model_by_id(
     request: Request,
     form_data: ModelForm,
     user=Depends(get_verified_user),
@@ -666,7 +677,8 @@ class ModelAccessGrantsForm(BaseModel):
 
 
 @router.post("/model/delete", response_model=bool)
-async def delete_model_by_id(
+@session_route
+def delete_model_by_id(
     form_data: ModelIdForm,
     user=Depends(get_verified_user),
     db: Session = Depends(get_session),
@@ -699,7 +711,8 @@ async def delete_model_by_id(
 
 
 @router.delete("/delete/all", response_model=bool)
-async def delete_all_models(
+@session_route
+def delete_all_models(
     user=Depends(get_admin_user), db: Session = Depends(get_session)
 ):
     result = Models.delete_all_models(db=db)

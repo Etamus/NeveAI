@@ -29,6 +29,7 @@
 	let loadController: AbortController | undefined;
 	let refreshQueued = false;
 	let mounted = false;
+	let refreshedAt = 0;
 	const url = (file: any) => `${NEVEAI_API_BASE_URL}/files/${file.id}/content`;
 	const thumbnailUrl = (file: any) =>
 		`${NEVEAI_API_BASE_URL}/files/${file.id}/thumbnail?v=${file.updated_at ?? file.created_at ?? ''}`;
@@ -141,27 +142,31 @@
 		const controller = new AbortController();
 		loadController = controller;
 		const requestedKind = kind;
-		const pageCount = preservePages ? Math.max(1, Math.ceil(files.length / 50)) : 1;
+		const windowSize = preservePages ? Math.max(50, Math.ceil(files.length / 50) * 50) : 50;
 		const start = more ? files.length : 0;
 		loading = true;
 		error = '';
 		try {
 			const results: any[] = [];
 			let lastPage: any[] = [];
-			for (let page = 0; page < pageCount; page++) {
+			let pageSize = 50;
+			for (let offset = 0; offset < windowSize; offset += pageSize) {
+				pageSize = Math.min(1000, windowSize - offset);
 				lastPage = await getGeneratedFiles(
-					localStorage.token, requestedKind, '', start + page * 50, controller.signal
+					localStorage.token, requestedKind, '', start + offset, controller.signal, pageSize
 				);
 				if (id !== requestId) return;
 				results.push(...lastPage);
-				if (lastPage.length < 50) break;
+				if (lastPage.length < pageSize) break;
 			}
 			// Commit the refreshed window together so later pages never disappear between requests.
-			files = [
+			const nextFiles = [
 				...new Map((more ? [...files, ...results] : results).map((file) => [file.id, file])).values()
 			];
+			if (JSON.stringify(nextFiles) !== JSON.stringify(files)) files = nextFiles;
+			refreshedAt = Date.now();
 			settledEmpty = files.length === 0;
-			hasMore = lastPage.length === 50;
+			hasMore = lastPage.length === pageSize;
 		} catch (cause) {
 			if (id === requestId && !controller.signal.aborted) error = String(cause);
 		} finally {
@@ -190,7 +195,7 @@
 		showViewer = true;
 	};
 	const refresh = () => {
-		if (!document.hidden && !showViewer && !loading) void load(false, true);
+		if (!document.hidden && !showViewer && !loading && Date.now() - refreshedAt > 1000) void load(false, true);
 	};
 	onMount(() => {
 		chatId.set('');

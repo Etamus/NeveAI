@@ -10,6 +10,7 @@
 	export let saveSettings: Function;
 
 	let showManageModal = false;
+	let manageModal: ManageModal;
 
 	// Addons
 	let enableMemory = false;
@@ -21,7 +22,7 @@
 	});
 </script>
 
-<ManageModal bind:show={showManageModal} />
+<ManageModal bind:this={manageModal} bind:show={showManageModal} />
 
 <form
 	id="tab-personalization"
@@ -41,7 +42,7 @@
 					<button
 						class="p-1 px-3 text-sm flex rounded-sm transition"
 						on:click={() => {
-							showManageModal = true;
+							void manageModal.open();
 						}}
 						type="button"
 					>

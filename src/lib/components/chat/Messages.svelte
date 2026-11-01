@@ -411,6 +411,7 @@
 		await updateChat();
 	};
 
+	import { getVideoGenerationFeatures } from '$lib/utils/videoGeneration';
 	const editMessage = async (messageId, { content, files }, submit = true) => {
 		if ((selectedModels ?? []).filter((id) => id).length === 0) {
 			toast.error($i18n.t('Model not selected'));
@@ -421,6 +422,8 @@
 				// New user message
 				let userPrompt = content;
 				let userMessageId = uuidv4();
+				const videoFeatures = getVideoGenerationFeatures(history.messages[messageId],
+					(history.messages[messageId].childrenIds ?? []).map((id) => history.messages[id]));
 
 				let userMessage = {
 					id: userMessageId,
@@ -428,6 +431,7 @@
 					childrenIds: [],
 					role: 'user',
 					content: userPrompt,
+					...(videoFeatures ? { video_generation_features: videoFeatures } : {}),
 					...(files && { files: files }),
 					models: selectedModels,
 					timestamp: Math.floor(Date.now() / 1000) // Unix epoch

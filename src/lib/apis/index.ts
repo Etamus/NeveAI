@@ -1,5 +1,6 @@
 import { NEVEAI_BASE_URL } from '$lib/constants';
 import { convertOpenApiToToolPayload } from '$lib/utils';
+import { versionUpdateStatus } from '$lib/utils/updateAvailability';
 
 export const shutdownApp = async (token: string) => {
 	const res = await fetch(`${NEVEAI_BASE_URL}/api/shutdown`, {
@@ -658,7 +659,9 @@ export const getVersion = async (token: string) => {
 	return res;
 };
 
+let versionUpdateRequest = 0;
 export const getVersionUpdates = async (token: string) => {
+	const requestId = ++versionUpdateRequest;
 	let error = null;
 
 	const res = await fetch(`${NEVEAI_BASE_URL}/api/version/updates`, {
@@ -679,6 +682,9 @@ export const getVersionUpdates = async (token: string) => {
 			return null;
 		});
 
+	if (requestId === versionUpdateRequest) {
+		versionUpdateStatus.set(res && typeof res === 'object' && !Array.isArray(res) ? res : null);
+	}
 	if (error) {
 		throw error;
 	}

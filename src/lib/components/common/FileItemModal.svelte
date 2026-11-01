@@ -23,6 +23,7 @@
 	import dayjs from 'dayjs';
 	import Spinner from './Spinner.svelte';
 	import PDFViewer from './PDFViewer.svelte';
+	import SheetTabs from './SheetTabs.svelte';
 	import GeneratedMusicPlayer from '$lib/components/chat/Messages/GeneratedMusicPlayer.svelte';
 	import GeneratedVideoPlayer from '$lib/components/chat/Messages/GeneratedVideoPlayer.svelte';
 
@@ -51,6 +52,8 @@
 	let excelSheetNames: string[] = [];
 	let selectedSheet = '';
 	let excelHtml = '';
+	const excelSheetCache = new Map<object, Promise<string>>();
+	let excelRenderRevision = 0;
 	let excelError = '';
 
 	// DOCX state
@@ -186,6 +189,7 @@
 				import('xlsx')
 			]);
 			excelWorkbook = read(arrayBuffer, { type: 'array' });
+			excelSheetCache.clear();
 			excelSheetNames = excelWorkbook.SheetNames;
 
 			if (excelSheetNames.length > 0) {
@@ -200,10 +204,25 @@
 
 	const renderExcelSheet = async () => {
 		if (!excelWorkbook || !selectedSheet) return;
-		const { excelToTable } = await import('$lib/utils/excelToTable');
 		const worksheet = excelWorkbook.Sheets[selectedSheet];
-		const result = await excelToTable(worksheet);
-		excelHtml = result.html;
+		const revision = ++excelRenderRevision;
+		let rendered = excelSheetCache.get(worksheet);
+		if (!rendered) {
+			rendered = import('$lib/utils/excelToTable').then(({ excelToTable }) => excelToTable(worksheet)).then(result => {
+				// Share in-flight work, but do not retain very large rendered sheets.
+				if (result.html.length > 2_000_000) excelSheetCache.delete(worksheet);
+				return result.html;
+			});
+			excelSheetCache.set(worksheet, rendered);
+			if (excelSheetCache.size > 2) excelSheetCache.delete(excelSheetCache.keys().next().value!);
+		}
+		try {
+			const html = await rendered;
+			if (revision === excelRenderRevision) excelHtml = html;
+		} catch (error) {
+			excelSheetCache.delete(worksheet);
+			throw error;
+		}
 	};
 
 	$: if (selectedSheet && excelWorkbook) {
@@ -426,7 +445,7 @@ $: if (show) {
 		<div class="flex-1 min-h-0 flex flex-col overflow-hidden pt-2.5">
 			{#if !loading}
 				<div
-					class="flex-1 min-h-0 {isPDF || isVideo || isImage
+					class="flex-1 min-h-0 {isPDF || isVideo || isImage || isExcel || isPptx
 						? 'overflow-hidden'
 						: 'overflow-auto'}"
 				>
@@ -488,31 +507,19 @@ $: if (show) {
 									{excelError}
 								</div>
 							{:else}
+								<div class="flex h-full min-h-0 min-w-0 flex-col gap-2.5">
 								{#if excelSheetNames.length > 1}
-									<div
-										class="flex mb-2.5 scrollbar-none overflow-x-auto w-full border-b border-gray-50 dark:border-gray-850/30 text-center text-sm font-medium bg-transparent dark:text-gray-200"
-									>
-										{#each excelSheetNames as sheetName}
-											<button
-												class="min-w-fit py-1.5 px-4 border-b {selectedSheet === sheetName
-													? ' '
-													: ' border-transparent text-gray-300 dark:text-gray-600 hover:text-gray-700 dark:hover:text-white'} transition"
-												type="button"
-												on:click={() => {
-													selectedSheet = sheetName;
-												}}>{sheetName}</button
-											>
-										{/each}
-									</div>
+									<SheetTabs sheets={excelSheetNames} selected={selectedSheet} onSelect={(sheet) => selectedSheet = sheet} />
 								{/if}
 
 								{#if excelHtml}
-									<div class="office-preview">
+									<div class="office-preview min-h-0 flex-1 overflow-auto">
 										{@html excelHtml}
 									</div>
 								{:else}
 									<div class="text-gray-500 text-sm p-4">Sem conteúdo</div>
 								{/if}
+								</div>
 							{/if}
 						{:else if isCode}
 							<div class="text-sm relative">
@@ -543,17 +550,17 @@ $: if (show) {
 							{#if pptxError}
 								<div class="text-red-500 text-sm p-4">{pptxError}</div>
 							{:else if pptxSlides.length > 0}
-								<div>
-									<div class="flex justify-center p-4">
+								<div class="presentation-preview flex h-full min-h-0 flex-col">
+									<div class="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-2">
 										<img
 											src={pptxSlides[pptxCurrentSlide]}
 											alt="Slide {pptxCurrentSlide + 1}"
-											class="max-w-full max-h-[50vh] object-contain rounded-md shadow-lg"
+											class="h-full w-full min-h-0 object-contain rounded-md"
 											draggable="false"
 										/>
 									</div>
 									{#if pptxSlides.length > 1}
-										<div class="flex items-center justify-center gap-3 pb-3 text-sm text-gray-500">
+										<div class="slide-navigation flex shrink-0 items-center justify-center gap-3 py-2 text-sm text-gray-500">
 											<button
 												class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
 												disabled={pptxCurrentSlide === 0}

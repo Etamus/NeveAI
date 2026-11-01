@@ -4,7 +4,6 @@
 
 	import { updateMemoryById } from '$lib/apis/memories';
 
-	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
@@ -28,6 +27,7 @@
 	};
 
 	const submitHandler = async () => {
+		if (loading) return;
 		loading = true;
 
 		const res = await updateMemoryById(localStorage.token, memory.id, content).catch((error) => {
@@ -39,7 +39,7 @@
 		if (res) {
 			console.log(res);
 			toast.success($i18n.t('Memory updated successfully'));
-			dispatch('save');
+			dispatch('save', res);
 			show = false;
 		}
 
@@ -47,7 +47,7 @@
 	};
 </script>
 
-<Modal bind:show size="sm">
+<Modal bind:show size="sm" animated={false}>
 	<div>
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20">
 			<div class=" text-lg font-medium self-center">
@@ -93,11 +93,6 @@
 						>
 							{$i18n.t('Update')}
 
-							{#if loading}
-								<span class="shrink-0">
-									<Spinner />
-								</span>
-							{/if}
 						</button>
 					</div>
 				</form>
@@ -105,3 +100,9 @@
 		</div>
 	</div>
 </Modal>
+
+<style>
+	textarea::-webkit-scrollbar-track { margin-block: 10px; }
+	textarea::-webkit-scrollbar-corner,
+	textarea::-webkit-resizer { background: transparent; }
+</style>

@@ -5,7 +5,6 @@
 	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import { addNewMemory } from '$lib/apis/memories';
 	import { toast } from 'svelte-sonner';
-	import Spinner from '$lib/components/common/Spinner.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 
 	const dispatch = createEventDispatcher();
@@ -17,6 +16,7 @@
 	let content = '';
 
 	const submitHandler = async () => {
+		if (loading) return;
 		loading = true;
 
 		const res = await addNewMemory(localStorage.token, content).catch((error) => {
@@ -30,7 +30,7 @@
 			toast.success($i18n.t('Memory added successfully'));
 			content = '';
 			show = false;
-			dispatch('save');
+			dispatch('save', res);
 		}
 
 		loading = false;
@@ -81,11 +81,6 @@
 						>
 							{$i18n.t('Add')}
 
-							{#if loading}
-								<span class="shrink-0">
-									<Spinner />
-								</span>
-							{/if}
 						</button>
 					</div>
 				</form>
@@ -93,3 +88,9 @@
 		</div>
 	</div>
 </Modal>
+
+<style>
+	textarea::-webkit-scrollbar-track { margin-block: 10px; }
+	textarea::-webkit-scrollbar-corner,
+	textarea::-webkit-resizer { background: transparent; }
+</style>

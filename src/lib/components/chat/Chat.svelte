@@ -176,21 +176,22 @@
 	let stableDiffusionModeOptions: import('$lib/utils/imageModes').ImageModeOptions = { mode: 'normal' };
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
+	import { normalizeVideoGenerationModel, snapshotVideoRequestFeatures, getVideoGenerationFeatures, type VideoGenerationModel } from '$lib/utils/videoGeneration';
+	let videoGenerationModel: VideoGenerationModel = 'minimax_h3';
 	let videoGenerationResolution: '480p' | '672p' = '480p';
 	let videoGenerationDuration: '5s' | '8s' = '5s';
 	let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
 	let videoPreferencesReady = false;
 	$: if (videoPreferencesReady) {
+		localStorage.setItem('neveai.videoModel', videoGenerationModel);
 		localStorage.setItem('neveai.videoResolution', videoGenerationResolution);
 		localStorage.setItem('neveai.videoDuration', videoGenerationDuration);
 		localStorage.setItem('neveai.videoAspectRatio', videoGenerationAspectRatio);
 	}
 	let previousMediaGenerationEnabled =
 		stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
-	let previousVideoGenerationEnabled = videoGenerationEnabled;
 	let stableDiffusionStandbyModel: LocalModel | null = null;
 	let restoringStableDiffusionStandbyModel = false;
-	let placingVideoModelInStandby = false;
 	let thinkingEnabled = true;
 	let thinkingUnlimitedEnabled = false;
 	let thinkingExtendedEnabled = true;
@@ -473,31 +474,6 @@
 		}
 	};
 
-	const putVideoGenerationModelInStandby = async () => {
-		if (placingVideoModelInStandby || !videoGenerationEnabled || hasActiveChatResponse()) return;
-
-		placingVideoModelInStandby = true;
-		modelLoading = true;
-		try {
-			const loadedModels = await getLoadedLocalModels(localStorage.token);
-			if (!videoGenerationEnabled) return;
-
-			const currentlyLoaded = loadedModels[0] ?? null;
-			if (!currentlyLoaded) return;
-
-			stableDiffusionStandbyModel ??= currentlyLoaded;
-			await unloadLocalModel(localStorage.token, currentlyLoaded.id, $models.find((model) => model.id === currentlyLoaded.id)?.name);
-			models.set(await getModels(localStorage.token, null, false, true));
-		} catch (err: any) {
-			console.error('Failed to put the local model in video generation standby:', err);
-			showLocalModelLoadError(err);
-		} finally {
-			placingVideoModelInStandby = false;
-			modelLoading = false;
-			if (!videoGenerationEnabled) void restoreStableDiffusionStandbyModel();
-		}
-	};
-
 	$: {
 		const mediaGenerationEnabled =
 			stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
@@ -505,13 +481,6 @@
 			void restoreStableDiffusionStandbyModel();
 		}
 		previousMediaGenerationEnabled = mediaGenerationEnabled;
-	}
-
-	$: {
-		if (!previousVideoGenerationEnabled && videoGenerationEnabled) {
-			void putVideoGenerationModelInStandby();
-		}
-		previousVideoGenerationEnabled = videoGenerationEnabled;
 	}
 
 	// Message queue for storing messages while generating
@@ -570,6 +539,7 @@
 					stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
 					musicGenerationEnabled = input.musicGenerationEnabled ?? false;
 					videoGenerationEnabled = input.videoGenerationEnabled ?? false;
+					videoGenerationModel = normalizeVideoGenerationModel(localStorage.getItem('neveai.videoModel') ?? input.videoGenerationModel);
 					normalizeExclusiveFeatureToggles();
 					thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
 				}
@@ -1902,6 +1872,7 @@
 		)
 			? (savedImageResolution as typeof stableDiffusionResolution)
 			: '1:1';
+		videoGenerationModel = normalizeVideoGenerationModel(localStorage.getItem('neveai.videoModel'));
 		const savedVideoResolution = localStorage.getItem('neveai.videoResolution');
 		videoGenerationResolution = ['480p', '672p'].includes(savedVideoResolution ?? '')
 			? (savedVideoResolution as typeof videoGenerationResolution)
@@ -2021,6 +1992,7 @@
 						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
 						musicGenerationEnabled = input.musicGenerationEnabled ?? false;
 						videoGenerationEnabled = input.videoGenerationEnabled ?? false;
+						videoGenerationModel = normalizeVideoGenerationModel(localStorage.getItem('neveai.videoModel') ?? input.videoGenerationModel);
 						normalizeExclusiveFeatureToggles();
 						thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
 					}
@@ -4162,8 +4134,8 @@
 	};
 
 	const ensureLocalModelsReady = async (modelIds: string[], { textOnly = false } = {}) => {
-		if (!textOnly && videoGenerationEnabled) {
-			await putVideoGenerationModelInStandby();
+		if (!textOnly && (stableDiffusionEnabled || videoGenerationEnabled)) {
+			// Standby belongs to the submitted backend job, including retries.
 			return true;
 		}
 
@@ -4287,7 +4259,7 @@
 		normalizeExclusiveFeatureToggles();
 		// Keep the user's selected integration stable across asynchronous model
 		// checks and the route change performed when the first message is sent.
-		const requestFeatures = features ?? structuredClone(getFeatures());
+		const requestFeatures = snapshotVideoRequestFeatures(features ?? getFeatures(), $mobile);
 		if (requestFeatures.stable_diffusion && requestFeatures.stable_diffusion_quality === 'qwen_image_2s') {
 			const mode = requestFeatures.stable_diffusion_mode_options?.mode ?? 'normal';
 			const error = imageModeSubmissionError(requestFeatures.stable_diffusion_mode_options ?? {mode:'normal'}, files);
@@ -4298,10 +4270,6 @@
 		} else {
 			imageModeDisplay = undefined;
 		}
-		if (requestFeatures.video_generation) {
-			await putVideoGenerationModelInStandby();
-		}
-
 		const _selectedModels = selectedModels.map((modelId) =>
 			$models.map((m) => m.id).includes(modelId) ? modelId : ''
 		);
@@ -4492,6 +4460,7 @@
 			role: 'user',
 			content: userPrompt,
 			...(imageModeDisplay ? { image_mode_display: imageModeDisplay } : {}),
+			...(requestFeatures.video_generation ? { video_generation_features: structuredClone(requestFeatures) } : {}),
 			files: _files.length > 0 ? _files : undefined,
 			timestamp: Math.floor(Date.now() / 1000), // Unix epoch
 			models: selectedModels
@@ -4535,7 +4504,7 @@
 		// Creating the first persisted chat can trigger a navigation/state restore
 		// before the request is sent. Freeze the selected integration beforehand.
 		normalizeExclusiveFeatureToggles();
-		const requestFeatures = features ?? structuredClone(getFeatures());
+		const requestFeatures = snapshotVideoRequestFeatures(features ?? _history.messages[parentId]?.video_generation_features ?? getFeatures(), $mobile);
 		let _chatId = JSON.parse(JSON.stringify($chatId));
 		_history = structuredClone(_history);
 
@@ -4564,6 +4533,7 @@
 					childrenIds: [],
 					role: 'assistant',
 					content: '',
+					...(requestFeatures.video_generation ? { video_generation_features: structuredClone(requestFeatures) } : {}),
 					done: false,
 					model: model.id,
 					modelName: model.name ?? model.id,
@@ -4724,8 +4694,9 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.video_generation)
 						? videoGenerationEnabled
 						: false,
-				video_generation_resolution: videoGenerationResolution,
-				video_generation_duration: videoGenerationDuration,
+				video_generation_model: normalizeVideoGenerationModel(videoGenerationModel),
+				video_generation_resolution: $mobile ? '480p' : videoGenerationResolution,
+				video_generation_duration: $mobile ? '5s' : videoGenerationDuration,
 				video_generation_aspect_ratio: videoGenerationAspectRatio
 			};
 
@@ -4888,7 +4859,7 @@
 				history.messages[responseMessageId].context_window = requestContextWindow;
 			}
 		}
-		const effectiveRequestFeatures = requestFeatures ?? getFeatures();
+		const effectiveRequestFeatures = snapshotVideoRequestFeatures(requestFeatures ?? getFeatures(), $mobile);
 		const isVisualMediaRequest = Boolean(
 			effectiveRequestFeatures?.stable_diffusion || effectiveRequestFeatures?.video_generation
 		);
@@ -5374,7 +5345,8 @@
 					return;
 				}
 
-				const generatedAction = message?.statusHistory?.some(
+				const videoRequestFeatures = getVideoGenerationFeatures(message) ?? getVideoGenerationFeatures(userMessage);
+				const generatedAction = videoRequestFeatures || message?.statusHistory?.some(
 					(status: any) => status.action === 'video_generation'
 				)
 					? 'video_generation'
@@ -5388,6 +5360,7 @@
 					musicGenerationEnabled,
 					videoGenerationEnabled,
 					stableDiffusionQuality,
+					videoGenerationModel,
 					stableDiffusionStyle,
 					stableDiffusionResolution,
 					stableDiffusionModeOptions,
@@ -5416,16 +5389,17 @@
 						stableDiffusionModeOptions = message?.statusHistory?.find((status: any) => status.action === 'stable_diffusion')?.mode_options ?? { mode: 'normal' };
 					}
 					if (generatedAction === 'video_generation') {
+						videoGenerationModel = normalizeVideoGenerationModel(videoRequestFeatures?.video_generation_model);
 						const videoStatus = message?.statusHistory?.find(
 							(status: any) => status.action === 'video_generation'
 						);
-						videoGenerationResolution = videoStatus?.resolution ?? videoGenerationResolution;
-						videoGenerationDuration = videoStatus?.duration ?? videoGenerationDuration;
-						videoGenerationAspectRatio = videoStatus?.aspect_ratio ?? videoGenerationAspectRatio;
+						videoGenerationResolution = videoRequestFeatures?.video_generation_resolution ?? videoStatus?.resolution ?? videoGenerationResolution;
+						videoGenerationDuration = videoRequestFeatures?.video_generation_duration ?? videoStatus?.duration ?? videoGenerationDuration;
+						videoGenerationAspectRatio = videoRequestFeatures?.video_generation_aspect_ratio ?? videoStatus?.aspect_ratio ?? videoGenerationAspectRatio;
 					}
 				}
 
-				const imageModeRequestFeatures = generatedAction === 'stable_diffusion' && stableDiffusionQuality === 'qwen_image_2s'
+				const mediaRequestFeatures = generatedAction === 'video_generation' || (generatedAction === 'stable_diffusion' && stableDiffusionQuality === 'qwen_image_2s')
 					? structuredClone(getFeatures()) : null;
 				try {
 					if (!(await ensureLocalModelsReady([model.id]))) {
@@ -5436,6 +5410,7 @@
 
 					const responseMessage = {
 						...history.messages[message.id],
+						...(generatedAction === 'video_generation' ? { video_generation_features: structuredClone(mediaRequestFeatures) } : {}),
 						content: '',
 						done: false,
 						error: undefined,
@@ -5476,7 +5451,7 @@
 						_history,
 						message.id,
 						$chatId,
-						imageModeRequestFeatures
+						mediaRequestFeatures
 					);
 
 					if (chatEventEmitter) clearInterval(chatEventEmitter);
@@ -5489,6 +5464,7 @@
 						stableDiffusionEnabled = previousMediaState.stableDiffusionEnabled;
 						musicGenerationEnabled = previousMediaState.musicGenerationEnabled;
 						videoGenerationEnabled = previousMediaState.videoGenerationEnabled;
+						videoGenerationModel = previousMediaState.videoGenerationModel;
 						stableDiffusionQuality = previousMediaState.stableDiffusionQuality;
 						stableDiffusionStyle = previousMediaState.stableDiffusionStyle;
 						stableDiffusionResolution = previousMediaState.stableDiffusionResolution;
@@ -5645,7 +5621,7 @@
 		return String(content).replace(/\s+/g, ' ').trim().slice(0, 100);
 	};
 
-	const getInitialImageChatTitle = (history) => {
+	const getInitialChatTitle = (history) => {
 		const firstUserMessage = createMessagesList(history, history.currentId).find(
 			(message) => message?.role === 'user'
 		);
@@ -5663,16 +5639,7 @@
 		let _chatId = $chatId;
 
 		if (!$temporaryChatEnabled) {
-			const firstUserMessage = createMessagesList(history, history.currentId).find(
-				(message) => message?.role === 'user'
-			);
-			const pastedOnlyTitle = getMessageTextForTitle(firstUserMessage?.content).trim()
-				? ''
-				: getPastedTextTitle(firstUserMessage);
-			const initialTitle =
-				stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled
-					? getInitialImageChatTitle(history) || $i18n.t('New Chat')
-					: pastedOnlyTitle || $i18n.t('New Chat');
+			const initialTitle = getInitialChatTitle(history) || $i18n.t('New Chat');
 
 			chat = await createNewChat(
 				localStorage.token,
@@ -5811,15 +5778,6 @@
 				<div
 					class="absolute top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
 					style="background-image: url({$selectedFolder?.meta?.background_image_url})  "
-				/>
-
-				<div
-					class="absolute top-0 left-0 w-full h-full bg-linear-to-t from-white to-white/85 dark:from-black dark:to-black/90 z-0"
-				/>
-			{:else if $settings?.backgroundImageUrl}
-				<div
-					class="absolute top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
-					style="background-image: url({$settings.backgroundImageUrl})  "
 				/>
 
 				<div
@@ -5977,6 +5935,7 @@
 									bind:stableDiffusionModeOptions
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
+									bind:videoGenerationModel
 									bind:videoGenerationResolution
 									bind:videoGenerationDuration
 									bind:videoGenerationAspectRatio
@@ -6063,6 +6022,7 @@
 									bind:stableDiffusionModeOptions
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
+									bind:videoGenerationModel
 									bind:videoGenerationResolution
 									bind:videoGenerationDuration
 									bind:videoGenerationAspectRatio

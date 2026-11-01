@@ -307,9 +307,6 @@ if FROM_INIT_PY:
 # Database
 ####################################
 
-from neveai.internal.legacy_state import import_database
-
-import_database(Path(DATA_DIR))
 
 DATABASE_URL = os.environ.get("DATABASE_URL", f"sqlite:///{DATA_DIR}/neve.db")
 

@@ -7,7 +7,7 @@
 	import HuggingFace from '$lib/components/icons/HuggingFace.svelte';
 	import Scale from '$lib/components/icons/Scale.svelte';
 	import { NEVEAI_VERSION, user } from '$lib/stores';
-	import { getAvailableUpdateTargets } from '$lib/utils/updateAvailability';
+	import { getAvailableUpdateTargets, versionUpdateStatus } from '$lib/utils/updateAvailability';
 	import bundledProjectVersion from '../../../../../version.txt?raw';
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
@@ -18,8 +18,9 @@
 	const licenseUrl = 'https://github.com/Etamus/NeveAI/blob/main/LICENSE.txt';
 	let versionRefreshInterval: ReturnType<typeof setInterval>;
 	let updateRefreshInterval: ReturnType<typeof setInterval>;
-	let updateAvailable = false;
-	let latestProjectVersion = '';
+	$: pendingTargets = getAvailableUpdateTargets($versionUpdateStatus, projectVersion);
+	$: latestProjectVersion = pendingTargets.join(' e ');
+	$: updateAvailable = pendingTargets.length > 0;
 	let startingUpdater = false;
 	let checkingUpdates = false;
 
@@ -49,7 +50,6 @@
 
 	const checkForUpdateStatus = async () => {
 		if ($user?.role !== 'admin') {
-			updateAvailable = false;
 			return;
 		}
 
@@ -61,10 +61,6 @@
 		if (!data) {
 			return;
 		}
-
-		const pendingTargets = getAvailableUpdateTargets(data, projectVersion);
-		latestProjectVersion = pendingTargets.join(' e ');
-		updateAvailable = pendingTargets.length > 0;
 	};
 
 	const startUpdate = async () => {
@@ -122,7 +118,7 @@
 		<div class="text-sm font-medium">{$i18n.t('Version')}</div>
 		<div class="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
 			<span>{projectVersion}</span>
-			{#if updateAvailable || startingUpdater}
+			{#if $user?.role === 'admin' && (updateAvailable || startingUpdater)}
 				<button
 					type="button"
 					class="bg-transparent p-0 text-sm font-medium text-gray-700 transition-opacity hover:opacity-60 disabled:cursor-default disabled:opacity-60 dark:text-gray-200"

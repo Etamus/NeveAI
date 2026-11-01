@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, load_only
 from neveai.internal.db import (Base, get_db_context)
 from neveai.utils.misc import sanitize_metadata
 from pydantic import BaseModel, ConfigDict, model_validator
-from sqlalchemy import BigInteger, Column, String, Text, JSON, or_
+from sqlalchemy import BigInteger, Column, String, Text, JSON, Index, or_
 
 log = logging.getLogger(__name__)
 
@@ -17,6 +17,7 @@ log = logging.getLogger(__name__)
 
 class File(Base):
     __tablename__ = "file"
+    __table_args__ = (Index("file_user_created_id_idx", "user_id", "created_at", "id"),)
     id = Column(String, primary_key=True, unique=True)
     user_id = Column(String)
     hash = Column(Text, nullable=True)

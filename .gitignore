@@ -13,6 +13,7 @@ venv/
 .venv/
 backend/venv/
 backend/neveai/venv/
+# Virtual environments are generated locally, never distributed as source.
 tools/
 context/
 

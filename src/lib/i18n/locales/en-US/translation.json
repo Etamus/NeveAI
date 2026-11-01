@@ -1,4 +1,10 @@
 {
+	"Sheets": "Sheets",
+	"Previous": "Previous",
+	"Next": "Next",
+	"Delete memory": "Delete memory",
+	"Are you sure you want to delete this memory? This action cannot be undone.": "Are you sure you want to delete this memory? This action cannot be undone.",
+	"Failed to load memories": "Failed to load memories",
 	"Apply an expansion adjustment before sending.": "Apply an expansion adjustment before sending.",
 	"Aprimorar": "Enhance",
 	"Expandir": "Expand",
@@ -705,6 +711,7 @@
 	"Tasks": "",
 	"Temporary Chat": "Temporary chat",
 	"Temporary Chat by Default": "Temporary chat by default",
+	"Allow update notifications": "Update notifications",
 	"Terminal": "",
 	"The temperature of the model. Increasing the temperature will make the model answer more creatively.": "",
 	"Theme": "",

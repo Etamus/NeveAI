@@ -28,7 +28,7 @@ try{
   const full=async(label)=>{const box=await dialogBox(page);assert(box,label+' missing');if(mobile)assert(Math.abs(box.x)<1&&Math.abs(box.y)<1&&Math.abs(box.width-width)<1&&Math.abs(box.height-height)<1,label+' not fullscreen '+JSON.stringify(box));else assert(box.width<width-30&&box.height<height,label+' changed desktop sizing '+JSON.stringify(box));return box;};
   const back=async()=>{await page.evaluate(()=>history.back());await page.waitForTimeout(300);assert.equal(page.url(),url,'Back navigated away from the chat');};
   if(mobile)await page.locator('button[aria-label="Models"]').tap();else await page.locator('button[aria-label="Models"]').click();await page.locator('.unified-models-shell').waitFor();await page.waitForTimeout(250);
-  const models=await full('models');assert.equal(await visibleDialog(page).locator('.unified-global-settings').isVisible(),!mobile);
+  const models=await full('models');assert.equal(await visibleDialog(page).locator('.unified-global-settings').count(),0);
   if(mobile)assert.equal(await visibleDialog(page).locator('button[aria-label="Close"]').count(),0);
   const modelSpacing=await page.locator('.unified-model-name').first().evaluate(e=>{const name=e.getBoundingClientRect(),meta=e.parentElement.nextElementSibling.getBoundingClientRect();return{gap:meta.top-name.bottom,max:getComputedStyle(e).maxWidth};});
   if(mobile)assert(modelSpacing.gap>=6,'Model metadata is too close');

@@ -1,3 +1,8 @@
+import { writable } from 'svelte/store';
+
+// Session-only result shared by the startup check and About. Never persisted.
+export const versionUpdateStatus = writable<Record<string, any> | null>(null);
+
 const normalizedVersion = (value: unknown) =>
 	typeof value === 'string' ? value.trim().replace(/^\uFEFF/, '').replace(/^v/i, '').toLowerCase() : '';
 

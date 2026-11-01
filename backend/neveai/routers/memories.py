@@ -8,6 +8,7 @@ from neveai.models.memories import Memories, MemoryModel
 from neveai.retrieval.vector.factory import VECTOR_DB_CLIENT
 from neveai.utils.auth import get_verified_user
 from neveai.internal.db import get_session
+from neveai.utils.db_work import session_route
 from sqlalchemy.orm import Session
 
 from neveai.utils.access_control import has_permission
@@ -24,7 +25,8 @@ router = APIRouter()
 
 
 @router.get("/", response_model=list[MemoryModel])
-async def get_memories(
+@session_route
+def get_memories(
     request: Request,
     user=Depends(get_verified_user),
     db: Session = Depends(get_session),
@@ -75,7 +77,7 @@ async def add_memory(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if not has_permission(
+    if not await asyncio.to_thread(has_permission,
         user.id, "features.memories", request.app.state.config.USER_PERMISSIONS
     ):
         raise HTTPException(
@@ -83,11 +85,11 @@ async def add_memory(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    memory = Memories.insert_new_memory(user.id, form_data.content)
+    memory = await asyncio.to_thread(Memories.insert_new_memory, user.id, form_data.content)
 
     vector = await request.app.state.EMBEDDING_FUNCTION(memory.content, user=user)
 
-    VECTOR_DB_CLIENT.upsert(
+    await asyncio.to_thread(VECTOR_DB_CLIENT.upsert,
         collection_name=f"user-memory-{user.id}",
         items=[
             {
@@ -128,7 +130,7 @@ async def query_memory(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if not has_permission(
+    if not await asyncio.to_thread(has_permission,
         user.id, "features.memories", request.app.state.config.USER_PERMISSIONS
     ):
         raise HTTPException(
@@ -136,13 +138,13 @@ async def query_memory(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    memories = Memories.get_memories_by_user_id(user.id)
+    memories = await asyncio.to_thread(Memories.get_memories_by_user_id, user.id)
     if not memories:
         raise HTTPException(status_code=404, detail="No memories found for user")
 
     vector = await request.app.state.EMBEDDING_FUNCTION(form_data.content, user=user)
 
-    results = VECTOR_DB_CLIENT.search(
+    results = await asyncio.to_thread(VECTOR_DB_CLIENT.search,
         collection_name=f"user-memory-{user.id}",
         vectors=[vector],
         limit=form_data.k,
@@ -173,7 +175,7 @@ async def reset_memory_from_vector_db(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if not has_permission(
+    if not await asyncio.to_thread(has_permission,
         user.id, "features.memories", request.app.state.config.USER_PERMISSIONS
     ):
         raise HTTPException(
@@ -181,9 +183,9 @@ async def reset_memory_from_vector_db(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    VECTOR_DB_CLIENT.delete_collection(f"user-memory-{user.id}")
+    await asyncio.to_thread(VECTOR_DB_CLIENT.delete_collection, f"user-memory-{user.id}")
 
-    memories = Memories.get_memories_by_user_id(user.id)
+    memories = await asyncio.to_thread(Memories.get_memories_by_user_id, user.id)
 
     # Generate vectors in parallel
     vectors = await asyncio.gather(
@@ -193,7 +195,7 @@ async def reset_memory_from_vector_db(
         ]
     )
 
-    VECTOR_DB_CLIENT.upsert(
+    await asyncio.to_thread(VECTOR_DB_CLIENT.upsert,
         collection_name=f"user-memory-{user.id}",
         items=[
             {
@@ -218,7 +220,8 @@ async def reset_memory_from_vector_db(
 
 
 @router.delete("/delete/user", response_model=bool)
-async def delete_memory_by_user_id(
+@session_route
+def delete_memory_by_user_id(
     request: Request,
     user=Depends(get_verified_user),
     db: Session = Depends(get_session),
@@ -271,7 +274,7 @@ async def update_memory_by_id(
             detail=ERROR_MESSAGES.NOT_FOUND,
         )
 
-    if not has_permission(
+    if not await asyncio.to_thread(has_permission,
         user.id, "features.memories", request.app.state.config.USER_PERMISSIONS
     ):
         raise HTTPException(
@@ -279,7 +282,7 @@ async def update_memory_by_id(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    memory = Memories.update_memory_by_id_and_user_id(
+    memory = await asyncio.to_thread(Memories.update_memory_by_id_and_user_id,
         memory_id, user.id, form_data.content
     )
     if memory is None:
@@ -288,7 +291,7 @@ async def update_memory_by_id(
     if form_data.content is not None:
         vector = await request.app.state.EMBEDDING_FUNCTION(memory.content, user=user)
 
-        VECTOR_DB_CLIENT.upsert(
+        await asyncio.to_thread(VECTOR_DB_CLIENT.upsert,
             collection_name=f"user-memory-{user.id}",
             items=[
                 {
@@ -312,7 +315,8 @@ async def update_memory_by_id(
 
 
 @router.delete("/{memory_id}", response_model=bool)
-async def delete_memory_by_id(
+@session_route
+def delete_memory_by_id(
     memory_id: str,
     request: Request,
     user=Depends(get_verified_user),

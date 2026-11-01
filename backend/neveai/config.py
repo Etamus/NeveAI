@@ -14,7 +14,6 @@ from pydantic import BaseModel
 from sqlalchemy import JSON, Column, DateTime, Integer, func
 from neveai.env import (DATA_DIR, ENABLE_DB_MIGRATIONS, ENV, FRONTEND_BUILD_DIR, OFFLINE_MODE, NEVEAI_DIR, NEVEAI_NAME, log)
 from neveai.internal.db import Base, get_db
-from neveai.internal.legacy_state import import_config_namespace
 from neveai.internal.settings import RuntimeSettings, Setting, SettingsStore
 from neveai.utils.redis import get_redis_connection
 
@@ -107,8 +106,6 @@ def get_config():
 
 
 CONFIG_DATA = get_config()
-if import_config_namespace(CONFIG_DATA):
-    save_to_db(CONFIG_DATA)
 
 
 PERSISTENT_CONFIG_REGISTRY = []

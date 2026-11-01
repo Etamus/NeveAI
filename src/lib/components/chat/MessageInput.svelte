@@ -72,6 +72,7 @@
 	import RichTextInput from '../common/RichTextInput.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
 	import ReasoningDropdown from './MessageInput/ReasoningDropdown.svelte';
+	import VideoSettingsDropdown from './MessageInput/VideoSettingsDropdown.svelte';
 	import { getReasoningLevel, getReasoningState, setReasoningLevel, usesReasoningEffort, type ReasoningLevel } from '$lib/utils/reasoningModes';
 	import FileItem from '../common/FileItem.svelte';
 	import AttachmentRemoveButton from '../common/AttachmentRemoveButton.svelte';
@@ -390,6 +391,11 @@
 	] as const;
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
+	import { normalizeVideoGenerationModel, videoGenerationModels, type VideoGenerationModel } from '$lib/utils/videoGeneration';
+	export let videoGenerationModel: VideoGenerationModel = 'minimax_h3';
+	$: if (videoGenerationModel !== normalizeVideoGenerationModel(videoGenerationModel)) {
+		videoGenerationModel = normalizeVideoGenerationModel(videoGenerationModel);
+	}
 	export let videoGenerationResolution: '480p' | '672p' = '480p';
 	export let videoGenerationDuration: '5s' | '8s' = '5s';
 	export let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
@@ -425,6 +431,7 @@
 	let videoPreferencesChatId: string | null = null;
 
 	const restoreVideoPreferences = () => {
+		videoGenerationModel = normalizeVideoGenerationModel(localStorage.getItem('neveai.videoModel'));
 		const savedResolution = localStorage.getItem('neveai.videoResolution');
 		videoGenerationResolution = videoResolutionOptions.includes(
 			savedResolution as typeof videoGenerationResolution
@@ -527,6 +534,7 @@
 		videoGenerationEnabled,
 		videoGenerationResolution,
 		videoGenerationDuration,
+		videoGenerationModel,
 		videoGenerationAspectRatio,
 		thinkingEnabled,
 		thinkingExtendedEnabled
@@ -799,21 +807,22 @@
 	let dropdownChatId = $chatId;
 	$: if (['qwen_image_2s', 'qwen_image_2_1_official'].includes(stableDiffusionQuality) && hasImageAttachment)
 		showImageResolutionDropdown = false;
+	let showVideoModelDropdown = false;
 	let showVideoResolutionDropdown = false;
-	let showVideoDurationDropdown = false;
+	$: if ($mobile) showVideoResolutionDropdown = false;
 	let showVideoAspectRatioDropdown = false;
 	const closeImageStyleDropdown = () => {
 		imageStyleDropdownRequest += 1;
 		showImageStyleDropdown = false;
 	};
 	const closeComposerDropdowns = () => {
+		showVideoModelDropdown = false;
 		showImageModeDropdown = false;
 		showThinkingDropdown = false;
 		showImageQualityDropdown = false;
 		closeImageStyleDropdown();
 		showImageResolutionDropdown = false;
 		showVideoResolutionDropdown = false;
-		showVideoDurationDropdown = false;
 		showVideoAspectRatioDropdown = false;
 	};
 	onMount(() => onChatDropdownDismiss(() => {
@@ -821,8 +830,8 @@
 		showTokenPopup = false;
 	}));
 	$: if (!videoGenerationEnabled) {
+		showVideoModelDropdown = false;
 		showVideoResolutionDropdown = false;
-		showVideoDurationDropdown = false;
 		showVideoAspectRatioDropdown = false;
 	}
 	$: if (videoGenerationEnabled && hasImageAttachment) showVideoAspectRatioDropdown = false;
@@ -866,6 +875,7 @@
 	}
 	$: if (stableDiffusionQuality === 'neve_image') stableDiffusionQuality = 'neve_image_2';
 	$: if (dropdownChatId !== $chatId) {
+		showVideoModelDropdown = false;
 		dropdownChatId = $chatId;
 		showThinkingDropdown = false;
 		showImageModeDropdown = false;
@@ -873,7 +883,6 @@
 		closeImageStyleDropdown();
 		showImageResolutionDropdown = false;
 		showVideoResolutionDropdown = false;
-		showVideoDurationDropdown = false;
 		showVideoAspectRatioDropdown = false;
 	}
 
@@ -2034,12 +2043,12 @@
 			showVideoResolutionDropdown = false;
 		}
 		if (
-			showVideoDurationDropdown &&
+			showVideoModelDropdown &&
 			!(e.target as HTMLElement).closest(
-				'#video-duration-dropdown-container, [data-composer-dropdown-anchor="video-duration-dropdown-container"]'
+				'#video-model-dropdown-container, [data-composer-dropdown-anchor="video-model-dropdown-container"]'
 			)
 		) {
-			showVideoDurationDropdown = false;
+			showVideoModelDropdown = false;
 		}
 		if (
 			showVideoAspectRatioDropdown &&
@@ -3000,117 +3009,58 @@
 													>
 												</button>
 
-												<div class="relative shrink-0" id="video-resolution-dropdown-container">
+												<div class="relative shrink-0" id="video-model-dropdown-container">
 													<button
 														type="button"
 														class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-														aria-label={$i18n.t('Video resolution')}
-														aria-expanded={showVideoResolutionDropdown}
+														aria-label={$i18n.t('Video model')}
+														aria-expanded={showVideoModelDropdown}
 														on:click|preventDefault={() => {
-															showVideoDurationDropdown = false;
-															showVideoAspectRatioDropdown = false;
-															showVideoResolutionDropdown = !showVideoResolutionDropdown;
+															const open = !showVideoModelDropdown;
+															closeComposerDropdowns();
+															showVideoModelDropdown = open;
 														}}
 													>
-														<span>{videoGenerationResolution}</span>
-														<svg
-															viewBox="0 0 20 20"
-															fill="currentColor"
-															class="size-3.5 transition-transform duration-150 {showVideoResolutionDropdown
-																? ''
-																: 'rotate-180'}"
-															aria-hidden="true"
-															><path
-																fill-rule="evenodd"
-																d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
-																clip-rule="evenodd"
-															/></svg
-														>
+														<span>{videoGenerationModels.find((model) => model.id === videoGenerationModel)?.label ?? 'Neve Video 1'}</span>
+														<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showVideoModelDropdown ? '' : 'rotate-180'}" aria-hidden="true">
+															<path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
+														</svg>
 													</button>
-													{#if showVideoResolutionDropdown}
+													{#if showVideoModelDropdown}
 														<div
 															use:viewportDropdown
-															class="fixed z-50 w-32 max-h-[min(50vh,340px)] overflow-y-auto rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
-															transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
+															class="fixed z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
+															in:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
 														>
-															{#each videoResolutionOptions as resolution}
+															{#each videoGenerationModels as model}
 																<button
 																	type="button"
 																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
 																	on:click={() => {
-																		videoGenerationResolution = resolution;
-																		localStorage.setItem(
-																			'neveai.videoResolution',
-																			videoGenerationResolution
-																		);
-																		showVideoResolutionDropdown = false;
+																		videoGenerationModel = model.id;
+																		showVideoModelDropdown = false;
+																		localStorage.setItem('neveai.videoModel', videoGenerationModel);
 																	}}
 																>
-																	<span>{resolution}</span
-																	>{#if videoGenerationResolution === resolution}<CheckCircle
-																			strokeWidth="1.7"
-																		/>{/if}
+																	<span>{model.label}</span>
+																	{#if videoGenerationModel === model.id}<CheckCircle strokeWidth="1.7" />{/if}
 																</button>
 															{/each}
 														</div>
 													{/if}
 												</div>
 
-												<div class="relative shrink-0" id="video-duration-dropdown-container">
-													<button
-														type="button"
-														class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-														aria-label={$i18n.t('Video duration')}
-														aria-expanded={showVideoDurationDropdown}
-														on:click|preventDefault={() => {
-															showVideoResolutionDropdown = false;
-															showVideoAspectRatioDropdown = false;
-															showVideoDurationDropdown = !showVideoDurationDropdown;
-														}}
-													>
-														<span>{videoGenerationDuration}</span>
-														<svg
-															viewBox="0 0 20 20"
-															fill="currentColor"
-															class="size-3.5 transition-transform duration-150 {showVideoDurationDropdown
-																? ''
-																: 'rotate-180'}"
-															aria-hidden="true"
-															><path
-																fill-rule="evenodd"
-																d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
-																clip-rule="evenodd"
-															/></svg
-														>
-													</button>
-													{#if showVideoDurationDropdown}
-														<div
-															use:viewportDropdown
-															class="fixed z-50 w-28 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
-															transition:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
-														>
-															{#each ['5s', '8s'] as durationOption}
-																<button
-																	type="button"
-																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
-																	on:click={() => {
-																		videoGenerationDuration = durationOption as '5s' | '8s';
-																		localStorage.setItem(
-																			'neveai.videoDuration',
-																			videoGenerationDuration
-																		);
-																		showVideoDurationDropdown = false;
-																	}}
-																>
-																	<span>{durationOption}</span
-																	>{#if videoGenerationDuration === durationOption}<CheckCircle
-																			strokeWidth="1.7"
-																		/>{/if}
-																</button>
-															{/each}
-														</div>
-													{/if}
+												{#if !$mobile}
+												<div class="relative shrink-0" id="video-resolution-dropdown-container">
+												<VideoSettingsDropdown
+													bind:resolution={videoGenerationResolution}
+													bind:duration={videoGenerationDuration}
+													bind:open={showVideoResolutionDropdown}
+													positionDropdown={viewportDropdown}
+													on:open={() => closeComposerDropdowns()}
+												/>
 												</div>
+												{/if}
 
 												{#if !hasImageAttachment}
 													<div class="relative shrink-0" id="video-aspect-ratio-dropdown-container">
@@ -3121,8 +3071,8 @@
 															aria-expanded={showVideoAspectRatioDropdown}
 															on:click|preventDefault={() => {
 																showVideoResolutionDropdown = false;
-																showVideoDurationDropdown = false;
 																showVideoAspectRatioDropdown = !showVideoAspectRatioDropdown;
+															showVideoModelDropdown = false;
 															}}
 														>
 															<span>{videoGenerationAspectRatio}</span>
@@ -3467,17 +3417,17 @@
 	.stable-image-toggle .chip-label {
 		white-space: nowrap;
 	}
-	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-actions-primary {
+	.message-input-actions:has(.image-quality-control, #video-model-dropdown-container) .message-input-actions-primary {
 		max-width: none;
 	}
-	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-active-controls {
+	.message-input-actions:has(.image-quality-control, #video-model-dropdown-container) .message-input-active-controls {
 		overflow-x: auto;
 		overscroll-behavior-x: contain;
 		scrollbar-width: none;
 	}
-	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-active-controls::-webkit-scrollbar { display: none; }
-	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-active-controls > button { flex-shrink: 0; }
-	.message-input-actions:has(.image-quality-control, #video-resolution-dropdown-container) .message-input-active-controls > div > button { white-space: nowrap; }
+	.message-input-actions:has(.image-quality-control, #video-model-dropdown-container) .message-input-active-controls::-webkit-scrollbar { display: none; }
+	.message-input-actions:has(.image-quality-control, #video-model-dropdown-container) .message-input-active-controls > button { flex-shrink: 0; }
+	.message-input-actions:has(.image-quality-control, #video-model-dropdown-container) .message-input-active-controls > div > button { white-space: nowrap; }
 	:global(#input-menu-button),
 	:global(.composer-more-trigger) {
 		display: flex;
@@ -3643,5 +3593,6 @@
 		margin-top: 0.625rem;
 		margin-bottom: 0.625rem;
 	}
+	.chat-input-scroll::-webkit-scrollbar-corner { background: transparent; }
 
 </style>

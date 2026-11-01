@@ -2,9 +2,11 @@
 
 import asyncio
 import ipaddress
+import json
 import logging
 import re
 import time
+import unicodedata
 from collections import OrderedDict
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -18,6 +20,22 @@ _pages = OrderedDict()
 _searches = OrderedDict()
 MAX_BYTES = 2 * 1024 * 1024
 DEEP_RESEARCH_BUDGET = 42
+
+
+def requested_time_range(question: str) -> str:
+    text = unicodedata.normalize("NFKD", question or "").encode("ascii", "ignore").decode().lower()
+    if re.search(r"\b(?:1[0-9]{3}|20[0-9]{2})\b", text) or re.search(r"\b(?:desde|since|entre|between)\b", text):
+        return ""
+    # Only explicit windows: a historical year or 'latest version' must not hide older evidence.
+    for value, pattern in (
+        ("day", r"\b(?:hoje|ultimas? 24 horas|today|last 24 hours)\b"),
+        ("week", r"\b(?:ultima semana|ultimos 7 dias|last week|past week|last 7 days)\b"),
+        ("month", r"\b(?:ultimo mes|ultimos 30 dias|last month|past month|last 30 days)\b"),
+        ("year", r"\b(?:ultimos 12 meses|last 12 months|past 12 months)\b"),
+    ):
+        if re.search(pattern, text):
+            return value
+    return ""
 
 
 def source_host(url):
@@ -47,8 +65,10 @@ def diverse_sources(items, existing=()):
 
 
 def extract_request_urls(text: str) -> list[str]:
+    from neveai.retrieval.web.url_identity import canonical_url
+
     urls = []
-    for value in re.findall(r"https?://[^\s<>\"']+", text or ""):
+    for value in re.findall(r"https?://[^\s<>\"']+", text or "", flags=re.IGNORECASE):
         value = value.rstrip(".,;:!?")
         for opening, closing in [("(", ")"), ("[", "]"), ("{", "}")]:
             while value.endswith(closing) and value.count(closing) > value.count(
@@ -57,9 +77,9 @@ def extract_request_urls(text: str) -> list[str]:
                 value = value[:-1]
         parsed = urlsplit(value)
         if parsed.hostname and not parsed.username and not parsed.password:
-            value = urlunsplit(
+            value = canonical_url(urlunsplit(
                 (parsed.scheme, parsed.netloc, parsed.path, parsed.query, "")
-            )
+            ))
             if value not in urls:
                 urls.append(value)
     return urls[:4]
@@ -107,11 +127,29 @@ class PublicResolver(aiohttp.resolver.DefaultResolver):
 
 def extract_page(text: str, url: str, content_type: str) -> dict:
     title = url
+    method = "text"
     if "html" in content_type or text.lstrip().lower().startswith(
         ("<!doctype html", "<html")
     ):
         soup = BeautifulSoup(text, "html.parser")
+        method = "html"
         title = soup.title.get_text(" ", strip=True) if soup.title else url
+        structured = []
+        # Some dynamic sites expose their article in JSON-LD even without a browser.
+        def collect(value, depth=0):
+            if depth > 12:
+                return
+            if isinstance(value, list):
+                for child in value[:100]:
+                    collect(child, depth + 1)
+            elif isinstance(value, dict):
+                for key, child in value.items():
+                    if key in {"articleBody", "text", "description", "transcript"} and isinstance(child, str):
+                        structured.append(child[:80000])
+                    elif key in {"@graph", "mainEntity", "itemListElement", "item", "acceptedAnswer"}:
+                        collect(child, depth + 1)
+        structured_nodes = [node.string or node.get_text() for node in
+                            soup.select('script[type="application/ld+json"]')[:20]]
         try:
             from trafilatura import extract
 
@@ -135,24 +173,130 @@ def extract_page(text: str, url: str, content_type: str) -> dict:
                 node.decompose()
             main = soup.find("main") or soup.find("article") or soup
             content = main.get_text("\n", strip=True)
+        if len(content) < 300:
+            for value in structured_nodes:
+                try:
+                    collect(json.loads(value))
+                except (ValueError, TypeError, RecursionError):
+                    continue
+        fallback = "\n".join(dict.fromkeys(structured))[:80000]
+        if len(content) < 300 and len(fallback) > len(content):
+            content = BeautifulSoup(fallback, "html.parser").get_text("\n", strip=True)
+            method = "structured_data"
     else:
         content = text
     return {
         "content": content[:80000].strip(),
-        "metadata": {"source": url, "title": title, "link": url},
+        "metadata": {"source": url, "title": title, "link": url, "extraction_method": method},
     }
 
 
+def is_access_challenge(page):
+    title = page.get("metadata", {}).get("title", "").strip().lower()
+    content = page.get("content", "").lower()
+    return len(content) < 3000 and (
+        title in {"just a moment...", "access denied", "attention required! | cloudflare"}
+        and any(term in content for term in ("cloudflare", "verify you are human", "enable javascript", "you have been blocked"))
+    )
+
+
+def version_present(text, version):
+    return bool(re.search(r"(?<![\d.])" + re.escape(version) + r"(?!\d)", text))
+
+
+async def read_candidates(reader, urls, limit, timeout=7, hedge_after=.75):
+    """Replace failures as they finish, within one existing page-read time window."""
+    pending, results, cursor = {}, [], 0
+    end = time.monotonic() + timeout
+
+    def fill():
+        nonlocal cursor
+        while cursor < len(urls) and len(pending) + len(results) < limit and time.monotonic() < end:
+            index = cursor
+            cursor += 1
+            pending[asyncio.create_task(reader(urls[index]))] = index
+
+    fill()
+    try:
+        while pending and len(results) < limit:
+            remaining = max(0, end - time.monotonic())
+            done, _ = await asyncio.wait(pending, timeout=min(remaining, hedge_after),
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if not done:
+                if time.monotonic() >= end:
+                    break
+                # A stalled primary must not consume the whole window before backups start.
+                if cursor < len(urls) and len(pending) < min(6, limit + 2):
+                    pending[asyncio.create_task(reader(urls[cursor]))] = cursor
+                    cursor += 1
+                continue
+            for task in done:
+                index = pending.pop(task)
+                if not task.cancelled() and task.exception() is None:
+                    page = task.result()
+                    if isinstance(page, dict):
+                        content = page.get("content", "").strip()
+                        if len(content) >= 80 or (content and page.get("metadata", {}).get("format") == "pdf"):
+                            results.append((index, page))
+            fill()
+        return [page for _, page in sorted(results)[:limit]]
+    finally:
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+def extract_pdf(data: bytes, url: str) -> dict:
+    import pypdfium2 as pdfium
+    from neveai.utils.pdf_document_text import PDF_RENDER_LOCK
+
+    # Reuse the native renderer lock; keep network retrieval independent of uploads.
+    with PDF_RENDER_LOCK:
+        document = pdfium.PdfDocument(data)
+        try:
+            sections, size = [], 0
+            total = len(document)
+            for index in range(min(total, 60)):
+                page = document[index]
+                try:
+                    textpage = page.get_textpage()
+                    try:
+                        text = textpage.get_text_range().strip()
+                    finally:
+                        textpage.close()
+                finally:
+                    page.close()
+                if text:
+                    section = f"[Page {index + 1}]\n{text}"
+                    sections.append(section[:max(0, 80000 - size)])
+                    size += len(section)
+                if size >= 80000:
+                    break
+            return {"content": "\n\n".join(sections), "metadata": {
+                "source": url, "title": url, "link": url, "format": "pdf",
+                "pages": total, "partial_document": total > 60 or size >= 80000,
+            }}
+        finally:
+            document.close()
+
+
 async def read_page(session, url: str, verify_ssl=True, trust_env=False) -> dict | None:
+    from neveai.retrieval.web.url_identity import (
+        canonical_url, reddit_feed_url, reddit_resource, extract_reddit_feed, extract_reddit_html,
+        matches_requested_resource,
+    )
     cache_key = (url, verify_ssl, trust_env)
     try:
+        url = canonical_url(url)
+        cache_key = (url, verify_ssl, trust_env)
         if not await asyncio.to_thread(validate_url, url):
             return None
         cached = _get(_pages, cache_key)
         if cached:
             return {"content": cached["content"], "metadata": dict(cached["metadata"])}
         target = huggingface_readme(url)
-        for initial in dict.fromkeys([target, url]):
+        feed = reddit_feed_url(url)
+        for initial in dict.fromkeys([target, url, *([feed] if feed else [])]):
             current = initial
             try:
                 for _ in range(4):
@@ -179,9 +323,12 @@ async def read_page(session, url: str, verify_ssl=True, trust_env=False) -> dict
                             )
                             continue
                         response.raise_for_status()
+                        if urlsplit(url).path.strip("/") and urlsplit(current).path.rstrip("/") in {"", "/login", "/signin", "/sign-in"} and not matches_requested_resource(current, [url]):
+                            raise ValueError("The requested page redirected to a different resource")
                         mime = response.headers.get("Content-Type", "").lower()
                         if not (
                             mime.startswith("text/") or "json" in mime or "xml" in mime
+                            or "application/pdf" in mime
                         ):
                             raise ValueError("Unsupported page format")
                         if (
@@ -195,12 +342,24 @@ async def read_page(session, url: str, verify_ssl=True, trust_env=False) -> dict
                             if size > MAX_BYTES:
                                 raise ValueError("Page too large")
                             chunks.append(chunk)
-                        text = b"".join(chunks).decode(
-                            response.charset or "utf-8", errors="replace"
-                        )
-                        page = await asyncio.to_thread(extract_page, text, url, mime)
+                        data = b"".join(chunks)
+                        if "application/pdf" in mime:
+                            try:
+                                page = await asyncio.to_thread(extract_pdf, data, url)
+                            except Exception as error:
+                                raise ValueError("Unreadable PDF") from error
+                        elif feed and initial == feed:
+                            page = await asyncio.to_thread(extract_reddit_feed, data, url)
+                        else:
+                            text = data.decode(response.charset or "utf-8", errors="replace")
+                            page = await asyncio.to_thread(
+                                extract_reddit_html if reddit_resource(url) else extract_page,
+                                *([text, url] if reddit_resource(url) else [text, url, mime]),
+                            )
+                        if page is None:
+                            break
                         page["metadata"]["fetched_url"] = current
-                        if page["content"]:
+                        if page["content"] and not is_access_challenge(page):
                             _put(_pages, cache_key, page)
                             return {
                                 "content": page["content"],
@@ -281,6 +440,8 @@ def matches_source_topic(item, terms):
 
 
 async def research(request, form, user, search):
+    from neveai.retrieval.web.url_identity import canonical_url, matches_requested_resource, wants_additional_sources
+    started = time.monotonic()
     config = request.app.state.config
     deep = bool(getattr(request.state, "deep_search_enabled", False))
     max_pages = max(1, min(form.max_loaded_urls or (10 if deep else 4), 10 if deep else 4))
@@ -297,7 +458,7 @@ async def research(request, form, user, search):
         trust_env=trust,
         headers={
             "User-Agent": "NeveAI/1.0 (web research)",
-            "Accept": "text/html,text/plain,application/json",
+            "Accept": "text/html,text/plain,application/json,application/pdf",
         },
     ) as session:
 
@@ -323,8 +484,10 @@ async def research(request, form, user, search):
                     if task not in done or task.cancelled() or task.exception() is not None:
                         continue
                     page = task.result()
-                    if isinstance(page, dict) and len(page.get("content", "").strip()) >= 80:
-                        pages.append(page)
+                    if isinstance(page, dict):
+                        content = page.get("content", "").strip()
+                        if len(content) >= 80 or (content and page.get("metadata", {}).get("format") == "pdf"):
+                            pages.append(page)
                 return pages
             finally:
                 for task in tasks:
@@ -332,7 +495,8 @@ async def research(request, form, user, search):
                         task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
 
-        direct = list(dict.fromkeys(form.urls))[:min(4, max_pages)]
+        direct = list(dict.fromkeys(canonical_url(url) for url in form.urls))[:min(4, max_pages)]
+        source_bound = bool(direct) and not deep and not form.search_after_urls and not wants_additional_sources(form.question)
         if direct:
             docs = await read_many(direct)
             items = [{"link": url, "title": url, "snippet": ""} for url in direct]
@@ -342,7 +506,7 @@ async def research(request, form, user, search):
         )
         direct_text = " ".join(doc["content"] for doc in docs)
         missing_versions = bool(direct) and any(
-            version not in direct_text for version in requested_versions
+            not version_present(direct_text, version) for version in requested_versions
         )
         # Read supplied URLs first; deep research also seeks independent evidence.
         if deep or form.search_after_urls or not docs or len(docs) < len(direct) or missing_versions:
@@ -356,6 +520,7 @@ async def research(request, form, user, search):
                 str(config.DDGS_BACKEND),
                 str(config.SEARXNG_QUERY_URL),
                 deep,
+                requested_time_range(form.question),
             )
             results = _get(_searches, key)
             if results is None:
@@ -378,7 +543,17 @@ async def research(request, form, user, search):
                     if hasattr(result, "model_dump")
                     else dict(result)
                 )
-                if item.get("link") and item["link"] not in seen and matches_source_topic(item, topic_terms):
+                if not item.get("link") or not matches_source_topic(item, topic_terms):
+                    continue
+                if source_bound and not matches_requested_resource(item["link"], direct):
+                    continue
+                if item["link"] in seen:
+                    # A supplied URL starts as an empty placeholder. Keep an indexed
+                    # excerpt of that exact page when the full page cannot be read.
+                    existing = next(entry for entry in items if entry["link"] == item["link"])
+                    if not existing.get("snippet") and item.get("snippet"):
+                        existing.update(item)
+                else:
                     items.append(item)
                     seen.add(item["link"])
             loaded = {doc["metadata"]["source"] for doc in docs}
@@ -388,27 +563,30 @@ async def research(request, form, user, search):
             ranked_items = sorted(
                 items,
                 key=lambda item: sum(
-                    version
-                    in (
+                    version_present((
                         item["link"]
                         + " "
                         + (item.get("title") or "")
                         + " "
                         + (item.get("snippet") or "")
-                    )
+                    ), version)
                     for version in versions
                 ),
                 reverse=True,
             )
-            if deep:
-                ranked_items = diverse_sources(ranked_items, loaded)
+            ranked_items = diverse_sources(ranked_items, loaded)
             candidates = [
                 item["link"] for item in ranked_items if item["link"] not in loaded
-            ][:20 if deep else max(0, max_pages - len(docs))]
+            ][:20 if deep else 8]
             if config.BYPASS_WEB_SEARCH_WEB_LOADER and not direct:
                 candidates = []
             batch_size = max(0, max_pages - len(docs))
-            docs.extend(await read_many(candidates[:batch_size]))
+            if not deep:
+                docs.extend(await read_candidates(
+                    lambda url: read_page(session, url, verify, trust), candidates, batch_size
+                ))
+            else:
+                docs.extend(await read_many(candidates[:batch_size]))
             # Replace blocked/empty pages with remaining candidates, within the same budget.
             if deep and len(docs) < max_pages and time.monotonic() < deadline:
                 docs.extend(
@@ -422,7 +600,7 @@ async def research(request, form, user, search):
                 if item["link"] not in loaded and item.get("snippet"):
                     docs.append(
                         {
-                            "content": ("[Search result snippet; page not read]\n" if deep else "") + item["snippet"],
+                            "content": "[Search result snippet; page not read]\n" + item["snippet"],
                             "metadata": {
                                 "source": item["link"],
                                 "title": item.get("title"),
@@ -439,8 +617,16 @@ async def research(request, form, user, search):
         doc["metadata"]["excerpt"] = len(doc["content"]) > per_page_limit
         doc["content"] = relevant_excerpt(doc["content"], question, per_page_limit)
     sources = [doc["metadata"]["source"] for doc in docs]
+    unread_urls = [url for url in direct if not any(
+        not doc["metadata"].get("snippet_only") and matches_requested_resource(doc["metadata"]["source"], [url])
+        for doc in docs
+    )]
+    log.info("Web research ready: deep=%s candidates=%s pages=%s snippets=%s elapsed=%.3fs",
+             deep, len(items), sum(not doc["metadata"].get("snippet_only") for doc in docs),
+             sum(bool(doc["metadata"].get("snippet_only")) for doc in docs), time.monotonic() - started)
     return {
         "status": bool(docs),
+        "unread_urls": unread_urls,
         "collection_names": [],
         "filenames": sources,
         "items": items,

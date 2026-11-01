@@ -78,6 +78,22 @@ export async function pptxToImages(
 		});
 
 	const images: string[] = [];
+	const decodedImages = new Map<string, Promise<HTMLImageElement>>();
+	const decodeImage = (source: string) => {
+		let result = decodedImages.get(source);
+		if (!result) {
+			result = loadImage(source).then(image => {
+				if (image.naturalWidth * image.naturalHeight > 4_000_000) decodedImages.delete(source);
+				return image;
+			}).catch(error => { decodedImages.delete(source); throw error; });
+			decodedImages.set(source, result);
+			if (decodedImages.size > 4) decodedImages.delete(decodedImages.keys().next().value!);
+		} else {
+			decodedImages.delete(source);
+			decodedImages.set(source, result);
+		}
+		return result;
+	};
 
 	for (const slidePath of slideFiles) {
 		const slideText = await zip.file(slidePath)!.async('text');
@@ -151,7 +167,7 @@ export async function pptxToImages(
 					const dataUri = mediaPath ? media[mediaPath] : '';
 					if (dataUri && !dataUri.includes('image/x-emf')) {
 						try {
-							const img = await loadImage(dataUri);
+							const img = await decodeImage(dataUri);
 							ctx.drawImage(img, x, y, w, h);
 						} catch {
 							// Skip images that fail to load

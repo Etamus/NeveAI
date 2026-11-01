@@ -215,7 +215,7 @@ async def query_doc_with_hybrid_search(
         ContextualCompressionRetriever,
         EnsembleRetriever,
     )
-    from langchain_community.retrievers import BM25Retriever
+    from neveai.retrieval.bm25_cache import create_bm25_retriever
 
     try:
         # First check if collection_result has the required attributes
@@ -238,23 +238,16 @@ async def query_doc_with_hybrid_search(
 
         log.debug(f"query_doc_with_hybrid_search:doc {collection_name}")
 
-        original_texts = collection_result.documents[0]
-        bm25_metadatas = [
-            {**meta, CHUNK_HASH_KEY: _content_hash(original_texts[idx])}
-            for idx, meta in enumerate(collection_result.metadatas[0])
-        ]
-
-        bm25_texts = (
-            get_enriched_texts(collection_result)
-            if enable_enriched_texts
-            else original_texts
-        )
-
-        bm25_retriever = BM25Retriever.from_texts(
-            texts=bm25_texts,
-            metadatas=bm25_metadatas,
-        )
-        bm25_retriever.k = k
+        if hybrid_bm25_weight > 0:
+            def build_bm25():
+                original_texts = collection_result.documents[0]
+                metadatas = [
+                    {**meta, CHUNK_HASH_KEY: _content_hash(original_texts[idx])}
+                    for idx, meta in enumerate(collection_result.metadatas[0])
+                ]
+                texts = get_enriched_texts(collection_result) if enable_enriched_texts else original_texts
+                return create_bm25_retriever(collection_name, texts, metadatas, k)
+            bm25_retriever = await asyncio.to_thread(build_bm25)
 
         vector_search_retriever = VectorSearchRetriever(
             collection_name=collection_name,
@@ -551,16 +544,10 @@ def get_embedding_function(
     embedding_batch_size,
 ) -> Awaitable:
     """Build the local sentence-transformers embedding function."""
-    local_batch_size = max(int(embedding_batch_size), 32)
-
     async def async_embedding_function(query, prefix=None, user=None):
-        return await asyncio.to_thread(
-            lambda: embedding_function.encode(
-                query,
-                batch_size=local_batch_size,
-                **({"prompt": prefix} if prefix else {}),
-            ).tolist()
-        )
+        from neveai.retrieval.local_embeddings import encode_local
+
+        return await encode_local(embedding_function, query, embedding_batch_size, prefix)
 
     return async_embedding_function
 

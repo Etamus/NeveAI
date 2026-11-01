@@ -2,7 +2,6 @@ import base64
 import os
 import random
 from pathlib import Path
-from neveai.internal.legacy_state import import_secret
 
 import typer
 import uvicorn
@@ -12,7 +11,6 @@ from typing_extensions import Annotated
 app = typer.Typer()
 
 KEY_FILE = Path.cwd() / ".neve_secret_key"
-import_secret(Path.cwd())
 
 
 def version_callback(value: bool):

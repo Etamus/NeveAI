@@ -36,7 +36,7 @@ from starlette_compress import CompressMiddleware
 
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
-from neveai.utils.session import NeveSessionMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 from neveai.utils.llamacpp_updates import installed_backend, latest_compatible_release_tag
 from starlette.responses import Response
 from starlette.datastructures import Headers
@@ -1651,7 +1651,7 @@ if len(app.state.config.TOOL_SERVER_CONNECTIONS) > 0:
                     pass
 
 app.add_middleware(
-    NeveSessionMiddleware,
+    SessionMiddleware,
     secret_key=NEVEAI_SECRET_KEY,
     session_cookie="neve-session",
     same_site=NEVEAI_SESSION_COOKIE_SAME_SITE,

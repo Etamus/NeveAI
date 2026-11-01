@@ -1496,6 +1496,13 @@ async def list_local_models():
     return {"models": models}
 
 
+@router.get("/media-state")
+async def get_media_model_state():
+    from neveai.utils.model_availability import get_model_availability
+
+    return get_model_availability()
+
+
 @router.get("/models/mmproj")
 async def list_mmproj_files():
     """List all .mmproj files found in the models/ directory."""

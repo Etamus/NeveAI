@@ -10,7 +10,7 @@ from neveai.utils.db_work import transaction_context as get_db_context
 from neveai.models.tags import Tags
 from neveai.models.folders import Folders
 from neveai.models.chat_messages import ChatMessage, ChatMessages
-from neveai.utils.misc import sanitize_data_for_db
+from neveai.utils.misc import sanitize_data_for_db, sanitize_text_for_db
 
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import (
@@ -791,6 +791,7 @@ class ChatTable:
         skip: int = 0,
         limit: int = 60,
         db: Optional[Session] = None,
+        summaries_only: bool = False,
     ) -> list[ChatModel]:
         """
         Filters chats based on a search query using Python, allowing pagination using skip and limit.
@@ -798,6 +799,11 @@ class ChatTable:
         search_text = sanitize_text_for_db(search_text).lower().strip()
 
         if not search_text:
+            if summaries_only:
+                return self.get_chat_title_id_list_by_user_id(
+                    user_id, include_archived=include_archived, include_folders=True,
+                    include_pinned=True, skip=skip, limit=limit, db=db,
+                )
             return self.get_chat_list_by_user_id(
                 user_id, include_archived, filter={}, skip=skip, limit=limit, db=db
             )
@@ -975,6 +981,9 @@ class ChatTable:
                 )
 
             # Perform pagination at the SQL level
+            if summaries_only:
+                rows = query.with_entities(Chat.id, Chat.title, Chat.updated_at, Chat.created_at).offset(skip).limit(limit).all()
+                return [ChatTitleIdResponse(**row._mapping) for row in rows]
             all_chats = query.offset(skip).limit(limit).all()
 
             log.info(f"The number of chats: {len(all_chats)}")

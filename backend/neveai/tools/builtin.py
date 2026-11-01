@@ -245,12 +245,36 @@ def _get_requested_generated_file_format(prompt: str) -> str:
         ("c", r"\barquivo\s+c\b"),
         ("sh", r"\b(?:shell\s+script|script\s+shell)\b"),
     )
-    for file_format, pattern in aliases:
-        if re.search(pattern, prompt, re.IGNORECASE):
-            return file_format
-
-    match = GENERATED_FILE_FORMAT_PATTERN.search(prompt)
-    return ((match.group("dotted") or match.group("plain")) if match else "").lower()
+    candidates = [(match.start(), (match.group("dotted") or match.group("plain")).lower())
+                  for match in GENERATED_FILE_FORMAT_PATTERN.finditer(prompt)]
+    language_matches = []
+    for index, (file_format, pattern) in enumerate(aliases):
+        for match in re.finditer(pattern, prompt, re.IGNORECASE):
+            if index < 4:
+                candidates.append((match.start(), file_format))
+            else:
+                language_matches.append((match.start(), file_format))
+                before, after = prompt[max(0, match.start() - 40):match.start()], prompt[match.end():]
+                if re.search(r"\b(?:script|programa|program|c[oó]digo|code|arquivo|file|crie|create|gere|generate|escreva|write|fa[cç]a)\s+(?:(?:um|uma|an?|em|in)\s+)?$|\b(?:em|in)\s+$", before) or re.match(r"\s+(?:script|code|program|file)\b", after):
+                    candidates.append((match.start(), file_format))
+    candidates.sort()
+    conversion = re.search(r"\b(?:converta|converter|convert|transforme|transformar|exporte|exportar|export|salve|salvar|save)\b", prompt)
+    # A requested program can mention the input/output document formats it handles.
+    if candidates and candidates[0][1] in {"py", "js", "ts", "c", "cpp", "h", "sh", "java"} and (not conversion or candidates[0][0] < conversion.start()):
+        return candidates[0][1]
+    if conversion and (not candidates or conversion.start() < candidates[0][0]):
+        markers = list(re.finditer(r"\b(?:para|em|to|into|as)\b", prompt))
+        allowed = {"o", "a", "um", "uma", "arquivo", "file", "formato", "format", "an", "the",
+                   "documento", "document", "planilha", "spreadsheet", "apresentacao", "apresentação", "presentation", "do", "da", "de", "of"}
+        for marker in reversed(markers):
+            for position, file_format in candidates:
+                between = prompt[marker.end():position]
+                if position >= marker.end() and len(between) <= 40 and set(re.findall(r"\w+", between)) <= allowed:
+                    return file_format
+    if candidates:
+        return candidates[0][1]
+    # Language alone is only a fallback, never stronger than a requested PDF/DOCX.
+    return min(language_matches)[1] if language_matches else ""
 
 
 def _get_attached_generated_file_format(metadata: dict) -> str:

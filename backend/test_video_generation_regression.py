@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 from fastapi import UploadFile
+from neveai.utils.media_standby import media_model_standby
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -123,6 +124,8 @@ class VideoHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.upload = Mock(return_value=SimpleNamespace(id="created-video"))
         self.release = Mock()
         self.references = []
+        self.model_manager = SimpleNamespace(standby=AsyncMock(return_value=None),
+                                             resume=AsyncMock(), get_loaded_model_id=Mock(return_value=None))
         prepared = SimpleNamespace(
             width=640,
             height=480,
@@ -151,7 +154,8 @@ class VideoHandlerTests(unittest.IsolatedAsyncioTestCase):
             _release_media_generation_slot=self.release,
             video_canvas_dimensions=lambda resolution, aspect, size=None: size
             or (864, 480),
-            model_manager=SimpleNamespace(standby=AsyncMock()),
+            model_manager=self.model_manager,
+            media_model_standby=media_model_standby,
             _prepare_init_image_sync=lambda *args: prepared,
             minimax_h3_runtime=self.runtime,
             upload_file_handler=self.upload,
@@ -223,6 +227,22 @@ class VideoHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             any(e["type"] == "status" and e["data"].get("error") for e in self.events)
         )
+
+    async def test_restores_snapshot_after_success_failure_and_stop(self):
+        snapshot = {"models": [{"filename": "fixture.gguf", "n_ctx": 8192}]}
+        for failure in (None, RuntimeError("fixture failure"), asyncio.CancelledError()):
+            with self.subTest(failure=type(failure).__name__):
+                self.setUp()
+                self.model_manager.standby.return_value = snapshot
+                self.runtime.generate.side_effect = failure
+                if isinstance(failure, asyncio.CancelledError):
+                    with self.assertRaises(asyncio.CancelledError):
+                        await self.invoke()
+                else:
+                    await self.invoke()
+                self.model_manager.resume.assert_awaited_once_with(snapshot)
+                self.assertGreaterEqual(self.runtime.stop.await_count, 1)
+                self.release.assert_called_once_with(True)
 
     async def test_cancel_releases_worker_and_slot(self):
         self.runtime.generate.side_effect = asyncio.CancelledError()
