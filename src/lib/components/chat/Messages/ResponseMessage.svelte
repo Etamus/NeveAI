@@ -17,6 +17,7 @@
 	import { copyToClipboard as _copyToClipboard, getMessageContentParts, removeAllDetails, removeReasoningControlTokens } from '$lib/utils';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 	import { messageSnapshotEqual } from '$lib/utils/messageSnapshot';
+	import { pendingVideoGenerationStatus } from '$lib/utils/videoGeneration';
 
 	import Name from './Name.svelte';
 	import ProfileImage from './ProfileImage.svelte';
@@ -221,9 +222,13 @@
 		!isGeneratedMediaResponse && !(message?.statusHistory ?? []).some((status) =>
 			['stable_diffusion', 'video_generation', 'music_generation'].includes(status?.action)
 		);
+	$: pendingVideoStatus = pendingVideoGenerationStatus(message, history?.messages?.[message?.parentId]);
 	$: latestVisualGenerationStatus = [...(message?.statusHistory ?? [])]
 		.reverse()
-		.find((status) => ['stable_diffusion', 'video_generation'].includes(status?.action));
+		.find((status) => ['stable_diffusion', 'video_generation'].includes(status?.action)) ?? pendingVideoStatus;
+	$: reserveVideoActionSpace = !readOnly && latestVisualGenerationStatus?.action === 'video_generation';
+	$: visualGenerationCanvas = latestVisualGenerationStatus?.action === 'video_generation' && pendingVideoStatus?.referenceDimensions
+		? pendingVideoStatus : latestVisualGenerationStatus;
 	$: visualGenerationFileReady = Boolean(
 		latestVisualGenerationStatus?.action === 'video_generation'
 			? message?.files?.some(
@@ -247,10 +252,10 @@
 	};
 	$: generatedVisualAspectRatio = Math.max(
 		0.01,
-		Number(latestVisualGenerationStatus?.width) > 0 &&
-			Number(latestVisualGenerationStatus?.height) > 0
-			? Number(latestVisualGenerationStatus.width) /
-				Number(latestVisualGenerationStatus.height)
+		Number(visualGenerationCanvas?.width) > 0 &&
+			Number(visualGenerationCanvas?.height) > 0
+			? Number(visualGenerationCanvas.width) /
+				Number(visualGenerationCanvas.height)
 			: visualResolutionAspectRatios[latestVisualGenerationStatus?.resolution ?? ''] ?? 16 / 9
 	);
 	$: generatedImageDisplayWidth = Math.min(26, 26 * generatedVisualAspectRatio);
@@ -560,19 +565,19 @@
 					<div>
 						{#if model?.info?.meta?.capabilities?.status_updates ?? true}
 							<div class="mt-1 pl-3">
-								<StatusHistory statusHistory={message?.statusHistory} />
+								<StatusHistory statusHistory={message?.statusHistory?.length ? message.statusHistory : pendingVideoStatus ? [{...pendingVideoStatus, description: $i18n.t('Creating video')}] : []} />
 							</div>
 						{/if}
 
 						{#if showVisualGenerationProgress}
-							<div class="{latestVisualGenerationStatus.action === 'stable_diffusion' ? 'my-1' : 'my-2'} w-full">
+							<div class="my-1 w-full">
 								<GeneratedMediaProgress
 									kind={latestVisualGenerationStatus.action === 'video_generation' ? 'video' : 'image'}
 									progress={latestVisualGenerationStatus.progress ??
 										(latestVisualGenerationStatus.done ? 100 : 0)}
-									width={latestVisualGenerationStatus.width ??
+									width={visualGenerationCanvas?.width ??
 										(latestVisualGenerationStatus.quality === 'neve_image_2' ? 16 : 1)}
-									height={latestVisualGenerationStatus.height ??
+									height={visualGenerationCanvas?.height ??
 										(latestVisualGenerationStatus.quality === 'neve_image_2' ? 9 : 1)}
 								/>
 							</div>
@@ -726,7 +731,7 @@
 							class="w-full flex flex-col relative {edit ? 'hidden' : ''}"
 							id="response-content-container"
 						>
-							{#if (message.content ?? '').trim() === '' && !message.error && ((model?.info?.meta?.capabilities?.status_updates ?? true) ? (message?.statusHistory ?? [...(message?.status ? [message?.status] : [])]).length === 0 || (message?.statusHistory?.at(-1)?.hidden ?? false) : true)}
+							{#if !showVisualGenerationProgress && (message.content ?? '').trim() === '' && !message.error && ((model?.info?.meta?.capabilities?.status_updates ?? true) ? (message?.statusHistory ?? [...(message?.status ? [message?.status] : [])]).length === 0 || (message?.statusHistory?.at(-1)?.hidden ?? false) : true)}
 								<Skeleton size={message?.done !== true ? 'sm' : 'md'} />
 							{:else if (message.content ?? '').trim() !== '' && message.error !== true}
 								<!-- always show message contents even if there's an error -->
@@ -815,11 +820,13 @@
 					</div>
 				</div>
 
-				{#if !edit && !isVisualGenerationInProgress}
+				{#if !edit && (!isVisualGenerationInProgress || reserveVideoActionSpace)}
 					<div
 						bind:this={buttonsContainerElement}
 						class="flex items-center gap-1 buttons text-gray-600 dark:text-gray-500 mt-1"
-						class:text-response-actions={reserveTextActionSpace}
+						class:text-response-actions={reserveTextActionSpace || reserveVideoActionSpace}
+						class:invisible={isVisualGenerationInProgress}
+						inert={isVisualGenerationInProgress}
 					>
 						{#if message.done || siblings.length > 1}
 							{#if siblings.length > 1}

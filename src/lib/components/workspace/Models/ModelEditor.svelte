@@ -750,7 +750,7 @@
 		.model-editor-profile { gap: 20px; }
 		.model-editor-features, .model-editor-features-divider { display: none; }
 		.model-editor-params-layout { flex-direction: column; height: auto; }
-		.model-editor-params-scroll { overflow-y: auto; }
+		.model-editor-params-scroll { overflow-y: auto; padding-left: 24px; }
 		.model-editor-advanced-column { width: 100%; height: auto; padding-right: 0; }
 		.model-editor-advanced-column .model-editor-advanced-params-window { max-height: none; overflow: visible; }
 	}

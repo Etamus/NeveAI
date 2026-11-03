@@ -53,6 +53,7 @@ DIFFUSION_MODEL = "minimax_h3_fl2va_pruned_w4a8_mixed.safetensors"
 TEXT_ENCODER = "qwen3vl_4b_fp8_scaled.safetensors"
 CLIP_PROJECTION = "mmh3-4b-ClipProj-v3.1.safetensors"
 VIDEO_VAE = "minimax_h3_video_vae_int8_convrot.safetensors"
+AUDIO_VAE = "minimax_h3_audio_vae_fp32.safetensors"
 TURBO_LORA = "minimax_h3_turbo_v4_step600_ema.safetensors"
 
 DEFAULT_WIDTH = 1024
@@ -281,6 +282,7 @@ class MiniMaxH3Runtime:
             COMFYUI_MODELS / "text_encoders" / TEXT_ENCODER,
             COMFYUI_MODELS / "clip_projections" / CLIP_PROJECTION,
             COMFYUI_MODELS / "vae" / VIDEO_VAE,
+            COMFYUI_MODELS / "vae" / AUDIO_VAE,
             COMFYUI_MODELS / "loras" / TURBO_LORA,
         )
 
@@ -462,6 +464,7 @@ items = {[
     ('Comfy-Org/Krea-2', f'text_encoders/{TEXT_ENCODER}', str(COMFYUI_MODELS)),
     ('NicoLab28/ClipProj-MiniMax-H3', CLIP_PROJECTION, str(COMFYUI_MODELS / 'clip_projections')),
     ('Comfy-Org/MiniMax-H3', f'vae/{VIDEO_VAE}', str(COMFYUI_MODELS)),
+    ('Comfy-Org/MiniMax-H3', f'vae/{AUDIO_VAE}', str(COMFYUI_MODELS)),
     ('larryvrh/MiniMax-H3-Turbo-Lora', TURBO_LORA, str(COMFYUI_MODELS / 'loras')),
 ]!r}
 for repo_id, filename, local_dir in items:
@@ -758,7 +761,7 @@ for repo_id, filename, local_dir in items:
             },
             "15": {
                 "class_type": "CreateVideo",
-                "inputs": {"images": ["14", 0], "fps": DEFAULT_FPS},
+                "inputs": {"images": ["14", 0], "fps": DEFAULT_FPS, "audio": ["18", 0]},
             },
             "16": {
                 "class_type": "SaveVideo",
@@ -770,6 +773,11 @@ for repo_id, filename, local_dir in items:
                     "format.codec.encoding": "re-encode",
                     "format.codec.encoding.crf": VIDEO_OUTPUT_CRF,
                 },
+            },
+            "17": {"class_type": "VAELoader", "inputs": {"vae_name": AUDIO_VAE}},
+            "18": {
+                "class_type": "VAEDecodeAudio",
+                "inputs": {"samples": ["13", 0], "vae": ["17", 0]},
             },
         }
         if input_image:
@@ -944,6 +952,7 @@ for repo_id, filename, local_dir in items:
                     "12": (42, 89),
                     "13": (89, 91),
                     "14": (91, 97),
+                    "18": (91, 97),
                     "15": (97, 98),
                     "16": (98, 99),
                 }
@@ -1120,7 +1129,7 @@ minimax_h3_runtime = MiniMaxH3Runtime()
 
 @router.get("/status")
 async def get_video_generation_status(request: Request, user=Depends(get_verified_user)):
-    from neveai.routers.video_vdn_generation import vdn_h3_runtime
+    from neveai.routers.video_quality_generation import video15_runtime as vdn_h3_runtime
     return {
         "enabled": request.app.state.config.ENABLE_VIDEO_GENERATION,
         "installed": minimax_h3_runtime.is_installed,
@@ -1143,6 +1152,6 @@ async def cancel_video_generation(request: Request, user=Depends(get_verified_us
     ):
         raise HTTPException(status_code=403, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
     await minimax_h3_runtime.cancel()
-    from neveai.routers.video_vdn_generation import vdn_h3_runtime
+    from neveai.routers.video_quality_generation import video15_runtime as vdn_h3_runtime
     await vdn_h3_runtime.cancel()
     return {"success": True}

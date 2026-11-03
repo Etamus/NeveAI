@@ -8,6 +8,33 @@ export type VideoGenerationModel = (typeof videoGenerationModels)[number]['id'];
 export const normalizeVideoGenerationModel = (value: unknown): VideoGenerationModel =>
 	value === 'vdn_h3' ? 'vdn_h3' : 'minimax_h3';
 
+// Match the server's latent-patch dimensions so the first status does not resize the preview.
+export function pendingVideoGenerationStatus(message: any, parent?: any): {
+	action: string; done: boolean; progress: number; width: number; height: number;
+	resolution: string; duration: string; aspect_ratio: string; referenceDimensions: boolean; error?: boolean; quality?: string;
+} | null {
+	const features = message?.video_generation_features;
+	if (message?.done || message?.error || !features?.video_generation) return null;
+	const resolution = features.video_generation_resolution === '672p' ? '672p' : '480p';
+	let [width, height] = resolution === '672p' ? [1184, 672] : [864, 480];
+	if (features.video_generation_aspect_ratio === '9:16') [width, height] = [height, width];
+	const image = parent?.files?.find((file: any) => file.type === 'image' || file.content_type?.startsWith('image/'));
+	const sourceWidth = Number(image?.image_width), sourceHeight = Number(image?.image_height);
+	const referenceDimensions = sourceWidth > 0 && sourceHeight > 0 && Number.isFinite(sourceWidth + sourceHeight);
+	if (referenceDimensions) {
+		const scale = (resolution === '672p' ? 672 : 480) / Math.min(sourceWidth, sourceHeight);
+		let w = sourceWidth * scale, h = sourceHeight * scale;
+		const maximum = 768 * 1344;
+		if (w * h > maximum) { const ratio = Math.sqrt(maximum / (w * h)); w *= ratio; h *= ratio; }
+		width = Math.max(32, Math.floor((Math.round(w) + 16) / 32) * 32);
+		height = Math.max(32, Math.floor((Math.round(h) + 16) / 32) * 32);
+		while (width * height > maximum) { if (width >= height) width -= 32; else height -= 32; }
+	}
+	return { action: 'video_generation', done: false, progress: 0, width, height,
+		resolution, referenceDimensions, duration: features.video_generation_duration ?? '5s',
+		aspect_ratio: features.video_generation_aspect_ratio ?? '16:9' };
+}
+
 export function snapshotVideoRequestFeatures(features: Record<string, any>, mobile = false) {
 	const snapshot = structuredClone(features);
 	if (snapshot.video_generation) {

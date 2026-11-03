@@ -53,7 +53,7 @@ def h3_builder(source):
 
 
 class VideoGraphTests(unittest.TestCase):
-    def test_h3_graphs_are_unchanged(self):
+    def test_h3_visual_graphs_are_unchanged_with_native_audio(self):
         path = "backend/neveai/routers/video_generation.py"
         old = h3_builder(
             subprocess.check_output(
@@ -83,10 +83,22 @@ class VideoGraphTests(unittest.TestCase):
                                 frames=frames,
                                 low_vram_lora=merged,
                             )
-                            self.assertEqual(
-                                old("Scene", 42, refs[0], **kwargs),
-                                new("Scene", 42, refs[0], **kwargs),
-                            )
+                            graph = new("Scene", 42, refs[0], **kwargs)
+                            self.assertEqual(graph.pop("17"), {
+                                "class_type": "VAELoader",
+                                "inputs": {"vae_name": "minimax_h3_audio_vae_fp32.safetensors"},
+                            })
+                            self.assertEqual(graph.pop("18"), {
+                                "class_type": "VAEDecodeAudio",
+                                "inputs": {"samples": ["13", 0], "vae": ["17", 0]},
+                            })
+                            self.assertEqual(graph["15"]["inputs"].pop("audio"), ["18", 0])
+                            baseline = old("Scene", 42, refs[0], **kwargs)
+                            # Allow the same regression to run after the audio change is committed.
+                            baseline.pop("17", None)
+                            baseline.pop("18", None)
+                            baseline["15"]["inputs"].pop("audio", None)
+                            self.assertEqual(baseline, graph)
 
 
 class VideoHandlerTests(unittest.IsolatedAsyncioTestCase):

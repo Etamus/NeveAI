@@ -289,7 +289,7 @@ async function resizeImageToDataURL(
 	return Promise.resolve(toDataURL());
 }
 
-export const compressImage = async (imageUrl, maxWidth, maxHeight) => {
+export const compressImage = async (imageUrl, maxWidth, maxHeight, sourceMimeType?: string) => {
 	return new Promise((resolve, reject) => {
 		const img = new Image();
 		img.onload = async () => {
@@ -335,7 +335,7 @@ export const compressImage = async (imageUrl, maxWidth, maxHeight) => {
 				height = maxHeight;
 			}
 
-			const mimeType = imageUrl.match(/^data:([^;]+);/)?.[1] ?? 'image/jpeg';
+			const mimeType = sourceMimeType || imageUrl.match(/^data:([^;]+);/)?.[1] || 'image/jpeg';
 			resolve(await resizeImageToDataURL(img, width, height, mimeType));
 		};
 		img.onerror = (error) => reject(error);

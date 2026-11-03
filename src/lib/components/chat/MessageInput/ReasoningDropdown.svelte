@@ -206,12 +206,11 @@
 		box-sizing: border-box; aspect-ratio: 1; min-width: 38px; min-height: 38px;
 		max-width: 38px; max-height: 38px;
 		padding: 0; flex: 0 0 38px; border-radius: 50%;
-		color: rgb(107 114 128); background: transparent;
+		color: rgb(115 115 115); background: transparent;
 	}
 	.mobile-reasoning-toggle:hover { background: rgb(0 0 0 / 6%); }
 	:global(.dark) .mobile-reasoning-toggle:hover { background: rgb(255 255 255 / 6%); }
-	.mobile-reasoning-toggle.enabled { color: rgb(59 130 246); background: rgb(59 130 246 / 12%); }
-	.mobile-reasoning-toggle.enabled:hover { background: rgb(59 130 246 / 18%); }
+	.mobile-reasoning-toggle.enabled { color: rgb(59 130 246); }
 	.reasoning-tool {
 		position: relative;
 		/* The raised effort label must not cover the buttons' hit areas. */

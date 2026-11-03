@@ -135,3 +135,9 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	@media (max-width: 767px) {
+		#model-settings-content { padding-left: 24px; }
+	}
+</style>

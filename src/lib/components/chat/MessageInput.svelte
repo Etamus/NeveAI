@@ -53,6 +53,8 @@
 		getWeekday
 	} from '$lib/utils';
 	import { uploadFile } from '$lib/apis/files';
+	import { imageCompressionBounds } from '$lib/utils/imageCompressionBounds';
+	import { prepareImageUpload } from '$lib/utils/prepareImageUpload';
 	import { generateAutoCompletion } from '$lib/apis';
 	import { getSessionUser } from '$lib/apis/auths';
 	import { getTools } from '$lib/apis/tools';
@@ -974,6 +976,38 @@
 	let isInputMultiline = false;
 	let composerContentRevision = 0;
 	let chatInputContainerEl: HTMLElement | null = null;
+
+	function expandWrappedInput(node: HTMLElement | null = chatInputContainerEl) {
+		const paragraph = node?.querySelector('.ProseMirror p');
+		if (!paragraph?.textContent) return;
+		const style = getComputedStyle(paragraph);
+		const lineHeight = parseFloat(style.lineHeight);
+		const effectiveLineHeight = Number.isNaN(lineHeight) ? parseFloat(style.fontSize) * 1.5 : lineHeight;
+		if (paragraph.getBoundingClientRect().height > effectiveLineHeight + 4) {
+			isInputMultiline = true;
+		}
+	}
+
+	function compactInputSize(node: HTMLElement, compact: boolean) {
+		let enabled = compact;
+		const observer = new ResizeObserver(() => {
+			if (!enabled) return;
+			expandWrappedInput(node);
+			// Expand before paint, then stop observing before the layout changes.
+			if (isInputMultiline) observer.disconnect();
+		});
+		if (enabled) observer.observe(node);
+		return {
+			update(value: boolean) {
+				enabled = value;
+				if (enabled) observer.observe(node);
+				else observer.disconnect();
+			},
+			destroy() {
+				observer.disconnect();
+			}
+		};
+	}
 	$: activeChipTextClass = $showArtifacts ? 'hidden @sm:inline' : 'inline';
 
 	type ViewportDropdownOptions =
@@ -1485,55 +1519,24 @@
 					return;
 				}
 
-				const compressImageHandler = async (
-					imageUrl: string,
-					settings: any = {},
-					config: any = {}
-				) => {
-					// Quick shortcut so we don't do unnecessary work.
-					const settingsCompression = settings?.imageCompression ?? false;
-					const configWidth = config?.file?.image_compression?.width ?? null;
-					const configHeight = config?.file?.image_compression?.height ?? null;
-
-					// If neither settings nor config wants compression, return original URL.
-					if (!settingsCompression && !configWidth && !configHeight) {
-						return imageUrl;
-					}
-
-					// Default to null (no compression unless set)
-					let width = null;
-					let height = null;
-
-					// If user/settings want compression, pick their preferred size.
-					if (settingsCompression) {
-						width = settings?.imageCompressionSize?.width ?? null;
-						height = settings?.imageCompressionSize?.height ?? null;
-					}
-
-					// Apply config limits as an upper bound if any
-					if (configWidth && (width === null || width > configWidth)) {
-						width = configWidth;
-					}
-					if (configHeight && (height === null || height > configHeight)) {
-						height = configHeight;
-					}
-
-					// Do the compression if required
-					if (width || height) {
-						return await compressImage(imageUrl, width, height);
-					}
-					return imageUrl;
-				};
-
+				const { width, height } = imageCompressionBounds($settings, $config);
 				try {
-					const readableFile = file.type === 'image/heic' ? await convertHeicToJpeg(file) : file;
+					let readableFile = file.type === 'image/heic' ? await convertHeicToJpeg(file) : file;
+					const prepared = readableFile instanceof File;
+					if (prepared) readableFile = await prepareImageUpload(readableFile, width, height);
+					// Only temporary chats need a Base64 representation of the image.
+					if (!$temporaryChatEnabled && prepared) {
+						releaseReservation();
+						await uploadFileHandler(readableFile, false);
+						return;
+					}
 					let imageUrl = await new Promise<string>((resolve, reject) => {
 						const reader = new FileReader();
 						reader.onload = (event) => resolve(String(event.target?.result ?? ''));
 						reader.onerror = () => reject(reader.error);
 						reader.readAsDataURL(readableFile);
 					});
-					imageUrl = String(await compressImageHandler(imageUrl, $settings, $config));
+					if (!prepared && (width || height)) imageUrl = String(await compressImage(imageUrl, width, height, readableFile.type));
 					if ($temporaryChatEnabled) {
 						releaseReservation();
 						const activePolicy = getMediaAttachmentPolicy(
@@ -1941,11 +1944,13 @@
 				style="font-family: 'Segoe UI', sans-serif;"
 				transition:fly={{ y: 4, duration: 150 }}
 			>
-				<div class="flex items-center gap-1.5 mb-2.5">
+				<div class="flex items-center justify-between mb-2.5">
 					<span
-						class="text-[14px] font-semibold text-gray-700 dark:text-gray-200"
-						>{$i18n.t('Uso de tokens')}</span
+						class="text-[14px] text-gray-500 dark:text-gray-400"
+						>{$i18n.t('Utilização')}</span
 					>
+					<span class="text-[14px] font-semibold tabular-nums" style="color: {ringColor}"
+						>{contextWindow ? `${(usageRatio * 100).toFixed(1)}%` : '--'}</span>
 				</div>
 				<div
 					class="w-full h-1.5 rounded-full bg-gray-100 dark:bg-gray-700 mb-3 overflow-hidden"
@@ -1984,18 +1989,6 @@
 						<span
 							class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
 							>{contextWindow ? formatTokens(contextWindow) : '--'}</span
-						>
-					</div>
-					<div
-						class="flex justify-between items-center pt-1.5 mt-1 border-t border-gray-100 dark:border-gray-700/50"
-					>
-						<span class="text-[14px] text-gray-500 dark:text-gray-400"
-							>{$i18n.t('Utilização')}</span
-						>
-						<span
-							class="text-[14px] font-semibold tabular-nums"
-							style="color: {ringColor}"
-							>{contextWindow ? `${(usageRatio * 100).toFixed(1)}%` : '--'}</span
 						>
 					</div>
 				</div>
@@ -2392,6 +2385,7 @@
 								<div
 									bind:this={chatInputContainerEl}
 									use:composerTextViewport={composerContentRevision}
+									use:compactInputSize={isCompact}
 									class="chat-input-scroll rtl:text-right ltr:text-left bg-transparent dark:text-gray-100 outline-hidden w-full px-1 resize-none h-fit max-h-47 overflow-auto {!hasComposerAttachmentArea
 										? atSelectedModel !== undefined
 											? 'pt-1.5'
@@ -2438,17 +2432,7 @@
 
 														// Visual wrapping: only escalate, never de-escalate
 														// (expanded layout width differs from compact, causing oscillation)
-														tick().then(() => {
-															if (!chatInputContainerEl) return;
-															const firstP = chatInputContainerEl.querySelector('.ProseMirror p');
-															if (!firstP) return;
-															const style = getComputedStyle(firstP);
-															const lh = parseFloat(style.lineHeight);
-															const effectiveLH = isNaN(lh) ? parseFloat(style.fontSize) * 1.5 : lh;
-															if (firstP.getBoundingClientRect().height > effectiveLH + 4) {
-																isInputMultiline = true;
-															}
-														});
+														tick().then(() => expandWrappedInput());
 													}}
 													json={true}
 													richText={$settings?.richTextInput ?? false}
@@ -3389,6 +3373,8 @@
 		color: var(--color-gray-200, #e5e7eb);
 	}
 	@media (min-width: 768px) {
+		.message-input-actions { height: 36px; align-items: center; }
+		.message-input-active-controls { height: 36px; align-items: center; }
 		.composer-compact-add { display: flex; align-items: center; height: 36px; }
 		:global(#message-input-container.flex-row > :has(#input-menu-button)) {
 			margin-inline-start: 0.375rem;

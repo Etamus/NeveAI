@@ -469,7 +469,7 @@
 		.chat-navbar-sidebar { align-self: center; margin: 0; transform: none; }
 		.chat-navbar-sidebar :global(button) { width: 38px; height: 38px; justify-content: center; align-items: center; padding: 0; }
 		.chat-navbar :global(button) { min-height: 38px; }
-		.chat-navbar :global(button[id^='model-selector-']) { padding-inline: 0.375rem; font-size: 16px; }
+		.chat-navbar :global(button[id^='model-selector-']) { padding-inline: 0.375rem; font-size: 18px; }
 		.chat-navbar :global(button[aria-label='New Chat']) { display: none; }
 		.chat-navbar :global(#chat-context-menu-button),
 		.chat-navbar :global(button[aria-label='Models']),

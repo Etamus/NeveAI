@@ -21,8 +21,8 @@
 	let duration = 0;
 	let muted = false;
 	let showExpanded = false;
-	let expandedAutoplay = false;
 	let metadataLoaded = false;
+	let frameReady = false;
 	let videoAspectRatio = Math.max(0.01, Number(initialAspectRatio) || 16 / 9);
 	let narrowControls = false;
 	let availableWidth = 0;
@@ -45,6 +45,7 @@
 	$: if (resolvedSrc !== metadataSource) {
 		metadataSource = resolvedSrc;
 		metadataLoaded = false;
+		frameReady = false;
 		videoAspectRatio = Math.max(0.01, Number(initialAspectRatio) || 16 / 9);
 	}
 	$: if (!metadataLoaded) {
@@ -80,8 +81,6 @@
 	};
 
 	const expandPlayer = () => {
-		expandedAutoplay = Boolean(videoElement && !videoElement.paused);
-		videoElement?.pause();
 		showExpanded = true;
 	};
 
@@ -106,23 +105,16 @@
 	};
 </script>
 
-<GeneratedVideoPreview
-	bind:show={showExpanded}
-	src={resolvedSrc}
-	initialTime={currentTime}
-	autoplay={expandedAutoplay}
-	onDownload={download}
-/>
-
 <div
 	bind:this={playerElement}
 	use:observePlayerWidth
 	data-generated-visual-media
 	class="video-player relative w-full {fitContainer ? 'self-center' : 'self-start'} {revealAfterMetadata && !metadataLoaded ? 'opacity-0' : 'opacity-100'} overflow-hidden rounded-[0.625rem] bg-transparent text-gray-700 dark:text-gray-200"
-	class:portrait-video={videoAspectRatio < 1 || narrowControls}
+	class:portrait-video={!showExpanded && (videoAspectRatio < 1 || narrowControls)}
 	class:fit-container={fitContainer}
 	style={`aspect-ratio: ${videoAspectRatio}; width: min(100%, ${fitContainer && fittedWidth > 0 ? `${fittedWidth}px` : `${videoDisplayWidth}rem`}); max-height: ${fitContainer ? '100%' : '32rem'};`}
 >
+	<GeneratedVideoPreview bind:show={showExpanded} aspectRatio={videoAspectRatio} ready={frameReady} onDownload={download}>
 	<!-- Generated clips do not have a caption track available. -->
 	<!-- svelte-ignore a11y_media_has_caption -->
 	<video
@@ -140,7 +132,10 @@
 			dispatch('ready', { aspectRatio: videoAspectRatio });
 		}}
 		on:durationchange={() => (duration = mediaDuration(videoElement))}
-		on:loadeddata={() => (duration = mediaDuration(videoElement))}
+		on:loadeddata={() => {
+			duration = mediaDuration(videoElement);
+			frameReady = true;
+		}}
 		on:progress={() => (duration = mediaDuration(videoElement))}
 		on:timeupdate={() => (currentTime = videoElement.currentTime || 0)}
 		on:play={() => (playing = true)}
@@ -167,7 +162,7 @@
 			{/if}
 		</button>
 
-		{#if videoAspectRatio < 1 || narrowControls}
+		{#if !showExpanded && (videoAspectRatio < 1 || narrowControls)}
 			<span class="video-time-combined whitespace-nowrap text-[0.6875rem] tabular-nums text-white drop-shadow-md dark:text-gray-200">
 				{formatTime(currentTime)} / {formatTime(duration)}
 			</span>
@@ -182,10 +177,11 @@
 			value={progress}
 			aria-label={$i18n.t('Playback position')}
 			class="video-progress min-w-0 flex-1 cursor-pointer"
+			class:preview-progress={showExpanded}
 			style="--video-progress: {progress}%"
 			on:input={seek}
 		/>
-		{#if videoAspectRatio >= 1 && !narrowControls}
+		{#if showExpanded || (videoAspectRatio >= 1 && !narrowControls)}
 			<span class="video-duration w-[2.3rem] shrink-0 text-right text-[0.6875rem] tabular-nums text-white drop-shadow-md dark:text-gray-200">{formatTime(duration)}</span>
 		{/if}
 
@@ -197,14 +193,15 @@
 					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-[1.05rem]" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5 6.8 8.5H4.5v7h2.3L11 19V5Zm4.2 3.4a5 5 0 0 1 0 7.2m2.6-9.8a8.5 8.5 0 0 1 0 12.4" /></svg>
 				{/if}
 			</button>
-			<button type="button" class="grid size-8 place-items-center rounded-md p-0 text-white drop-shadow-md transition-colors hover:bg-white/15 hover:text-white dark:text-gray-200 dark:hover:bg-white/10 dark:hover:text-white" aria-label="Expandir" title="Expandir" on:click={expandPlayer}>
+			<button type="button" class="grid size-8 place-items-center rounded-md p-0 text-white drop-shadow-md transition-colors hover:bg-white/15 hover:text-white dark:text-gray-200 dark:hover:bg-white/10 dark:hover:text-white" class:hidden={showExpanded} aria-label="Expandir" title="Expandir" on:click={expandPlayer}>
 				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="size-[1.05rem]" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4H4v5m11-5h5v5m0 6v5h-5M4 15v5h5" /></svg>
 			</button>
-			<button type="button" class="grid size-8 place-items-center rounded-md p-0 text-white drop-shadow-md transition-colors hover:bg-white/15 hover:text-white dark:text-gray-200 dark:hover:bg-white/10 dark:hover:text-white" aria-label={$i18n.t('Download')} title={$i18n.t('Download')} on:click={download}>
+			<button type="button" class="grid size-8 place-items-center rounded-md p-0 text-white drop-shadow-md transition-colors hover:bg-white/15 hover:text-white dark:text-gray-200 dark:hover:bg-white/10 dark:hover:text-white" class:hidden={showExpanded} aria-label={$i18n.t('Download')} title={$i18n.t('Download')} on:click={download}>
 				<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="size-[1.05rem]" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 11l5 5 5-5M12 4v12" /></svg>
 			</button>
 		</div>
 	</div>
+	</GeneratedVideoPreview>
 </div>
 
 <style>
@@ -230,7 +227,7 @@
 		clip-path: inset(0 round 0.625rem);
 	}
 
-	.video-player > video {
+	.video-player video {
 		margin: 0 !important;
 		border-radius: inherit;
 		transform: none;

@@ -36,6 +36,16 @@ try{
    const backs=dialog.locator('.mobile-modal-back');if(!process.env.BASELINE_VARIABLES)assert.equal(await backs.count(),mobile?1:0,kind+' mobile Back visibility');
    if(mobile)for(const close of await dialog.locator('[data-mobile-modal-close]').all())assert.equal(await close.isVisible(),false,kind+' mobile close icon is visible');
    const metrics={width,dark,kind};
+   if(kind==='parameters')assert.equal(await page.locator('#model-settings-content').evaluate(e=>getComputedStyle(e).paddingLeft),mobile?'24px':await page.evaluate(()=>getComputedStyle(document.documentElement).fontSize));
+   if(kind==='settings'&&mobile){
+    const tabs=page.locator('.tabs button');
+    for(let index=0;index<await tabs.count();index++){
+     await tabs.nth(index).click();
+     assert.equal(await page.locator('.settings-content').evaluate(e=>getComputedStyle(e).paddingLeft),'28px');
+     assert.equal(await page.locator('.settings-content').evaluate(e=>e.scrollWidth>e.clientWidth),false);
+     await page.goBack();await page.waitForTimeout(100);
+    }
+   }
    if(kind==='unified'){
     assert.equal(await dialog.getByText('VRAM',{exact:true}).count(),mobile?0:1);
     metrics.cards=await page.locator('.unified-model-card').evaluateAll(es=>es.map(e=>{const r=e.getBoundingClientRect(),avatar=e.querySelector('.model-avatar').getBoundingClientRect(),last=e.lastElementChild.getBoundingClientRect(),n=e.querySelector('.unified-model-name').getBoundingClientRect(),m=e.querySelector('.unified-model-meta').getBoundingClientRect();return{left:avatar.left-r.left,right:r.right-last.right,gap:m.top-n.bottom};}));
@@ -52,6 +62,7 @@ try{
     if(mobile)assert(metrics.identity.gap>=19&&Math.abs(metrics.identity.name-metrics.identity.description)<=1,JSON.stringify(metrics.identity));
     metrics.params=await page.locator('.model-editor-advanced-params-window').evaluate(e=>({max:getComputedStyle(e).maxHeight,client:e.clientHeight,scroll:e.scrollHeight}));
     if(mobile)assert.equal(metrics.params.max,'none');
+    assert.equal(await page.locator('.model-editor-params-scroll').evaluate(e=>getComputedStyle(e).paddingLeft),mobile?'24px':await page.evaluate(()=>getComputedStyle(document.documentElement).fontSize));
    }
    if(kind.startsWith('file-')){
     const size=await page.locator('.file-viewer-size').boundingBox(),name=await page.locator('[title="Example.'+kind.slice(5)+'"]').boundingBox();metrics.metadata={size,name};

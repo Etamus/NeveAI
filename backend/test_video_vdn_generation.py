@@ -106,7 +106,15 @@ class VideoVDNGraphTests(unittest.TestCase):
                 for merged in (False, True):
                     with self.subTest(refs=refs, frames=frames, merged=merged):
                         args = ("Scene", 42, *refs, 864, 480, frames, merged)
-                        self.assertEqual(original._build_workflow(*args), self.base._build_workflow(*args))
+                        baseline = original._build_workflow(*args)
+                        graph = self.base._build_workflow(*args)
+                        self.assertEqual(graph["18"]["class_type"], "VAEDecodeAudio")
+                        self.assertEqual(graph["15"]["inputs"]["audio"], ["18", 0])
+                        for candidate in (baseline, graph):
+                            candidate.pop("17", None)
+                            candidate.pop("18", None)
+                            candidate["15"]["inputs"].pop("audio", None)
+                        self.assertEqual(baseline, graph)
 
     def test_vdn_changes_only_own_adapters_and_beta8_er_sde(self):
         for count in range(3):
@@ -130,6 +138,9 @@ class VideoVDNGraphTests(unittest.TestCase):
                         self.assertNotIn(self.ns["h3"].TURBO_LORA, json.dumps(graph))
                         self.assertEqual(graph["9"]["inputs"]["scheduler"], "beta")
                         self.assertEqual(graph["9"]["inputs"]["steps"], 8)
+                        self.assertEqual(graph["17"]["inputs"]["vae_name"], self.ns["h3"].AUDIO_VAE)
+                        self.assertEqual(graph["18"]["inputs"], {"samples": ["13", 0], "vae": ["17", 0]})
+                        self.assertEqual(graph["15"]["inputs"]["audio"], ["18", 0])
                         self.assertEqual(graph["11"], {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "er_sde"}})
                         conditioning = graph["4"]["inputs"]
                         self.assertEqual(conditioning["length"], frames)
@@ -461,7 +472,7 @@ class VideoVDNHandlerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(metadata["video_model"], "vdn_h3" if model == "vdn_h3" else "minimax_h3")
                         if model in ("vdn_h3", "minimax_h3"):
                             self.assertEqual(metadata["video_model"], model)
-                        self.assertEqual(metadata["source"], "minimax-h3-vdn-int8" if model == "vdn_h3" else "minimax-h3-fl2va-w4a8")
+                        self.assertEqual(metadata["source"], "minimax-h3-fl2va-w6a8" if model == "vdn_h3" else "minimax-h3-fl2va-w4a8")
                         # Generated-video library queries accept this source family.
                         self.assertTrue(metadata["source"].startswith("minimax-h3-"))
                         self.assertTrue(self.metadata["skip_llm"])

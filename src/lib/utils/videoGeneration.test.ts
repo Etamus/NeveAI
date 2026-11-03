@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
-import { getVideoGenerationFeatures, normalizeVideoGenerationModel, snapshotVideoRequestFeatures, videoGenerationModels } from './videoGeneration';
+import { getVideoGenerationFeatures, normalizeVideoGenerationModel, snapshotVideoRequestFeatures, videoGenerationModels, pendingVideoGenerationStatus } from './videoGeneration';
 
 const chat = readFileSync('src/lib/components/chat/Chat.svelte', 'utf8');
 const input = readFileSync('src/lib/components/chat/MessageInput.svelte', 'utf8');
@@ -27,6 +27,28 @@ const videoFeatures = (model = 'vdn_h3') => ({
 });
 
 describe('video generation model selection', () => {
+	it('reserves the server canvas before the first status without changing history', () => {
+		for (const resolution of ['480p','672p']) for (const aspect of ['16:9','9:16']) {
+			const message={done:false,video_generation_features:{...videoFeatures(),video_generation_resolution:resolution,video_generation_aspect_ratio:aspect}};
+			const before=structuredClone(message);
+			const status=pendingVideoGenerationStatus(message)!;
+			const [w,h]=resolution==='672p'?[1184,672]:[864,480];
+			expect([status.width,status.height]).toEqual(aspect==='9:16'?[h,w]:[w,h]);
+			expect(message).toEqual(before);
+			expect(pendingVideoGenerationStatus({...message,done:true})).toBeNull();
+			expect(pendingVideoGenerationStatus({...message,error:{message:'failed'}})).toBeNull();
+		}
+		expect(pendingVideoGenerationStatus({done:false})).toBeNull();
+	});
+	it('uses known image dimensions and respects latent and pixel limits', () => {
+		for (const [width,height] of [[1000,1000],[1600,900],[900,1600],[10000,100]]) {
+			const status=pendingVideoGenerationStatus({done:false,video_generation_features:videoFeatures()},
+				{files:[{type:'image',image_width:width,image_height:height}]})!;
+			expect(status.width%32).toBe(0);expect(status.height%32).toBe(0);
+			expect(status.width*status.height).toBeLessThanOrEqual(768*1344);
+			expect(status.width>status.height).toBe(width>height);
+		}
+	});
 	it('exposes exactly the two supported models and defaults old/unknown values', () => {
 		expect(videoGenerationModels).toEqual([
 			{id: 'minimax_h3', label: 'Neve Video 1'}, {id: 'vdn_h3', label: 'Neve Video 1.5'}

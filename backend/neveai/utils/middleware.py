@@ -3219,7 +3219,7 @@ async def chat_video_generation_handler(
         from neveai.routers.video_generation import minimax_h3_runtime
 
         if video_model == "vdn_h3":
-            from neveai.routers.video_vdn_generation import vdn_h3_runtime
+            from neveai.routers.video_quality_generation import video15_runtime as vdn_h3_runtime
             runtime = vdn_h3_runtime
         else:
             runtime = minimax_h3_runtime
@@ -3280,7 +3280,7 @@ async def chat_video_generation_handler(
             request,
             file=upload,
             metadata={
-                "source": "minimax-h3-vdn-int8" if video_model == "vdn_h3" else "minimax-h3-fl2va-w4a8",
+                "source": "minimax-h3-fl2va-w6a8" if video_model == "vdn_h3" else "minimax-h3-fl2va-w4a8",
                 "video_model": video_model,
                 "prompt": prompt,
                 "width": width,

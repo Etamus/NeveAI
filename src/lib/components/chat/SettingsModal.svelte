@@ -406,7 +406,7 @@
 		.tabs :global(button svg) { flex-shrink: 0; width: 20px; height: 20px; }
 		.tabs :global(button span) { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 		.mobile-settings-chevron { display: flex; margin-left: auto; color: var(--color-gray-400); }
-		.settings-content { display: none; padding: 16px 20px; min-height: 0; max-height: none; }
+		.settings-content { display: none; padding: 16px 20px 16px 28px; min-height: 0; max-height: none; }
 		.mobile-settings-detail .tabs { display: none; }
 		.mobile-settings-detail .settings-content { display: block; }
 		.settings-content :global(.flex.w-full.justify-between) { gap: 0.75rem; }

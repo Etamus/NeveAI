@@ -46,7 +46,8 @@
 		const align = () => {
 			if (!alive) return;
 			const icon = node.querySelector<SVGElement>('svg');
-			const size = Math.max(2, Math.round(parseFloat(getComputedStyle(document.documentElement).fontSize) * 0.75 / 2) * 2);
+			const scale = window.matchMedia('(max-width: 767px)').matches ? 0.875 : 0.75;
+			const size = Math.max(2, Math.round(parseFloat(getComputedStyle(document.documentElement).fontSize) * scale / 2) * 2);
 			modelChevronSize = size;
 			if (icon) { icon.style.width = `${size}px`; icon.style.height = `${size}px`; }
 			const left = node.getBoundingClientRect().left - correction;
