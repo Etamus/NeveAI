@@ -296,7 +296,8 @@ STATIC_DIR = Path(os.getenv("STATIC_DIR", NEVEAI_DIR / "static"))
 
 FONTS_DIR = Path(os.getenv("FONTS_DIR", NEVEAI_DIR / "static" / "fonts"))
 
-FRONTEND_BUILD_DIR = Path(os.getenv("FRONTEND_BUILD_DIR", BASE_DIR / "build")).resolve()
+_default_frontend = NEVEAI_DIR / "frontend" if os.getenv("NEVE_USE_PUBLISHED_FRONTEND") == "1" else BASE_DIR / "build"
+FRONTEND_BUILD_DIR = Path(os.getenv("FRONTEND_BUILD_DIR", _default_frontend)).resolve()
 
 if FROM_INIT_PY:
     FRONTEND_BUILD_DIR = Path(

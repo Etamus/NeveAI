@@ -72,6 +72,7 @@ export interface LocalVramGpu {
 }
 
 export interface LocalVramInfo {
+	ram?: { available: boolean; source: string; total: number; used: number; free: number };
 	available: boolean;
 	source?: string;
 	total: number;

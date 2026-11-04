@@ -1393,8 +1393,20 @@ _vram_cache: dict = {"data": None, "timestamp": 0.0}
 _vram_cache_lock = asyncio.Lock()
 
 
+def _get_system_ram_info() -> dict:
+    try:
+        memory = psutil.virtual_memory()
+        return {
+            "available": True, "source": "system", "total": memory.total,
+            "used": memory.total - memory.available, "free": memory.available,
+        }
+    except Exception:
+        return {"available": False, "source": "system", "total": 0, "used": 0, "free": 0}
+
+
 def _get_vram_info() -> dict:
     """Return NVIDIA VRAM information from nvidia-smi when available."""
+    ram = _get_system_ram_info()
     command = [
         "nvidia-smi",
         "--query-gpu=index,name,memory.total,memory.used,memory.free",
@@ -1444,6 +1456,7 @@ def _get_vram_info() -> dict:
         return {
             "available": len(gpus) > 0,
             "source": "nvidia-smi",
+            "ram": ram,
             "total": total,
             "used": used,
             "free": free,
@@ -1456,6 +1469,7 @@ def _get_vram_info() -> dict:
         return {
             "available": False,
             "source": "nvidia-smi",
+            "ram": ram,
             "total": 0,
             "used": 0,
             "free": 0,

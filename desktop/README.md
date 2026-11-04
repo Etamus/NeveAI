@@ -29,6 +29,16 @@ para rollback. Nao apagar diretorios de runtime/host usados por processos ativos
 
 ## Preferencias e integracao
 
+### Instalador nativo
+
+O instalador usa PowerShell/WPF, sem renderer web ou perfil de navegador proprio.
+Uma segunda abertura reutiliza a janela correspondente ao mesmo projeto.
+
+Instalacao, atualizacao, reparo e inicio compartilham a validacao em
+`launchers/runtime-validation.ps1`. O launcher define `NEVE_USE_PUBLISHED_FRONTEND=1`
+para servir o frontend publicado e validado, sem depender do build temporario.
+O desenvolvimento continua usando o diretorio de build habitual.
+
 A primeira abertura migra localStorage do perfil exclusivo antigo
 `logs/browser-app`, sem apagar esse perfil. Essa transferencia unica precisa do
 navegador anteriormente usado, caso exista um perfil antigo. Depois da migracao,

@@ -42,6 +42,7 @@ export default defineConfig({
 		// (backend/venv tem 2GB/56k arquivos — sem isso o build trava o sistema)
 		watch: {
 			ignored: [
+				'**/.desktop/**',
 				'**/backend/**',
 				'**/test/**',
 				'**/static/pyodide/**',

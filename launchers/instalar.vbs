@@ -8,6 +8,9 @@ launcherDir = fso.GetParentFolderName(WScript.ScriptFullName)
 root = fso.GetParentFolderName(launcherDir)
 scriptPath = fso.BuildPath(launcherDir, "instalar.ps1")
 powershellPath = shell.ExpandEnvironmentStrings("%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe")
+If shell.ExpandEnvironmentStrings("%PROCESSOR_ARCHITEW6432%") <> "%PROCESSOR_ARCHITEW6432%" Then
+    powershellPath = shell.ExpandEnvironmentStrings("%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe")
+End If
 startPage = "home"
 language = "pt-BR"
 languageFile = fso.BuildPath(fso.BuildPath(shell.ExpandEnvironmentStrings("%LOCALAPPDATA%"), "NeveAI"), "installer-language.txt")

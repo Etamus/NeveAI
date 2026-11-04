@@ -237,32 +237,10 @@ function Test-NeveInstallReady {
 		return $false
 	}
 
-	# Node/Vite and OfficeCLI are installer/build tools. Their absence must not
-	# prevent an already published NeveAI runtime from starting.
-	$required = @(
-		(Join-Path $Root '.env'),
-		$VenvPy,
-		(Join-Path $Root 'llamacpp-server\bin\llama-server.exe'),
-		(Join-Path $Backend 'neveai\frontend\index.html'),
-		(Join-Path $Backend 'neveai\models\users.py'),
-		$WindowScript
-		(Join-Path $Root '.desktop\installed.json')
-		(Join-Path $Root 'desktop\setup_runtime.py')
-	)
-	foreach ($path in $required) {
-		if (-not (Test-Path -LiteralPath $path)) {
-			Write-StartLog "instalação indisponível: arquivo essencial ausente: $path"
-			return $false
-		}
-	}
-	$frontendIndex = Join-Path $Backend 'neveai\frontend\index.html'
-	$desktopCheck = Start-Process -FilePath $VenvPy -ArgumentList @("`"$(Join-Path $Root 'desktop\setup_runtime.py')`"", '--check') -WorkingDirectory $Root -WindowStyle Hidden -Wait -PassThru
-	if ($desktopCheck.ExitCode -ne 0) {
-		Write-StartLog 'WebView2 Fixed ausente ou desatualizado; reparacao pelo instalador necessaria.'
-		return $false
-	}
-	if ((Get-Item -LiteralPath $frontendIndex).Length -le 0) {
-		Write-StartLog "instalação indisponível: frontend publicado está vazio: $frontendIndex"
+	. (Join-Path $LauncherDir 'runtime-validation.ps1')
+	$health = Get-NeveRuntimeHealth $Root
+	if (-not $health.Ok) {
+		Write-StartLog ("Runtime invalido: " + ($health.Missing -join '; '))
 		return $false
 	}
 	return $true
@@ -350,7 +328,12 @@ try {
 			Where-Object { $_.OwningProcess -and $_.OwningProcess -ne 0 } |
 			Select-Object -ExpandProperty OwningProcess -Unique
 	)
+	. (Join-Path $LauncherDir 'process-ownership.ps1')
+	$ownedProcesses = @(Get-NeveProjectProcessIds $Root $PID @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue))
 	foreach ($owner in $owners) {
+		if ($owner -notin $ownedProcesses) {
+			throw "A porta 8080 esta ocupada por outro programa (PID $owner). Ele nao sera encerrado pelo NeveAI."
+		}
 		Stop-Process -Id $owner -Force -ErrorAction SilentlyContinue
 	}
 
@@ -358,7 +341,7 @@ try {
 	if ($DebugConsole) {
 		$backendQ = Quote-PsLiteral $Backend
 		$venvPyQ = Quote-PsLiteral $VenvPy
-		$backendCommand = "`$env:PYTHONIOENCODING='utf-8'; `$env:PYTHONPATH='$backendQ'; Set-Location -LiteralPath '$backendQ'; & '$venvPyQ' -m uvicorn neveai.main:app --host 0.0.0.0 --port 8080"
+		$backendCommand = "`$env:PYTHONIOENCODING='utf-8'; `$env:PYTHONPATH='$backendQ'; `$env:NEVE_USE_PUBLISHED_FRONTEND='1'; Set-Location -LiteralPath '$backendQ'; & '$venvPyQ' -m uvicorn neveai.main:app --host 0.0.0.0 --port 8080"
 		$cmdStartCommand = 'start "NeveAI - Backend" /min /D "' + $Backend + '" powershell -NoProfile -ExecutionPolicy Bypass -Command "' + $backendCommand.Replace('"', '\"') + '"'
 		Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', $cmdStartCommand) -WindowStyle Hidden -WorkingDirectory $Root | Out-Null
 		Write-StartLog 'backend debug console started through cmd start /min'
@@ -367,9 +350,11 @@ try {
 		$backendErrorLog = Join-Path $LogDir 'backend-error.log'
 		$previousPythonEncoding = $env:PYTHONIOENCODING
 		$previousPythonPath = $env:PYTHONPATH
+		$previousFrontendMode = $env:NEVE_USE_PUBLISHED_FRONTEND
 		try {
 			$env:PYTHONIOENCODING = 'utf-8'
 			$env:PYTHONPATH = $Backend
+			$env:NEVE_USE_PUBLISHED_FRONTEND = '1'
 			$backendProcess = Start-Process -FilePath $VenvPy `
 				-ArgumentList @('-m', 'uvicorn', 'neveai.main:app', '--host', '0.0.0.0', '--port', '8080') `
 				-WorkingDirectory $Backend `
@@ -381,6 +366,7 @@ try {
 		} finally {
 			$env:PYTHONIOENCODING = $previousPythonEncoding
 			$env:PYTHONPATH = $previousPythonPath
+			$env:NEVE_USE_PUBLISHED_FRONTEND = $previousFrontendMode
 		}
 	}
 
@@ -395,6 +381,9 @@ try {
 			$response.Close()
 			break
 		} catch {
+			if ($backendProcess -and $backendProcess.HasExited) {
+				throw "O backend encerrou durante a inicializacao (codigo $($backendProcess.ExitCode)). Consulte logs\backend-error.log."
+			}
 			$elapsed = ([DateTime]::UtcNow - $start).TotalSeconds
 			if ($elapsed -gt 120) {
 				throw 'Backend nao respondeu em 120 segundos.'

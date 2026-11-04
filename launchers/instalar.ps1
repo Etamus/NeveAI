@@ -1,5 +1,5 @@
-﻿# NeveAI - Instalador Grafico (WPF)
-# UI bonita + progresso visual + log em tempo real.
+﻿# NeveAI - Instalador PowerShell/WPF nativo.
+# Interface PowerShell/WPF nativa; workers de instalacao e recuperacao preservados.
 # Toda a logica original (deteccao de GPU, llama.cpp, venv, requirements, npm)
 # roda em runspace separado para nao travar a interface.
 
@@ -49,6 +49,34 @@ public static class NeveInstallerWindowIdentity
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);
+    [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    private delegate bool WindowCallback(IntPtr window, IntPtr data);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr data);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetProp(IntPtr window, string key);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool SetProp(IntPtr window, string key, IntPtr value);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr RemoveProp(IntPtr window, string key);
+    public static IntPtr FindInstaller(string key)
+    {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr window, IntPtr data) {
+            if (GetProp(window, key) == IntPtr.Zero) return true;
+            found = window; return false;
+        }, IntPtr.Zero);
+        return found;
+    }
+    public static void RegisterInstaller(IntPtr window, string key) { SetProp(window, key, new IntPtr(1)); }
+    public static void UnregisterInstaller(IntPtr window, string key) { RemoveProp(window, key); }
+    public static bool ActivateExisting(IntPtr window, int page)
+    {
+        PostMessage(window, 0x8011, new IntPtr(page), IntPtr.Zero);
+        if (IsIconic(window)) ShowWindow(window, 9);
+        SetForegroundWindow(window);
+        return IsWindowVisible(window);
+    }
 
     public static void ApplyIcon(IntPtr window, string iconPath)
     {
@@ -77,6 +105,30 @@ public static class NeveInstallerWindowIdentity
 $SCRIPT_PATH = if ($PSCommandPath) { $PSCommandPath } elseif ($MyInvocation.MyCommand.Path) { $MyInvocation.MyCommand.Path } else { throw 'Não foi possível determinar o caminho do instalador.' }
 $LAUNCHER_DIR = (Resolve-Path -LiteralPath (Split-Path -Parent $SCRIPT_PATH)).ProviderPath
 $ROOT         = (Resolve-Path -LiteralPath (Join-Path $LAUNCHER_DIR '..')).ProviderPath
+$mutexHash = [Security.Cryptography.SHA256]::Create()
+try { $mutexName = 'Local\NeveAI.Installer.' + [BitConverter]::ToString($mutexHash.ComputeHash([Text.Encoding]::UTF8.GetBytes($ROOT.ToLowerInvariant()))).Replace('-','').Substring(0,24) }
+finally { $mutexHash.Dispose() }
+$script:InstallerInstanceKey = $mutexName
+$script:InstallerSessionMutex = [Threading.Mutex]::new($false, $mutexName)
+try { $ownsInstallerMutex = $script:InstallerSessionMutex.WaitOne(0) }
+catch [Threading.AbandonedMutexException] { $ownsInstallerMutex = $true }
+if (-not $ownsInstallerMutex) {
+    try {
+        $deadline = [DateTime]::UtcNow.AddSeconds(10)
+        do {
+            $existing = [NeveInstallerWindowIdentity]::FindInstaller($script:InstallerInstanceKey)
+            if ($existing -ne [IntPtr]::Zero) {
+                $pageNumber = switch ($StartPage) { 'update' { 1 }; 'build' { 2 }; default { 0 } }
+                if ([NeveInstallerWindowIdentity]::ActivateExisting($existing, $pageNumber)) {
+                    if ($env:NEVE_INSTALLER_READY_FILE) { [IO.File]::WriteAllText($env:NEVE_INSTALLER_READY_FILE, 'ready') }
+                    exit 0
+                }
+            }
+            Start-Sleep -Milliseconds 100
+        } while ([DateTime]::UtcNow -lt $deadline)
+        throw 'O instalador ja esta aberto, mas sua janela ainda nao ficou disponivel.'
+    } finally { $script:InstallerSessionMutex.Dispose() }
+}
 $WINDOW_ICON_PATH = Join-Path $ROOT 'static\static\faviconbar.ico'
 Set-Location -LiteralPath $ROOT
 $VENV_DIR = Join-Path $ROOT 'backend\neveai\venv'
@@ -100,7 +152,7 @@ try {
     $savedInstallerLanguage = ([string](Get-Content -LiteralPath $INSTALLER_LANGUAGE_FILE -Raw -ErrorAction Stop)).Trim()
     if ($savedInstallerLanguage -in @('pt-BR', 'en-US')) { $script:InstallerLanguage = $savedInstallerLanguage }
 } catch {}
-$INSTALLER_REVISION = '2026-09-27-resumable-install-i18n-v2'
+$INSTALLER_REVISION = '2026-11-03-native-runtime-validation-v2'
 $PREVIOUS_INSTALL_STATE = if (Test-Path -LiteralPath $STATE_FILE) {
     ([string](Get-Content -LiteralPath $STATE_FILE -Raw -EA SilentlyContinue)).Trim()
 } else { 'pending' }
@@ -558,8 +610,6 @@ $script:InstallerPtToEn = [ordered]@{
     'Você já está atualizado' = 'You are up to date'
     'Falha ao verificar atualizações' = 'Failed to check for updates'
     'Nenhuma atualização pendente para a NeveAI ou llama.cpp.' = 'There are no pending updates for NeveAI or llama.cpp.'
-    'Uma nova versão está pronta para ser instalada.' = 'A new version is ready to install.'
-    'Marque uma ou mais atualizações para continuar.' = 'Select one or more updates to continue.'
     'Reparo disponível' = 'Repair available'
     'Reparo necessário' = 'Repair required'
     'Arquivos locais estão faltando; o release do GitHub será reaplicado.' = 'Local files are missing; the GitHub release will be reapplied.'
@@ -948,6 +998,7 @@ function Set-InstallerElementLanguage($Element) {
 
 function Apply-InstallerLanguage {
     Set-InstallerElementLanguage $window
+    if ($script:InstallerLegacyContent) { Set-InstallerElementLanguage $script:InstallerLegacyContent }
     if ($ctl.CmbLanguage) {
         $ctl.CmbLanguage.Tag = if ($script:InstallerLanguage -eq 'en-US') { 'Language' } else { 'Idioma' }
         foreach ($item in $ctl.CmbLanguage.Items) {
@@ -1055,49 +1106,8 @@ function Stop-NeveRunningApp([string]$Reason = 'operação') {
         Add-Content -LiteralPath $LOG -Value ("[INFO] Encerrando NeveAI antes de iniciar: {0}" -f $Reason) -Encoding UTF8
     } catch {}
 
-    $targets = @()
-    $browserProfile = ''
-    try { $browserProfile = (Join-Path $ROOT 'logs\browser-app').ToLowerInvariant() } catch {}
-    $browserProfileAlt = $browserProfile -replace '\\', '/'
-
-    try {
-        foreach ($proc in @(Get-CimInstance Win32_Process -EA SilentlyContinue)) {
-            $processId = [int]$proc.ProcessId
-            if ($processId -eq $PID) { continue }
-
-            $name = if ($proc.Name) { [string]$proc.Name } else { '' }
-            $cmd = if ($proc.CommandLine) { [string]$proc.CommandLine } else { '' }
-            $nameLower = $name.ToLowerInvariant()
-            $cmdLower = $cmd.ToLowerInvariant()
-
-            if ($cmdLower.Contains('instalar.ps1') -or $cmdLower.Contains('install-launcher.log')) {
-                continue
-            }
-
-            $isTarget = $false
-            if ($nameLower -like 'llama-server*' -or $nameLower -like 'llama_server*') {
-                $isTarget = $true
-            }
-            if ($cmdLower.Contains('neveai.main:app')) {
-                $isTarget = $true
-            }
-            if ($cmdLower.Contains('neve_window.py')) {
-                $isTarget = $true
-            }
-            $desktopRoot = (Join-Path $ROOT '.desktop\').ToLowerInvariant()
-            if (($nameLower -eq 'neveai.window.exe' -or $nameLower -eq 'msedgewebview2.exe') -and $cmdLower.Contains($desktopRoot)) {
-                $isTarget = $true
-            }
-            if ($browserProfile -and ($cmdLower.Contains($browserProfile) -or $cmdLower.Contains($browserProfileAlt))) {
-                $isTarget = $true
-            }
-            if ($cmdLower.Contains('--app=http://localhost:8080') -or $cmdLower.Contains('--app=http://127.0.0.1:8080')) {
-                $isTarget = $true
-            }
-
-            if ($isTarget) { $targets += $processId }
-        }
-    } catch {}
+    . (Join-Path $ROOT 'launchers\process-ownership.ps1')
+    $targets = @(Get-NeveProjectProcessIds $ROOT $PID @(Get-CimInstance Win32_Process -EA SilentlyContinue))
 
     foreach ($targetPid in @($targets | Sort-Object -Unique)) {
         try { Stop-InstallerProcessTree ([int]$targetPid) } catch {}
@@ -1518,10 +1528,11 @@ $ctl.BtnPrimary.Add_Click({
 	$isRepair = Test-HubProjectInstalled
 	$installPython311 = (-not $isRepair) -and [bool]$ctl.ChkInstallPython.IsChecked
 	$createDesktopShortcut = (-not $isRepair) -and [bool]$ctl.ChkDesktopShortcut.IsChecked
-	if ($isRepair -and (Test-Path -LiteralPath $VENV_PY)) {
+	if ($isRepair -and (Test-PythonLaunch $VENV_PY)) {
 		$script:PYTHON_EXE = $VENV_PY
 		$PYTHON_EXE = $VENV_PY
 	}
+	if ($isRepair -and -not (Test-PythonLaunch $PYTHON_EXE)) { $installPython311 = $true }
     if ([string]::IsNullOrWhiteSpace($PYTHON_EXE) -or -not (Test-Path -LiteralPath $PYTHON_EXE)) {
         if ($installPython311) {
             $pythonLaunchRetry = Resolve-PythonLaunch
@@ -1597,8 +1608,10 @@ $ctl.BtnPrimary.Add_Click({
     $envOk      = Test-Path (Join-Path $ROOT '.env')
     $python311Target = Join-Path $env:LocalAppData 'Programs\Python\Python311\python.exe'
     $needsPython311Install = $installPython311 -and -not (Test-PythonLaunch $python311Target)
+	. (Join-Path $LAUNCHER_DIR 'runtime-validation.ps1')
+	$runtimeOk = (Get-NeveRuntimeHealth $ROOT).Ok
 
-    if ($stateBeforeAttempt -in @('done', 'idle') -and $venvOk -and $torchOk -and $llamaOk -and $nodeModsOk -and $officeCliOk -and $frontendOk -and $envOk -and -not $needsPython311Install) {
+    if ($stateBeforeAttempt -in @('done', 'idle') -and $runtimeOk -and $venvOk -and $torchOk -and $llamaOk -and $nodeModsOk -and $officeCliOk -and $frontendOk -and $envOk -and -not $needsPython311Install) {
         $ctl.LogBox.AppendText("[OK] Tudo já está instalado. Nada a fazer.`r`n")
         if ($createDesktopShortcut) {
             $shortcutPath = New-NeveDesktopShortcut $ROOT $LOG
@@ -1635,6 +1648,7 @@ $ctl.BtnPrimary.Add_Click({
         $ctl.BtnPrimary.IsEnabled    = $true
         $ctl.BtnPrimary.Content      = 'Concluir'
         $ctl.BtnPrimary.Tag          = 'done'
+        $ctl.BtnClose.IsEnabled      = $true
         $window.Tag = 'done'
         try { [System.IO.File]::WriteAllText($STATE_FILE, 'done', [System.Text.UTF8Encoding]::new($false)) } catch {}
         return
@@ -2302,6 +2316,9 @@ $ctl.BtnPrimary.Add_Click({
                 'desktop\runtime.json'
                 'desktop\NeveWindow.cs'
                 'desktop\app.manifest'
+                'launchers\runtime-validation.ps1'
+                'launchers\process-ownership.ps1'
+                'launchers\installer-release-cache.ps1'
                 'desktop\verify-runtime.ps1'
                 'desktop\profile_migration.py'
             )
@@ -2454,9 +2471,21 @@ USER_AGENT=NeveAI
             Set-InstallState 'creating_venv'
             Log "[OK] Python selecionado: $PYTHON_EXE"
             $forceRecreateVenv = @('1','true','yes','sim') -contains ([string]$env:NEVE_RECREATE_VENV).ToLowerInvariant()
-            if ((Test-Path -LiteralPath $VENV_PY) -and -not $forceRecreateVenv) {
+            $venvValid = (Test-Path -LiteralPath (Join-Path $VENV_DIR 'pyvenv.cfg')) -and [bool](Test-InstallerPythonLaunch $VENV_PY)
+            if ($venvValid -and -not $forceRecreateVenv) {
                 Log "[OK] venv existente preservado para retry incremental"
             } else {
+                $venvPrefix = [IO.Path]::GetFullPath($VENV_DIR).TrimEnd('\') + '\'
+                $expectedVenv = [IO.Path]::GetFullPath((Join-Path $ROOT 'backend\neveai\venv')).TrimEnd('\') + '\'
+                if (-not $venvPrefix.Equals($expectedVenv,[StringComparison]::OrdinalIgnoreCase)) { throw 'Pasta de ambiente Python invalida; nenhuma remocao sera realizada.' }
+                if ((Test-Path -LiteralPath $VENV_DIR) -and ((Get-Item -LiteralPath $VENV_DIR -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'O ambiente Python e um link de diretorio; ele foi preservado para evitar remover arquivos externos.' }
+                if ([IO.Path]::GetFullPath($PYTHON_EXE).StartsWith($venvPrefix,[StringComparison]::OrdinalIgnoreCase)) {
+                    $basePython = Resolve-InstallerPythonLaunch
+                    if (-not $basePython -or $basePython.Executable.StartsWith($venvPrefix,[StringComparison]::OrdinalIgnoreCase)) {
+                        throw 'Nao foi encontrado um Python base independente para reconstruir o ambiente. O ambiente atual foi preservado.'
+                    }
+                    $PYTHON_EXE = $basePython.Executable
+                }
                 if (Test-Path $VENV_DIR) {
                     Log "==> Removendo venv antigo ou incompleto"
                     try { Remove-Item $VENV_DIR -Recurse -Force -EA Stop } catch {
@@ -2971,6 +3000,9 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             Log "[OK] Frontend copiado para backend\neveai\frontend"
 
             # ---- Done
+            $validator = Join-Path $ROOT 'launchers\runtime-validation.ps1'
+            $rc = Run (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') @('-NoProfile','-ExecutionPolicy','Bypass','-File',$validator,'-Root',$ROOT,'-Check') 'validar inicializacao'
+            if ($rc -ne 0) { throw 'A validacao final de inicializacao falhou. A instalacao nao sera marcada como concluida.' }
             $finalInstallState = if ($pythonDependencyFailures.Count -eq 0) { 'done' } else { 'incomplete' }
             Set-InstallState $finalInstallState
             $recordedInstallState = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -ErrorAction SilentlyContinue)).Trim()
@@ -3214,7 +3246,7 @@ function Get-GitHubLatestTagFromRedirect([string]$owner, [string]$repo) {
             $request.Method = $method
             $request.AllowAutoRedirect = $false
             $request.UserAgent = $UA
-            $request.Timeout = 20000
+            $request.Timeout = 4000
             $response = $request.GetResponse()
             try {
                 $location = [string]$response.Headers['Location']
@@ -3255,7 +3287,7 @@ function New-GitHubReleaseFallbackObject([string]$owner, [string]$repo, [string]
 function Get-GitHubLatestRelease([string]$owner, [string]$repo) {
     $apiUrl = "https://api.github.com/repos/$owner/$repo/releases/latest"
     try {
-        return Invoke-RestMethod $apiUrl -Headers @{ 'User-Agent' = $UA } -TimeoutSec 20
+        return Invoke-RestMethod $apiUrl -Headers @{ 'User-Agent' = $UA } -TimeoutSec 6
     } catch {
         $apiError = $_
         $tag = Get-GitHubLatestTagFromRedirect $owner $repo
@@ -3274,13 +3306,13 @@ function New-LlamaReleaseAssetReference([string]$tag, [string]$name) {
     }
 }
 
-function Test-LlamaReleaseAssetReference([string]$url) {
+function Test-LlamaReleaseAssetReference([string]$url, [int]$timeoutMs = 2500) {
     try {
         $request = [System.Net.HttpWebRequest]::Create($url)
         $request.Method = 'HEAD'
         $request.AllowAutoRedirect = $true
         $request.UserAgent = $UA
-        $request.Timeout = 15000
+        $request.Timeout = $timeoutMs
         $response = $request.GetResponse()
         try {
             $statusCode = [int]$response.StatusCode
@@ -3303,6 +3335,7 @@ function Test-LlamaBackendCompatible([string]$requested, [string]$available) {
 }
 
 function Get-GitHubLatestLlamaRelease([string[]]$backends = @()) {
+    $budget = [Diagnostics.Stopwatch]::StartNew()
     $supportedBackends = @('cpu', 'cuda-12.4', 'cuda-13.4', 'cuda-13.3', 'cuda-cu12.4', 'cuda-cu13.4', 'cuda-cu13.3', 'vulkan')
     $wantedBackends = @($backends | Where-Object { $_ })
     if ($wantedBackends.Count -eq 0) { $wantedBackends = $supportedBackends }
@@ -3314,7 +3347,7 @@ function Get-GitHubLatestLlamaRelease([string[]]$backends = @()) {
 
     $apiError = $null
     try {
-        $releases = @((Invoke-RestMethod $LLAMA_API_RELEASES -Headers @{ 'User-Agent' = $UA; 'Accept' = 'application/vnd.github+json' } -TimeoutSec 30))
+        $releases = @((Invoke-RestMethod $LLAMA_API_RELEASES -Headers @{ 'User-Agent' = $UA; 'Accept' = 'application/vnd.github+json' } -TimeoutSec 8))
         foreach ($release in $releases) {
             if ($release.draft -or -not $release.tag_name) { continue }
             $tagEsc = [regex]::Escape([string]$release.tag_name)
@@ -3333,7 +3366,7 @@ function Get-GitHubLatestLlamaRelease([string[]]$backends = @()) {
     }
 
     try {
-        $feed = Invoke-WebRequest 'https://github.com/ggml-org/llama.cpp/releases.atom' -Headers @{ 'User-Agent' = $UA } -UseBasicParsing -TimeoutSec 30
+        $feed = Invoke-WebRequest 'https://github.com/ggml-org/llama.cpp/releases.atom' -Headers @{ 'User-Agent' = $UA } -UseBasicParsing -TimeoutSec 6
         $seenTags = @{}
         foreach ($match in [regex]::Matches([string]$feed.Content, '/releases/tag/([^"<]+)')) {
             $tag = [uri]::UnescapeDataString($match.Groups[1].Value).Trim()
@@ -3341,6 +3374,7 @@ function Get-GitHubLatestLlamaRelease([string[]]$backends = @()) {
             $seenTags[$tag] = $true
 
             foreach ($backend in $wantedBackends) {
+                if ($budget.Elapsed.TotalSeconds -ge 20) { throw 'Tempo limite da consulta de releases atingido.' }
                 $mainName = "llama-$tag-bin-win-$backend-x64.zip"
                 $mainAsset = New-LlamaReleaseAssetReference $tag $mainName
                 if (-not (Test-LlamaReleaseAssetReference $mainAsset.browser_download_url)) { continue }
@@ -3742,6 +3776,9 @@ function Test-NeveAppIntegrity([string]$root) {
         @{ Path = 'backend\neveai\models\auths.py'; Label = 'backend\neveai\models\auths.py' },
         @{ Path = 'backend\neveai\routers\auths.py'; Label = 'backend\neveai\routers' },
         @{ Path = 'backend\neveai\utils\auth.py'; Label = 'backend\neveai\utils' },
+        @{ Path = 'launchers\runtime-validation.ps1'; Label = 'launchers\runtime-validation.ps1' },
+        @{ Path = 'launchers\process-ownership.ps1'; Label = 'launchers\process-ownership.ps1' },
+        @{ Path = 'launchers\installer-release-cache.ps1'; Label = 'launchers\installer-release-cache.ps1' },
         @{ Path = 'desktop\runtime.json'; Label = 'WebView2 manifest' },
         @{ Path = 'desktop\setup_runtime.py'; Label = 'WebView2 setup' },
         @{ Path = 'desktop\NeveWindow.cs'; Label = 'WebView2 host' },
@@ -3763,6 +3800,7 @@ function Test-NeveAppIntegrity([string]$root) {
 }
 
 function Update-PrimaryButtonState {
+    if ($ctl.UpdatePanel.Visibility -eq 'Visible' -or $ctl.BtnPrimary.Tag -in @('done','error','close')) { return }
     $hasSelection = [bool]$ctl.ChkUpdateNeve.IsChecked -or [bool]$ctl.ChkUpdateLlama.IsChecked
     if ($hasSelection) {
         $ctl.BtnPrimary.Content = 'Atualizar'
@@ -3807,14 +3845,10 @@ function Reset-UpdateSelectionView([bool]$completed) {
         Where-Object { $_.Visibility -eq 'Visible' }
     if ($available.Count -eq 0) {
         $ctl.LblCheckTitle.Text = 'Você já está atualizado'
-        $ctl.LblCheckSub.Text = 'Nenhuma atualização pendente para a NeveAI ou llama.cpp.'
+        $ctl.LblCheckSub.Text = ''
     } else {
         $ctl.LblCheckTitle.Text = if ($available.Count -gt 1) { 'Atualizações disponíveis' } else { 'Atualização disponível' }
-        $ctl.LblCheckSub.Text = if ($available.Count -gt 1) {
-            'Marque uma ou mais atualizações para continuar.'
-        } else {
-            'Uma nova versão está pronta para ser instalada.'
-        }
+        $ctl.LblCheckSub.Text = ''
     }
 
     $ctl.BtnPrimary.Tag = $null
@@ -4381,35 +4415,46 @@ if ($llamaInstalledTag) {
 # =============================================================================
 # Consulta as releases fora da thread da janela.
 # =============================================================================
-function Get-UpdateReleaseState([string]$llamaInstalledAsset, [string]$llamaInstalledBackend) {
+. (Join-Path $ROOT 'launchers\installer-release-cache.ps1')
+function Get-UpdateReleaseState([string]$llamaInstalledAsset, [string]$llamaInstalledBackend, [string]$part = 'all') {
 $latestTag   = $null
 $releaseObj  = $null
 $checkError  = $null
 $llamaLatestTag = $null
 $llamaReleaseObj = $null
 $llamaCheckError = $null
-try {
-    $releaseObj = Get-GitHubLatestRelease $REPO_OWNER $REPO_NAME
+if ($part -ne 'llama') { try {
+    $releaseObj = Get-InstallerCachedRelease 'neve'
+    if (-not $releaseObj) {
+        $releaseObj = Get-GitHubLatestRelease $REPO_OWNER $REPO_NAME
+        Save-InstallerCachedRelease 'neve' $releaseObj
+    }
     $latestTag  = $releaseObj.tag_name
     if (-not (Test-ReleaseTagValid $latestTag)) {
         throw "O GitHub retornou uma versão inválida: '$latestTag'."
     }
 } catch {
     $checkError = Get-FriendlyGitHubError $_
-}
-try {
+} }
+if ($part -ne 'neve') { try {
     $llamaPreferredBackends = @()
     if ($llamaInstalledAsset -match '-bin-win-(.+)-x64\.zip$') {
         $llamaPreferredBackends = @($matches[1])
     } elseif ($llamaInstalledBackend -in @('cpu', 'cuda-12.4', 'cuda-13.3', 'cuda-13.4', 'cuda-cu12.4', 'cuda-cu13.3', 'cuda-cu13.4', 'vulkan')) {
         $llamaPreferredBackends = @($llamaInstalledBackend)
     }
-    $llamaReleaseObj = Get-GitHubLatestLlamaRelease ([string[]]$llamaPreferredBackends)
+    $cacheKey = "llama:$llamaInstalledAsset`:$llamaInstalledBackend"
+    $llamaReleaseObj = Get-InstallerCachedRelease $cacheKey
+    if (-not $llamaReleaseObj) {
+        $llamaReleaseObj = Get-GitHubLatestLlamaRelease ([string[]]$llamaPreferredBackends)
+        Save-InstallerCachedRelease $cacheKey $llamaReleaseObj
+    }
     $llamaLatestTag  = $llamaReleaseObj.tag_name
 } catch {
     $llamaCheckError = Get-FriendlyGitHubError $_
-}
+} }
 return @{
+    Part = $part
     LatestTag = $latestTag; Release = $releaseObj; Error = $checkError
     LlamaLatestTag = $llamaLatestTag; LlamaRelease = $llamaReleaseObj; LlamaError = $llamaCheckError
 }
@@ -4424,6 +4469,7 @@ $script:checkError = $result.Error
 $script:llamaLatestTag = $result.LlamaLatestTag
 $script:llamaReleaseObj = $result.LlamaRelease
 $script:llamaCheckError = $result.LlamaError
+if ($result.Part -ne 'llama') {
 $ctl.LblCurrent.Text = $currentVersion
 if ($checkError) {
     $ctl.LblCheckTitle.Text = 'Falha ao verificar atualizações'
@@ -4463,6 +4509,8 @@ if ($checkError) {
     }
 }
 
+}
+if ($result.Part -ne 'neve') {
 $ctl.LblLlamaCurrent.Text = $llamaCurrentDisplay
 if ($llamaCheckError) {
     $ctl.LblLlamaLatest.Text = '—'
@@ -4492,26 +4540,27 @@ if ($llamaCheckError) {
     }
 }
 
+}
 if ($ctl.ChkUpdateNeve.Visibility -eq 'Visible' -and $ctl.ChkUpdateLlama.Visibility -eq 'Visible') {
     $ctl.LblCheckTitle.Text = 'Atualizações disponíveis'
-    $ctl.LblCheckSub.Text = 'Marque uma ou mais atualizações para continuar.'
+    $ctl.LblCheckSub.Text = ''
 } elseif ($ctl.ChkUpdateNeve.Visibility -eq 'Visible') {
     if (((Normalize-ReleaseTag $currentVersion) -eq (Normalize-ReleaseTag $latestTag)) -and -not $appIntegrity.Ok) {
         $ctl.LblCheckTitle.Text = 'Reparo disponível'
         $ctl.LblCheckSub.Text = 'Arquivos locais estão faltando; o release do GitHub será reaplicado.'
     } else {
         $ctl.LblCheckTitle.Text = 'Atualização disponível'
-        $ctl.LblCheckSub.Text = 'Uma nova versão está pronta para ser instalada.'
+        $ctl.LblCheckSub.Text = ''
     }
 } elseif ($ctl.ChkUpdateLlama.Visibility -eq 'Visible') {
     $ctl.LblCheckTitle.Text = 'Atualização disponível'
-    $ctl.LblCheckSub.Text = 'Uma nova versão está pronta para ser instalada.'
-} elseif (-not $checkError -and -not $llamaCheckError) {
+    $ctl.LblCheckSub.Text = ''
+} elseif (-not $checkError -and -not $llamaCheckError -and -not $result.PendingNeve -and -not $result.PendingLlama) {
     $ctl.LblCheckTitle.Text = 'Você já está atualizado'
-    $ctl.LblCheckSub.Text = 'Nenhuma atualização pendente para a NeveAI ou llama.cpp.'
+    $ctl.LblCheckSub.Text = ''
 }
 
-Update-PrimaryButtonState
+if ($ctl.UpdatePanel.Visibility -ne 'Visible' -and $ctl.BtnPrimary.Tag -notin @('done','error','close')) { Update-PrimaryButtonState }
 }
 
 $ctl.LblCurrent.Text = $currentVersion
@@ -4527,49 +4576,69 @@ $ctl.ChkUpdateLlama.Visibility = 'Collapsed'
 $ctl.BtnLlama.IsEnabled = $false
 Update-PrimaryButtonState
 
-$releaseSession = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
-foreach ($name in @('Normalize-ReleaseTag', 'Test-ReleaseTagValid', 'Get-FriendlyGitHubError',
-    'Get-GitHubLatestTagFromRedirect', 'New-GitHubReleaseFallbackObject', 'Get-GitHubLatestRelease',
-    'New-LlamaReleaseAssetReference', 'Test-LlamaReleaseAssetReference', 'Test-LlamaBackendCompatible',
-    'Get-GitHubLatestLlamaRelease', 'Get-UpdateReleaseState')) {
-    $definition = (Get-Command $name -CommandType Function).Definition
-    $releaseSession.Commands.Add((New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry($name, $definition)))
+$script:ReleaseCheckJobs = @()
+$script:ReleaseCheckState = @{
+    PendingNeve=$true; PendingLlama=$true; LatestTag=$null; Release=$null; Error=$null;
+    LlamaLatestTag=$null; LlamaRelease=$null; LlamaError=$null
 }
-foreach ($name in @('UA', 'REPO_OWNER', 'REPO_NAME', 'LLAMA_API_RELEASES')) {
-    $releaseSession.Variables.Add((New-Object System.Management.Automation.Runspaces.SessionStateVariableEntry($name, (Get-Variable $name -ValueOnly), '')))
+foreach ($part in @('neve','llama')) {
+    $releaseSession = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    foreach ($name in @('Normalize-ReleaseTag', 'Test-ReleaseTagValid', 'Get-FriendlyGitHubError',
+        'Get-GitHubLatestTagFromRedirect', 'New-GitHubReleaseFallbackObject', 'Get-GitHubLatestRelease',
+        'New-LlamaReleaseAssetReference', 'Test-LlamaReleaseAssetReference', 'Test-LlamaBackendCompatible',
+        'Get-GitHubLatestLlamaRelease', 'Get-UpdateReleaseState', 'Get-InstallerReleaseCachePath',
+        'Test-InstallerReleaseTag', 'Get-InstallerCachedRelease', 'Save-InstallerCachedRelease')) {
+        $definition = (Get-Command $name -CommandType Function).Definition
+        $releaseSession.Commands.Add((New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry($name, $definition)))
+    }
+    foreach ($name in @('UA', 'ROOT', 'REPO_OWNER', 'REPO_NAME', 'LLAMA_API_RELEASES')) {
+        $releaseSession.Variables.Add((New-Object System.Management.Automation.Runspaces.SessionStateVariableEntry($name, (Get-Variable $name -ValueOnly), '')))
+    }
+    $runspace = [RunspaceFactory]::CreateRunspace($releaseSession)
+    $runspace.Open()
+    $powerShell = [PowerShell]::Create()
+    $powerShell.Runspace = $runspace
+    [void]$powerShell.AddScript('param($asset,$backend,$part) Get-UpdateReleaseState $asset $backend $part').AddArgument($llamaInstalledAsset).AddArgument($llamaInstalledBackend).AddArgument($part)
+    $script:ReleaseCheckJobs += [pscustomobject]@{ Part=$part; PowerShell=$powerShell; Runspace=$runspace; Async=$powerShell.BeginInvoke() }
 }
-$script:ReleaseCheckRunspace = [RunspaceFactory]::CreateRunspace($releaseSession)
-$script:ReleaseCheckRunspace.Open()
-$script:ReleaseCheckPowerShell = [PowerShell]::Create()
-$script:ReleaseCheckPowerShell.Runspace = $script:ReleaseCheckRunspace
-[void]$script:ReleaseCheckPowerShell.AddScript('param($asset, $backend) Get-UpdateReleaseState $asset $backend').AddArgument($llamaInstalledAsset).AddArgument($llamaInstalledBackend)
-$script:ReleaseCheckAsync = $script:ReleaseCheckPowerShell.BeginInvoke()
 $script:ReleaseCheckTimer = New-Object Windows.Threading.DispatcherTimer
 $script:ReleaseCheckTimer.Interval = [TimeSpan]::FromMilliseconds(50)
 $script:ReleaseCheckTimer.Add_Tick({
-    if (-not $script:ReleaseCheckAsync.IsCompleted) { return }
-    $script:ReleaseCheckTimer.Stop()
-    try {
-        $results = @($script:ReleaseCheckPowerShell.EndInvoke($script:ReleaseCheckAsync))
-        if ($results.Count -eq 0) { throw 'Falha ao verificar atualizações.' }
-        Complete-UpdateReleaseCheck $results[-1]
-    } catch {
-        Complete-UpdateReleaseCheck @{ Error = "$_"; LlamaError = "$_" }
-    } finally {
+    foreach ($job in @($script:ReleaseCheckJobs)) {
+        if (-not $job.Async.IsCompleted) { continue }
+        try {
+            $results = @($job.PowerShell.EndInvoke($job.Async))
+            if ($results.Count -eq 0) { throw 'Release query returned no result' }
+            $result = $results[-1]
+        } catch { $result = @{ Error=[string]$_; LlamaError=[string]$_ } }
+        finally {
+            $job.PowerShell.Dispose()
+            $job.Runspace.Dispose()
+            $script:ReleaseCheckJobs = @($script:ReleaseCheckJobs | Where-Object { $_ -ne $job })
+        }
+        if ($job.Part -eq 'neve') {
+            foreach ($key in @('LatestTag','Release','Error')) { $script:ReleaseCheckState[$key] = $result[$key] }
+            $script:ReleaseCheckState.PendingNeve = $false
+        } else {
+            foreach ($key in @('LlamaLatestTag','LlamaRelease','LlamaError')) { $script:ReleaseCheckState[$key] = $result[$key] }
+            $script:ReleaseCheckState.PendingLlama = $false
+        }
+        $partial = $script:ReleaseCheckState.Clone()
+        $partial.Part = $job.Part
+        Complete-UpdateReleaseCheck $partial
+    }
+    if ($script:ReleaseCheckJobs.Count -eq 0) {
+        $script:ReleaseCheckTimer.Stop()
         $ctl.BtnLlama.IsEnabled = $true
-        $script:ReleaseCheckPowerShell.Dispose()
-        $script:ReleaseCheckRunspace.Dispose()
-        $script:ReleaseCheckPowerShell = $null
     }
 })
 $script:ReleaseCheckTimer.Start()
 $window.Add_Closed({
     $script:ReleaseCheckTimer.Stop()
-    if ($script:ReleaseCheckPowerShell) {
-        try { [void]$script:ReleaseCheckPowerShell.BeginStop($null, $null) } catch {}
+    foreach ($job in @($script:ReleaseCheckJobs)) {
+        try { [void]$job.PowerShell.BeginStop($null,$null) } catch {}
     }
 })
-
 # =============================================================================
 # Worker da atualização combinada (NeveAI -> llama.cpp)
 # =============================================================================
@@ -5034,6 +5103,9 @@ $ctl.BtnPrimary.Add_Click({
                 @{ Path = 'backend\neveai\models\auths.py'; Label = 'backend\neveai\models\auths.py' },
                 @{ Path = 'backend\neveai\routers\auths.py'; Label = 'backend\neveai\routers' },
                 @{ Path = 'backend\neveai\utils\auth.py'; Label = 'backend\neveai\utils' },
+                @{ Path = 'launchers\runtime-validation.ps1'; Label = 'launchers\runtime-validation.ps1' },
+                @{ Path = 'launchers\process-ownership.ps1'; Label = 'launchers\process-ownership.ps1' },
+                @{ Path = 'launchers\installer-release-cache.ps1'; Label = 'launchers\installer-release-cache.ps1' },
                 @{ Path = 'desktop\runtime.json'; Label = 'WebView2 manifest' },
                 @{ Path = 'desktop\setup_runtime.py'; Label = 'WebView2 setup' },
                 @{ Path = 'desktop\NeveWindow.cs'; Label = 'WebView2 host' },
@@ -5415,8 +5487,7 @@ $ctl.BtnPrimary.Add_Click({
             $required = @(
                 @{ Path = '.env'; Label = '.env' },
                 @{ Path = 'backend\neveai\venv\Scripts\python.exe'; Label = 'venv Python' },
-                @{ Path = 'node_modules'; Label = 'node_modules' },
-                @{ Path = 'backend\neveai\frontend\index.html'; Label = 'frontend publicado' }
+                @{ Path = 'backend\neveai\venv\pyvenv.cfg'; Label = 'venv configuration' }
             )
             $missing = @()
             foreach ($item in $required) {
@@ -5557,6 +5628,7 @@ $ctl.BtnPrimary.Add_Click({
             $frontendTransaction = $null
             $backendDependenciesChanged = $false
             $rollbackRequirement = $null
+            $preserveRollback = $false
             $versionExisted = Test-Path -LiteralPath $VERSION_FILE
             $previousVersion = if ($versionExisted) { Get-Content -LiteralPath $VERSION_FILE -Raw -EA SilentlyContinue } else { $null }
             $excludeDirs = @('backend\neveai\venv','backend\neveai\frontend','backend\neveai\data','backend\data','backend\__pycache__','models','mmproj','llamacpp-server','node_modules','build','logs','tools\nodejs','.desktop','.git','.vscode','.svelte-kit')
@@ -5621,7 +5693,7 @@ $ctl.BtnPrimary.Add_Click({
                 }
                 L '[OK] Integridade dos arquivos essenciais validada'
 
-                if ($canBuildAndDeploy) {
+                if (Test-Path -LiteralPath (Join-Path $ROOT 'backend\neveai\venv\Scripts\python.exe')) {
                     PN 46 'Atualizando janela WebView2 Fixed'
                     $desktopSetup = Join-Path $ROOT 'desktop\setup_runtime.py'
                     $desktopPython = Join-Path $ROOT 'backend\neveai\venv\Scripts\python.exe'
@@ -5714,6 +5786,11 @@ $ctl.BtnPrimary.Add_Click({
                 }
 
                 PN 96 'Finalizando atualização'
+                if ($canBuildAndDeploy) {
+                    $validator = Join-Path $ROOT 'launchers\runtime-validation.ps1'
+                    $rc = Run (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') @('-NoProfile','-ExecutionPolicy','Bypass','-File',$validator,'-Root',$ROOT,'-Check') 'validar inicializacao apos atualizacao' 60
+                    if ($rc -ne 0) { throw 'A atualizacao nao passou na validacao de inicializacao; restaurando a versao anterior.' }
+                }
                 [System.IO.File]::WriteAllText($VERSION_FILE, $latestTag, [System.Text.UTF8Encoding]::new($false))
                 Copy-ReleaseInstallerFiles $sourceRoot $destinationRoot
                 $mutationStarted = $false
@@ -5756,15 +5833,19 @@ $ctl.BtnPrimary.Add_Click({
                         }
                         L '[OK] Instalação anterior restaurada.'
                     } catch {
-                        throw "A atualização falhou e a restauração automática também encontrou um erro: $($_.Exception.Message). Erro original: $($updateError.Exception.Message)"
+                        $preserveRollback = $true
+                        [IO.File]::WriteAllText((Join-Path $ROOT 'logs\install-state.txt'), 'failed', [Text.UTF8Encoding]::new($false))
+                        throw "A atualização falhou e a restauração automática também encontrou um erro: $($_.Exception.Message). Backup preservado em $rollbackRoot. Erro original: $($updateError.Exception.Message)"
                     }
                 }
                 throw $updateError
             } finally {
                 Remove-Item -LiteralPath $tmpZip -Force -EA SilentlyContinue
                 Remove-Item -LiteralPath $tmpExt -Recurse -Force -EA SilentlyContinue
-                Remove-Item -LiteralPath $rollbackRoot -Recurse -Force -EA SilentlyContinue
-                if ($envBackup) { Remove-Item -LiteralPath $envBackup -Force -EA SilentlyContinue }
+                if (-not $preserveRollback) {
+                    Remove-Item -LiteralPath $rollbackRoot -Recurse -Force -EA SilentlyContinue
+                    if ($envBackup) { Remove-Item -LiteralPath $envBackup -Force -EA SilentlyContinue }
+                }
             }
         }
         function Update-LlamaCpp {
@@ -6768,45 +6849,8 @@ function Stop-NeveRunningApp([string]$Reason = 'operação') {
 		Add-Content -LiteralPath $LOG -Value ("[INFO] Encerrando NeveAI antes de iniciar: {0}" -f $Reason) -Encoding UTF8
 	} catch {}
 
-	$targets = @()
-	$browserProfile = ''
-	try { $browserProfile = (Join-Path $ROOT 'logs\browser-app').ToLowerInvariant() } catch {}
-	$browserProfileAlt = $browserProfile -replace '\\', '/'
-
-	try {
-		foreach ($proc in @(Get-CimInstance Win32_Process -EA SilentlyContinue)) {
-			$processId = [int]$proc.ProcessId
-			if ($processId -eq $PID) { continue }
-
-			$name = if ($proc.Name) { [string]$proc.Name } else { '' }
-			$cmd = if ($proc.CommandLine) { [string]$proc.CommandLine } else { '' }
-			$nameLower = $name.ToLowerInvariant()
-			$cmdLower = $cmd.ToLowerInvariant()
-
-			if ($cmdLower.Contains('instalar.ps1') -or $cmdLower.Contains('install-launcher.log')) {
-				continue
-			}
-
-			$isTarget = $false
-			if ($nameLower -like 'llama-server*' -or $nameLower -like 'llama_server*') {
-				$isTarget = $true
-			}
-			if ($cmdLower.Contains('neveai.main:app')) {
-				$isTarget = $true
-			}
-			if ($cmdLower.Contains('neve_window.py')) {
-				$isTarget = $true
-			}
-			if ($browserProfile -and ($cmdLower.Contains($browserProfile) -or $cmdLower.Contains($browserProfileAlt))) {
-				$isTarget = $true
-			}
-			if ($cmdLower.Contains('--app=http://localhost:8080') -or $cmdLower.Contains('--app=http://127.0.0.1:8080')) {
-				$isTarget = $true
-			}
-
-			if ($isTarget) { $targets += $processId }
-		}
-	} catch {}
+	. (Join-Path $ROOT 'launchers\process-ownership.ps1')
+	$targets = @(Get-NeveProjectProcessIds $ROOT $PID @(Get-CimInstance Win32_Process -EA SilentlyContinue))
 
 	foreach ($targetPid in @($targets | Sort-Object -Unique)) {
 		try { Stop-HubNeveProcessTree ([int]$targetPid) } catch {}
@@ -7018,8 +7062,6 @@ function Test-HubProjectInstalled {
         (Join-Path $ROOT '.env'),
         (Join-Path $ROOT 'backend\neveai\venv\Scripts\python.exe'),
         (Join-Path $ROOT 'llamacpp-server\bin\llama-server.exe'),
-        (Join-Path $ROOT 'node_modules\vite\bin\vite.js'),
-        (Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe'),
         (Join-Path $ROOT 'backend\neveai\frontend\index.html')
     )
     foreach ($path in $requiredPaths) {
@@ -7101,10 +7143,25 @@ Update-HubInstallModeState
 # =============================================================================
 # Mostrar a janela
 # =============================================================================
-$installerReadyPath = $env:NEVE_INSTALLER_READY_FILE
-if ($installerReadyPath) {
-    $window.Add_ContentRendered({
-        try { [IO.File]::WriteAllText($installerReadyPath, 'ready') } catch {}
-    }.GetNewClosure())
-}
-[void]$window.ShowDialog()
+$window.Add_SourceInitialized({
+    $script:InstallerWindowHandle = ([Windows.Interop.WindowInteropHelper]::new($window)).Handle
+    [NeveInstallerWindowIdentity]::RegisterInstaller($script:InstallerWindowHandle, $script:InstallerInstanceKey)
+    $script:InstallerWindowHook = [Windows.Interop.HwndSourceHook]{
+        param($handle,$message,$wparam,$lparam,[ref]$handled)
+        if ($message -eq 0x8011) {
+            $page = switch ($wparam.ToInt32()) { 1 { 'update' }; 2 { 'build' }; default { 'install' } }
+            Select-HubPage $page
+            $handled.Value = $true
+        }
+        return [IntPtr]::Zero
+    }
+    [Windows.Interop.HwndSource]::FromHwnd($script:InstallerWindowHandle).AddHook($script:InstallerWindowHook)
+})
+$window.Add_ContentRendered({
+    if ($env:NEVE_INSTALLER_READY_FILE) { [IO.File]::WriteAllText($env:NEVE_INSTALLER_READY_FILE, 'ready') }
+})
+$window.Add_Closed({
+    if ($script:InstallerWindowHandle) { [NeveInstallerWindowIdentity]::UnregisterInstaller($script:InstallerWindowHandle, $script:InstallerInstanceKey) }
+})
+try { [void]$window.ShowDialog() }
+finally { $script:InstallerSessionMutex.ReleaseMutex(); $script:InstallerSessionMutex.Dispose() }

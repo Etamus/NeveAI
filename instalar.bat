@@ -4,6 +4,7 @@ set "ROOT=%~dp0"
 set "SCRIPT=%ROOT%launchers\instalar.ps1"
 set "LAUNCHER=%ROOT%launchers\instalar.vbs"
 set "PS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if defined PROCESSOR_ARCHITEW6432 set "PS=%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
 
 if /i "%~1"=="--check" (
 	if not exist "%SCRIPT%" (

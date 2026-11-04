@@ -1574,12 +1574,16 @@
 				</div>
 			</div>
 		{:else}
-			<div class="rounded-xl border border-dashed border-gray-200/80 dark:border-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+			<div data-ram-meter class="rounded-xl border border-gray-200/70 dark:border-gray-800 px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
 				<div class="flex items-center gap-3">
-					<span class="font-medium text-gray-700 dark:text-gray-200">VRAM</span>
+					<span class="font-medium text-gray-700 dark:text-gray-200">RAM</span>
 				</div>
-				<div class="mt-1">
-					{$i18n.t('Use CPU models or install compatible drivers.')}
+				<div class="relative mt-2 h-2 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+					<div class="absolute inset-y-0 rounded-full" style={getSystemVramBarStyle(0, percentOf(vramInfo.ram?.used ?? 0, vramInfo.ram?.total ?? 0))}></div>
+				</div>
+				<div class="mt-1.5 flex items-center justify-between gap-3">
+					<span>{$i18n.t('Uso:')} {vramInfo.ram?.available ? `${formatBytes(vramInfo.ram.used)} / ${formatBytes(vramInfo.ram.total)}` : '—'}</span>
+					<span>{$i18n.t('Livre:')} {vramInfo.ram?.available ? formatBytes(vramInfo.ram.free) : '—'}</span>
 				</div>
 			</div>
 		{/if}
