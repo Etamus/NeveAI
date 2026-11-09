@@ -35,7 +35,7 @@ from neveai.utils.payload import apply_model_params_to_body_openai, apply_system
 from neveai.utils.gpu_selection import preferred_vulkan_device
 from neveai.utils.local_model_context import (
     AUTO_CONTEXT_CAP, bounded_context, context_memory_margin, is_memory_failure,
-    plan_auto_context, runtime_context,
+    plan_auto_context, runtime_context, require_gpu_device,
 )
 
 log = logging.getLogger(__name__)
@@ -381,9 +381,11 @@ class _LoadedModelInfo:
         "token_prediction",
         "context_shift",
         "reasoning_control",
+        "unload_requested",
+        "prioritize_gpu",
     )
 
-    def __init__(self, model_id: str, filename: str, n_gpu_layers: int, n_ctx: int, file_size: int, mmproj_filename: Optional[str] = None, cache_type: str = "f16", speculative_decoding: str = "off", token_prediction: str = "off", context_shift: str = "off"):
+    def __init__(self, model_id: str, filename: str, n_gpu_layers: int, n_ctx: int, file_size: int, mmproj_filename: Optional[str] = None, cache_type: str = "f16", speculative_decoding: str = "off", token_prediction: str = "off", context_shift: str = "off", prioritize_gpu: bool = False):
         self.model_id = model_id
         self.filename = filename
         self.loaded_at = int(time.time())
@@ -395,6 +397,8 @@ class _LoadedModelInfo:
         self.cache_type = cache_type
         self.context_shift = _normalize_context_shift(context_shift)
         self.reasoning_control = None
+        self.unload_requested = False
+        self.prioritize_gpu = prioritize_gpu
         self.token_prediction = _normalize_token_prediction(token_prediction)
         if self.context_shift != "off" or self.token_prediction != "off":
             token_prediction = "off" if self.context_shift != "off" else token_prediction
@@ -415,6 +419,7 @@ class _LoadedModelInfo:
             "speculative_decoding": self.speculative_decoding,
             "token_prediction": self.token_prediction,
             "context_shift": self.context_shift,
+            "prioritize_gpu": self.prioritize_gpu,
         }
 
 
@@ -573,6 +578,7 @@ class LocalModelManager:
                     "speculative_decoding": info.speculative_decoding if is_loaded else None,
                     "token_prediction": info.token_prediction if is_loaded else None,
                     "context_shift": info.context_shift if is_loaded else None,
+                    "prioritize_gpu": info.prioritize_gpu if is_loaded else False,
                     "process_rss_bytes": self._get_process_rss(model_id) if is_loaded else None,
                 })
         return results
@@ -708,6 +714,7 @@ class LocalModelManager:
         speculative_decoding: str = "default",
         token_prediction: str = "off",
         context_shift: str = "off",
+        prioritize_gpu: bool = False,
     ) -> dict:
         """Load a .gguf model by starting a new llama-server subprocess."""
         # Clean up stale entries before loading to prevent phantom models
@@ -735,6 +742,9 @@ class LocalModelManager:
                     raise FileNotFoundError(f"mmproj file not found: {mmproj_filename}")
 
         model_id = f"local/{filepath.stem}"
+        if prioritize_gpu:
+            await asyncio.to_thread(require_gpu_device, LLAMACPP_SERVER_DIR)
+            n_gpu_layers = -1
         context_shift = _normalize_context_shift(context_shift)
         token_prediction = _normalize_token_prediction(token_prediction)
         speculative_decoding = _normalize_speculative_decoding(speculative_decoding)
@@ -757,6 +767,7 @@ class LocalModelManager:
                 and existing.speculative_decoding == speculative_decoding
                 and existing.token_prediction == token_prediction
                 and existing.context_shift == context_shift
+                and existing.prioritize_gpu == prioritize_gpu
             ):
                 return existing.load_result()
 
@@ -782,11 +793,12 @@ class LocalModelManager:
                 n_ctx, n_gpu_layers = await asyncio.to_thread(
                     plan_auto_context, LLAMACPP_SERVER_DIR, filepath, n_gpu_layers, cache_type,
                     mmproj_path, token_prediction != "off" and mmproj_path is None, device,
+                    prioritize_gpu=prioritize_gpu,
                 )
             # Retry smaller contexts only for automatic memory-allocation failures.
             for attempt in range(6):
                 try:
-                    await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type, speculative_decoding, token_prediction, context_shift, auto_context=auto_context)
+                    await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type, speculative_decoding, token_prediction, context_shift, auto_context=auto_context, prioritize_gpu=prioritize_gpu)
                     if auto_context:
                         try:
                             props_response = await _get_http_client(port).get("/props")
@@ -805,9 +817,13 @@ class LocalModelManager:
                 except Exception as error:
                     await self._kill_server(model_id)
                     if not auto_context or not is_memory_failure(error) or attempt == 5:
+                        if prioritize_gpu and is_memory_failure(error):
+                            raise RuntimeError("Nao ha memoria suficiente para carregar todas as camadas na GPU com este contexto/cache. Reduza o contexto ou desative Priorizar execucao na GPU.") from error
                         raise
                     n_ctx = bounded_context(n_ctx // 2) if n_ctx > 2048 else 0
                     if n_ctx == 0:
+                        if prioritize_gpu:
+                            raise RuntimeError("O modelo nao coube integralmente na GPU nem com o contexto automatico minimo. Desative Priorizar execucao na GPU para permitir uso da CPU.") from error
                         raise
                     self._ports[model_id] = port
             else:
@@ -825,6 +841,7 @@ class LocalModelManager:
                 speculative_decoding,
                 token_prediction,
                 context_shift,
+                prioritize_gpu,
             )
             self._loaded[model_id].context_auto = auto_context
 
@@ -837,6 +854,7 @@ class LocalModelManager:
             if model_id not in self._loaded:
                 raise KeyError(f"Model not loaded: {model_id}")
 
+            self._loaded[model_id].unload_requested = True
             await self._kill_server(model_id)
             self._loaded.pop(model_id, None)
             log.info(f"Model unloaded: {model_id}")
@@ -890,6 +908,7 @@ class LocalModelManager:
                 "speculative_decoding": info.speculative_decoding,
                 "token_prediction": info.token_prediction,
                 "context_shift": info.context_shift,
+                "prioritize_gpu": info.prioritize_gpu,
             })
 
         # Unload all models
@@ -920,6 +939,7 @@ class LocalModelManager:
                     speculative_decoding=m.get("speculative_decoding", "off"),
                     token_prediction=m.get("token_prediction", "off"),
                     context_shift=m.get("context_shift", "off"),
+                    prioritize_gpu=m.get("prioritize_gpu", False),
                 )
                 model_id = f"local/{Path(m['filename']).stem}"
                 if model_id in self._loaded:
@@ -929,7 +949,7 @@ class LocalModelManager:
 
     # -- subprocess management ------------------------------------------
 
-    async def _start_server(self, model_path: Path, n_gpu_layers: int, n_ctx: int, mmproj_path: Optional[Path], port: int, model_id: str, cache_type: str = "f16", speculative_decoding: str = "default", token_prediction: str = "off", context_shift: str = "off", auto_context: bool = False):
+    async def _start_server(self, model_path: Path, n_gpu_layers: int, n_ctx: int, mmproj_path: Optional[Path], port: int, model_id: str, cache_type: str = "f16", speculative_decoding: str = "default", token_prediction: str = "off", context_shift: str = "off", auto_context: bool = False, prioritize_gpu: bool = False):
         """Start llama-server.exe with the given model on the given port."""
         if not LLAMACPP_SERVER_BIN.exists():
             raise FileNotFoundError(
@@ -942,14 +962,16 @@ class LocalModelManager:
             "--model", str(model_path),
             "--host", LLAMACPP_HOST,
             "--port", str(port),
-            "--n-gpu-layers", str(n_gpu_layers),
+            "--n-gpu-layers", "all" if prioritize_gpu else str(n_gpu_layers),
             "--ctx-size", str(n_ctx),
             "--flash-attn", "auto",
             "--cache-type-k", cache_type,
             "--cache-type-v", cache_type,
             "--no-webui",
         ]
-        if n_ctx == 0:
+        if prioritize_gpu:
+            cmd += ["--fit", "off"]
+        elif n_ctx == 0:
             cmd += ["--fit", "on", "--fit-target", str(context_memory_margin(mmproj_path, token_prediction != "off" and mmproj_path is None)), "--fit-ctx", "2048"]
         if auto_context:
             cmd += ["--parallel", "1"]
@@ -1288,6 +1310,7 @@ class LocalModelManager:
         )
         context_window = getattr(self._loaded.get(model_id), "n_ctx", None)
         if stream:
+            payload["timings_per_token"] = True
             return self._stream_proxy(client, payload, model_id)
         else:
             resp = await client.post("/v1/chat/completions", json=payload, timeout=300.0)
@@ -1303,8 +1326,11 @@ class LocalModelManager:
 
     def _stream_proxy(self, client: httpx.AsyncClient, payload: dict, model_id: str):
         """Stream SSE from llama-server back to the client."""
-        context_window = getattr(self._loaded.get(model_id), "n_ctx", None)
+        # Retain this load session even if the same model is immediately reloaded.
+        model_info = self._loaded.get(model_id)
+        context_window = getattr(model_info, "n_ctx", None)
         async def _generate():
+            last_usage_at = None
             try:
                 async with client.stream(
                     "POST",
@@ -1324,7 +1350,7 @@ class LocalModelManager:
                             "model": model_id,
                             "choices": [{
                                 "index": 0,
-                                "delta": {"content": f"\n\n{user_error}"},
+                                "delta": {} if getattr(model_info, "unload_requested", False) else {"content": f"\n\n{user_error}"},
                                 "finish_reason": "stop",
                             }],
                         }
@@ -1341,6 +1367,18 @@ class LocalModelManager:
                             try:
                                 data = json.loads(data_str)
                                 data["model"] = model_id
+                                # Sample native metrics without flushing the batched text on every token.
+                                if data.get("timings") or data.get("usage"):
+                                    now = time.monotonic()
+                                    terminal = not data.get("choices") or any(
+                                        choice.get("finish_reason") is not None
+                                        for choice in data.get("choices", [])
+                                    )
+                                    if terminal or last_usage_at is None or now - last_usage_at >= 0.25:
+                                        last_usage_at = now
+                                    else:
+                                        data.pop("timings", None)
+                                        data.pop("usage", None)
                                 if isinstance(context_window, int) and context_window > 0 and (data.get("usage") or data.get("timings")):
                                     data.setdefault("usage", {})
                                     data["usage"] = {**(data["usage"] or {}), "context_window": context_window}
@@ -1348,7 +1386,11 @@ class LocalModelManager:
                             except json.JSONDecodeError:
                                 yield f"{line}\n\n"
             except Exception as e:
-                log.error(f"Stream proxy error: {e}")
+                unloading = getattr(model_info, "unload_requested", False)
+                if unloading:
+                    log.debug("Stream stopped after unloading model %s", model_id)
+                else:
+                    log.error(f"Stream proxy error: {e}")
                 error_data = {
                     "id": f"chatcmpl-error-{int(time.time())}",
                     "object": "chat.completion.chunk",
@@ -1356,7 +1398,7 @@ class LocalModelManager:
                     "model": model_id,
                     "choices": [{
                         "index": 0,
-                        "delta": {"content": f"\n\n[Error: {str(e)}]"},
+                        "delta": {} if unloading else {"content": f"\n\n[Error: {str(e)}]"},
                         "finish_reason": "stop",
                     }],
                 }
@@ -1383,6 +1425,7 @@ class LoadModelRequest(BaseModel):
     speculative_decoding: str = "default"  # default/off | high (legacy low maps to high)
     token_prediction: str = "off"  # on | off
     context_shift: str = "off"  # on | off
+    prioritize_gpu: bool = False
 
 class UnloadModelRequest(BaseModel):
     model_id: str
@@ -1548,6 +1591,7 @@ async def get_llamacpp_status():
         "models_count": len(model_manager.scan_models()),
         "mmproj_count": len(model_manager.scan_mmproj_files()),
         "automatic_context": True,
+        "gpu_priority_supported": True,
     }
 
 
@@ -1564,6 +1608,7 @@ async def load_model(req: LoadModelRequest, request: Request):
             speculative_decoding=req.speculative_decoding,
             token_prediction=req.token_prediction,
             context_shift=req.context_shift,
+            prioritize_gpu=req.prioritize_gpu,
         )
         # Invalidate cached base models so /api/models returns fresh n_ctx
         request.app.state.BASE_MODELS = None
@@ -1826,6 +1871,7 @@ async def generate_chat_completion(
                         speculative_decoding=loaded_info.speculative_decoding,
                         token_prediction=loaded_info.token_prediction,
                         context_shift=loaded_info.context_shift,
+                        prioritize_gpu=loaded_info.prioritize_gpu,
                     )
                 except Exception as e:
                     log.error(

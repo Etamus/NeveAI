@@ -3227,7 +3227,6 @@ async def chat_video_generation_handler(
             # Downloads and environment preparation do not need VRAM. Keep the chat
             # model available until every disk/network prerequisite is ready.
             await runtime.prepare(emit_progress)
-
             input_images = []
             for index, image_reference in enumerate(image_references):
                 prepared = await asyncio.to_thread(
@@ -3897,6 +3896,11 @@ FILE_GENERATION_OUTPUT_FORMATS = (
 FILE_GENERATION_PRESERVING_OPERATIONS = {"merge", "edit", "convert", "reformat"}
 
 FILE_GENERATION_FORMAT_GUIDANCE = {
+    "rtf": (
+        "For an ordinary prose document return plain text; the application renders it as RTF "
+        "with Unicode support. Use RTF control words only when requested styling requires them. "
+        "If using structured RTF, include a complete rtf1 root and close every opened group."
+    ),
     "xlsx": (
         "Every distinct non-empty worksheet cell is mandatory unless the user explicitly asks "
         "to remove that value. Keep its data type and text. Deduplicate only genuinely equivalent "
@@ -5631,7 +5635,7 @@ async def _review_generated_file_content(
                     "Explicit user instructions to remove, filter or select content take priority over that flag; never demand material the user asked to omit. "
                     "For summaries and selective extraction, omitting details is expected; check the requested scope, key facts and actual condensation instead. "
                     "Reject a summary that reproduces the original instead of summarizing. Reject the draft if it changes "
-                    "facts or values without permission, invents content, includes unrequested "
+                    "facts or values without permission, fabricates concrete facts, includes unrequested "
                     "citations, exposes analysis/reasoning, or fails the requested transformation. "
                     "For edits, require all unaffected content to remain. Deduplication permits only "
                     "genuinely equivalent repetitions. Technical wrappers such as format, sheets, "
@@ -5660,7 +5664,7 @@ async def _review_generated_file_content(
             },
         ],
         "stream": False,
-        "max_tokens": 500,
+        "max_tokens": 900,
         "reasoning_mode": "quick",
         "no_think": True,
         "response_format": {
@@ -5743,6 +5747,33 @@ async def _review_generated_file_content(
             schema["properties"]["invented_facts"]["maxItems"] = 3
             schema["properties"]["invented_facts"]["items"]["maxLength"] = 240
         schema["properties"]["objective_issue"]["maxLength"] = 240
+    review_payload["messages"][0]["content"] += (
+        "\nYou are reviewing the CONTENT BODY BEFORE file rendering, not an already encoded file. "
+        "The application converts the approved body into the final container and validates it separately. "
+        "For PDF, DOCX and RTF, Markdown-style text is the expected renderer input, not a format mismatch. "
+        "For XLSX, PPTX and ZIP, structured JSON is expected. Never reject a draft because it is not "
+        "binary PDF/Office/ZIP, lacks a file signature, has no download link yet, or uses this intermediate representation. "
+        "Do assess requested tables, sections, values, meaning and scope. Missing_facts must cite actual "
+        "attachment source text absent from the draft, never the draft itself, objective or planner text. "
+        "When no attachment sources are supplied, missing_facts must be empty. Creation from scratch "
+        "allows the explanatory or creative content the user requested; absence of a source is not fabrication. "
+        "Do not invent defects to demonstrate an audit. A concise usable document is acceptable."
+    )
+    if not research_sources:
+        schema["properties"]["missing_facts"]["maxItems"] = 6 if source_payloads else 0
+        schema["properties"]["invented_facts"]["maxItems"] = 3
+        schema["properties"]["invented_facts"]["items"]["maxLength"] = 240
+        schema["properties"]["objective_issue"]["maxLength"] = 400
+        schema["properties"]["objective_failure_scope"] = {
+            "type": "string", "enum": ["none", "content", "container"]
+        }
+        schema["required"].append("objective_failure_scope")
+        review_payload["messages"][0]["content"] += (
+            " objective_failure_scope is content only for a failure of the requested meaning or transformation; "
+            "container means encoding/rendering not yet performed by the application; none means no objective failure. "
+            "invented_facts must quote exact draft spans containing an unsupported concrete claim, not explanations "
+            "of objections or merely newly authored content. For creative writing, requested fictional content is allowed."
+        )
     response = await generate_chat_completion(
         request, form_data=review_payload, user=user
     )
@@ -5755,6 +5786,10 @@ async def _review_generated_file_content(
         from neveai.utils.research_audit import research_review_issues
 
         return research_review_issues(review, generated_content, research_sources)
+    if not research_sources:
+        from neveai.utils.document_audit import document_review_issues
+
+        return document_review_issues(review, generated_content, source_payloads)
     if review.get("approved"):
         return []
 
@@ -7322,6 +7357,10 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     features = form_data.pop("features", None) or {}
     submitted_features = metadata.get("features", {}) or {}
+    if submitted_features.get("guided_learning"):
+        features["guided_learning"] = True
+    if features.get("guided_learning") is True:
+        features["file_generation"] = False
     if submitted_features.get("stable_diffusion"):
         # Keep the explicit image model/style choice if an inlet rebuilt the payload.
         features["stable_diffusion"] = True
@@ -7358,6 +7397,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
             "web_search",
             "deep_search",
             "code_execution",
+            "guided_learning",
             "file_generation",
             "stable_diffusion",
             "music_generation",
@@ -8002,6 +8042,16 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                             file_generation_plan,
                             generation_reasoning,
                         )
+                        if not coverage_issues:
+                            from neveai.utils.document_validation import validate_generated_body
+
+                            try:
+                                await asyncio.to_thread(validate_generated_body, generated_content, output_format)
+                            except Exception as format_error:
+                                coverage_issues = [
+                                    "Corrija somente a estrutura/sintaxe do formato solicitado, preservando todo o conteudo: "
+                                    + str(format_error)[:400]
+                                ]
                         if not coverage_issues and output_format not in {
                             "xlsx",
                             "csv",
@@ -8131,6 +8181,11 @@ async def process_chat_payload(request, form_data, user, metadata, model):
                 file_generation_failure,
                 form_data["messages"],
             )
+
+    from neveai.utils.guided_learning import apply_guided_learning
+    form_data["messages"] = apply_guided_learning(
+        form_data["messages"], features, generated_file_ready=generated_file_ready
+    )
 
     # Save the pre-RAG message state so the native tool call loop can
     # restore to the true original (before file-source injection) rather

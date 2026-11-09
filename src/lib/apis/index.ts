@@ -682,8 +682,8 @@ export const getVersionUpdates = async (token: string) => {
 			return null;
 		});
 
-	if (requestId === versionUpdateRequest) {
-		versionUpdateStatus.set(res && typeof res === 'object' && !Array.isArray(res) ? res : null);
+	if (requestId === versionUpdateRequest && res && typeof res === 'object' && !Array.isArray(res)) {
+		versionUpdateStatus.set(res);
 	}
 	if (error) {
 		throw error;

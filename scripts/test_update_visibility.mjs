@@ -11,6 +11,12 @@ try {
     let unavailable = false;
     let queries = 0;
     page.on('pageerror', error => errors.push(error.message));
+    // Test visibility independently of the user's saved notification preference.
+    await page.route('**/api/v1/users/user/settings', async route => {
+      const response = await route.fetch();
+      const settings = await response.json();
+      await route.fulfill({ response, json: { ...settings, ui: { ...settings.ui, showUpdateToast: true } } });
+    });
     await page.route('**/api/version/updates', route => {
       queries++;
       if (unavailable) return route.fulfill({ status: 503, json: { detail: 'Temporary test outage' } });
@@ -25,7 +31,8 @@ try {
       await notifications.waitFor();
       const text = await notifications.innerText();
       assert.equal(text.includes('NeveAI v3.0.21'), project);
-      assert.equal(text.includes('llama.cpp b11857'), runtime);
+      assert.equal(text.includes('llama.cpp b11857'), runtime && !project);
+      assert.equal(text.includes('e mais'), runtime && project);
     } else assert.equal(await notifications.count(), 0);
     await page.getByRole('button', { name: /Usu/ }).click();
     await page.getByRole('menuitem').filter({ hasText: /Configura/ }).click();

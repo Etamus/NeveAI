@@ -233,7 +233,7 @@
 			{/if}
 
 			{#if edit === true}
-				<div class=" w-full bg-gray-50 dark:bg-gray-800 rounded-3xl px-5 py-3 mb-2">
+				<div class=" w-full bg-gray-50 dark:bg-gray-800 rounded-[1.25rem] px-5 py-3 mb-2">
 					{#if (editedFiles ?? []).length > 0}
 						<div class="flex items-center flex-wrap gap-2 -mx-2 mb-1">
 							{#each editedFiles as file, fileIdx}
@@ -337,7 +337,7 @@
 						<div class="flex space-x-1.5 items-center">
 							<button
 								id="close-edit-message-button"
-							class="px-4 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition rounded-lg inline-flex items-center"
+							class="px-4 py-1.5 text-xs font-medium text-black dark:text-white bg-gray-100 dark:bg-white/10 hover:bg-gray-200 dark:hover:bg-white/5 transition rounded-lg inline-flex items-center"
 								on:click={() => {
 									cancelEditMessage();
 								}}

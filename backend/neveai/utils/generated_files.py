@@ -416,12 +416,28 @@ def read_rtf_text(content: str) -> str:
     return text.encode("utf-16", errors="surrogatepass").decode("utf-16", errors="replace")
 
 
+def _rtf_unicode_escape(char: str) -> str:
+    units = char.encode("utf-16-le")
+    return "".join(
+        f"\\u{value if value < 32768 else value - 65536}?"
+        for index in range(0, len(units), 2)
+        for value in [int.from_bytes(units[index:index + 2], "little")]
+    )
+
+
 def _build_rtf(content: str) -> bytes:
     if content.lstrip().startswith("{\\rtf"):
         try:
             return content.strip().encode("ascii")
         except UnicodeEncodeError as error:
-            raise GeneratedFileError("RTF estruturado deve codificar Unicode com sequencias de escape.") from error
+            if re.search(r"\\bin\d+", content):
+                raise GeneratedFileError("RTF com dados binarios precisa ter codificacao valida.") from error
+            # Local groups preserve the existing uc setting and all RTF control words.
+            encoded = "".join(
+                char if ord(char) < 128 else "{\\uc1" + _rtf_unicode_escape(char) + "}"
+                for char in content.strip()
+            )
+            return encoded.encode("ascii")
     # Unicode RTF uses signed UTF-16 code units, not raw UTF-8 bytes.
     escaped = []
     for char in content.replace("\r\n", "\n").replace("\r", "\n"):
@@ -434,10 +450,7 @@ def _build_rtf(content: str) -> bytes:
         elif 32 <= ord(char) < 127:
             escaped.append(char)
         else:
-            units = char.encode("utf-16-le")
-            for index in range(0, len(units), 2):
-                value = int.from_bytes(units[index:index + 2], "little")
-                escaped.append(f"\\u{value if value < 32768 else value - 65536}?")
+            escaped.append(_rtf_unicode_escape(char))
     return ("{\\rtf1\\ansi\\ansicpg1252\\uc1\\deff0{\\fonttbl{\\f0 Arial;}}\\f0\\fs22 " + "".join(escaped) + "}").encode("ascii")
 
 

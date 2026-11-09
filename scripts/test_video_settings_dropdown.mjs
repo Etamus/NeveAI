@@ -108,6 +108,7 @@ try {
    await page.locator(trigger).click();
    await page.locator(panel).waitFor({state:'visible'});
    const slider=page.locator(panel).getByRole('slider');
+   assert.equal(await page.locator(panel).getByRole('button',{name:/1080p/}).count(),0);
    assert.equal(await page.locator(trigger+' svg').count(),1,'Only the chevron should remain');
    assert.equal(await page.locator(panel+' .effort-dots span').count(),4);
    for(const [index,[resolution,duration]] of [['480p','5s'],['480p','8s'],['672p','5s'],['672p','8s']].entries()){

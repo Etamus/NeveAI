@@ -258,6 +258,7 @@
 
 <Dropdown
 	bind:show
+	triggerClassName="grid place-items-center"
 	on:change={(e) => {
 		if (e.detail === false) {
 			onClose();

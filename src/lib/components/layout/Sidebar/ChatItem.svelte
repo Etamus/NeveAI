@@ -338,7 +338,7 @@
 			<input
 				id="chat-title-input-{id}"
 				bind:value={chatTitle}
-				class="m-0 block h-5 w-full border-0 bg-transparent p-0 leading-5 outline-hidden"
+				class="sidebar-entry-title m-0 block h-5 w-full border-0 bg-transparent p-0 leading-5 outline-hidden"
 				placeholder={generating ? $i18n.t('Generating...') : ''}
 				disabled={generating}
 				on:keydown={chatTitleInputKeydownHandler}
@@ -384,7 +384,7 @@
 			draggable="false"
 		>
 			<div class="flex min-h-5 flex-1 items-center w-full min-w-0">
-				<div dir="auto" class="block h-5 w-full overflow-hidden text-left leading-5 truncate {$activeChatIds.has(id) && !mouseOver && !chatMenuOpen && !selected && id !== $chatId ? 'sidebar-chat-title-fade' : ''}">
+				<div dir="auto" class="sidebar-entry-title block h-5 w-full overflow-hidden text-left leading-5 truncate {$activeChatIds.has(id) && !mouseOver && !chatMenuOpen && !selected && id !== $chatId ? 'sidebar-chat-title-fade' : ''}">
 					{title}
 				</div>
 			</div>
@@ -409,7 +409,7 @@
 						: 'invisible group-hover:visible from-gray-100 dark:from-gray-800'}
             absolute {className === 'pr-2'
 			? 'right-[6px]'
-			: 'right-0.5'} top-0 bottom-0 flex items-center pr-0.5 mr-1.5 pl-5 bg-linear-to-l from-80%
+			: 'right-0.5'} top-0 bottom-0 flex items-center pr-0.5 mr-1 pl-5 bg-linear-to-l from-80%
               to-transparent"
 		on:mouseenter={(e) => {
 			mouseOver = true;
@@ -439,6 +439,11 @@
 				</div>
 			{:else}
 			<div class="flex self-center z-10 items-center gap-1">
+				<Tooltip content={$i18n.t(isPinned ? 'Unpin' : 'Pin')}>
+					<button type="button" aria-label={$i18n.t(isPinned ? 'Unpin' : 'Pin')} aria-pressed={isPinned} disabled={pinPending} class="grid size-5 place-items-center dark:hover:text-white transition" on:click={togglePin}>
+						<OfficePin className="size-[0.84375rem]" filled={isPinned} />
+					</button>
+				</Tooltip>
 				<ChatMenu
 					bind:show={chatMenuOpen}
 					chatId={id}
@@ -462,7 +467,7 @@
 				>
 					<button
 						aria-label="Chat Menu"
-						class=" self-center dark:hover:text-white transition m-0"
+						class="relative left-[2px] grid size-5 place-items-center self-center dark:hover:text-white transition m-0 p-0"
 						on:click={() => {
 							dispatch('select');
 						}}
@@ -479,11 +484,6 @@
 						</svg>
 					</button>
 				</ChatMenu>
-				<Tooltip content={$i18n.t(isPinned ? 'Unpin' : 'Pin')}>
-					<button type="button" aria-label={$i18n.t(isPinned ? 'Unpin' : 'Pin')} aria-pressed={isPinned} disabled={pinPending} class="grid size-5 place-items-center dark:hover:text-white transition" on:click={togglePin}>
-						<OfficePin className="size-[0.84375rem]" filled={isPinned} />
-					</button>
-				</Tooltip>
 
 				{#if id === $chatId}
 					<!-- Shortcut support using "delete-chat-button" id -->
@@ -523,7 +523,7 @@
 			pointer-events: auto;
 			padding: 0;
 			margin: 0;
-			right: 0.25rem;
+			right: calc(0.25rem - 2px);
 			color: var(--color-gray-500);
 		}
 		:global(#sidebar-chat-item) { padding-right: 4.75rem; min-height: 44px; align-items: center; }

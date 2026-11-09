@@ -2,13 +2,22 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { writable } from 'svelte/store';
 import { getAvailableUpdateTargets } from './updateAvailability';
-import { createUpdateToastManager, updateNotificationsEnabled } from './updateToast';
+import { createUpdateToastManager, getUpdateToastSummary, updateNotificationsEnabled } from './updateToast';
 
 const generalSource = readFileSync('src/lib/components/chat/Settings/General.svelte', 'utf8');
 const layoutSource = readFileSync('src/routes/(app)/+layout.svelte', 'utf8').replace(/\r\n/g, '\n');
 const settingsModalSource = readFileSync('src/lib/components/chat/SettingsModal.svelte', 'utf8');
 
 describe('Update notification preference', () => {
+	it.each([
+		['', '', 0],
+		['NeveAI v3.1.83', 'NeveAI v3.1.83', 0],
+		['llama.cpp b12167', 'llama.cpp b12167', 0],
+		['NeveAI v3.1.83 • llama.cpp b12167', 'NeveAI v3.1.83', 1],
+		['NeveAI v3.1.83 • llama.cpp b12167 • engine', 'NeveAI v3.1.83', 2]
+	])('summarizes only the visible toast label: %s', (version, primary, additional) => {
+		expect(getUpdateToastSummary(version as string)).toEqual({ primary, additional });
+	});
 	it.each([undefined, null, {}, { showUpdateToast: true }])('defaults enabled for %j', (settings) => {
 		expect(updateNotificationsEnabled(settings)).toBe(true);
 		const manager = createUpdateToastManager();

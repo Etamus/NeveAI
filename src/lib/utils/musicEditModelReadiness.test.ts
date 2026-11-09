@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { getVideoGenerationFeatures, snapshotVideoRequestFeatures } from './videoGeneration';
+import { normalizeLearningRequestFeatures } from './guidedLearning';
 
 function sourceFunction(file: string, name: string, prefix = false) {
 	const source = Array.from(readFileSync(resolve(file), 'utf8').matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g), match => match[1]).join('\n');
@@ -24,7 +25,7 @@ function sourceFunction(file: string, name: string, prefix = false) {
 
 function compile(source: string, globals: Record<string, unknown>) {
 	const js = ts.transpile(`const action = ${source};`, {target: ts.ScriptTarget.ES2022});
-	return runInNewContext(js + '\naction;', {structuredClone, getVideoGenerationFeatures, snapshotVideoRequestFeatures, ...globals});
+	return runInNewContext(js + '\naction;', {structuredClone, getVideoGenerationFeatures, snapshotVideoRequestFeatures, normalizeLearningRequestFeatures, ...globals});
 }
 
 const sendSource = sourceFunction('src/lib/components/chat/Chat.svelte', 'sendMessage', true);

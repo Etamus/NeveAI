@@ -13,8 +13,8 @@ def normalize_usage(usage: dict) -> dict:
                 return None
         return None
 
-    input_tokens = usage.get("input_tokens") or usage.get("prompt_n") or 0
-    output_tokens = usage.get("output_tokens") or usage.get("predicted_n") or 0
+    input_tokens = usage.get("input_tokens") or usage.get("prompt_tokens") or usage.get("prompt_n") or 0
+    output_tokens = usage.get("output_tokens") or usage.get("completion_tokens") or usage.get("predicted_n") or 0
     total_tokens = usage.get("total_tokens") or input_tokens + output_tokens
 
     tokens_per_second = None

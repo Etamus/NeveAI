@@ -8,6 +8,7 @@
 	import { oneDark } from '@codemirror/theme-one-dark';
 	import { indentUnit } from '@codemirror/language';
 	import { onMount, getContext, createEventDispatcher } from 'svelte';
+	import { get } from 'svelte/store';
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
 	const dispatch = createEventDispatcher();
@@ -183,6 +184,12 @@
 	}
 
 	const iframeLoadHandler = () => {
+		// Sandboxed previews have an opaque origin; never weaken the sandbox to inspect them.
+		try {
+			if (!iframeElement?.contentWindow?.document) return;
+		} catch {
+			return;
+		}
 		iframeElement.contentWindow.addEventListener(
 			'click',
 			function (e) {
@@ -237,7 +244,7 @@
 
 	onMount(() => {
 		const unsubscribeArtifactCode = artifactCode.subscribe((value) => {
-			if (contents) {
+			if (contents && value) {
 				const codeIdx = contents.findIndex((content) => content.content.includes(value));
 				selectedContentIdx = codeIdx !== -1 ? codeIdx : 0;
 			}
@@ -245,11 +252,17 @@
 
 		const unsubscribeArtifactContents = artifactContents.subscribe((value) => {
 			const newContents = value ?? [];
+			const requestedCode = get(artifactCode);
+			const requestedIndex = requestedCode
+				? newContents.findIndex((content) => content.content.includes(requestedCode))
+				: -1;
 
 			if (newContents.length === 0) {
 				showControls.set(false);
 				showArtifacts.set(false);
 				selectedContentIdx = 0;
+			} else if (requestedIndex !== -1) {
+				selectedContentIdx = requestedIndex;
 			} else if (newContents.length > contents.length) {
 				selectedContentIdx = newContents.length - 1;
 			} else {

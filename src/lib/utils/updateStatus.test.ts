@@ -53,9 +53,13 @@ describe('Shared update status for immediate About availability', () => {
 		await older;
 		expect(getAvailableUpdateTargets(get(versionUpdateStatus), 'v3.1.01')).toEqual([]);
 	});
-	it('clears a result on an API failure without claiming that an update is available', async () => {
+	it('preserves confirmed availability on a temporary API failure', async () => {
 		versionUpdateStatus.set(available);
 		await expect(api(vi.fn().mockResolvedValue(response({detail: 'offline'}, false)))('fixture')).rejects.toEqual({detail: 'offline'});
+		expect(get(versionUpdateStatus)).toEqual(available);
+	});
+	it('does not invent availability when the initial check fails', async () => {
+		await expect(api(vi.fn().mockRejectedValue(new Error('offline')))('fixture')).rejects.toThrow('offline');
 		expect(get(versionUpdateStatus)).toBeNull();
 	});
 	it('About derives visibility from shared availability and preserves the admin restriction', () => {

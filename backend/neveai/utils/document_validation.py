@@ -157,3 +157,13 @@ def validate_document_output(data: bytes, file_format: str, content: str = "") -
             raise GeneratedFileError("O RTF gerado perdeu seu conteudo.")
         report["checks"].append("rtf_structure")
     return report
+
+
+def validate_generated_body(content: str, file_format: str) -> None:
+    """Cheap syntax preflight before the bounded author-repair loop finishes."""
+    if file_format not in {"rtf", "json", "xml", "yaml", "yml", "py", "csv"}:
+        return
+    from neveai.utils.generated_files import build_generated_file
+
+    _, data, _ = build_generated_file("preflight." + file_format, content, file_format)
+    validate_document_output(data, file_format, content)

@@ -1,4 +1,4 @@
-import { Marked, marked, type MarkedExtension, type TokensList } from 'marked';
+import { Marked, marked, Tokenizer, type MarkedExtension, type TokensList } from 'marked';
 import detailsExtension from './extension';
 import katexExtension from './katex-extension';
 import citationExtension from './citation-extension';
@@ -7,6 +7,25 @@ import { disableSingleTilde } from './strikethrough-extension';
 import { isWithinCodeBlock } from 'remend';
 import { mentionExtension } from './mention-extension';
 
+const tolerantTable: MarkedExtension = {
+	tokenizer: {
+		table(source) {
+			const match = /^([^\n]*\|[^\n]*)\n( {0,3}\|?[:\- |\t]+)(?=\r?(?:\n|$))/.exec(source);
+			if (!match || !/[:\-][ \t]+:?-/.test(match[2])) return false;
+			const separator = match[2].replace(/(:?-+:?)[ \t]+(?=:?-+:?)/g, '$1 | ');
+			if (separator === match[2]) return false;
+			const prefix = `${match[1]}\n${separator}`;
+			// The normal GFM tokenizer validates column count and cell syntax. Running
+			// here also leaves fenced/indented code and literal HTML blocks untouched.
+			const table = Tokenizer.prototype.table.call(this, prefix + source.slice(match[0].length));
+			if (!table || !table.raw.startsWith(prefix)) return false;
+			// The lexer consumes the original source, not the repaired string.
+			table.raw = match[0] + table.raw.slice(prefix.length);
+			return table;
+		}
+	}
+};
+
 function extensions(): MarkedExtension[] {
 	const options = { throwOnError: false, breaks: true };
 	return [
@@ -14,6 +33,7 @@ function extensions(): MarkedExtension[] {
 		detailsExtension(options),
 		citationExtension(),
 		footnoteExtension(),
+		tolerantTable,
 		disableSingleTilde,
 		{ extensions: ['@', '#', '$'].map((triggerChar) => mentionExtension({ triggerChar })) }
 	] as MarkedExtension[];
@@ -25,6 +45,7 @@ marked.use(...extensions());
 
 // Other consumers can mutate global marked without affecting the main lexer.
 const chatMarked = new Marked(...extensions());
+
 export const lexChatMarkdown = (source: string): TokensList => {
 	// Structured output is a separate block, not a lazy continuation of a list.
 	// Keep literal examples inside code untouched, including unfinished fences.

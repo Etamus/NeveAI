@@ -3,6 +3,7 @@ import type { LocalModel, LocalVramInfo } from '$lib/apis/llamacpp';
 export interface UnifiedModelsPreload {
 	loaded: boolean;
 	runtimeUpdatedAt?: number;
+	catalogUpdatedAt?: number;
 	localModels: LocalModel[];
 	mmProjFiles: string[];
 	adminModels: any[];

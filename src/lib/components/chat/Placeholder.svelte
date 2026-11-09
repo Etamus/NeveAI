@@ -37,7 +37,7 @@
 
 	export let showCommands = false;
 
-	export let codeExecutionEnabled = false;
+	export let learningEnabled = false;
 	export let fileGenerationEnabled = false;
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
@@ -127,7 +127,7 @@
 					bind:prompt
 					bind:autoScroll
 					bind:selectedToolIds
-					bind:codeExecutionEnabled
+					bind:learningEnabled
 					bind:fileGenerationEnabled
 					bind:webSearchEnabled
 					bind:deepSearchEnabled

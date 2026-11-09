@@ -95,7 +95,7 @@ def search_duckduckgo(
             return merged
 
         candidate_backends = []
-        for candidate in [backend, "duckduckgo", "auto", "bing", "brave", "yahoo"]:
+        for candidate in [backend, "duckduckgo", "auto", "brave", "yahoo"]:
             if candidate and candidate not in candidate_backends:
                 candidate_backends.append(candidate)
 
@@ -118,6 +118,17 @@ def search_duckduckgo(
                 log.warning(f"DDGS search error ({search_backend} backend): {e}")
     if filter_list:
         search_results = get_filtered_results(search_results, filter_list)
+
+    if not search_results and not time_range:
+        from neveai.retrieval.web.bing import search_bing_fallback
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            try:
+                search_results = search_bing_fallback(query, count, min(remaining, timeout or 8))
+                if filter_list:
+                    search_results = get_filtered_results(search_results, filter_list)
+            except Exception as error:
+                log.warning("Bing search fallback unavailable: %s", error)
 
     # Return the list of search results
     return [

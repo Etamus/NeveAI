@@ -544,10 +544,10 @@
 					</Tooltip>
 
 					{#if preview && ['html', 'svg'].includes(lang)}
-						<Tooltip content={$i18n.t('Preview')} placement="top">
+						<Tooltip content={$i18n.t('Artifact preview')} placement="top">
 							<button
 								class="flex items-center justify-center run-code-button bg-none border-none transition rounded-md p-1 hover:bg-gray-200 dark:hover:bg-gray-700"
-								aria-label={$i18n.t('Preview')}
+								aria-label={$i18n.t('Artifact preview')}
 								on:click={previewCode}
 							>
 								<Cube className="size-4" />

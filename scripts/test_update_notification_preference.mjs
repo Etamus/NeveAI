@@ -230,13 +230,13 @@ try {
    await setToggle(true);
    const beforeRestore = polls;
    await close();
-   await visible('NeveAI v3.0.21 • llama.cpp b11857');
+   await visible('NeveAI v3.0.21 e mais');
    assert.equal(polls, beforeRestore, 'Reenabling must restore the pending result without requiring another check');
    await page.evaluate(() => window.__updatePreferenceFixture.others());
    await othersIntact();
    await screenshot('reenabled-pending');
    await boot();
-   await visible('NeveAI v3.0.21 • llama.cpp b11857');
+   await visible('NeveAI v3.0.21 e mais');
    await open();
    await checked(true);
    await screenshot('general-reloaded-enabled');

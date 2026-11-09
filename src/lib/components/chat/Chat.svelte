@@ -14,7 +14,8 @@
 	import type { i18n as i18nType } from 'i18next';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 
-	import { chatId, chats, config, type Model, models, tags as allTags, settings, banners, user, socket, audioQueue, showControls, showCallOverlay, currentChatPage, temporaryChatEnabled, mobile, chatTitle, showArtifacts, artifactContents, tools, toolServers, terminalServers, selectedFolder, pinnedChats, showEmbeds, selectedTerminalId, showFileNavPath, showFileNavDir, chatCodeExecutionEnabled, activeChatIds } from '$lib/stores';
+	import { chatId, chats, config, type Model, models, tags as allTags, settings, banners, user, socket, audioQueue, showControls, showCallOverlay, currentChatPage, temporaryChatEnabled, mobile, chatTitle, showArtifacts, artifactContents, tools, toolServers, terminalServers, selectedFolder, pinnedChats, showEmbeds, selectedTerminalId, showFileNavPath, showFileNavDir, activeChatIds } from '$lib/stores';
+	import {getConversationArtifacts} from '$lib/utils/artifactResults';
 
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
@@ -26,7 +27,6 @@
 		getPromptVariables,
 		processDetails,
 		removeAllDetails,
-		getCodeBlockContents,
 		isYoutubeUrl,
 		displayFileHandler
 	} from '$lib/utils';
@@ -78,6 +78,7 @@
 	import { HISTORY_LAYOUT_EVENT } from '$lib/utils/historyScrollLock';
 	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
 	import { getFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
+	import { normalizeLearningRequestFeatures } from '$lib/utils/guidedLearning';
 	import { updateFolderById } from '$lib/apis/folders';
 
 	import Banner from '../common/Banner.svelte';
@@ -124,6 +125,7 @@
 	let generationSpacerScrollAllowance: number | null = null;
 	let activeGenerationSpacerHeightLimit: number | null = null;
 	let lastMessagesScrollTop = 0;
+	let lastGenerationContentHeight: number | null = null;
 	let generationSpacerUpwardScrollIntentUntil = 0;
 	let loadedChatLayoutController: AbortController | null = null;
 	let textGenerationAnchorScrollTop: number | null = null;
@@ -156,7 +158,7 @@
 
 	let webSearchEnabled = false;
 	let deepSearchEnabled = false;
-	let codeExecutionEnabled = false;
+	let learningEnabled = false;
 	let fileGenerationEnabled = getFileGenerationPreference(false);
 	let stableDiffusionEnabled = false;
 	let stableDiffusionQuality:
@@ -196,11 +198,6 @@
 	let thinkingUnlimitedEnabled = false;
 	let thinkingExtendedEnabled = true;
 
-	// Sincronizar toggle do chat com a store — controla auto-show de artifacts
-	$: chatCodeExecutionEnabled.set(codeExecutionEnabled);
-	$: if (!codeExecutionEnabled && $showArtifacts) {
-		showArtifacts.set(false);
-	}
 
 	let showCommands = false;
 
@@ -459,7 +456,8 @@
 				standbySpeculativeDecoding,
 				isLocalContextShiftEnabled(standbyContextShift) ? 'off' : standbyTokenPrediction,
 				standbyContextShift,
-				$models.find((model) => model.id === standbyModel.id)?.name ?? standbyModel.filename.replace(/\.gguf$/i, '')
+				$models.find((model) => model.id === standbyModel.id)?.name ?? standbyModel.filename.replace(/\.gguf$/i, ''),
+				standbyModel.prioritize_gpu ?? false
 			);
 
 			stableDiffusionStandbyModel = null;
@@ -515,7 +513,7 @@
 		selectedToolIds = [];
 		webSearchEnabled = false;
 		deepSearchEnabled = false;
-		codeExecutionEnabled = false;
+		learningEnabled = false;
 		fileGenerationEnabled = getFileGenerationPreference(false);
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
@@ -534,7 +532,7 @@
 					selectedToolIds = input.selectedToolIds;
 					webSearchEnabled = input.webSearchEnabled;
 					deepSearchEnabled = input.deepSearchEnabled ?? false;
-					codeExecutionEnabled = input.codeExecutionEnabled ?? false;
+					learningEnabled = input.learningEnabled ?? false;
 					fileGenerationEnabled = getFileGenerationPreference(input.fileGenerationEnabled ?? false);
 					stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
 					musicGenerationEnabled = input.musicGenerationEnabled ?? false;
@@ -648,7 +646,7 @@
 		selectedToolIds = [];
 		webSearchEnabled = false;
 		deepSearchEnabled = false;
-		codeExecutionEnabled = false;
+		learningEnabled = false;
 		fileGenerationEnabled = getFileGenerationPreference(false);
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
@@ -663,7 +661,7 @@
 	type ChatIntegrationId =
 		| 'web_search'
 		| 'deep_search'
-		| 'code_execution'
+		| 'guided_learning'
 		| 'stable_diffusion'
 		| 'music_generation'
 		| 'video_generation';
@@ -672,7 +670,7 @@
 		const enabledIntegrations: ChatIntegrationId[] = [
 			webSearchEnabled ? 'web_search' : null,
 			deepSearchEnabled ? 'deep_search' : null,
-			codeExecutionEnabled ? 'code_execution' : null,
+			learningEnabled ? 'guided_learning' : null,
 			stableDiffusionEnabled ? 'stable_diffusion' : null,
 			musicGenerationEnabled ? 'music_generation' : null,
 			videoGenerationEnabled ? 'video_generation' : null
@@ -686,7 +684,7 @@
 
 			webSearchEnabled = keep === 'web_search';
 			deepSearchEnabled = keep === 'deep_search';
-			codeExecutionEnabled = keep === 'code_execution';
+			learningEnabled = keep === 'guided_learning';
 			stableDiffusionEnabled = keep === 'stable_diffusion';
 			musicGenerationEnabled = keep === 'music_generation';
 			videoGenerationEnabled = keep === 'video_generation';
@@ -702,7 +700,7 @@
 	const setNativeIntegration = (integration: ChatIntegrationId | null) => {
 		webSearchEnabled = integration === 'web_search';
 		deepSearchEnabled = integration === 'deep_search';
-		codeExecutionEnabled = integration === 'code_execution';
+		learningEnabled = integration === 'guided_learning';
 		stableDiffusionEnabled = integration === 'stable_diffusion';
 		musicGenerationEnabled = integration === 'music_generation';
 		videoGenerationEnabled = integration === 'video_generation';
@@ -748,10 +746,7 @@
 					webSearchEnabled = model.info.meta.defaultFeatureIds.includes('web_search');
 				}
 
-				if ($config?.features?.enable_code_execution) {
-					codeExecutionEnabled =
-						model.info.meta.defaultFeatureIds?.includes('code_execution') ?? false;
-				}
+				learningEnabled = model.info.meta.defaultFeatureIds?.includes('guided_learning') ?? false;
 
 				if (
 					$config?.features?.enable_stable_diffusion &&
@@ -1970,7 +1965,7 @@
 				selectedToolIds = [];
 				webSearchEnabled = false;
 				deepSearchEnabled = false;
-				codeExecutionEnabled = false;
+				learningEnabled = false;
 				fileGenerationEnabled = getFileGenerationPreference(false);
 				stableDiffusionEnabled = false;
 				musicGenerationEnabled = false;
@@ -1985,7 +1980,7 @@
 						selectedToolIds = input.selectedToolIds;
 						webSearchEnabled = input.webSearchEnabled;
 						deepSearchEnabled = input.deepSearchEnabled ?? false;
-						codeExecutionEnabled = input.codeExecutionEnabled ?? false;
+						learningEnabled = input.learningEnabled ?? false;
 						fileGenerationEnabled = getFileGenerationPreference(
 							input.fileGenerationEnabled ?? false
 						);
@@ -2013,8 +2008,6 @@
 				$socket?.off('events', chatEventHandler);
 				audioQueueInstance?.destroy();
 				audioQueue.set(null);
-				// Reset code execution store so CodeBlock in other views doesn't see stale value
-				chatCodeExecutionEnabled.set(false);
 				loadedChatLayoutController?.abort();
 				if (scrollRAF) {
 					cancelAnimationFrame(scrollRAF);
@@ -2126,6 +2119,7 @@
 				contentsDebounceTimer = null;
 				const messages = history ? createMessagesList(history, history.currentId) : [];
 				const lastAssistant = messages.filter((m) => m?.role !== 'user').pop();
+				if (lastAssistant?.done === false) return;
 				const fingerprint = lastAssistant
 					? `${lastAssistant.id}:${lastAssistant.content?.length ?? 0}`
 					: '';
@@ -2141,71 +2135,10 @@
 		}
 	};
 
-	$: onHistoryChange(history, codeExecutionEnabled);
+	$: onHistoryChange(history, $showArtifacts);
 
 	const getContents = () => {
-		if (!codeExecutionEnabled) {
-			artifactContents.set([]);
-			return;
-		}
-
-		const messages = history ? createMessagesList(history, history.currentId) : [];
-		let contents = [];
-		messages.forEach((message) => {
-			if (message?.role !== 'user' && message?.content) {
-				const {
-					codeBlocks: codeBlocks,
-					html: htmlContent,
-					css: cssContent,
-					js: jsContent
-				} = getCodeBlockContents(message.content);
-
-				if (htmlContent || cssContent || jsContent) {
-					const renderedContent = `
-                        <!DOCTYPE html>
-                        <html lang="en">
-                        <head>
-                            <meta charset="UTF-8">
-                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-							<${''}style>
-								body {
-									background-color: white; /* Ensure the iframe has a white background */
-								}
-
-								${cssContent}
-							</${''}style>
-                        </head>
-                        <body>
-                            ${htmlContent}
-
-							<${''}script>
-                            	${jsContent}
-							</${''}script>
-                        </body>
-                        </html>
-                    `;
-					contents = [
-						...contents,
-						{
-							type: 'iframe',
-							content: renderedContent,
-							rawHtml: htmlContent,
-							rawCss: cssContent,
-							rawJs: jsContent
-						}
-					];
-				} else {
-					// Check for SVG content
-					for (const block of codeBlocks) {
-						if (block.lang === 'svg' || (block.lang === 'xml' && block.code.includes('<svg'))) {
-							contents = [...contents, { type: 'svg', content: block.code }];
-						}
-					}
-				}
-			}
-		});
-
-		artifactContents.set(contents);
+		artifactContents.set(getConversationArtifacts(history, $artifactContents ?? []));
 	};
 
 	//////////////////////////
@@ -2641,11 +2574,28 @@
 		});
 	};
 
+	const preserveGenerationLimitOnContentShrink = (desiredTop: number, rememberHeight = false) => {
+		if (!anchoredGeneratingMessageId || visualMediaGenerationAnchorId === anchoredGeneratingMessageId || textGenerationAnchorScrollTop === null || !messagesContainerElement) return;
+		const message = document.getElementById(`message-${anchoredGeneratingMessageId}`);
+		if (!message) return;
+		const height = message.getBoundingClientRect().height;
+		if (
+			lastGenerationContentHeight !== null && height < lastGenerationContentHeight - 0.5 &&
+			desiredTop > getMaxScrollWithoutGenerationSpacer() + 0.5
+		) {
+			// The reading position was preserved after a real reply reflow. Wheel
+			// clamping must honor it too, not restore the earlier generation limit.
+			textGenerationAnchorScrollTop = Math.max(textGenerationAnchorScrollTop, desiredTop);
+		}
+		if (rememberHeight) lastGenerationContentHeight = height;
+	};
+
 	const fitGenerationSpacerToViewport = async (
 		desiredScrollTop = messagesContainerElement?.scrollTop ?? 0,
 		preserveExistingPosition = false
 	) => {
 		if (!messagesContainerElement || (generationBottomSpacerHeight <= 0 && !preserveExistingPosition)) return;
+		if (preserveExistingPosition) preserveGenerationLimitOnContentShrink(desiredScrollTop);
 
 		const realScrollHeight = getMessagesContentHeight(messagesContainerElement, generationBottomSpacerHeight);
 		const requestedSpacerHeight = Math.max(
@@ -2776,6 +2726,7 @@
 
 	const primeGeneratingMessageAnchor = (trackedMessageId?: string | null) => {
 		if (!trackedMessageId) return;
+		lastGenerationContentHeight = null;
 
 		anchoredGeneratingMessageId = trackedMessageId;
 		visualMediaGenerationAnchorId = null;
@@ -2832,6 +2783,7 @@
 			includeReadingPadding?: boolean;
 		} = {}
 	) => {
+		lastGenerationContentHeight = null;
 		anchoredGeneratingMessageId = trackedMessageId;
 		if (visualMediaGenerationAnchorId !== trackedMessageId) {
 			visualMediaGenerationAnchorId = null;
@@ -2854,6 +2806,7 @@
 		activeGenerationSpacerHeightLimit = generationBottomSpacerHeight;
 		lastMessagesScrollTop = messagesContainerElement?.scrollTop ?? 0;
 		textGenerationAnchorScrollTop = messagesContainerElement?.scrollTop ?? null;
+		lastGenerationContentHeight = document.getElementById(`message-${trackedMessageId}`)?.getBoundingClientRect().height ?? null;
 		textGenerationAnchorUserMoved = false;
 		generationSpacerUpwardScrollIntentUntil = 0;
 		autoScroll = false;
@@ -2865,6 +2818,7 @@
 
 	const anchorContinuingMessage = (messageId: string) => {
 		primeGeneratingMessageAnchor(messageId);
+		lastGenerationContentHeight = document.getElementById(`message-${messageId}`)?.getBoundingClientRect().height ?? null;
 		activeGenerationSpacerHeightLimit = generationBottomSpacerHeight;
 		lastMessagesScrollTop = messagesContainerElement?.scrollTop ?? 0;
 		textGenerationAnchorScrollTop = messagesContainerElement?.scrollTop ?? null;
@@ -2936,6 +2890,7 @@
 
 	const releaseGeneratingMessageAnchor = (messageId?: string) => {
 		if (!messageId || anchoredGeneratingMessageId === messageId) {
+			lastGenerationContentHeight = null;
 			if (
 				messagesContainerElement &&
 				generationBottomSpacerHeight > 0 &&
@@ -3398,6 +3353,7 @@
 			if (applyReasoningLayout()) return;
 			if (!anchoredGeneratingMessageId || visualMediaGenerationAnchorId === anchoredGeneratingMessageId || textGenerationAnchorScrollTop === null || !messagesContainerElement || cancelBottomNavigation) return;
 			const desiredTop = textGenerationAnchorUserMoved ? lastMessagesScrollTop : textGenerationAnchorScrollTop;
+			preserveGenerationLimitOnContentShrink(desiredTop, true);
 			if (Math.abs(messagesContainerElement.scrollTop - desiredTop) <= 0.5 && getMessagesMaxScrollTop() >= desiredTop) return;
 			// Status replacements and streamed markdown can shrink content and clamp scrolling before paint.
 			void fitGenerationSpacerToViewport(desiredTop, true);
@@ -3917,6 +3873,7 @@
 
 		if (usage) {
 			message.usage = usage;
+			history.messages[message.id] = message;
 		}
 
 		if (done) {
@@ -3982,23 +3939,8 @@
 				scrollToBottom();
 			}
 
-			// Update artifacts only when the integration is active.
-			if (codeExecutionEnabled) {
-				getContents();
-			}
-
-			// Auto-open artifacts panel if HTML/SVG content was detected
-			const artContents = get(artifactContents);
-			if (
-				$chatCodeExecutionEnabled &&
-				artContents &&
-				artContents.length > 0 &&
-				($settings?.detectArtifacts ?? true) &&
-				!$mobile
-			) {
-				showArtifacts.set(true);
-				showControls.set(true);
-			}
+			// Refresh an already-open preview; completion never opens the panel.
+			if ($showArtifacts) getContents();
 
 			await chatCompletedHandler(
 				chatId,
@@ -4035,6 +3977,7 @@
 		speculativeDecoding: string;
 		tokenPrediction: string;
 		contextShift: string;
+		prioritizeGpu: boolean;
 	};
 
 	const normalizeLocalCacheType = (cacheType?: string | null) => {
@@ -4100,7 +4043,8 @@
 			cacheType: normalizeLocalCacheType(loadPreferences.cache),
 			speculativeDecoding,
 			tokenPrediction,
-			contextShift
+			contextShift,
+			prioritizeGpu: loadPreferences.prioritizeGpu
 		};
 	};
 
@@ -4112,7 +4056,8 @@
 			normalizeLocalSpeculativeDecoding(loadedModel.speculative_decoding) ===
 				loadPlan.speculativeDecoding &&
 			normalizeLocalTokenPrediction(loadedModel.token_prediction) === loadPlan.tokenPrediction &&
-			normalizeLocalContextShift(loadedModel.context_shift) === loadPlan.contextShift
+			normalizeLocalContextShift(loadedModel.context_shift) === loadPlan.contextShift &&
+			(loadedModel.prioritize_gpu ?? false) === loadPlan.prioritizeGpu
 		);
 	};
 
@@ -4184,7 +4129,8 @@
 							loadPlan.speculativeDecoding,
 							loadPlan.tokenPrediction,
 							loadPlan.contextShift,
-							model.name ?? model.id
+							model.name ?? model.id,
+							loadPlan.prioritizeGpu
 						);
 					let loadedResult;
 					try {
@@ -4259,7 +4205,7 @@
 		normalizeExclusiveFeatureToggles();
 		// Keep the user's selected integration stable across asynchronous model
 		// checks and the route change performed when the first message is sent.
-		const requestFeatures = snapshotVideoRequestFeatures(features ?? getFeatures(), $mobile);
+		const requestFeatures = normalizeLearningRequestFeatures(snapshotVideoRequestFeatures(features ?? getFeatures(), $mobile));
 		if (requestFeatures.stable_diffusion && requestFeatures.stable_diffusion_quality === 'qwen_image_2s') {
 			const mode = requestFeatures.stable_diffusion_mode_options?.mode ?? 'normal';
 			const error = imageModeSubmissionError(requestFeatures.stable_diffusion_mode_options ?? {mode:'normal'}, files);
@@ -4336,7 +4282,8 @@
 									loadPlan.speculativeDecoding,
 									loadPlan.tokenPrediction,
 									loadPlan.contextShift,
-									model.name ?? model.id
+									model.name ?? model.id,
+									loadPlan.prioritizeGpu
 								);
 							let loadedResult;
 							try {
@@ -4504,7 +4451,7 @@
 		// Creating the first persisted chat can trigger a navigation/state restore
 		// before the request is sent. Freeze the selected integration beforehand.
 		normalizeExclusiveFeatureToggles();
-		const requestFeatures = snapshotVideoRequestFeatures(features ?? _history.messages[parentId]?.video_generation_features ?? getFeatures(), $mobile);
+		const requestFeatures = normalizeLearningRequestFeatures(snapshotVideoRequestFeatures(features ?? _history.messages[parentId]?.video_generation_features ?? getFeatures(), $mobile));
 		let _chatId = JSON.parse(JSON.stringify($chatId));
 		_history = structuredClone(_history);
 
@@ -4534,6 +4481,7 @@
 					role: 'assistant',
 					content: '',
 					...(requestFeatures.video_generation ? { video_generation_features: structuredClone(requestFeatures) } : {}),
+					token_usage_eligible: !(requestFeatures.stable_diffusion || requestFeatures.video_generation),
 					done: false,
 					model: model.id,
 					modelName: model.name ?? model.id,
@@ -4641,7 +4589,7 @@
 		const effectiveDeepSearchEnabled =
 			deepSearchEnabled &&
 			!webSearchEnabled &&
-			!codeExecutionEnabled &&
+			!learningEnabled &&
 			!stableDiffusionEnabled &&
 			!musicGenerationEnabled &&
 			!videoGenerationEnabled &&
@@ -4662,9 +4610,10 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.web_search)
 						? effectiveDeepSearchEnabled
 						: false,
-				code_execution: $config?.features?.enable_code_execution ? codeExecutionEnabled : false,
+				guided_learning: learningEnabled,
 				file_generation:
 					fileGenerationEnabled &&
+					!learningEnabled &&
 					!deepSearchEnabled &&
 					!stableDiffusionEnabled &&
 					!musicGenerationEnabled &&
@@ -4859,10 +4808,11 @@
 				history.messages[responseMessageId].context_window = requestContextWindow;
 			}
 		}
-		const effectiveRequestFeatures = snapshotVideoRequestFeatures(requestFeatures ?? getFeatures(), $mobile);
+		const effectiveRequestFeatures = normalizeLearningRequestFeatures(snapshotVideoRequestFeatures(requestFeatures ?? getFeatures(), $mobile));
 		const isVisualMediaRequest = Boolean(
 			effectiveRequestFeatures?.stable_diffusion || effectiveRequestFeatures?.video_generation
 		);
+		responseMessage.token_usage_eligible = !isVisualMediaRequest;
 
 		let socketId = '';
 		try {
@@ -5924,7 +5874,7 @@
 									bind:prompt
 									bind:autoScroll
 									bind:selectedToolIds
-									bind:codeExecutionEnabled
+									bind:learningEnabled
 									bind:fileGenerationEnabled
 									bind:webSearchEnabled
 									bind:deepSearchEnabled
@@ -6011,7 +5961,7 @@
 									bind:prompt
 									bind:autoScroll
 									bind:selectedToolIds
-									bind:codeExecutionEnabled
+									bind:learningEnabled
 									bind:fileGenerationEnabled
 									bind:webSearchEnabled
 									bind:deepSearchEnabled

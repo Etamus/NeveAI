@@ -9,6 +9,12 @@ const resources = {
 };
 
 describe('Interface translations after cleanup', () => {
+	it('scopes artifact preview text and updates the Learn description', () => {
+		expect(ptBR['Artifact preview']).toBe('Pré-visualização');
+		expect(enUS['Artifact preview']).toBe('Preview');
+		expect(ptBR['Learn step by step with guided explanations'])
+			.toBe('Estude com orientações e exercícios guiados');
+	});
 	it('translates all composer integration descriptions', async () => {
 		const descriptions = {
 			'Add attachments': 'Adicionar anexos',

@@ -10,6 +10,7 @@ import {
 	setLocalModelContextPreference,
 	setLocalModelVisionPreference,
 	setLocalModelCachePreference,
+	setLocalModelGpuPriorityPreference,
 	RESPONSE_SPEED_CHANGED
 } from './llamacppLoadPreferences';
 
@@ -21,6 +22,25 @@ beforeEach(() => {
 		removeItem: (key: string) => values.delete(key)
 	});
 	vi.stubGlobal('window', { dispatchEvent: vi.fn() });
+});
+
+describe('GPU execution preference', () => {
+	it('is opt-in and survives reopening without changing other preferences', () => {
+		expect(getLocalModelLoadPreferences().prioritizeGpu).toBe(false);
+		setLocalModelContextPreference(16384);setLocalModelCachePreference('q8_0');
+		const before=getLocalModelLoadPreferences();
+		setLocalModelGpuPriorityPreference(true);
+		expect(getLocalModelLoadPreferences()).toEqual({...before,prioritizeGpu:true});
+		expect(window.dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({type:RESPONSE_SPEED_CHANGED}));
+		setLocalModelGpuPriorityPreference(false);
+		expect(getLocalModelLoadPreferences()).toEqual(before);
+	});
+	it('does not interpret corrupt or legacy values as enabled', () => {
+		for(const value of ['false','on','1','invalid']) {
+			localStorage.setItem('llamacpp_prioritize_gpu',value);
+			expect(getLocalModelLoadPreferences().prioritizeGpu).toBe(false);
+		}
+	});
 });
 
 describe('Independent acceleration controls', () => {

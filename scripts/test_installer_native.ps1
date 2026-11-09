@@ -1,4 +1,4 @@
-param([ValidateSet('normal','slow','offline')][string]$Mode = 'normal')
+param([ValidateSet('normal','slow','offline')][string]$Mode = 'normal', [ValidateSet('home','update','build')][string]$StartPage = 'home')
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing
 $root = Split-Path -Parent $PSScriptRoot
@@ -43,11 +43,22 @@ function Save-Window([string]$Suffix) {
         $bitmap.Save((Join-Path $root "logs/installer-native-$Mode-$Suffix.png"))
     } finally { $graphics.Dispose(); $bitmap.Dispose() }
 }
+function Assert-FooterAction([bool]$AllowMissing = $false) {
+    Wait-For {
+        $process.Refresh()
+        $view = [Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
+        $windowBounds = $view.Current.BoundingRectangle
+        $button = Find-Control 'BtnPrimary'
+        if (-not $button) { return $AllowMissing }
+        $buttonBounds = $button.Current.BoundingRectangle
+        return $buttonBounds.Bottom -ge $windowBounds.Bottom - 60 -and $buttonBounds.Right -ge $windowBounds.Right - 60
+    } -Timeout 2000
+}
 try {
     $env:NEVE_INSTALLER_READY_FILE = Join-Path $directory 'ready'
     $env:NEVE_INSTALLER_FIXTURE_CACHE = Join-Path $directory 'cache'
     [void][IO.Directory]::CreateDirectory($env:NEVE_INSTALLER_FIXTURE_CACHE)
-    $arguments = if ($Mode -eq 'normal') { @('-File','launchers/instalar.ps1') } else { @('-File','scripts/run_installer_fixture.ps1','-Mode',$Mode) }
+    $arguments = if ($Mode -eq 'normal') { @('-File','scripts/run_installer_diagnostics.ps1','-StartPage',$StartPage) } else { @('-File','scripts/run_installer_fixture.ps1','-Mode',$Mode) }
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $process = Start-Process powershell.exe -ArgumentList (@('-NoProfile','-STA','-ExecutionPolicy','Bypass') + $arguments) -WorkingDirectory $root -WindowStyle Hidden -PassThru
     Wait-For { Test-Path -LiteralPath $env:NEVE_INSTALLER_READY_FILE }
@@ -63,6 +74,7 @@ try {
     Wait-For { (Find-Control 'LblNavInstall').Current.Name -match 'Repair|Install' }
     Select-Language 0
     Save-Window 'install'
+    Assert-FooterAction
     Click-Control 'NavSettings'
     Wait-For { Find-Control 'LblLatest' }
     if ($Mode -eq 'slow') {
@@ -77,12 +89,13 @@ try {
         Wait-For { (Find-Control 'LblLlamaStatus').Current.Name -match 'Erro|Error' }
     }
     Save-Window 'update'
+    Assert-FooterAction $true
     foreach ($page in @('build','update')) {
         Remove-Item -LiteralPath $env:NEVE_INSTALLER_READY_FILE
         $wrapper = Start-Process cmd.exe -ArgumentList @('/c','instalar.bat','--page',$page) -WorkingDirectory $root -WindowStyle Hidden -Wait -PassThru
         if ($wrapper.ExitCode -ne 0) { throw 'BAT entrypoint failed' }
         Wait-For { Test-Path -LiteralPath $env:NEVE_INSTALLER_READY_FILE }
-        if ($page -eq 'build') { Wait-For { Find-Control 'LblDeployPath' }; Save-Window 'publish' }
+        if ($page -eq 'build') { Wait-For { Find-Control 'LblDeployPath' }; Save-Window 'publish'; Assert-FooterAction }
         else { Wait-For { Find-Control 'LblLatest' } }
     }
     Click-Control 'NavOverview'

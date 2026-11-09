@@ -131,7 +131,7 @@
 	{#if token.type === 'hr'}
 		<hr class=" border-gray-100/30 dark:border-gray-850/30" />
 	{:else if token.type === 'heading'}
-		<svelte:element this={headerComponent(token.depth)} dir="auto">
+		<svelte:element this={headerComponent(token.depth)} dir="auto" class:chat-primary-heading={token.depth === 1}>
 			<MarkdownInlineTokens
 				id={`${id}-${tokenIdx}-h`}
 				tokens={token.tokens}
@@ -172,7 +172,7 @@
 			<div class="markdown-table scrollbar-hidden relative overflow-x-auto max-w-full rounded-xl border border-gray-200 dark:border-gray-800">
 				<table
 					class="w-full text-sm text-start text-gray-500 dark:text-gray-400 max-w-full !my-0"
-					style="table-layout: fixed;"
+					style={`table-layout: fixed; min-width: max(100%, ${token.header.length * 7.5}rem);`}
 					dir="auto"
 				>
 					<thead
@@ -477,3 +477,10 @@
 		{console.log('Unknown token', token)}
 	{/if}
 {/each}
+
+<style>
+	.chat-primary-heading {
+		font-size: 1.5em;
+		line-height: 1.35;
+	}
+</style>

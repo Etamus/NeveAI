@@ -3,6 +3,7 @@ import { runInNewContext } from 'node:vm';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 import { getVideoGenerationFeatures, normalizeVideoGenerationModel, snapshotVideoRequestFeatures, videoGenerationModels, pendingVideoGenerationStatus } from './videoGeneration';
+import { normalizeLearningRequestFeatures } from './guidedLearning';
 
 const chat = readFileSync('src/lib/components/chat/Chat.svelte', 'utf8');
 const input = readFileSync('src/lib/components/chat/MessageInput.svelte', 'utf8');
@@ -71,7 +72,7 @@ describe('video generation model selection', () => {
 		const prefix = script.slice(0, script.indexOf('let _chatId')) + 'return requestFeatures; }; action;';
 		const current = videoFeatures('minimax_h3');
 		const historical = videoFeatures();
-		const send = runInNewContext(prefix, {$mobile: false, snapshotVideoRequestFeatures, getFeatures: () => current, normalizeExclusiveFeatureToggles() {}});
+		const send = runInNewContext(prefix, {$mobile: false, snapshotVideoRequestFeatures, normalizeLearningRequestFeatures, getFeatures: () => current, normalizeExclusiveFeatureToggles() {}});
 		const history = {messages: {user: {video_generation_features: historical}}};
 		const restored = await send(history, 'user');
 		expect(restored).toEqual(historical);
@@ -91,7 +92,7 @@ describe('video generation model selection', () => {
 		expect(snapshotVideoRequestFeatures(other, true)).toEqual(other);
 		const script = sourceFunction(chat, 'sendMessage');
 		const prefix = script.slice(0, script.indexOf('let _chatId')) + 'return requestFeatures; }; action;';
-		const send = runInNewContext(prefix, {$mobile: true, snapshotVideoRequestFeatures, getFeatures: () => features, normalizeExclusiveFeatureToggles() {}});
+		const send = runInNewContext(prefix, {$mobile: true, snapshotVideoRequestFeatures, normalizeLearningRequestFeatures, getFeatures: () => features, normalizeExclusiveFeatureToggles() {}});
 		const history = {messages: {user: {video_generation_features: features}}};
 		expect(await send(history, 'user')).toEqual(mobileFeatures);
 		expect(await send(history, 'user', {features})).toEqual(mobileFeatures);

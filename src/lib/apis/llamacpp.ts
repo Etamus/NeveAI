@@ -53,6 +53,7 @@ export interface LocalModel {
 	process_rss_bytes?: number | null;
 	n_ctx: number | null;
 	context_auto?: boolean;
+	prioritize_gpu?: boolean;
 	mmproj_filename: string | null;
 	cache_type: string | null;
 	speculative_decoding: string | null;
@@ -87,6 +88,7 @@ export interface LocalVramInfo {
 
 export interface LlamaCppStatus {
 	automatic_context?: boolean;
+	gpu_priority_supported?: boolean;
 	server_binary_exists: boolean;
 	server_binary_path: string;
 	models_dir: string;
@@ -256,10 +258,17 @@ export const loadLocalModel = async (
 	speculative_decoding: string = 'default',
 	token_prediction: string = 'off',
 	context_shift: string = 'off',
-	display_name?: string
+	display_name?: string,
+	prioritize_gpu: boolean = false
 ): Promise<any> => {
-	if (n_ctx === 0 && !(await getLlamaCppStatus(token)).automatic_context) {
-		throw new Error('Reinicie a interface para ativar o contexto automático atualizado.');
+	if (n_ctx === 0 || prioritize_gpu) {
+		const status = await getLlamaCppStatus(token);
+		if (n_ctx === 0 && !status.automatic_context) {
+			throw new Error('Reinicie a interface para ativar o contexto automático atualizado.');
+		}
+		if (prioritize_gpu && !status.gpu_priority_supported) {
+			throw new Error('Reinicie o backend para ativar Priorizar execução na GPU.');
+		}
 	}
 	const operationId = createLocalModelOperationId();
 	emitLocalModelRuntimeEvent({ operationId, action: 'load', phase: 'start', filename, displayName: display_name });
@@ -280,7 +289,8 @@ export const loadLocalModel = async (
 				cache_type,
 				speculative_decoding,
 				token_prediction,
-				context_shift
+				context_shift,
+				prioritize_gpu
 			})
 		});
 

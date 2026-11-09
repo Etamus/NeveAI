@@ -586,7 +586,7 @@
 				{/if}
 
 				<div
-					class="h-5 flex-1 justify-start text-start leading-5 line-clamp-1 {!folderHasItems
+					class="sidebar-entry-title h-5 flex-1 justify-start text-start leading-5 line-clamp-1 {!folderHasItems
 						? 'ml-[5px]'
 						: ''}"
 				>

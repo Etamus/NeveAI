@@ -4,16 +4,7 @@
 	const i18n = getContext('i18n');
 
 	import Markdown from './Markdown.svelte';
-	import {
-		artifactCode,
-		chatCodeExecutionEnabled,
-		chatId,
-		mobile,
-		settings,
-		showArtifacts,
-		showControls,
-		showEmbeds
-	} from '$lib/stores';
+	import {settings} from '$lib/stores';
 	import FloatingButtons from '../ContentRenderer/FloatingButtons.svelte';
 	import { createMessagesList } from '$lib/utils';
 
@@ -37,16 +28,12 @@
 	export let editCodeBlock = false;
 	export let topPadding = false;
 
-	$: artifactsPreviewEnabled = preview && $chatCodeExecutionEnabled;
+	import {previewArtifactCode} from '$lib/utils/artifactPreview';
 
 	export let onSave = (e) => {};
 	export let onSourceClick = (e) => {};
 	export let onTaskClick = (e) => {};
 
-	let hasStreamingMessage = false;
-	$: hasStreamingMessage = Object.values(history?.messages ?? {}).some(
-		(message) => message?.role !== 'user' && message?.done === false
-	);
 	export let onAddMessages = (e) => {};
 
 	let contentContainerElement;
@@ -167,7 +154,7 @@
 		{content}
 		{model}
 		{save}
-		preview={artifactsPreviewEnabled}
+		{preview}
 		{done}
 		streaming={!messageDone}
 		{editCodeBlock}
@@ -176,32 +163,7 @@
 		{onSourceClick}
 		{onTaskClick}
 		{onSave}
-		onUpdate={async (token) => {
-			const { lang: rawLang, text: code } = token;
-			const lang = rawLang?.match(/^[\w+#.-]+/)?.[0] ?? rawLang;
-
-			if (
-				!hasStreamingMessage &&
-				messageDone &&
-				$chatCodeExecutionEnabled &&
-				($settings?.detectArtifacts ?? true) &&
-				(['html', 'svg'].includes(lang) || (lang === 'xml' && code.includes('svg'))) &&
-				!$mobile &&
-				$chatId
-			) {
-				await tick();
-				showArtifacts.set(true);
-				showControls.set(true);
-			}
-		}}
-		onPreview={async (value) => {
-			if (!$chatCodeExecutionEnabled) return;
-
-			await artifactCode.set(value);
-			await showControls.set(true);
-			await showArtifacts.set(true);
-			await showEmbeds.set(false);
-		}}
+		onPreview={(value) => previewArtifactCode(value,messageId,history)}
 	/>
 </div>
 

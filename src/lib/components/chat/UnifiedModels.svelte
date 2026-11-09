@@ -25,7 +25,7 @@
 </script>
 
 <script lang="ts">
-	import { onMount, onDestroy, getContext, tick } from 'svelte';
+	import { onMount, onDestroy, getContext, tick, createEventDispatcher } from 'svelte';
 	import { slide } from 'svelte/transition';
 	import { marked } from 'marked';
 	import type { I18nStore } from '$lib/i18n';
@@ -58,6 +58,7 @@
 	import { toast } from 'svelte-sonner';
 	import { findMatchingMmproj } from '$lib/utils/mmproj';
 	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
+	import { messageSnapshotEqual } from '$lib/utils/messageSnapshot';
 	import {
 		buildUnifiedAdminModels,
 		type UnifiedModelsPreload
@@ -233,6 +234,21 @@
 	let appliedPreload: UnifiedModelsPreload | null = null;
 	let localModelsSnapshotAt = 0;
 	let preloadVramSignature = '';
+	let catalogSnapshotAt = 0;
+	let catalogRevision = 0;
+	let pendingModelToggles: Record<string, boolean> = {};
+	let publishedCatalog: unknown = null;
+	const dispatch = createEventDispatcher();
+	const protectPendingToggles = (entries: any[]) => entries.map((entry) =>
+		Object.hasOwn(pendingModelToggles, entry.id) ? { ...entry, is_active: pendingModelToggles[entry.id] } : entry
+	);
+	const publishCatalog = (timestamp = Date.now(), force = true) => {
+		catalogSnapshotAt = Math.max(catalogSnapshotAt, timestamp);
+		const catalog = { adminModels, workspaceModels, baseModels };
+		if (!force && messageSnapshotEqual(publishedCatalog, catalog)) return;
+		publishedCatalog = catalog;
+		dispatch('catalogChange', { catalogUpdatedAt: catalogSnapshotAt, ...catalog });
+	};
 	let highlightedLoadedModelId: string | null = null;
 	let modelsBelowLoadedCollapsed = false;
 	let previousShow = false;
@@ -733,9 +749,12 @@
 			}
 		}
 		mmProjFiles = data.mmProjFiles ?? [];
-		adminModels = data.adminModels ?? [];
-		workspaceModels = data.workspaceModels ?? [];
-		baseModels = data.baseModels ?? [];
+		if (catalogSnapshotAt === 0 || (data.catalogUpdatedAt ?? 0) > catalogSnapshotAt) {
+			adminModels = protectPendingToggles(data.adminModels ?? []);
+			workspaceModels = data.workspaceModels ?? [];
+			baseModels = data.baseModels ?? [];
+			catalogSnapshotAt = data.catalogUpdatedAt ?? 0;
+		}
 		vramInfo = data.vramInfo ?? null;
 		localLoading = false;
 	};
@@ -933,9 +952,11 @@
 		}
 	}
 
-	async function refreshGlobalModelsStore() {
+	async function refreshGlobalModelsStore(useDirectConnections = false) {
+		const revision = catalogRevision;
 		try {
-			_models.set(await getModels(localStorage.token));
+			const result = await getModels(localStorage.token, useDirectConnections ? $config?.features?.enable_direct_connections && ($settings?.directConnections ?? null) : undefined);
+			if (revision === catalogRevision && Object.keys(pendingModelToggles).length === 0) _models.set(result);
 		} catch {
 			// Best effort: a post-action refresh should not look like the action failed.
 		}
@@ -971,7 +992,8 @@
 						speculative_decoding:
 							result?.speculative_decoding ?? getSpeculativeDecodingForLoad(),
 						token_prediction: result?.token_prediction ?? getTokenPredictionForLoad(),
-						context_shift: result?.context_shift ?? getContextShiftForLoad()
+						context_shift: result?.context_shift ?? getContextShiftForLoad(),
+						prioritize_gpu: result?.prioritize_gpu ?? getLocalModelLoadPreferences().prioritizeGpu
 					}
 				: {
 						...localModel,
@@ -983,7 +1005,8 @@
 						cache_type: null,
 						speculative_decoding: null,
 						token_prediction: null,
-						context_shift: null
+						context_shift: null,
+						prioritize_gpu: false
 					}
 		);
 	};
@@ -1001,7 +1024,8 @@
 						cache_type: null,
 						speculative_decoding: null,
 						token_prediction: null,
-						context_shift: null
+						context_shift: null,
+						prioritize_gpu: false
 					}
 				: localModel
 		);
@@ -1135,7 +1159,8 @@
 				getSpeculativeDecodingForLoad(),
 				getTokenPredictionForLoad(),
 				getContextShiftForLoad(),
-				localModelDisplayName(model)
+				localModelDisplayName(model),
+				getLocalModelLoadPreferences().prioritizeGpu
 			);
 			markLocalModelLoaded(model, result);
 			localSuccess = `${model.filename} carregado com sucesso!`;
@@ -1189,7 +1214,8 @@
 				getSpeculativeDecodingForLoad(),
 				getTokenPredictionForLoad(),
 				getContextShiftForLoad(),
-				localModelDisplayName(model)
+				localModelDisplayName(model),
+				getLocalModelLoadPreferences().prioritizeGpu
 			);
 			markLocalModelLoaded(model, result, mmprojFile);
 			localSuccess = $i18n.t('{{name}} loaded! (vision: {{file}})', {
@@ -1240,18 +1266,22 @@
 
 	// ─── ADMIN MODEL FUNCTIONS ───────────────────────────────────────────────
 	const initAdmin = async (localModelSource: LocalModel[] = localModels) => {
+		const revision = catalogRevision;
+		const startedAt = Date.now();
 		try {
-			baseModels = [...$_models];
-			try {
-				const res = await getBaseModels(localStorage.token);
-				workspaceModels = Array.isArray(res) ? res : [];
-			} catch (e) {
-				workspaceModels = [];
-			}
-			adminModels = buildUnifiedAdminModels(localModelSource, baseModels, workspaceModels ?? []);
+			const nextBaseModels = [...$_models];
+			const res = await getBaseModels(localStorage.token);
+			if (destroyed || revision !== catalogRevision || startedAt < catalogSnapshotAt) return false;
+			baseModels = nextBaseModels;
+			workspaceModels = Array.isArray(res) ? res : [];
+			adminModels = protectPendingToggles(buildUnifiedAdminModels(localModelSource, baseModels, workspaceModels));
+			publishCatalog(startedAt, false);
+			return true;
 		} catch (e) {
 			console.error('[UnifiedModels] initAdmin error:', e);
+			lastAdminRefreshAt = Date.now();
 			if (adminModels.length === 0) adminModels = baseModels ?? [];
+			return false;
 		}
 	};
 
@@ -1270,8 +1300,7 @@
 				getLocalModelsCatalogSignature(newLocalModels) !==
 				getLocalModelsCatalogSignature(localModels);
 			if (initial || localCatalogChanged || Date.now() - lastAdminRefreshAt >= 3000) {
-				await initAdmin(newLocalModels);
-				lastAdminRefreshAt = Date.now();
+				if (await initAdmin(newLocalModels)) lastAdminRefreshAt = Date.now();
 			}
 			if (destroyed) return null;
 			localError = '';
@@ -1333,7 +1362,8 @@
 				cache_type: model.cache_type,
 				speculative_decoding: model.speculative_decoding,
 				token_prediction: model.token_prediction,
-				context_shift: model.context_shift
+				context_shift: model.context_shift,
+				prioritize_gpu: model.prioritize_gpu
 			}))
 		);
 	const getLocalModelsCatalogSignature = (models: LocalModel[]) =>
@@ -1377,11 +1407,13 @@
 	};
 
 	const upsertModelHandler = async (model: any, showToast = true) => {
+		catalogRevision++;
+		publishCatalog();
+		let saved: any;
 		if ((workspaceModels ?? []).find((m) => m.id === model.id)) {
-			const res = await updateModelById(localStorage.token, model.id, model).catch(() => null);
-			if (res && showToast) toast.success($i18n.t('Model updated successfully'));
+			saved = await updateModelById(localStorage.token, model.id, model).catch(() => null);
 		} else {
-			const res = await createNewModel(localStorage.token, {
+			saved = await createNewModel(localStorage.token, {
 				meta: {},
 				id: model.id,
 				name: model.name,
@@ -1390,22 +1422,28 @@
 				access_grants: [],
 				...model
 			}).catch(() => null);
-			if (res && showToast) toast.success($i18n.t('Model updated successfully'));
 		}
+		catalogRevision++;
+		if (!saved) { toast.error($i18n.t('Failed to save model')); return; }
+		workspaceModels = [...(workspaceModels ?? []).filter((entry) => entry.id !== model.id), { ...model, ...saved }];
+		adminModels = protectPendingToggles(adminModels.map((entry) => entry.id === model.id ? { ...entry, ...model, ...saved } : entry));
+		publishCatalog();
+		if (showToast) toast.success($i18n.t('Model updated successfully'));
+		await refreshGlobalModelsStore(true);
 		if (showToast) {
 			await initAdmin();
 		}
-		_models.set(
-			await getModels(
-				localStorage.token,
-				$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-			)
-		);
 	};
 
 	const toggleModelHandler = async (model: any) => {
-		if (!Object.keys(model).includes('base_model_id')) {
-			await createNewModel(localStorage.token, {
+		if (Object.hasOwn(pendingModelToggles, model.id)) return;
+		const previousActive = adminModels.find((entry) => entry.id === model.id)?.is_active ?? true;
+		pendingModelToggles = { ...pendingModelToggles, [model.id]: model.is_active };
+		catalogRevision++;
+		adminModels = protectPendingToggles(adminModels);
+		publishCatalog();
+		try {
+			const saved = !Object.keys(model).includes('base_model_id') ? await createNewModel(localStorage.token, {
 				id: model.id,
 				name: model.name,
 				base_model_id: null,
@@ -1413,16 +1451,22 @@
 				params: {},
 				access_grants: [],
 				is_active: model.is_active
-			}).catch(() => null);
-		} else {
-			await toggleModelById(localStorage.token, model.id);
+			}) : await toggleModelById(localStorage.token, model.id);
+			if (!saved) throw new Error('Model update returned no result');
+			const active = saved.is_active ?? model.is_active;
+			adminModels = adminModels.map((entry) => entry.id === model.id ? { ...entry, ...saved, is_active: active } : entry);
+			workspaceModels = [...(workspaceModels ?? []).filter((entry) => entry.id !== model.id), { ...model, ...saved, is_active: active }];
+		} catch (error) {
+			adminModels = adminModels.map((entry) => entry.id === model.id ? { ...entry, is_active: previousActive } : entry);
+			toast.error($i18n.t('Failed to save model'));
+		} finally {
+			const next = { ...pendingModelToggles };
+			delete next[model.id];
+			pendingModelToggles = next;
+			catalogRevision++;
+			publishCatalog();
 		}
-		_models.set(
-			await getModels(
-				localStorage.token,
-				$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-			)
-		);
+		await refreshGlobalModelsStore(true);
 		await initAdmin();
 	};
 
@@ -1738,11 +1782,12 @@
 								<button
 									type="button"
 									class="flex h-[1.125rem] min-h-[1.125rem] w-8 shrink-0 cursor-pointer items-center rounded-full px-[2px] mx-[1px] transition-colors outline outline-1 outline-gray-100 dark:outline-gray-800 {(am?.is_active ?? true) ? 'bg-blue-500 dark:bg-blue-600' : 'bg-gray-200 dark:bg-transparent'}"
+									disabled={Object.hasOwn(pendingModelToggles, am.id)}
+									role="switch"
+									aria-checked={am?.is_active ?? true}
+									aria-label={am.name ?? am.id}
 									on:click|stopPropagation={() => {
 										const newActive = !(am.is_active ?? true);
-										adminModels = adminModels.map((m) =>
-											m.id === am.id ? { ...m, is_active: newActive } : m
-										);
 										toggleModelHandler({ ...am, is_active: newActive });
 									}}
 								>

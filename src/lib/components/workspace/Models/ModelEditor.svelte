@@ -724,7 +724,7 @@
 							availableFeatures={[
 								'web_search',
 								'deep_search',
-								'code_execution',
+								'guided_learning',
 								'stable_diffusion',
 								'video_generation',
 								'music_generation'

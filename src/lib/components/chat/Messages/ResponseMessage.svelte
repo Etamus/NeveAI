@@ -35,6 +35,7 @@
 	import ContentRenderer from './ContentRenderer.svelte';
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 	import FileItem from '$lib/components/common/FileItem.svelte';
+	import ArtifactCards from './ArtifactCards.svelte';
 	import { fade } from 'svelte/transition';
 	import StatusHistory from './ResponseMessage/StatusHistory.svelte';
 	import FullHeightIframe from '$lib/components/common/FullHeightIframe.svelte';
@@ -799,6 +800,7 @@
 							{/if}
 						</div>
 
+						<ArtifactCards content={message.content ?? ''} messageId={message.id} done={message.done && !message.error} {history} />
 						{#if message?.files?.some((file) => file?.generated)}
 							<div
 								class="mt-3 mb-5 flex w-full flex-col gap-2"

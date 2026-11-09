@@ -24,6 +24,7 @@
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import IntegrationOptionLabel from './IntegrationOptionLabel.svelte';
+	import BookOpen from '$lib/components/icons/BookOpen.svelte';
 
 	import { setFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
 	import type { MediaAttachmentPolicy } from '$lib/utils/mediaAttachmentPolicy';
@@ -47,8 +48,8 @@
 	export let showWebSearchButton = false;
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
-	export let showCodeExecutionButton = false;
-	export let codeExecutionEnabled = false;
+	export let showLearningButton = true;
+	export let learningEnabled = false;
 	export let showFileGenerationButton = true;
 	export let fileGenerationEnabled = false;
 	export let showStableDiffusionButton = false;
@@ -82,6 +83,7 @@
 	let tab = '';
 	let tools = null;
 	$: fileGenerationBlocked =
+		learningEnabled ||
 		deepSearchEnabled ||
 		stableDiffusionEnabled ||
 		musicGenerationEnabled ||
@@ -126,7 +128,7 @@
 	type IntegrationId =
 		| 'web_search'
 		| 'deep_search'
-		| 'code_execution'
+		| 'guided_learning'
 		| 'stable_diffusion'
 		| 'music_generation'
 		| 'video_generation';
@@ -134,7 +136,7 @@
 	const clearNativeIntegrations = () => {
 		webSearchEnabled = false;
 		deepSearchEnabled = false;
-		codeExecutionEnabled = false;
+		learningEnabled = false;
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
 		videoGenerationEnabled = false;
@@ -156,8 +158,8 @@
 				return webSearchEnabled;
 			case 'deep_search':
 				return deepSearchEnabled;
-			case 'code_execution':
-				return codeExecutionEnabled;
+			case 'guided_learning':
+				return learningEnabled;
 			case 'stable_diffusion':
 				return stableDiffusionEnabled;
 			case 'music_generation':
@@ -185,8 +187,8 @@
 			case 'deep_search':
 				deepSearchEnabled = true;
 				break;
-			case 'code_execution':
-				codeExecutionEnabled = true;
+			case 'guided_learning':
+				learningEnabled = true;
 				break;
 			case 'stable_diffusion':
 				stableDiffusionEnabled = true;
@@ -249,7 +251,7 @@
 
 	<div slot="content">
 		<DropdownMenu.Content
-			class="composer-integrations-menu overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl p-2 border bg-clip-padding z-50 bg-white dark:bg-gray-850 text-gray-700 dark:text-gray-200 shadow-md"
+			class="composer-integrations-menu overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl p-2 border bg-clip-border z-50 bg-white dark:bg-gray-850 text-gray-700 dark:text-gray-200 shadow-md"
 			style="font-family: 'Segoe UI', sans-serif; width: {menuWidth}px; max-width: calc(100vw - 16px); max-height: min(calc(100dvh - 16px), var(--bits-dropdown-menu-content-available-height, calc(100dvh - 16px)));"
 			strategy="fixed"
 			fitViewport={true}
@@ -287,7 +289,7 @@
 					</Tooltip>
 
 
-					{#if showWebSearchButton || showCodeExecutionButton || showFileGenerationButton || showStableDiffusionButton || showMusicGenerationButton || showVideoGenerationButton || (tools && Object.keys(tools).length > 0)}
+					{#if showWebSearchButton || showLearningButton || showFileGenerationButton || showStableDiffusionButton || showMusicGenerationButton || showVideoGenerationButton || (tools && Object.keys(tools).length > 0)}
 				<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[96%]" />
 					{/if}
 
@@ -340,20 +342,18 @@
 						</Tooltip>
 					{/if}
 
-					{#if showCodeExecutionButton}
+					{#if showLearningButton}
 						<Tooltip content="" placement="top-start">
-							<button class="my-px flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(codeExecutionEnabled)}" aria-pressed={codeExecutionEnabled} on:click={() => toggleNativeIntegration('code_execution')}>
+							<button class="my-px flex w-full justify-between gap-2 items-center px-3 py-1.5 text-sm cursor-pointer rounded-sm {integrationOptionClass(learningEnabled)}" aria-pressed={learningEnabled} on:click={() => toggleNativeIntegration('guided_learning')}>
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0">
-											<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" class="size-4">
-												<path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"/>
-											</svg>
+											<BookOpen className="size-[0.96875rem]" />
 										</div>
-										<IntegrationOptionLabel label="Artifacts" description="Preview generated code" />
+										<IntegrationOptionLabel label="Learn" description="Learn step by step with guided explanations" />
 									</div>
 								</div>
-								<div class="size-4 shrink-0">{#if codeExecutionEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
+								<div class="size-4 shrink-0">{#if learningEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
 							</button>
 						</Tooltip>
 					{/if}
@@ -520,7 +520,7 @@
 		border: 1px solid rgba(0, 0, 0, 0.12) !important;
 	}
 	:global(.dark .composer-integrations-menu) {
-		border-color: rgba(255, 255, 255, 0.22) !important;
+		border-color: rgb(56, 56, 56) !important;
 	}
 	@media (max-width: 767px) {
 		:global(.composer-integrations-menu) { border: 0 !important; scrollbar-width: none; }

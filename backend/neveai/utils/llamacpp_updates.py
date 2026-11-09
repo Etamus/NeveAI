@@ -1,12 +1,46 @@
 import asyncio
+from html.parser import HTMLParser
 import re
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 
 WINDOWS_BACKENDS = (
     "cpu", "cuda-12.4", "cuda-13.4", "cuda-13.3",
     "cuda-cu12.4", "cuda-cu13.4", "cuda-cu13.3", "vulkan",
 )
+
+
+class _ReleaseLinks(HTMLParser):
+    def __init__(self, html: str):
+        super().__init__()
+        self.links = []
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self.links.extend(value for key, value in attrs if key == "href" and value)
+
+
+def _release_tags(html: str) -> list[str]:
+    prefix = "/ggml-org/llama.cpp/releases/tag/"
+    tags = []
+    for link in _ReleaseLinks(html).links:
+        path = unquote(urlsplit(link).path)
+        if path.startswith(prefix):
+            tag = path[len(prefix):]
+            if re.fullmatch(r"b\d+", tag, re.I):
+                tags.append(tag)
+    return list(dict.fromkeys(tags))
+
+
+def _release_from_assets(tag: str, html: str) -> dict:
+    prefix = f"/ggml-org/llama.cpp/releases/download/{tag}/"
+    assets = []
+    for link in _ReleaseLinks(html).links:
+        path = unquote(urlsplit(link).path)
+        if path.startswith(prefix):
+            assets.append({"name": path[len(prefix):]})
+    return {"tag_name": tag, "assets": assets}
 
 
 def installed_backend(info: dict) -> str:
@@ -39,7 +73,9 @@ def compatible_release(release: dict, backend: str = "") -> bool:
         if not isinstance(asset, dict):
             continue
         match = pattern.fullmatch(str(asset.get("name") or "").strip())
-        if match and match[1].lower() in WINDOWS_BACKENDS and compatible_backend(backend, match[1].lower()):
+        available = match[1].lower() if match else ""
+        supported = available in {"cpu", "vulkan"} or re.fullmatch(r"cuda(?:-cu)?-?(?:12|13)(?:\.\d+)?", available)
+        if match and supported and compatible_backend(backend, available):
             return True
     return False
 
@@ -59,25 +95,27 @@ async def latest_compatible_release_tag(session, backend: str = "", ssl=True) ->
     except Exception as error:
         api_error = error
 
-    # The feed alone cannot prove that a package for this backend was published.
+    # The Atom feed lists too few releases and guessed package names miss older
+    # compatible CUDA builds. Read published manifests, with the same rules as API.
     try:
         async with asyncio.timeout(8):
-            async with session.get("https://github.com/ggml-org/llama.cpp/releases.atom", ssl=ssl) as response:
-                response.raise_for_status()
-                feed = await response.text()
-            candidates = [value for value in WINDOWS_BACKENDS if compatible_backend(backend, value)]
-            tags = dict.fromkeys(unquote(value).strip() for value in re.findall(r'/releases/tag/([^"<]+)', feed))
-            for tag in list(tags)[:5]:
-                if not re.fullmatch(r"b\d+", tag, re.I):
-                    continue
-                for candidate in candidates:
-                    url = f"https://github.com/ggml-org/llama.cpp/releases/download/{tag}/llama-{tag}-bin-win-{candidate}-x64.zip"
-                    try:
-                        async with session.head(url, allow_redirects=True, ssl=ssl) as response:
-                            if 200 <= response.status < 300:
-                                return tag
-                    except Exception:
-                        continue
+            async def read_html(path):
+                try:
+                    async with session.get(f"https://github.com/ggml-org/llama.cpp/{path}", ssl=ssl) as response:
+                        response.raise_for_status()
+                        return await response.text()
+                except Exception:
+                    return ""
+
+            pages = await asyncio.gather(*(read_html(f"releases?page={page}") for page in range(1, 4)))
+            tags = sorted({tag for html in pages for tag in _release_tags(html)},
+                          key=lambda tag: int(tag[1:]), reverse=True)[:30]
+            for offset in range(0, len(tags), 4):
+                batch = tags[offset:offset + 4]
+                manifests = await asyncio.gather(*(read_html(f"releases/expanded_assets/{tag}") for tag in batch))
+                for tag, html in zip(batch, manifests):
+                    if compatible_release(_release_from_assets(tag, html), backend):
+                        return tag
     except Exception:
         pass
     raise api_error

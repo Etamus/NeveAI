@@ -48,7 +48,6 @@ export const user: Writable<SessionUser | undefined> = writable(undefined);
 
 // Per-chat feature toggles (updated reactively by Chat.svelte)
 // Used by deep components (e.g. CodeBlock) that cannot receive props easily
-export const chatCodeExecutionEnabled = writable(false);
 
 // Electron App
 export const isApp = writable(false);

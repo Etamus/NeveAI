@@ -46,6 +46,11 @@ html.theme-switching body *::after {
 	min-height: calc(20px * var(--app-text-scale, 1));
 }
 
+/* Match the optical text center in both display and rename states. */
+.sidebar-entry-title {
+	transform: translateY(-0.0625em);
+}
+
 code {
 	/* white-space-collapse: preserve !important; */
 	overflow-x: auto;
@@ -127,6 +132,20 @@ textarea::placeholder {
 	font-family: 'Segoe UI', 'Vazirmatn', ui-sans-serif, system-ui, sans-serif;
 }
 
+/* Message bodies match the composer; document previews retain their typography. */
+.chat-user.markdown-prose,
+.chat-assistant.markdown-prose {
+	font-size: 0.85rem;
+	font-family: 'Segoe UI', 'Vazirmatn', ui-sans-serif, system-ui, sans-serif;
+}
+
+@media (max-width: 767px) {
+	.chat-user.markdown-prose,
+	.chat-assistant.markdown-prose {
+		font-size: 16px;
+	}
+}
+
 .markdown-prose-xs {
 	@apply text-xs prose dark:prose-invert prose-blockquote:border-s-gray-100 prose-blockquote:dark:border-gray-800 prose-blockquote:border-s-2 prose-blockquote:not-italic prose-blockquote:font-normal  prose-headings:font-semibold prose-hr:my-0.5  prose-hr:border-gray-50 prose-hr:dark:border-gray-850 prose-p:my-1.5 prose-img:my-1 prose-headings:my-1 prose-pre:my-0 prose-table:my-0 prose-blockquote:my-0 prose-ul:my-0.5 prose-ol:my-0.5 prose-li:my-0 whitespace-pre-line;
 	line-height: 1.65;
@@ -193,6 +212,10 @@ li p {
 ::-webkit-scrollbar-track {
 	background-color: transparent;
 	border-radius: 9999px;
+}
+
+::-webkit-scrollbar-corner {
+	background-color: transparent;
 }
 
 select {

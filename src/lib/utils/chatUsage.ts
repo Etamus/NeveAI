@@ -1,10 +1,21 @@
+const isVisualMediaResponse = (message: any, history: any): boolean => {
+	if (message?.token_usage_eligible === false) return true;
+	if (message?.video_generation_features?.video_generation === true) return true;
+	if (message?.statusHistory?.some((status: any) =>
+		status?.action === 'stable_diffusion' || status?.action === 'video_generation')) return true;
+	const parent = history?.messages?.[message?.parentId];
+	return parent?.video_generation_features?.video_generation === true;
+};
+
 export const getLastChatUsage = (history: any) => {
 	let id = history?.currentId;
 	const visited = new Set<string>();
 	while (id && !visited.has(id)) {
 		visited.add(id);
 		const message = history?.messages?.[id];
-		if (message?.role === 'assistant' && message.done && message.usage) {
+		if (message?.role === 'assistant' && !isVisualMediaResponse(message, history) && message.usage &&
+			(message.done || ['prompt_tokens', 'input_tokens', 'prompt_n', 'completion_tokens',
+				'output_tokens', 'predicted_n', 'total_tokens'].some((key) => message.usage[key] != null))) {
 			return message.usage;
 		}
 		id = message?.parentId;
@@ -23,7 +34,7 @@ export const getChatContextWindow = (history: any): number | null => {
 	while (id && !visited.has(id)) {
 		visited.add(id);
 		const message = history?.messages?.[id];
-		if (message?.role === 'assistant') {
+		if (message?.role === 'assistant' && !isVisualMediaResponse(message, history)) {
 			const context = getUsageContextWindow(message.usage) ?? getUsageContextWindow(message);
 			if (context !== null) return context;
 		}

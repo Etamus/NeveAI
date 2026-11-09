@@ -335,8 +335,8 @@ if (-not (Test-Path $LOGO_PATH)) {
                     </Grid>
                 </Border>
                 <Border Grid.Column="1" Background="{DynamicResource BackgroundBrush}" CornerRadius="0,0,17,0">
-                    <Grid><Grid.RowDefinitions><RowDefinition Height="70"/><RowDefinition Height="*"/><RowDefinition Height="0"/></Grid.RowDefinitions>
-                        <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Background="{DynamicResource BackgroundBrush}"><Grid Margin="28,0"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel VerticalAlignment="Center"><TextBlock x:Name="LblPageContext" Text="Instalação" FontSize="15" FontWeight="SemiBold"/><TextBlock x:Name="LblPageSubtitle" Text="Detecte o hardware e instale tudo o que a NeveAI precisa." Margin="0,3,0,0" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"/></StackPanel><Grid x:Name="HeaderActions" Grid.Column="1" VerticalAlignment="Center"><StackPanel x:Name="InstallActions" Orientation="Horizontal"><Button x:Name="BtnCancel" Style="{StaticResource CompletionActionBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/><Button x:Name="BtnPrimary" Style="{StaticResource AccentActionBtn}" Content="Instalar"/></StackPanel></Grid></Grid></Border>
+                    <Grid><Grid.RowDefinitions><RowDefinition Height="70"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Background="{DynamicResource BackgroundBrush}"><StackPanel Margin="28,0" VerticalAlignment="Center"><TextBlock x:Name="LblPageContext" Text="Instalação" FontSize="15" FontWeight="SemiBold"/><TextBlock x:Name="LblPageSubtitle" Text="Detecte o hardware e instale tudo o que a NeveAI precisa." Margin="0,3,0,0" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"/></StackPanel></Border>
                         <Grid x:Name="InstallBodyHost" Grid.Row="1" Margin="32,24,32,24">
 
                 <!-- WELCOME / CONFIG CARD -->
@@ -447,7 +447,10 @@ if (-not (Test-Path $LOGO_PATH)) {
 
                         </Grid>
                         <Border x:Name="InstallFooterHost" Grid.Row="2" Visibility="Collapsed"/>
-                        <ContentControl x:Name="HubPageHost" Grid.Row="1" Grid.RowSpan="2" Visibility="Collapsed"/>
+                        <ContentControl x:Name="HubPageHost" Grid.Row="1" Visibility="Collapsed"/>
+                        <Grid x:Name="FooterActions" Grid.Row="2" HorizontalAlignment="Right" Margin="28,0,28,20">
+                            <StackPanel x:Name="InstallActions" Orientation="Horizontal"><Button x:Name="BtnCancel" Style="{StaticResource CompletionActionBtn}" Content="Cancelar" Margin="0,0,10,0" Visibility="Collapsed"/><Button x:Name="BtnPrimary" Style="{StaticResource AccentActionBtn}" Content="Instalar"/></StackPanel>
+                        </Grid>
                     </Grid>
                 </Border>
             </Grid>
@@ -490,7 +493,7 @@ if (Test-Path -LiteralPath $WINDOW_ICON_PATH) {
 
 # Atalhos para controles
 $ctl = @{}
-foreach ($name in 'TitleBar','BtnMinimize','BtnMaximize','BtnClose','SidebarColumn','SidebarPanel','NavOverview','NavSettings','NavDiagnostics','LblNavInstall','LblPageContext','LblPageSubtitle','HeaderActions','InstallActions',
+foreach ($name in 'TitleBar','BtnMinimize','BtnMaximize','BtnClose','SidebarColumn','SidebarPanel','NavOverview','NavSettings','NavDiagnostics','LblNavInstall','LblPageContext','LblPageSubtitle','FooterActions','InstallActions',
                   'CmbLanguage',
                   'LblGpu','CmbBackend','CmbVram','ChkInstallPython','ChkDesktopShortcut',
                   'ConfigPanel','InstallPanel','DonePanel',
@@ -1035,7 +1038,7 @@ $window.Dispatcher.add_UnhandledException({
     param($sender, $eventArgs)
     $msg = if ($eventArgs.Exception) { $eventArgs.Exception.Message } else { 'Falha inesperada no instalador.' }
     try { [System.IO.File]::WriteAllText($STATE_FILE, 'failed', [System.Text.UTF8Encoding]::new($false)) } catch {}
-    try { Add-Content -LiteralPath $LOG -Value "[FATAL UI] $msg" -Encoding UTF8 } catch {}
+    try { Add-Content -LiteralPath $LOG -Value ("[FATAL UI] $msg`r`n" + $eventArgs.Exception.ToString()) -Encoding UTF8 } catch {}
     try {
         $ctl.LblStep.Text = 'Falha inesperada no instalador.'
         $ctl.LblPhase.Text = 'Falha inesperada no instalador.'
@@ -1664,8 +1667,8 @@ $ctl.BtnPrimary.Add_Click({
             try {
                 if ($script:Window -and $script:Ctl -and $script:Ctl.LogBox) {
                     $script:Window.Dispatcher.Invoke([Action]{
-                        $script:Ctl.LogBox.AppendText("$line`r`n")
-                        $script:Ctl.LogScroll.ScrollToEnd()
+                        if ($script:Ctl -and $script:Ctl.LogBox) { $script:Ctl.LogBox.AppendText("$line`r`n") }
+                        if ($script:Ctl -and $script:Ctl.LogScroll) { $script:Ctl.LogScroll.ScrollToEnd() }
                     })
                 }
             } catch {}
@@ -1675,9 +1678,12 @@ $ctl.BtnPrimary.Add_Click({
             try {
                 if ($script:Window -and $script:Ctl) {
                     $script:Window.Dispatcher.Invoke([Action]{
-                        $script:Ctl.Progress.Value = $v
-                        $script:Ctl.LblProgressTxt.Text = "$v%"
-                        if ($phase) { $script:Ctl.LblPhase.Text = $phase; $script:Ctl.LblStep.Text = $phase }
+                        if ($script:Ctl -and $script:Ctl.Progress) { $script:Ctl.Progress.Value = $v }
+                        if ($script:Ctl -and $script:Ctl.LblProgressTxt) { $script:Ctl.LblProgressTxt.Text = "$v%" }
+                        if ($phase -and $script:Ctl) {
+                            if ($script:Ctl.LblPhase) { $script:Ctl.LblPhase.Text = $phase }
+                            if ($script:Ctl.LblStep) { $script:Ctl.LblStep.Text = $phase }
+                        }
                     })
                 }
             } catch {}
@@ -3052,6 +3058,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 return
             }
             $errMsg = "$($_.Exception.Message)"
+            Log ("[DIAGNOSTIC] " + $_.InvocationInfo.PositionMessage + "`r`n" + $_.ScriptStackTrace) 'err'
             if (-not $errMsg) { $errMsg = "$_" }
             Set-InstallState 'failed'
             Log "[X] FALHA: $errMsg" 'err'
@@ -6911,7 +6918,7 @@ function Initialize-HubLegacyPage([string]$mode) {
 	if ($actionPanel.Children.Count -gt 0) {
 		$actionPanel.Children[$actionPanel.Children.Count - 1].Margin = New-Object System.Windows.Thickness(0)
 	}
-	[void]$ctl.HeaderActions.Children.Add($actionPanel)
+	[void]$ctl.FooterActions.Children.Add($actionPanel)
 	$script:HubActionPanels[$mode] = $actionPanel
 
 	# Os títulos das páginas agora vivem no cabeçalho persistente da moldura.

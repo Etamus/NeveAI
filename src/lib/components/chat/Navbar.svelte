@@ -105,6 +105,11 @@
 			);
 		} catch {}
 	};
+	const acceptUnifiedCatalog = (event: CustomEvent) => {
+		if (!unifiedModelsPreload || (event.detail.catalogUpdatedAt ?? 0) < (unifiedModelsPreload.catalogUpdatedAt ?? 0)) return;
+		unifiedModelsPreload = { ...unifiedModelsPreload, ...event.detail };
+		setCachedUnifiedModelsPreload(unifiedModelsPreload);
+	};
 
 	const getModelImageVersion = (model: any) =>
 		model?.updated_at ?? model?.info?.updated_at ?? model?.meta?.updated_at ?? '';
@@ -157,15 +162,16 @@
 
 		unifiedModelsPreloadPromise = (async () => {
 			const runtimeUpdatedAt = Date.now();
+			const catalogUpdatedAt = Date.now();
 			const localModelsPromise = getLocalModels(localStorage.token).catch(() => []);
 			const mmProjFilesPromise = getMmProjFiles(localStorage.token).catch(() => []);
-			const workspaceModelsPromise = getBaseModels(localStorage.token).catch(() => []);
+			const workspaceModelsPromise = getBaseModels(localStorage.token).catch(() => null);
 			const baseModelsPromise = $globalModels?.length
 				? Promise.resolve([...$globalModels])
 				: getModels(
 						localStorage.token,
 						$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-					).catch(() => []);
+					).catch(() => null);
 
 			const [localModels, mmProjFiles] = await Promise.all([
 				localModelsPromise,
@@ -184,6 +190,7 @@
 			unifiedModelsPreload = {
 				loaded: true,
 				runtimeUpdatedAt,
+				catalogUpdatedAt: unifiedModelsPreload?.catalogUpdatedAt ?? 0,
 				localModels,
 				mmProjFiles,
 				workspaceModels: currentWorkspaceModels,
@@ -198,8 +205,8 @@
 				baseModelsPromise
 			]);
 
-			const workspaceModels = Array.isArray(workspaceModelsResult) ? workspaceModelsResult : [];
-			const resolvedBaseModels = Array.isArray(baseModels) ? baseModels : [];
+			const workspaceModels = Array.isArray(workspaceModelsResult) ? workspaceModelsResult : (unifiedModelsPreload?.workspaceModels ?? []);
+			const resolvedBaseModels = Array.isArray(baseModels) ? baseModels : (unifiedModelsPreload?.baseModels ?? []);
 			const adminModels = buildUnifiedAdminModels(localModels, resolvedBaseModels, workspaceModels);
 			preloadUnifiedModelImages(adminModels);
 
@@ -208,9 +215,9 @@
 				runtimeUpdatedAt,
 				localModels,
 				mmProjFiles,
-				workspaceModels,
-				baseModels: resolvedBaseModels,
-				adminModels,
+				...((unifiedModelsPreload?.catalogUpdatedAt ?? 0) >= catalogUpdatedAt
+					? { catalogUpdatedAt: unifiedModelsPreload.catalogUpdatedAt, workspaceModels: unifiedModelsPreload.workspaceModels, baseModels: unifiedModelsPreload.baseModels, adminModels: unifiedModelsPreload.adminModels }
+					: { catalogUpdatedAt: Array.isArray(workspaceModelsResult) ? catalogUpdatedAt : (unifiedModelsPreload?.catalogUpdatedAt ?? 0), workspaceModels, baseModels: resolvedBaseModels, adminModels }),
 				vramInfo: unifiedModelsVramInfo
 			};
 			setCachedUnifiedModelsPreload(unifiedModelsPreload);
@@ -246,7 +253,7 @@
 		keepMounted
 		onOutsideClick={() => unifiedModels?.handleOutsideClick() ?? false}
 	>
-		<UnifiedModels bind:this={unifiedModels} bind:mobileStep={unifiedModelMobileStep} preload={unifiedModelsPreload} show={$showLocalModelsModal} />
+		<UnifiedModels bind:this={unifiedModels} bind:mobileStep={unifiedModelMobileStep} preload={unifiedModelsPreload} show={$showLocalModelsModal} on:catalogChange={acceptUnifiedCatalog} />
 	</Modal>
 {/if}
 

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getLastChatUsage, getChatContextWindow, getUsageTotalTokens, getUsageTokensPerSecond, formatUsageTokensPerSecond } from '$lib/utils/chatUsage';
+	import { createTokenTotalSampler } from '$lib/utils/tokenTotalSampler';
 	import { toast } from 'svelte-sonner';
 
 	import { marked } from 'marked';
@@ -11,7 +12,7 @@
 	dayjs.extend(duration);
 	dayjs.extend(relativeTime);
 
-	import { onMount, tick, getContext, createEventDispatcher } from 'svelte';
+	import { onMount, onDestroy, tick, getContext, createEventDispatcher } from 'svelte';
 	import { onChatDropdownDismiss } from '$lib/utils/chatDropdownDismissal';
 	import ImageModeSelector from './MessageInput/ImageModeSelector.svelte';
 	$: if ($mobile) {
@@ -95,6 +96,7 @@
 	import Voice from '../icons/Voice.svelte';
 	import Cloud from '../icons/Cloud.svelte';
 	import Code from '../icons/Code.svelte';
+	import BookOpen from '../icons/BookOpen.svelte';
 	import TerminalMenu from './MessageInput/TerminalMenu.svelte';
 	import Knobs from '../icons/Knobs.svelte';
 	import PlusAlt from '../icons/PlusAlt.svelte';
@@ -153,7 +155,7 @@
 
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
-	export let codeExecutionEnabled = false;
+	export let learningEnabled = false;
 	export let fileGenerationEnabled = false;
 	export let stableDiffusionEnabled = false;
 	export let stableDiffusionModeOptions: ImageModeOptions = imageModeDefaults();
@@ -526,7 +528,7 @@
 		selectedToolIds,
 		webSearchEnabled,
 		deepSearchEnabled,
-		codeExecutionEnabled,
+		learningEnabled,
 		fileGenerationEnabled,
 		stableDiffusionEnabled,
 		stableDiffusionQuality,
@@ -548,7 +550,7 @@
 		files.length === 0 &&
 		!webSearchEnabled &&
 		!deepSearchEnabled &&
-		!codeExecutionEnabled &&
+		!learningEnabled &&
 		!stableDiffusionEnabled &&
 		!musicGenerationEnabled &&
 		!videoGenerationEnabled &&
@@ -557,9 +559,13 @@
 
 	let showTokenPopup = false;
 
-	// Token usage from the last assistant message
+	// Latest measured usage on the current branch, including active generation.
 	$: lastUsage = getLastChatUsage(history);
 	$: chatContextWindow = getChatContextWindow(history);
+	let displayedTotalTokens = 0;
+	const totalSampler = createTokenTotalSampler(total => { displayedTotalTokens = total; });
+	$: totalSampler.update(history?.currentId, getUsageTotalTokens(lastUsage), responseInProgress);
+	onDestroy(() => totalSampler.destroy());
 
 	function formatTokens(n: number): string {
 		if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
@@ -1202,10 +1208,7 @@
 	let showWebSearchButton = false;
 	$: showWebSearchButton = $_user.role === 'admin' || $_user?.permissions?.features?.web_search;
 
-	let showCodeExecutionButton = false;
-	$: showCodeExecutionButton =
-		$config?.features?.enable_code_execution !== false &&
-		($_user.role === 'admin' || $_user?.permissions?.features?.code_execution !== false);
+	const showLearningButton = true;
 
 	let showFileGenerationButton = true;
 
@@ -1884,8 +1887,8 @@
 </script>
 
 {#snippet usageIndicator()}
-{#if (lastUsage || chatContextWindow) && !stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled}
-	{@const totalTokens = getUsageTotalTokens(lastUsage)}
+{#if (lastUsage || chatContextWindow) && !stableDiffusionEnabled && !videoGenerationEnabled}
+	{@const totalTokens = displayedTotalTokens}
 	{@const contextWindow = chatContextWindow}
 	{@const usageRatio = contextWindow ? Math.min(totalTokens / contextWindow, 1) : 0}
 	{@const ringRadius = 9}
@@ -1933,7 +1936,6 @@
 					class="transition-all duration-500"
 				/>
 			</svg>
-			<span data-token-usage-percentage class="text-[14px] font-medium tabular-nums" style="color: {ringColor}">{contextWindow ? `${(usageRatio * 100).toFixed(1)}%` : '--'}</span>
 		</div>
 
 		{#if showTokenPopup}
@@ -2207,7 +2209,7 @@
 
 						<div
 							id="message-input-container"
-							use:animateComposerHeight={{ key: `${isCompact}:${isInputMultiline}:${composerContentRevision}:${stableDiffusionQuality}:${webSearchEnabled}:${deepSearchEnabled}:${codeExecutionEnabled}:${stableDiffusionEnabled}:${musicGenerationEnabled}:${videoGenerationEnabled}:${selectedToolIds.length}`, context: `${$chatId}:${selectedModels.join(',')}`, conversation: $chatId }}
+							use:animateComposerHeight={{ key: `${isCompact}:${isInputMultiline}:${composerContentRevision}:${stableDiffusionQuality}:${webSearchEnabled}:${deepSearchEnabled}:${learningEnabled}:${stableDiffusionEnabled}:${musicGenerationEnabled}:${videoGenerationEnabled}:${selectedToolIds.length}`, context: `${$chatId}:${selectedModels.join(',')}`, conversation: $chatId }}
 							class="min-h-0 flex-none flex {isCompact
 								? 'flex-row items-center rounded-full'
 								: 'flex-col rounded-3xl'} relative z-40 w-full shadow-lg border {chatDragged
@@ -2351,7 +2353,7 @@
 										chatInput?.focus();
 									}}
 									{showWebSearchButton}
-									{showCodeExecutionButton}
+									{showLearningButton}
 									{showFileGenerationButton}
 									{showStableDiffusionButton}
 									{showMusicGenerationButton}
@@ -2359,7 +2361,7 @@
 									bind:selectedToolIds
 									bind:webSearchEnabled
 									bind:deepSearchEnabled
-									bind:codeExecutionEnabled
+									bind:learningEnabled
 									bind:fileGenerationEnabled
 									bind:stableDiffusionEnabled
 									bind:musicGenerationEnabled
@@ -2629,7 +2631,7 @@
 													chatInput?.focus();
 												}}
 												{showWebSearchButton}
-												{showCodeExecutionButton}
+												{showLearningButton}
 												{showFileGenerationButton}
 												{showStableDiffusionButton}
 												{showMusicGenerationButton}
@@ -2637,7 +2639,7 @@
 												bind:selectedToolIds
 												bind:webSearchEnabled
 												bind:deepSearchEnabled
-												bind:codeExecutionEnabled
+												bind:learningEnabled
 												bind:fileGenerationEnabled
 												bind:stableDiffusionEnabled
 												bind:musicGenerationEnabled
@@ -2658,7 +2660,7 @@
 											</InputMenu>
 										</div>
 
-										<div class="message-input-active-controls ml-2.5 flex min-w-0 gap-1.5">
+										<div class="message-input-active-controls ml-[calc(0.5rem_-_1px)] flex min-w-0 gap-1.5">
 											{#if (selectedToolIds ?? []).length > 0}
 												<Tooltip
 													content={$i18n.t('{{COUNT}} Available Tools', {
@@ -2724,14 +2726,14 @@
 												</button>
 											{/if}
 
-											{#if codeExecutionEnabled}
+											{#if learningEnabled}
 												<button
-													aria-label={codeExecutionEnabled
-														? $i18n.t('Disable Code Execution')
-														: $i18n.t('Enable Code Execution')}
-													aria-pressed={codeExecutionEnabled}
+													aria-label={learningEnabled
+														? $i18n.t('Disable guided learning')
+														: $i18n.t('Enable guided learning')}
+													aria-pressed={learningEnabled}
 													on:click|preventDefault={() =>
-														(codeExecutionEnabled = !codeExecutionEnabled)}
+														(learningEnabled = !learningEnabled)}
 													type="button"
 													class="group py-[7px] px-2.5 flex gap-1.5 items-center text-[0.8125rem] transition-colors duration-300 max-w-full overflow-hidden text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 {($settings?.highContrastMode ??
 													false)
@@ -2740,20 +2742,7 @@
 												>
 													<div class="relative size-4 shrink-0 flex items-center justify-center">
 														<span class="group-hover:hidden flex items-center justify-center">
-															<svg
-																aria-hidden="true"
-																xmlns="http://www.w3.org/2000/svg"
-																fill="none"
-																viewBox="0 0 24 24"
-																stroke="currentColor"
-																stroke-width="1.5"
-																class="size-4"
-																><path
-																	stroke-linecap="round"
-																	stroke-linejoin="round"
-																	d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9"
-																/></svg
-															>
+															<BookOpen className="size-[0.96875rem]" />
 														</span>
 														<span class="hidden group-hover:flex items-center justify-center">
 															<XMark className="size-4" strokeWidth="1.75" />
@@ -2761,7 +2750,7 @@
 													</div>
 													<span
 														class="chip-label text-[0.8125rem] font-medium {activeChipTextClass}"
-														>{$i18n.t('Artifacts')}</span
+														>{$i18n.t('Learn')}</span
 													>
 												</button>
 											{/if}
@@ -3507,7 +3496,7 @@
 			display: flex;
 			grid-column: 2;
 			grid-row: 1;
-			margin-left: 0;
+			margin-left: -3px;
 			gap: 0.25rem;
 			flex-wrap: nowrap;
 			align-items: center;

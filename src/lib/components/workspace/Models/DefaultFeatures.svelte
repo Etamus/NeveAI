@@ -9,6 +9,7 @@
 	import ImageIcon from '$lib/components/icons/Image.svelte';
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 	import Video from '$lib/components/icons/Video.svelte';
+	import BookOpen from '$lib/components/icons/BookOpen.svelte';
 	import { marked } from 'marked';
 
 	type I18nStore = Readable<{ t: (key: string) => string }>;
@@ -20,9 +21,9 @@
 			label: $i18n.t('Busca na web'),
 			description: $i18n.t('Modelo pode buscar informações na web')
 		},
-		code_execution: {
-			label: $i18n.t('Artefatos'),
-			description: $i18n.t('Modelo pode abrir artefatos por padrão')
+		guided_learning: {
+			label: $i18n.t('Learn'),
+			description: $i18n.t('Learn step by step with guided explanations')
 		},
 		deep_search: {
 			label: $i18n.t('Pesquisa profunda'),
@@ -45,7 +46,7 @@
 	export let availableFeatures = [
 		'web_search',
 		'deep_search',
-		'code_execution',
+		'guided_learning',
 		'stable_diffusion',
 		'video_generation',
 		'music_generation'
@@ -66,7 +67,7 @@
 		};
 
 	const normalizeFeatureIds = (ids: string[]) => {
-		const supportedIds = ids.filter((id) => id !== 'code_interpreter');
+		const supportedIds = ids.filter((id) => id !== 'code_interpreter' && id !== 'code_execution');
 		const selectedExclusiveFeature = [...supportedIds]
 			.reverse()
 			.find((id) => isExclusiveFeature(id));
@@ -135,10 +136,8 @@
 							<GlobeAlt />
 						{:else if feature === 'deep_search'}
 							<Atom02 />
-						{:else if feature === 'code_execution'}
-							<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" class="size-4">
-								<path stroke-linecap="round" stroke-linejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" />
-							</svg>
+						{:else if feature === 'guided_learning'}
+							<BookOpen className="size-[0.96875rem]" />
 						{:else if feature === 'stable_diffusion'}
 							<ImageIcon className="size-4" strokeWidth="1.5" />
 						{:else if feature === 'music_generation'}

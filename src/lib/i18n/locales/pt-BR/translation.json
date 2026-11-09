@@ -1,4 +1,5 @@
 {
+	"{{version}} and more": "{{version}} e mais",
 	"Sheets": "Abas",
 	"Previous": "Anterior",
 	"Next": "Próximo",
@@ -127,6 +128,11 @@
 	"Are you sure you want to delete all chats? This action cannot be undone.": "Tem certeza de que deseja excluir todas as conversas? Esta ação não pode ser desfeita.",
 	"Are you sure you want to delete all files? This action cannot be undone.": "Tem certeza de que deseja excluir todos os arquivos? Esta ação não pode ser desfeita.",
 	"Artifacts": "Artefatos",
+	"Learn": "Aprender",
+	"Learn step by step with guided explanations": "Estude com orientações e exercícios guiados",
+	"Artifact preview": "Pré-visualização",
+	"Disable guided learning": "Desativar aprendizado guiado",
+	"Enable guided learning": "Ativar aprendizado guiado",
 	"Ask": "Perguntar",
 	"Ask a question": "Faça uma pergunta",
 	"Assistant": "Assistente",

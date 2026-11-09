@@ -116,7 +116,7 @@
 					</button>
 				</Tooltip>
 
-				<Tooltip content={$i18n.t('Reset view')}>
+				<Tooltip content={$i18n.t('Reset')}>
 					<button
 						class="p-1.5 rounded-lg border border-gray-100 dark:border-none dark:bg-gray-850 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
 						on:click={() => {
@@ -127,7 +127,7 @@
 					</button>
 				</Tooltip>
 
-				<Tooltip content={$i18n.t('Copy to clipboard')}>
+				<Tooltip content={$i18n.t('Copy')}>
 					<button
 						class="p-1.5 rounded-lg border border-gray-100 dark:border-none dark:bg-gray-850 hover:bg-gray-50 dark:hover:bg-gray-800 transition"
 						on:click={() => {

@@ -40,6 +40,35 @@ $$
 ];
 
 describe('chat Markdown lexer', () => {
+	it('recovers missing delimiter pipes as in the saved GOT response', () => {
+		const source = '| Temporada | Titulo | Melhor Para | Pontos Fortes | Atencao |\n| :--- | :--- | :--- | :--- :--- |\n| 1 | Inicio | Mundo | **Detalhes**<br>Mais | Ritmo |';
+		const tokens = lexChatMarkdown(source);
+		expect(tokens[0].type).toBe('table');
+		if (tokens[0].type !== 'table') throw new Error('Expected recovered table');
+		expect(tokens[0].header).toHaveLength(5);
+		expect(tokens[0].rows[0]).toHaveLength(5);
+		expect(tokens[0].rows[0][3].text).toBe('**Detalhes**<br>Mais');
+		expect(tokens[0].raw).toBe(source);
+	});
+	it.each([
+		'```markdown\n| A | B | C |\n| --- | --- --- |\n| 1 | 2 | 3 |\n```',
+		'~~~markdown\n| A | B | C |\n| --- | --- --- |\n~~~',
+		'    | A | B | C |\n    | --- | --- --- |\n',
+		'<pre>\n| A | B | C |\n| --- | --- --- |\n</pre>\n',
+		'| A | B |\n| --- | --- --- |\n| 1 | 2 |',
+		'| A | B |\n| not --- | --- --- |',
+		'| A | B |\n| --- | --- |\n| literal --- --- | B |'
+	])('does not rewrite code or ambiguous/valid Markdown: %s', (source) => {
+		expect(lexChatMarkdown(source)).toEqual(reference.lexer(source));
+	});
+	it.each(['\n', '\r\n'])('recovers tables inside blockquotes without consuming following text (%j)', (newline) => {
+		const source = '> | A | B | C |\n> | --- | --- --- |\n> | 1 | 2 | 3 |\n\nAfter the table.'.replaceAll('\n', newline);
+		const tokens = lexChatMarkdown(source);
+		expect(tokens[0].type).toBe('blockquote');
+		if (tokens[0].type !== 'blockquote') throw new Error('Expected blockquote');
+		expect(tokens[0].tokens[0].type).toBe('table');
+		expect(tokens.at(-1)?.type).toBe('paragraph');
+	});
 	it.each(documents)('matches original configuration for every streamed prefix: %s', (source) => {
 		const parse = createChatMarkdownParser();
 		for (let end = 0; end <= source.length; end++) {

@@ -11,6 +11,7 @@ export const LOCAL_MODEL_CONTEXT_OPTIONS = [2048, 4096, 8192, 16384, 32768, 6553
 const CONTEXT_KEY = 'llamacpp_load_context';
 const VISION_KEY = 'llamacpp_load_vision';
 const CACHE_KEY = 'llamacpp_cache_type';
+const GPU_PRIORITY_KEY = 'llamacpp_prioritize_gpu';
 const SPECULATIVE_KEY = 'llamacpp_speculative_decoding';
 const RESPONSE_SPEED_KEY = 'neveai.responseSpeed';
 export const RESPONSE_SPEED_CHANGED = 'neve:response-speed-changed';
@@ -96,6 +97,7 @@ export const getLocalModelLoadPreferences = () => {
 			context: 'auto' as LocalModelContextPreference,
 			vision: 'yes' as LocalModelVisionPreference,
 			cache: 'default' as LocalModelCachePreference,
+			prioritizeGpu: false,
 			speculative: 'default' as LocalModelSpeculativePreference,
 			tokenPrediction: 'off' as LocalModelTokenPredictionPreference,
 			contextShift: 'default' as LocalModelContextShiftPreference
@@ -106,6 +108,7 @@ export const getLocalModelLoadPreferences = () => {
 		context: parseContextPreference(localStorage.getItem(CONTEXT_KEY)),
 		vision: parseVisionPreference(localStorage.getItem(VISION_KEY)),
 		cache: parseCachePreference(localStorage.getItem(CACHE_KEY)),
+		prioritizeGpu: localStorage.getItem(GPU_PRIORITY_KEY) === 'true',
 		speculative:
 			localStorage.getItem(CONTEXT_SHIFT_KEY) === 'on' || getResponseSpeed() === 'fast'
 				? ('off' as LocalModelSpeculativePreference)
@@ -129,6 +132,13 @@ export const setLocalModelContextPreference = (preference: LocalModelContextPref
 export const setLocalModelVisionPreference = (preference: LocalModelVisionPreference) => {
 	if (!hasStorage()) return;
 	localStorage.setItem(VISION_KEY, preference);
+};
+
+export const setLocalModelGpuPriorityPreference = (enabled: boolean) => {
+	if (!hasStorage()) return;
+	if (enabled) localStorage.setItem(GPU_PRIORITY_KEY, 'true');
+	else localStorage.removeItem(GPU_PRIORITY_KEY);
+	window.dispatchEvent(new Event(RESPONSE_SPEED_CHANGED));
 };
 
 export const setLocalModelCachePreference = (preference: LocalModelCachePreference) => {

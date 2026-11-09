@@ -14,6 +14,7 @@
 		setLocalModelContextPreference,
 		setLocalModelVisionPreference,
 		setLocalModelCachePreference,
+		setLocalModelGpuPriorityPreference,
 		RESPONSE_SPEED_CHANGED
 	} from '$lib/utils/llamacppLoadPreferences';
 
@@ -48,6 +49,7 @@
 	] as const;
 	$: visionEnabled = preferences.vision === 'yes';
 	$: contextShiftEnabled = preferences.contextShift === 'on';
+	$: gpuPriorityEnabled = preferences.prioritizeGpu;
 
 	function update<K extends keyof Preferences>(key: K, value: Preferences[K]) {
 		if (key === 'contextShift') {
@@ -59,7 +61,7 @@
 			window.dispatchEvent(new Event(RESPONSE_SPEED_CHANGED));
 		}
 	}
-	function cycle(key: keyof Preferences, options: readonly (string | number)[]) {
+	function cycle(key: Exclude<keyof Preferences, 'prioritizeGpu'>, options: readonly (string | number)[]) {
 		const index = options.indexOf(preferences[key]);
 		update(key, options[(index + 1) % options.length] as Preferences[typeof key]);
 	}
@@ -158,5 +160,9 @@
 				{/if}
 			</div>
 		{/each}
+		<div class="setting-row flex min-h-[36px] w-full items-center justify-between gap-3 py-0">
+			<span id="load-setting-gpu-priority-label" class={labelClass}>{$i18n.t('Priorizar execução na GPU')}</span>
+			<div class="shrink-0"><Switch id="load-setting-gpu-priority" ariaLabelledbyId="load-setting-gpu-priority-label" bind:state={gpuPriorityEnabled} on:change={(e) => setLocalModelGpuPriorityPreference(e.detail)} /></div>
+		</div>
 	</div>
 </div>

@@ -1,6 +1,41 @@
 import { describe, expect, it } from 'vitest';
 import { getLastChatUsage, getChatContextWindow, getUsageContextWindow, getUsageTotalTokens, formatUsageTokensPerSecond } from './chatUsage';
 
+describe('visual generations do not supply chat token usage', () => {
+	const measured = {total_tokens:500, context_window:8192, tokens_per_second:60};
+	it.each([
+		{token_usage_eligible:false},
+		{statusHistory:[{action:'stable_diffusion',done:true}]},
+		{statusHistory:[{action:'video_generation',done:false}]},
+		{video_generation_features:{video_generation:true}}
+	])('ignores media counts and seeded context, including saved chats: %j', extra => {
+		const h={currentId:'a',messages:{a:{role:'assistant',done:true,usage:measured,context_window:16384,...extra}}};
+		for (const history of [h,JSON.parse(JSON.stringify(h))]) {
+			expect(getLastChatUsage(history)).toBeNull();
+			expect(getChatContextWindow(history)).toBeNull();
+		}
+	});
+	it('handles older video responses identified by their parent request', () => {
+		const h={currentId:'a',messages:{u:{role:'user',video_generation_features:{video_generation:true}},a:{role:'assistant',parentId:'u',usage:measured,done:true}}};
+		expect(getLastChatUsage(h)).toBeNull();
+		expect(getChatContextWindow(h)).toBeNull();
+	});
+	it('retains normal metrics in mixed chats without media overwriting them', () => {
+		const h:any={currentId:'media',messages:{normal:{role:'assistant',done:true,usage:measured},media:{role:'assistant',parentId:'normal',done:true,usage:{total_tokens:99000,context_window:128000},statusHistory:[{action:'stable_diffusion'}]}}};
+		expect(getLastChatUsage(h)).toBe(measured);
+		expect(getChatContextWindow(h)).toBe(8192);
+		h.messages.next={role:'assistant',parentId:'media',done:false,context_window:32768};h.currentId='next';
+		expect(getChatContextWindow(h)).toBe(32768);
+		h.messages.next.usage={total_tokens:700,predicted_per_second:75};
+		expect(getUsageTotalTokens(getLastChatUsage(h))).toBe(700);
+	});
+	it.each(['music_generation','web_search','file_generation','sources_retrieved'])('keeps other integrations eligible: %s', action => {
+		const h={currentId:'a',messages:{a:{role:'assistant',done:true,usage:measured,statusHistory:[{action}],files:[{type:'image',content_type:'image/png'}]}}};
+		expect(getLastChatUsage(h)).toBe(measured);
+		expect(getChatContextWindow(h)).toBe(8192);
+	});
+});
+
 describe('context at request start', () => {
 	const makeHistory = () => ({currentId: 'pending', messages: {
 		previous: {role: 'assistant', done: true, usage: {context_window: 8192, total_tokens: 100, tokens_per_second: 109}},
@@ -38,6 +73,24 @@ describe('integer tokens per second display', () => {
 		[0, '0'], [null, '0'], [Infinity, '0']
 	])('formats %s as %s', (value, expected) => {
 		expect(formatUsageTokensPerSecond(value)).toBe(expected);
+	});
+});
+
+describe('live measured usage', () => {
+	it('uses active counts and speed before completion, on this branch only', () => {
+		const h = {currentId:'active',messages:{
+			previous:{role:'assistant',done:true,usage:{total_tokens:200}},
+			active:{role:'assistant',done:false,parentId:'previous',usage:{prompt_n:500,predicted_n:30,predicted_per_second:80}},
+			other:{role:'assistant',done:false,usage:{total_tokens:9000}}
+		}};
+		expect(getLastChatUsage(h)).toBe(h.messages.active.usage);
+		expect(getUsageTotalTokens(getLastChatUsage(h))).toBe(530);
+		h.messages.active.done = true;
+		expect(getUsageTotalTokens(getLastChatUsage(h))).toBe(530);
+	});
+	it('accepts zero measured counts instead of showing an older generation', () => {
+		const h = {currentId:'a',messages:{a:{role:'assistant',done:false,usage:{prompt_tokens:12,completion_tokens:0}}}};
+		expect(getUsageTotalTokens(getLastChatUsage(h))).toBe(12);
 	});
 });
 
