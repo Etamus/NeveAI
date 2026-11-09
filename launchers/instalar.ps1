@@ -59,6 +59,27 @@ public static class NeveInstallerWindowIdentity
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetProp(IntPtr window, string key);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool SetProp(IntPtr window, string key, IntPtr value);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr RemoveProp(IntPtr window, string key);
+    [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] private struct MonitorInfo { public int Size; public Rect Monitor, Work; public uint Flags; }
+    [StructLayout(LayoutKind.Sequential)] private struct MinMaxInfo { public Point Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize; }
+    [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+    public static bool ConstrainMaximizedBounds(IntPtr window, IntPtr data)
+    {
+        if (data == IntPtr.Zero) return false;
+        IntPtr monitor = MonitorFromWindow(window, 2);
+        MonitorInfo info = new MonitorInfo();
+        info.Size = Marshal.SizeOf(typeof(MonitorInfo));
+        if (monitor == IntPtr.Zero || !GetMonitorInfo(monitor, ref info)) return false;
+        MinMaxInfo bounds = (MinMaxInfo)Marshal.PtrToStructure(data, typeof(MinMaxInfo));
+        bounds.MaxPosition.X = info.Work.Left - info.Monitor.Left;
+        bounds.MaxPosition.Y = info.Work.Top - info.Monitor.Top;
+        bounds.MaxSize.X = info.Work.Right - info.Work.Left;
+        bounds.MaxSize.Y = info.Work.Bottom - info.Work.Top;
+        Marshal.StructureToPtr(bounds, data, false);
+        return true;
+    }
     public static IntPtr FindInstaller(string key)
     {
         IntPtr found = IntPtr.Zero;
@@ -179,7 +200,8 @@ if (-not (Test-Path $LOGO_PATH)) {
         Width="980" Height="600" MinWidth="980" MinHeight="600"
         WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
         WindowStyle="None" AllowsTransparency="True"
-        Background="Transparent" FontFamily="Segoe UI" TextOptions.TextFormattingMode="Display">
+        Background="Transparent" FontFamily="Segoe UI" TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True" SnapsToDevicePixels="True">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="18"/>
     </shell:WindowChrome.WindowChrome>
@@ -204,7 +226,7 @@ if (-not (Test-Path $LOGO_PATH)) {
         <Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/></Style>
         <Style x:Key="PageTitle" TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="FontSize" Value="24"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
         <Style x:Key="CaptionText" TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/><Setter Property="FontSize" Value="12"/></Style>
-        <Style x:Key="Section" TargetType="Border"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="8"/><Setter Property="Padding" Value="20"/></Style>
+        <Style x:Key="Section" TargetType="Border"><Setter Property="Background" Value="Transparent"/><Setter Property="BorderThickness" Value="0"/><Setter Property="CornerRadius" Value="8"/><Setter Property="Padding" Value="21"/></Style>
 
         <Style x:Key="PrimaryBtn" TargetType="Button">
             <Setter Property="Background" Value="{DynamicResource SurfaceRaisedBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}"/>
@@ -258,10 +280,35 @@ if (-not (Test-Path $LOGO_PATH)) {
             </ControlTemplate></Setter.Value></Setter>
         </Style>
         <Style TargetType="ComboBox">
-            <Setter Property="Background" Value="{DynamicResource InputBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="11,0"/><Setter Property="MinHeight" Value="36"/><Setter Property="FontSize" Value="13"/><Setter Property="MaxDropDownHeight" Value="260"/><Setter Property="ItemContainerStyle" Value="{StaticResource ComboBoxItemStyle}"/>
-            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBox"><Grid><ToggleButton x:Name="DropDownToggle" Background="Transparent" BorderThickness="0" Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"><ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="ComboBorder" Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderBrush="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}" BorderThickness="{Binding BorderThickness, RelativeSource={RelativeSource AncestorType=ComboBox}}" CornerRadius="6"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="34"/></Grid.ColumnDefinitions><ContentPresenter Margin="11,0,6,0" VerticalAlignment="Center" HorizontalAlignment="Stretch" TextElement.Foreground="{DynamicResource TextPrimaryBrush}" Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}" ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"/><Path Grid.Column="1" Width="10" Height="6" HorizontalAlignment="Center" VerticalAlignment="Center" Stroke="{DynamicResource TextSecondaryBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 1 1 L 5 5 L 9 1"/></Grid></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ComboBorder" Property="BorderBrush" Value="{DynamicResource BorderStrongBrush}"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template></ToggleButton><Popup x:Name="Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" PlacementTarget="{Binding ElementName=DropDownToggle}" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade"><Border Width="{Binding ActualWidth, ElementName=DropDownToggle}" MaxHeight="{TemplateBinding MaxDropDownHeight}" Margin="0,4,0,0" Padding="3" Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1" CornerRadius="6"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel IsItemsHost="True"/></ScrollViewer></Border></Popup></Grid><ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter TargetName="DropDownToggle" Property="Opacity" Value="0.48"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+            <Setter Property="Background" Value="{DynamicResource InputBrush}"/><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="UseLayoutRounding" Value="True"/><Setter Property="SnapsToDevicePixels" Value="True"/><Setter Property="Padding" Value="11,0"/><Setter Property="MinHeight" Value="36"/><Setter Property="FontSize" Value="13"/><Setter Property="MaxDropDownHeight" Value="260"/><Setter Property="ItemContainerStyle" Value="{StaticResource ComboBoxItemStyle}"/>
+            <Setter Property="Template"><Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton x:Name="DropDownToggle" Background="Transparent" BorderThickness="0" Focusable="False" ClickMode="Press" IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Template><ControlTemplate TargetType="ToggleButton">
+                                <Border x:Name="ComboBorder" Background="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}" Padding="{Binding BorderThickness, RelativeSource={RelativeSource AncestorType=ComboBox}}" CornerRadius="6">
+                                    <Border Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}" CornerRadius="5">
+                                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="34"/></Grid.ColumnDefinitions>
+                                            <ContentPresenter Margin="11,0,6,0" VerticalAlignment="Center" HorizontalAlignment="Stretch" TextElement.Foreground="{DynamicResource TextPrimaryBrush}" Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}" ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
+                                            <Path Grid.Column="1" Width="10" Height="6" HorizontalAlignment="Center" VerticalAlignment="Center" Stroke="{DynamicResource TextSecondaryBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 1 1 L 5 5 L 9 1"/>
+                                        </Grid>
+                                    </Border>
+                                </Border>
+                                <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="ComboBorder" Property="Background" Value="{DynamicResource BorderStrongBrush}"/></Trigger></ControlTemplate.Triggers>
+                            </ControlTemplate></ToggleButton.Template>
+                        </ToggleButton>
+                        <Popup x:Name="Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Bottom" PlacementTarget="{Binding ElementName=DropDownToggle}" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
+                            <Border Width="{Binding ActualWidth, ElementName=DropDownToggle}" MaxHeight="{TemplateBinding MaxDropDownHeight}" Margin="0,4,0,0" Padding="1" Background="{DynamicResource BorderStrongBrush}" CornerRadius="6" UseLayoutRounding="True" SnapsToDevicePixels="True">
+                                <Border Padding="3" Background="{DynamicResource SurfaceRaisedBrush}" CornerRadius="5"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel IsItemsHost="True"/></ScrollViewer></Border>
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter TargetName="DropDownToggle" Property="Opacity" Value="0.48"/></Trigger></ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value></Setter>
         </Style>
         <Style x:Key="LanguageComboBox" TargetType="ComboBox">
+            <Setter Property="UseLayoutRounding" Value="True"/><Setter Property="SnapsToDevicePixels" Value="True"/>
             <Setter Property="Foreground" Value="#B8B8B8"/><Setter Property="MinHeight" Value="46"/><Setter Property="FontSize" Value="16"/><Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontWeight" Value="Medium"/><Setter Property="Cursor" Value="Hand"/><Setter Property="MaxDropDownHeight" Value="160"/><Setter Property="ItemContainerStyle" Value="{StaticResource LanguageComboBoxItem}"/>
             <Setter Property="Template"><Setter.Value>
                 <ControlTemplate TargetType="ComboBox">
@@ -283,7 +330,9 @@ if (-not (Test-Path $LOGO_PATH)) {
                             </ControlTemplate></ToggleButton.Template>
                         </ToggleButton>
                         <Popup x:Name="Popup" IsOpen="{TemplateBinding IsDropDownOpen}" Placement="Top" VerticalOffset="-5" PlacementTarget="{Binding ElementName=DropDownToggle}" AllowsTransparency="True" Focusable="False" PopupAnimation="Fade">
-                            <Border Width="{Binding ActualWidth, ElementName=DropDownToggle}" MaxHeight="{TemplateBinding MaxDropDownHeight}" Padding="4" Background="{DynamicResource SurfaceRaisedBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="7" TextOptions.TextFormattingMode="Ideal"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel IsItemsHost="True"/></ScrollViewer></Border>
+                            <Border Width="{Binding ActualWidth, ElementName=DropDownToggle}" MaxHeight="{TemplateBinding MaxDropDownHeight}" Padding="1" Background="{DynamicResource BorderBrush}" CornerRadius="7" UseLayoutRounding="True" SnapsToDevicePixels="True" TextOptions.TextFormattingMode="Ideal">
+                                <Border Padding="4" Background="{DynamicResource SurfaceRaisedBrush}" CornerRadius="6"><ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"><StackPanel IsItemsHost="True"/></ScrollViewer></Border>
+                            </Border>
                         </Popup>
                     </Grid>
                     <ControlTemplate.Triggers><Trigger Property="IsEnabled" Value="False"><Setter TargetName="DropDownToggle" Property="Opacity" Value="0.48"/></Trigger></ControlTemplate.Triggers>
@@ -292,8 +341,22 @@ if (-not (Test-Path $LOGO_PATH)) {
             <Style.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/></Trigger></Style.Triggers>
         </Style>
         <Style x:Key="OptionCheckBox" TargetType="CheckBox">
+            <Setter Property="UseLayoutRounding" Value="True"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="FontSize" Value="13"/><Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox"><StackPanel Orientation="Horizontal"><Border x:Name="CheckBorder" Width="18" Height="18" Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1" CornerRadius="4"><Path x:Name="CheckMark" Width="10" Height="7" Data="M 1 3.5 L 4 6.5 L 9 1" Stroke="#111317" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed"/></Border><ContentPresenter Margin="9,0,0,0" VerticalAlignment="Center"/></StackPanel><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource TextSecondaryBrush}"/></Trigger><Trigger Property="IsChecked" Value="True"><Setter TargetName="CheckBorder" Property="Background" Value="{DynamicResource AccentBrush}"/><Setter TargetName="CheckBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/><Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
+                <StackPanel Orientation="Horizontal">
+                    <Border x:Name="CheckBorder" Width="18" Height="18" Background="{DynamicResource BorderStrongBrush}" Padding="1" CornerRadius="4">
+                        <Border x:Name="CheckSurface" Background="{DynamicResource InputBrush}" CornerRadius="3"><Path x:Name="CheckMark" Width="10" Height="7" Data="M 1 3.5 L 4 6.5 L 9 1" Stroke="#111317" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed"/></Border>
+                    </Border>
+                    <ContentPresenter Margin="9,0,0,0" VerticalAlignment="Center"/>
+                </StackPanel>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CheckBorder" Property="Background" Value="{DynamicResource TextSecondaryBrush}"/></Trigger>
+                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="CheckBorder" Property="Background" Value="{DynamicResource AccentBrush}"/><Setter TargetName="CheckSurface" Property="Background" Value="{DynamicResource AccentBrush}"/><Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/></Trigger>
+                    <Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.45"/></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
         </Style>
         <Style TargetType="ScrollBar">
             <Setter Property="Width" Value="10"/><Setter Property="MinWidth" Value="10"/><Setter Property="Background" Value="Transparent"/>
@@ -301,7 +364,7 @@ if (-not (Test-Path $LOGO_PATH)) {
         </Style>
     </Window.Resources>
 
-    <Border Margin="1" BorderBrush="{DynamicResource BorderStrongBrush}" BorderThickness="1" CornerRadius="18" Background="Transparent">
+    <Border Margin="1" Padding="1" CornerRadius="18" Background="Transparent">
         <Grid>
             <Grid.RowDefinitions><RowDefinition Height="44"/><RowDefinition Height="*"/></Grid.RowDefinitions>
             <Border x:Name="TitleBar" Grid.Row="0" Background="{DynamicResource SidebarBrush}" CornerRadius="17,17,0,0">
@@ -368,7 +431,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="Tipo de aceleração:" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,0,12"/>
                             <ComboBox  Grid.Row="1" Grid.Column="1" x:Name="CmbBackend" Margin="0,0,0,12">
                                 <ComboBoxItem Content="CPU (sem GPU)"/>
-                                <ComboBoxItem Content="NVIDIA - RTX 50xx (Blackwell, CUDA 13.3)"/>
+                                <ComboBoxItem Content="NVIDIA - RTX 50xx (Blackwell, CUDA 13.5)"/>
                                 <ComboBoxItem Content="NVIDIA - RTX 40xx (Ada, CUDA 12.8)"/>
                                 <ComboBoxItem Content="NVIDIA - RTX 30xx (Ampere, CUDA 12.8)"/>
                                 <ComboBoxItem Content="NVIDIA - RTX 20xx (Turing, CUDA 12.6)"/>
@@ -409,7 +472,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                         <TextBlock x:Name="LblStep" Text="Preparando…" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,5,0,0" Visibility="Collapsed"/>
                     </StackPanel>
 
-                    <Border Grid.Row="1" Style="{StaticResource Section}" Padding="16,14" Margin="0,0,0,14">
+                    <Border Grid.Row="1" Style="{StaticResource Section}" Background="{DynamicResource SurfaceBrush}" Padding="17,15" Margin="0,0,0,14">
                         <StackPanel>
                             <Grid>
                                 <TextBlock x:Name="LblProgressTxt" Text="0%" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Right"/>
@@ -420,7 +483,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                         </StackPanel>
                     </Border>
 
-                    <Border Grid.Row="2" Background="#000000" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14,12">
+                    <Border Grid.Row="2" Background="Transparent" CornerRadius="8" Padding="15,13">
                         <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
                             <TextBox x:Name="LogBox" Background="Transparent" Foreground="#D4D4D4" BorderThickness="0"
                                      IsReadOnly="True" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"
@@ -431,14 +494,14 @@ if (-not (Test-Path $LOGO_PATH)) {
 
                 <!-- DONE CARD -->
                 <Grid x:Name="DonePanel" Visibility="Collapsed">
-                    <Border Style="{StaticResource Section}" Padding="32" VerticalAlignment="Top">
+                    <Border Style="{StaticResource Section}" Padding="33" VerticalAlignment="Top">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Border Width="56" Height="56" CornerRadius="28" Background="#10B981" Margin="0,0,0,18">
                                 <TextBlock Text="OK" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <TextBlock x:Name="LblDoneTitle" Text="Tudo pronto!" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center"/>
                             <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar o NeveAI." FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="0,6,0,18"/>
-                            <Border Background="{DynamicResource InputBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="7" Padding="14,12">
+                            <Border Background="Transparent" CornerRadius="7" Padding="15,13">
                                 <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
                             </Border>
                         </StackPanel>
@@ -3546,7 +3609,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                         <TextBlock x:Name="LblCheckSub" Text="Consultando GitHub…" FontSize="13" Foreground="#71717A" Margin="0,4,0,0"/>
                     </StackPanel>
 
-                    <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="20,14" VerticalAlignment="Center" Margin="0,-86,0,16">
+                    <Border Grid.Row="1" Background="Transparent" CornerRadius="10" Padding="21,15" VerticalAlignment="Center" Margin="0,-86,0,16">
                         <Grid VerticalAlignment="Center">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -3631,7 +3694,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                         <TextBlock x:Name="LblStep" Text="Preparando…" FontSize="13" Foreground="#71717A" Margin="0,4,0,0" Visibility="Collapsed"/>
                     </StackPanel>
 
-                    <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="16,14" Margin="0,0,0,14">
+                    <Border Grid.Row="1" Background="White" CornerRadius="10" Padding="17,15" Margin="0,0,0,14">
                         <StackPanel>
                             <Grid>
                                 <TextBlock x:Name="LblProgressTxt" Text="0%" FontSize="12" Foreground="#52525B" HorizontalAlignment="Right"/>
@@ -3642,7 +3705,7 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
                         </StackPanel>
                     </Border>
 
-                    <Border Grid.Row="2" Background="#0A0A0A" BorderBrush="#E4E4E7" BorderThickness="1" CornerRadius="10" Padding="14,12">
+                    <Border Grid.Row="2" Background="Transparent" CornerRadius="10" Padding="15,13">
                         <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
                             <TextBox x:Name="LogBox" Background="Transparent" Foreground="#D4D4D4" BorderThickness="0"
                                      IsReadOnly="True" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"
@@ -3653,14 +3716,14 @@ if (-not (Test-Path $LOGO_PATH)) { $LOGO_PATH = Join-Path $ROOT 'static\static\f
 
                 <!-- DONE PANEL -->
                 <Grid x:Name="DonePanel" Visibility="Collapsed">
-                    <Border Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="32">
+                    <Border Background="Transparent" CornerRadius="10" Padding="33">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Border Width="56" Height="56" CornerRadius="28" Background="#10B981" Margin="0,0,0,18">
                                 <TextBlock Text="OK" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <TextBlock x:Name="LblDoneTitle" Text="Atualização concluída!" FontSize="22" FontWeight="SemiBold" Foreground="#111111" HorizontalAlignment="Center"/>
                             <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar a NeveAI." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
-                            <Border Background="#FAFAFA" CornerRadius="8" Padding="14,12">
+                            <Border Background="Transparent" CornerRadius="8" Padding="14,12">
                                 <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="#52525B"/>
                             </Border>
                         </StackPanel>
@@ -6160,7 +6223,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                                    FontSize="13" Foreground="#71717A" Margin="0,4,0,0"/>
                     </StackPanel>
 
-                    <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="20">
+                    <Border Grid.Row="1" Background="Transparent" CornerRadius="10" Padding="21">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -6193,7 +6256,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                         <TextBlock x:Name="LblStep" Text="Preparando..." FontSize="13" Foreground="#71717A" Margin="0,4,0,0"/>
                     </StackPanel>
 
-                    <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="16,14" Margin="0,0,0,14">
+                    <Border Grid.Row="1" Background="White" CornerRadius="10" Padding="17,15" Margin="0,0,0,14">
                         <StackPanel>
                             <Grid>
                                 <TextBlock x:Name="LblProgressTxt" Text="0%" FontSize="12" Foreground="#52525B" HorizontalAlignment="Right"/>
@@ -6204,7 +6267,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                         </StackPanel>
                     </Border>
 
-                    <Border Grid.Row="2" Background="#0A0A0A" CornerRadius="10" Padding="14,12">
+                    <Border Grid.Row="2" Background="Transparent" CornerRadius="10" Padding="14,12">
                         <ScrollViewer x:Name="LogScroll" VerticalScrollBarVisibility="Auto">
                             <TextBox x:Name="LogBox" Background="Transparent" Foreground="#D4D4D4" BorderThickness="0"
                                      IsReadOnly="True" FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"
@@ -6214,14 +6277,14 @@ if (-not (Test-Path $LOGO_PATH)) {
                 </Grid>
 
                 <Grid x:Name="DonePanel" Visibility="Collapsed">
-                    <Border Background="White" CornerRadius="10" BorderBrush="#E4E4E7" BorderThickness="1" Padding="32">
+                    <Border Background="Transparent" CornerRadius="10" Padding="33">
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                             <Border x:Name="StatusBadge" Width="56" Height="56" CornerRadius="28" Background="#10B981" Margin="0,0,0,18">
                                 <TextBlock x:Name="LblBadge" Text="OK" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <TextBlock x:Name="LblDoneTitle" Text="Build publicado!" FontSize="22" FontWeight="SemiBold" Foreground="#111111" HorizontalAlignment="Center"/>
                             <TextBlock x:Name="LblDoneSub" Text="O frontend do backend esta atualizado." FontSize="13" Foreground="#71717A" HorizontalAlignment="Center" Margin="0,6,0,18"/>
-                            <Border Background="#FAFAFA" CornerRadius="8" Padding="14,12" MaxWidth="620">
+                            <Border Background="Transparent" CornerRadius="8" Padding="14,12" MaxWidth="620">
                                 <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="#52525B" TextWrapping="Wrap"/>
                             </Border>
                         </StackPanel>
@@ -7155,6 +7218,10 @@ $window.Add_SourceInitialized({
     [NeveInstallerWindowIdentity]::RegisterInstaller($script:InstallerWindowHandle, $script:InstallerInstanceKey)
     $script:InstallerWindowHook = [Windows.Interop.HwndSourceHook]{
         param($handle,$message,$wparam,$lparam,[ref]$handled)
+        if ($message -eq 0x0024) {
+            $handled.Value = [NeveInstallerWindowIdentity]::ConstrainMaximizedBounds($handle, $lparam)
+            return [IntPtr]::Zero
+        }
         if ($message -eq 0x8011) {
             $page = switch ($wparam.ToInt32()) { 1 { 'update' }; 2 { 'build' }; default { 'install' } }
             Select-HubPage $page

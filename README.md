@@ -6,11 +6,11 @@
 
 ---
 
-<img width="1917" height="1002" alt="{99A0A289-8960-4D2F-B0F8-3133A7BAF2D4}" src="https://github.com/user-attachments/assets/df5ce74e-2f1a-4f83-8bdd-a53e43ccc0b8" />
+<img width="1915" height="1005" alt="{D52C0BE7-032E-4C4C-9707-71926D2266E2}" src="https://github.com/user-attachments/assets/9a285cc3-0f0f-456a-b587-de4044eef6d9" />
 
 ---
 
-<img width="1640" height="529" alt="{4B7D67A4-51B5-4A70-B337-C3A1D5C637E6}" src="https://github.com/user-attachments/assets/57438c6c-71ac-418d-abb2-37dd2ed04a17" />
+<img width="1636" height="455" alt="{BCE366BD-B3E2-4744-B3C2-C79066F421B8}" src="https://github.com/user-attachments/assets/ea9b9479-80cf-409d-b32a-42e06ad320d7" />
 
 ---
 
@@ -42,7 +42,7 @@ instalar.bat → Instalar
 ```
 
 <h1 align="center">
-<img width="975" alt="1" src="https://github.com/user-attachments/assets/72a8c60b-867e-457c-967a-4678ee32c521" />
+<img width="975" alt="1" src="https://github.com/user-attachments/assets/3398b445-141a-4b98-9eb7-de3102fb3615" />
 </h1>
 
 O instalador realiza automaticamente as seguintes ações:
@@ -64,7 +64,7 @@ instalar.bat → Atualizar
 ```
 
 <h1 align="center">
-<img width="976" alt="2" src="https://github.com/user-attachments/assets/c384ef8f-21db-42b4-b2a0-fa9f160c7150" />
+<img width="976" alt="2" src="https://github.com/user-attachments/assets/bec95849-b86b-48b5-92cb-f72bd69c0ee9" />
 </h1>
 
 O atualizador realiza automaticamente as seguintes ações:
@@ -258,7 +258,7 @@ instalar.bat → Buildar
 ```
 
 <h1 align="center">
-<img width="976" alt="3" src="https://github.com/user-attachments/assets/47c1a27a-cb39-451d-9cbb-ac1357cfc6d6" />
+<img width="976" alt="3" src="https://github.com/user-attachments/assets/3d9d21d4-af11-41f5-b851-d301e7c0e493" />
 </h1>
 
 ### Dev mode (hot reload)
