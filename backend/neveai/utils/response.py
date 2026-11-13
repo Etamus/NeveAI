@@ -1,3 +1,6 @@
+import math
+
+
 def normalize_usage(usage: dict) -> dict:
     """Normalize local llama.cpp usage statistics."""
     if not usage:
@@ -13,9 +16,19 @@ def normalize_usage(usage: dict) -> dict:
                 return None
         return None
 
-    input_tokens = usage.get("input_tokens") or usage.get("prompt_tokens") or usage.get("prompt_n") or 0
-    output_tokens = usage.get("output_tokens") or usage.get("completion_tokens") or usage.get("predicted_n") or 0
-    total_tokens = usage.get("total_tokens") or input_tokens + output_tokens
+    def count(*values):
+        for value in values:
+            number = as_float(value)
+            if number is not None and math.isfinite(number) and number >= 0:
+                return int(number)
+        return None
+
+    input_tokens = count(usage.get("input_tokens"), usage.get("prompt_tokens"))
+    if input_tokens is None:
+        # Native timings separate reused KV tokens from newly evaluated input.
+        input_tokens = (count(usage.get("prompt_n")) or 0) + (count(usage.get("cache_n")) or 0)
+    output_tokens = count(usage.get("output_tokens"), usage.get("completion_tokens"), usage.get("predicted_n")) or 0
+    total_tokens = count(usage.get("total_tokens")) or input_tokens + output_tokens
 
     tokens_per_second = None
     for key in (

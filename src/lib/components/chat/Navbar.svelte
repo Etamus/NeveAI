@@ -23,7 +23,7 @@
 	import ChatPlus from '../icons/ChatPlus.svelte';
 	import ChatCheck from '../icons/ChatCheck.svelte';
 	import Knobs from '../icons/Knobs.svelte';
-	import Blocks from '../icons/Blocks.svelte';
+	import ModelsGrid from '../icons/ModelsGrid.svelte';
 	import { showModelSettings } from '$lib/stores';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import UnifiedModels from '$lib/components/chat/UnifiedModels.svelte';
@@ -405,8 +405,8 @@
 								}}
 								aria-label="Models"
 							>
-								<div class=" m-auto self-center">
-									<Blocks className="size-4.5 scale-110" />
+								<div class="m-auto self-center">
+										<ModelsGrid className="size-4.5 scale-110" />
 								</div>
 							</button>
 						</Tooltip>

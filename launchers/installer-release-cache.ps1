@@ -7,7 +7,7 @@ function Get-InstallerReleaseCachePath([string]$Key) {
 
 function Test-InstallerReleaseTag([string]$Key, [string]$Tag) {
     if ($Key -like 'llama:*') { return $Tag -match '^b\d+$' }
-    return Test-ReleaseTagValid $Tag
+    return $Tag -match '^v?\d+(?:\.\d+)+(?:[-+][\w.-]+)?$'
 }
 
 function Get-InstallerCachedRelease([string]$Key) {

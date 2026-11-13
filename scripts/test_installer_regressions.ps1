@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $repo = Split-Path -Parent $PSScriptRoot
 $testRoot = Join-Path $repo ('logs\installer-regressions-' + [guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($testRoot)
@@ -18,17 +18,8 @@ function Parse-TestSource([string]$Text) {
 try {
     $source = [IO.File]::ReadAllText((Join-Path $repo 'launchers\instalar.ps1'))
     $ast = Parse-TestSource $source
-    $assignment = $ast.Find({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$script:UpdateLegacySource'},$true)
-    $update = $assignment.Right.Extent.Text.Substring(2).TrimStart("`r", "`n")
-    $update = $update.Substring(0, $update.LastIndexOf("'@"))
-    $updateAst = Parse-TestSource $update
-    foreach ($name in @('Normalize-ReleaseTag','Test-ReleaseTagValid','Get-VersionParts','Test-ReleaseTagNewer','Get-FriendlyGitHubError','Get-UpdateReleaseState','Complete-UpdateReleaseCheck',
-        'Test-NeveAppIntegrity','Copy-ReleaseInstallerFiles','Test-ReleaseExcluded','Test-ReleaseProtectedDescendant','Remove-ReleaseItem','Remove-ReleaseOrphans','Test-ReleaseFileContentEqual','Copy-ReleaseFileRobust',
-        'Get-RelativePath','Copy-ReleaseTree','New-ReleaseRollbackSnapshot','Restore-ReleaseRollbackSnapshot','Publish-FrontendAtomically','Test-NeveInstallState','Update-NeveAI')) {
-        $functions = @($updateAst.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]},$true) | Where-Object Name -eq $name)
-        if (-not $functions.Count) { throw "Missing function $name" }
-        . ([scriptblock]::Create($functions[-1].Extent.Text))
-    }
+    $updateAst = Parse-TestSource ([IO.File]::ReadAllText((Join-Path $repo 'launchers/update-core.ps1')))
+    . (Join-Path $repo 'launchers/update-core.ps1')
     . (Join-Path $repo 'launchers\runtime-validation.ps1')
     . (Join-Path $repo 'launchers\process-ownership.ps1')
     . (Join-Path $repo 'launchers\installer-release-cache.ps1')
@@ -88,26 +79,6 @@ try {
     Write-Fixture $cachePath ((@{key='neve';saved=[DateTime]::UtcNow.AddMinutes(-2).ToString('o');release=@{tag_name='v1.2.3'}}) | ConvertTo-Json -Depth 5)
     Assert-Test ($null -eq (Get-InstallerCachedRelease 'neve')) 'stale release cache is ignored'
     Remove-Item -LiteralPath $cachePath
-    $script:NeveCalls=0; $script:LlamaCalls=0
-    function Get-GitHubLatestRelease { param($Owner,$Repo);$script:NeveCalls++; return [pscustomobject]@{tag_name='v9.0.0';body='fixture'} }
-    function Get-GitHubLatestLlamaRelease { param($Backends);$script:LlamaCalls++;return [pscustomobject]@{tag_name='b90000';assets=@()} }
-    $REPO_OWNER='fixture';$REPO_NAME='fixture'
-    $part = Get-UpdateReleaseState 'cpu' 'cpu' 'neve'
-    Assert-Test ($part.LatestTag -eq 'v9.0.0' -and $script:NeveCalls -eq 1 -and $script:LlamaCalls -eq 0) 'Neve query never waits for llama query'
-    $null = Get-UpdateReleaseState 'cpu' 'cpu' 'neve'
-    Assert-Test ($script:NeveCalls -eq 1) 'reopening uses fresh cache without repeated network requests'
-
-    $ctl=@{}
-    foreach($name in @('LblCurrent','LblLatest','LblStatus','LblLlamaCurrent','LblLlamaLatest','LblLlamaStatus','LblCheckTitle','LblCheckSub','ChkUpdateNeve','ChkUpdateLlama','BtnPrimary','UpdatePanel')) {
-        $ctl[$name]=[pscustomobject]@{Text='';Foreground='';Visibility='Collapsed';IsChecked=$false;IsEnabled=$false;Tag=$null}
-    }
-    $ctl.UpdatePanel.Visibility='Visible';$ctl.BtnPrimary.Tag='update';$ctl.LblCurrent.Text='completed-version'
-    $currentVersion='v1.0.0';$llamaCurrentDisplay='b1';$llamaInstalledTag='b1';$appIntegrity=@{Ok=$true};$script:PrimaryUpdates=0
-    function Update-PrimaryButtonState { $script:PrimaryUpdates++ }
-    Complete-UpdateReleaseCheck @{Part='llama';LatestTag='v2.0.0';Release=@{body='fixture'};LlamaLatestTag='b2';LlamaRelease=@{};PendingNeve=$false;PendingLlama=$false}
-    Assert-Test ($ctl.LblCurrent.Text -eq 'completed-version') 'late llama response preserves completed Neve status'
-    Assert-Test (-not $ctl.BtnPrimary.IsEnabled -and $script:PrimaryUpdates -eq 0) 'late release response cannot enable an active operation button'
-
     $releaseSource = Join-Path $testRoot 'release\NeveAI'
     $integrityFunction = @($updateAst.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-NeveAppIntegrity'},$true))[-1]
     foreach ($match in [regex]::Matches($integrityFunction.Extent.Text, "Path = '([^']+)'")) { Write-Fixture (Join-Path $releaseSource $match.Groups[1].Value) 'new' }

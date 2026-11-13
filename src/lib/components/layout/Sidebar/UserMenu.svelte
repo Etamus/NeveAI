@@ -5,7 +5,8 @@
 
 	import { getSessionUser } from '$lib/apis/auths';
 
-	import { showSettings, mobile, showSidebar, sidebarWidth, user } from '$lib/stores';
+	import { showSettings, showSettingsTab, mobile, showSidebar, sidebarWidth, user } from '$lib/stores';
+	import Face from '$lib/components/icons/Face.svelte';
 
 	import Settings from '$lib/components/icons/Settings.svelte';
 	import SignOut from '$lib/components/icons/SignOut.svelte';
@@ -33,6 +34,13 @@
 	};
 
 	const dispatch = createEventDispatcher();
+	const openSettingsTab = async (tab: string) => {
+		show = false;
+		showSettingsTab.set(tab);
+		await tick();
+		showSettings.set(true);
+		if ($mobile) { await tick(); showSidebar.set(false); }
+	};
 
 	const handleDropdownChange = (state: boolean) => {
 		if (state && $mobile) measureMobileMenu();
@@ -54,7 +62,7 @@
 <!-- svelte-ignore a11y-no-static-element-interactions -->
 <DropdownMenu.Root bind:open={show} onOpenChange={handleDropdownChange}>
 	<DropdownMenu.Trigger bind:el={triggerElement}>
-		<slot />
+		<slot open={show} />
 	</DropdownMenu.Trigger>
 
 	<slot name="content">
@@ -89,19 +97,13 @@
 						<span class="text-sm">{$i18n.t('Profile')}</span>
 					</div>
 				</DropdownMenu.Item>
+				<DropdownMenu.Item class="flex items-center rounded-sm py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer select-none" on:click={() => openSettingsTab('personalization')}>
+					<div class="flex items-center gap-3"><Face className="w-5 h-5" strokeWidth="2" /><span class="text-sm">{$i18n.t('Personalization')}</span></div>
+				</DropdownMenu.Item>
 
 				<DropdownMenu.Item
 					class="flex items-center rounded-sm py-1.5 px-3 w-full hover:bg-gray-50 dark:hover:bg-gray-800 transition cursor-pointer select-none"
-					on:click={async () => {
-						show = false;
-
-						await showSettings.set(true);
-
-						if ($mobile) {
-							await tick();
-							showSidebar.set(false);
-						}
-					}}
+					on:click={() => openSettingsTab('')}
 				>
 					<div class="flex items-center gap-3">
 						<Settings className="w-5 h-5" strokeWidth="1.5" />

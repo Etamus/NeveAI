@@ -111,6 +111,9 @@ export const showFileNavDir: Writable<string | null> = writable(null);
 export const selectedTerminalId: Writable<string | null> = writable(null);
 
 export const artifactCode = writable(null);
+export const artifactSelection = writable<string | null>(null);
+export const artifactPanelActive = writable(false);
+export const artifactGenerating = writable(false);
 export const artifactContents = writable(null);
 
 export const embed = writable(null);
@@ -146,6 +149,11 @@ type Settings = {
 	directConnections?: any[];
 	detectArtifacts?: boolean;
 	showUpdateToast?: boolean;
+	enableInterfaceNotifications?: boolean;
+	receiveLlamaUpdates?: boolean;
+	showModelRuntimeToasts?: boolean;
+	showModelDownloadToasts?: boolean;
+	showErrorToasts?: boolean;
 	showChangelog?: boolean;
 	showEmojiInCall?: boolean;
 	voiceInterruption?: boolean;

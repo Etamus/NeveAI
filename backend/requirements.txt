@@ -8,7 +8,7 @@ itsdangerous==2.2.0
 python-socketio==5.17.0
 cryptography
 PyJWT==2.15.1
-authlib==1.8.0
+authlib==1.9.1
 
 requests==2.34.2
 aiohttp==3.14.3

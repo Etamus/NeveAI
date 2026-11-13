@@ -733,12 +733,13 @@
 				<div class=" py-2 flex justify-center items-center">
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
+							let:open={userMenuOpen}
 							role={$user?.role}
 							on:show={(e) => {
 							}}
 						>
 							<div
-								class=" cursor-pointer flex rounded-md hover:bg-gray-100 dark:hover:bg-gray-700/50 transition group"
+								class=" cursor-pointer flex rounded-md hover:bg-gray-100 dark:hover:bg-gray-700/50 transition group {userMenuOpen ? 'bg-gray-100 dark:bg-gray-700/50' : ''}"
 							>
 								<div class="self-center relative">
 									<img
@@ -1141,13 +1142,14 @@
 				<div class="flex flex-col">
 					{#if $user !== undefined && $user !== null}
 						<UserMenu
+							let:open={userMenuOpen}
 							role={$user?.role}
 							align="start"
 							on:show={(e) => {
 							}}
 						>
 							<div
-								class=" flex min-h-11 items-center rounded-md py-2 px-1.5 w-full hover:bg-gray-100 dark:hover:bg-gray-700/50 transition"
+								class=" flex min-h-11 items-center rounded-md py-2 px-1.5 w-full hover:bg-gray-100 dark:hover:bg-gray-700/50 transition {userMenuOpen ? 'bg-gray-100 dark:bg-gray-700/50' : ''}"
 							>
 								<div class=" self-center mr-3 relative">
 									<img

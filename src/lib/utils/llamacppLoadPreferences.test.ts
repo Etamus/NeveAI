@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+	getSpeculativeMethod,
+	setSpeculativeMethod,
+	isSpeculativeSpeedEnabled,
+	setSpeculativeSpeedEnabled,
+	initializeSpeculativePreferences,
+	getContextCompactionPreference,
+	setContextCompactionPreference,
 	getLocalModelLoadPreferences,
 	getLocalModelAccelerationMode,
 	setLocalModelAccelerationMode,
@@ -22,6 +29,70 @@ beforeEach(() => {
 		removeItem: (key: string) => values.delete(key)
 	});
 	vi.stubGlobal('window', { dispatchEvent: vi.fn() });
+});
+
+describe('Context compaction preference', () => {
+	it.each(['on', 'off'] as const)('is opt-in and independent of context shift %s', (shift) => {
+		expect(getContextCompactionPreference()).toBe(false);
+		setLocalModelContextShiftPreference(shift);
+		const before = getLocalModelLoadPreferences();
+		setContextCompactionPreference(true);
+		expect(getContextCompactionPreference()).toBe(true);
+		expect(getLocalModelLoadPreferences()).toEqual(before);
+		setContextCompactionPreference(false);
+		expect(getContextCompactionPreference()).toBe(false);
+		expect(getLocalModelLoadPreferences()).toEqual(before);
+	});
+	it('ignores malformed persisted values', () => {
+		for (const value of ['false', '1', 'on', 'invalid']) {
+			localStorage.setItem('llamacpp_context_compaction', value);
+			expect(getContextCompactionPreference()).toBe(false);
+		}
+	});
+});
+
+describe('Speculative decoding method and independent activation', () => {
+	it('starts at Auto without enabling acceleration', () => {
+		initializeSpeculativePreferences();
+		expect(getSpeculativeMethod()).toBe('auto');
+		expect(isSpeculativeSpeedEnabled()).toBe(false);
+		expect(getLocalModelLoadPreferences()).toMatchObject({ speculative: 'off', tokenPrediction: 'off' });
+	});
+	it.each(['auto', 'ngram', 'mtp'] as const)('uses %s only when speed is enabled', (method) => {
+		initializeSpeculativePreferences();
+		const before = getLocalModelLoadPreferences();
+		setSpeculativeMethod(method);
+		expect(getLocalModelLoadPreferences()).toEqual(before);
+		setSpeculativeSpeedEnabled(true);
+		expect(getLocalModelLoadPreferences()).toEqual({ ...before,
+			speculative: method === 'ngram' ? 'high' : 'off',
+			tokenPrediction: method === 'auto' ? 'auto' : method === 'mtp' ? 'on' : 'off' });
+		setSpeculativeSpeedEnabled(false);
+		expect(getLocalModelLoadPreferences()).toEqual(before);
+		expect(getSpeculativeMethod()).toBe(method);
+	});
+	it('preserves saved activation and method through context shift and initialization', () => {
+		initializeSpeculativePreferences();
+		setSpeculativeMethod('mtp');setSpeculativeSpeedEnabled(true);
+		setLocalModelContextShiftPreference('on');
+		initializeSpeculativePreferences();
+		expect(isSpeculativeSpeedEnabled()).toBe(false);
+		expect(getLocalModelLoadPreferences()).toMatchObject({ speculative: 'off', tokenPrediction: 'off' });
+		setSpeculativeSpeedEnabled(false);
+		setLocalModelContextShiftPreference('off');
+		expect(isSpeculativeSpeedEnabled()).toBe(true);
+		expect(getSpeculativeMethod()).toBe('mtp');
+	});
+	it.each(['fast', 'high', 'low'])('migrates legacy %s to enabled Auto without touching unrelated settings', (mode) => {
+		if(mode === 'fast')localStorage.setItem('neveai.responseSpeed', mode);
+		else localStorage.setItem('llamacpp_speculative_decoding', mode);
+		setLocalModelContextShiftPreference('on');
+		initializeSpeculativePreferences();
+		setLocalModelContextShiftPreference('off');
+		expect(getSpeculativeMethod()).toBe('auto');
+		expect(isSpeculativeSpeedEnabled()).toBe(true);
+		expect(getLocalModelLoadPreferences().tokenPrediction).toBe('auto');
+	});
 });
 
 describe('GPU execution preference', () => {

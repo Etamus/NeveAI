@@ -62,8 +62,12 @@ describe('Shared update status for immediate About availability', () => {
 		await expect(api(vi.fn().mockRejectedValue(new Error('offline')))('fixture')).rejects.toThrow('offline');
 		expect(get(versionUpdateStatus)).toBeNull();
 	});
-	it('About derives visibility from shared availability and preserves the admin restriction', () => {
-		expect(aboutSource).toContain('getAvailableUpdateTargets($versionUpdateStatus, projectVersion)');
-		expect(aboutSource).toContain("$user?.role === 'admin' && (updateAvailable || startingUpdater)");
+	it('moves availability out of About and preserves the admin restriction', () => {
+		expect(aboutSource).not.toContain('startAppUpdater');
+		expect(aboutSource).not.toContain('getAvailableUpdateTargets');
+		const updates = readFileSync('src/lib/components/chat/Settings/Updates.svelte', 'utf8');
+		expect(updates).toMatch(/getAvailableUpdateTargets\(status,\s*\$NEVEAI_VERSION\)/);
+		const modal = readFileSync('src/lib/components/chat/SettingsModal.svelte', 'utf8');
+		expect(modal).toMatch(/updates[\s\S]*admin/);
 	});
 });

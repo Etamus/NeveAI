@@ -41,7 +41,7 @@
 
 	export let onSave: (value: any) => void = () => {};
 	export let onUpdate: (value: any) => void = () => {};
-	export let onPreview: (value: any) => void = () => {};
+	export let onPreview: (value: any, language?: string) => void = () => {};
 
 	export let onTaskClick: Function = () => {};
 	export let onSourceClick: Function = () => {};
@@ -72,7 +72,7 @@
 			const match = lang.match(/^[\w+#.-]+/);
 			if (match && match[0].length < lang.length) {
 				const overflow = lang.slice(match[0].length);
-				code = overflow + '\n' + code;
+				if (!/^\s/.test(overflow) || /^\s*</.test(overflow)) code = overflow + '\n' + code;
 			}
 		}
 		// 2. Strip trailing ``` that is a malformed closing fence

@@ -34,14 +34,16 @@ export function prepareStreamingMarkdown(source: string): string {
 	return result + repairMarkdown(source.slice(cursor));
 }
 
-export function stabilizeStreamingBlocks(tokens: TokensList): TokensList {
+export function stabilizeStreamingBlocks(tokens: TokensList, originalSource?: string): TokensList {
 	const last = tokens.at(-1);
 	if (!last) return tokens;
 	const raw = last.raw ?? '';
 	const pendingTable = (last.type === 'paragraph' || last.type === 'text') && /^ {0,3}\|/.test(raw);
 	const pendingFence = last.type === 'code' && /^ {0,3}(`{3,}|~{3,})/.test(raw) && !raw.includes('\n');
 	const pendingMath = (last.type === 'paragraph' || last.type === 'text') && /^ {0,3}(\$\$|\\\[|\\begin\{equation\})/.test(raw);
-	if (!pendingTable && !pendingFence && !pendingMath) return tokens;
+	// A live `*   **` can still become a bold list item, not a thematic break.
+	const pendingRule = last.type === 'hr' && !/\n[\t \r]*$/.test(originalSource ?? raw);
+	if (!pendingTable && !pendingFence && !pendingMath && !pendingRule) return tokens;
 	// An unfinished table header/fence must not first appear as a normal paragraph.
 	const visible = tokens.slice(0, -1) as TokensList;
 	visible.links = tokens.links;

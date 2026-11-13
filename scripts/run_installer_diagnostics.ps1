@@ -1,4 +1,4 @@
-param([ValidateSet('home','install','update','build')][string]$StartPage = 'home')
+param([ValidateSet('home','install','build')][string]$StartPage = 'home')
 $root = Split-Path -Parent $PSScriptRoot
 $Error.Clear()
 try { & (Join-Path $root 'launchers/instalar.ps1') -StartPage $StartPage }

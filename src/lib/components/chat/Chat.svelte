@@ -16,6 +16,7 @@
 
 	import { chatId, chats, config, type Model, models, tags as allTags, settings, banners, user, socket, audioQueue, showControls, showCallOverlay, currentChatPage, temporaryChatEnabled, mobile, chatTitle, showArtifacts, artifactContents, tools, toolServers, terminalServers, selectedFolder, pinnedChats, showEmbeds, selectedTerminalId, showFileNavPath, showFileNavDir, activeChatIds } from '$lib/stores';
 	import {getConversationArtifacts} from '$lib/utils/artifactResults';
+	import { artifactSelection, artifactPanelActive, artifactGenerating } from '$lib/stores';
 
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
@@ -76,7 +77,7 @@
 	import { getAccordionScrollPosition } from '$lib/utils/accordionScrollPosition';
 	import { dismissTooltipsOnMediaScroll } from '$lib/utils/mediaGenerationHover';
 	import { HISTORY_LAYOUT_EVENT } from '$lib/utils/historyScrollLock';
-	import { getLocalModelLoadPreferences } from '$lib/utils/llamacppLoadPreferences';
+	import { getLocalModelLoadPreferences, getContextCompactionPreference } from '$lib/utils/llamacppLoadPreferences';
 	import { getFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
 	import { normalizeLearningRequestFeatures } from '$lib/utils/guidedLearning';
 	import { updateFolderById } from '$lib/apis/folders';
@@ -162,17 +163,11 @@
 	let fileGenerationEnabled = getFileGenerationPreference(false);
 	let stableDiffusionEnabled = false;
 	let stableDiffusionQuality:
-		| 'neve_image'
-		| 'neve_image_2'
+
 		| 'qwen_image_2s'
-		| 'qwen_image_2_1_official' = 'neve_image_2';
-	let stableDiffusionStyle:
-		| 'none'
-		| 'minimalist'
-		| 'fantasy'
-		| 'spontaneous'
-		| 'realistic'
-		| 'manga' = 'none';
+		| 'minimax_h3_image'
+		| 'qwen_image_2_1_official' = 'qwen_image_2s';
+	let stableDiffusionStyle: 'none' = 'none';
 	let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	import { imageModePrompt, imageModeSubmissionError, imageModeIsSwap, imageModeOwnsAttachmentSpacing, imageSwapSlots, type ImageModeDisplay } from '$lib/utils/imageModes';
 	let stableDiffusionModeOptions: import('$lib/utils/imageModes').ImageModeOptions = { mode: 'normal' };
@@ -1793,38 +1788,23 @@
 		}
 		localStorage.removeItem('neveai.imageResolution.neve_image_2_2');
 		const savedImageQuality =
-			storedImageQuality === 'qwen_image_2_2_experimental' ? 'qwen_image_2_1_official' : storedImageQuality === 'qwen_image_2_1' ? 'qwen_image_2s' : storedImageQuality === 'neve_image' ? 'neve_image_2' : storedImageQuality;
+			storedImageQuality === 'qwen_image_2_2_experimental' ? 'qwen_image_2_1_official' : storedImageQuality === 'qwen_image_2_1' ? 'qwen_image_2s' : storedImageQuality === 'neve_image' ? 'qwen_image_2s' : storedImageQuality;
 		stableDiffusionQuality = [
-			'neve_image_2',
 			'qwen_image_2s',
+			'minimax_h3_image',
 			'qwen_image_2_1_official'
 		].includes(savedImageQuality ?? '')
 			? (savedImageQuality as typeof stableDiffusionQuality)
-			: 'neve_image_2';
+			: 'qwen_image_2s';
 		if (storedImageQuality !== stableDiffusionQuality) {
 			localStorage.setItem('neveai.imageQuality', stableDiffusionQuality);
 		}
 		localStorage.removeItem('neveai.image2Mode');
-		const previousImageStyle = localStorage.getItem('neveai.imageStyle');
-		const savedImageStyle =
-			(
-				{ analog: 'spontaneous', realistic_2: 'realistic' } as Record<
-					string,
-					string
-				>
-			)[previousImageStyle ?? ''] ?? previousImageStyle;
-		stableDiffusionStyle = [
-			'realistic',
-			'spontaneous',
-			'fantasy',
-			'minimalist',
-			'manga'
-		].includes(savedImageStyle ?? '')
-			? (savedImageStyle as typeof stableDiffusionStyle)
-			: 'none';
+		stableDiffusionStyle = 'none';
+		localStorage.removeItem('neveai.imageStyle');
+		localStorage.removeItem('neveai.imageResolution.neve_image_1_4');
 		const legacyImageResolution = localStorage.getItem('neveai.imageResolution');
 		const imageResolutionKeys = [
-			'neveai.imageResolution.neve_image_1_4',
 			'neveai.imageResolution.neve_image_2',
 			'neveai.imageResolution.neve_image_2_1'
 		];
@@ -1844,21 +1824,19 @@
 			: legacyImageResolution;
 		if (
 			['1:1', '16:9', '9:16', '4:3', '3:4'].includes(migratedQwenImageResolution ?? '') &&
-			!localStorage.getItem(imageResolutionKeys[1])
+			!localStorage.getItem(imageResolutionKeys[0])
 		) {
-			localStorage.setItem(imageResolutionKeys[1], migratedQwenImageResolution!);
+			localStorage.setItem(imageResolutionKeys[0], migratedQwenImageResolution!);
 		}
 		localStorage.removeItem('neveai.imageResolution');
 		localStorage.removeItem('neveai.imageResolution.qwen_image_2_1');
 		localStorage.removeItem('neveai.imageResolution.qwen_image_2s');
 		const activeImageResolutionKey =
-			stableDiffusionQuality === 'neve_image_2'
+			stableDiffusionQuality === 'qwen_image_2s'
 				? imageResolutionKeys[0]
-				: stableDiffusionQuality === 'qwen_image_2s'
+				: stableDiffusionQuality === 'qwen_image_2_1_official'
 					? imageResolutionKeys[1]
-					: stableDiffusionQuality === 'qwen_image_2_1_official'
-						? imageResolutionKeys[2]
-						: null;
+					: stableDiffusionQuality === 'minimax_h3_image' ? 'neveai.imageResolution.minimax_h3_image' : null;
 		const savedImageResolution = activeImageResolutionKey
 			? localStorage.getItem(activeImageResolutionKey)
 			: null;
@@ -2098,47 +2076,38 @@
 	};
 
 	let contentsDebounceTimer = null;
-	let lastContentsFingerprint = '';
 
-	const onHistoryChange = (history, artifactsEnabled) => {
+	const onHistoryChange = (history, artifactsEnabled, selectedArtifact = null, panelActive = false) => {
+		const current = history?.messages?.[history?.currentId];
+		artifactGenerating.set(artifactsEnabled && panelActive && current?.role === 'assistant' && current.done === false);
 		if (!artifactsEnabled) {
 			clearTimeout(contentsDebounceTimer);
 			contentsDebounceTimer = null;
-			lastContentsFingerprint = '';
 			artifactContents.set([]);
+			return;
+		}
+		if (!panelActive) {
+			clearTimeout(contentsDebounceTimer);
+			contentsDebounceTimer = null;
 			return;
 		}
 
 		if (history) {
-			// Skip entirely while streaming — artifacts will be updated
-			// directly by chatCompletionEventHandler when generation completes
-			if (_flushRAF) return;
-
-			clearTimeout(contentsDebounceTimer);
+			if (contentsDebounceTimer) return;
 			contentsDebounceTimer = setTimeout(() => {
 				contentsDebounceTimer = null;
-				const messages = history ? createMessagesList(history, history.currentId) : [];
-				const lastAssistant = messages.filter((m) => m?.role !== 'user').pop();
-				if (lastAssistant?.done === false) return;
-				const fingerprint = lastAssistant
-					? `${lastAssistant.id}:${lastAssistant.content?.length ?? 0}`
-					: '';
-				if (fingerprint !== lastContentsFingerprint) {
-					lastContentsFingerprint = fingerprint;
-					getContents();
-				}
-			}, 300);
+				getContents();
+			}, 250);
 		} else {
 			clearTimeout(contentsDebounceTimer);
-			lastContentsFingerprint = '';
 			artifactContents.set([]);
 		}
 	};
 
-	$: onHistoryChange(history, $showArtifacts);
+	$: onHistoryChange(history, $showArtifacts, $artifactSelection, $showControls && $artifactPanelActive);
 
 	const getContents = () => {
-		artifactContents.set(getConversationArtifacts(history, $artifactContents ?? []));
+		artifactContents.set(getConversationArtifacts(history, $artifactContents ?? [], $artifactSelection, $showControls && $artifactPanelActive));
 	};
 
 	//////////////////////////
@@ -3767,8 +3736,9 @@
 		}
 	};
 
-	const chatCompletionEventHandler = async (data, message, chatId) => {
-		const { id, done, choices, content, output, sources, selected_model_id, error, usage } = data;
+	const chatCompletionEventHandler = async (data, message, eventChatId) => {
+		const { id, done, choices, content, output, sources, selected_model_id, error, usage, finish_reason } = data;
+		if (finish_reason != null) message.finish_reason = finish_reason;
 
 		// Store raw OR-aligned output items from backend
 		if (output) {
@@ -3877,6 +3847,11 @@
 		}
 
 		if (done) {
+			if (finish_reason === 'length' && eventChatId === $chatId) {
+				toast.error($i18n.t('The response reached the token limit before finishing.'), {
+					id: `generation-limit-${eventChatId}-${message.id}`
+				});
+			}
 			// Flush final buffered content to the proxy
 			const finalContent = _contentBuffers.get(message.id) ?? message.content;
 			message.content = finalContent;
@@ -3885,7 +3860,6 @@
 			// Clear artifact debounce — we'll call getContents() directly below
 			clearTimeout(contentsDebounceTimer);
 			contentsDebounceTimer = null;
-			lastContentsFingerprint = '';
 
 			const wasAnchored = anchoredGeneratingMessageId === message.id;
 			const isVisualMediaCompletion = isVisualMediaMessage(message);
@@ -3893,7 +3867,7 @@
 
 			// Immediately remove this chat from activeChatIds so spinner stops
 			activeChatIds.update((ids) => {
-				ids.delete(chatId);
+				ids.delete(eventChatId);
 				return new Set(ids);
 			});
 
@@ -3940,10 +3914,10 @@
 			}
 
 			// Refresh an already-open preview; completion never opens the panel.
-			if ($showArtifacts) getContents();
+			if ($showArtifacts && $showControls && $artifactPanelActive) getContents();
 
 			await chatCompletedHandler(
-				chatId,
+				eventChatId,
 				message.model,
 				message.id,
 				createMessagesList(history, message.id)
@@ -3989,6 +3963,7 @@
 	};
 
 	const normalizeLocalTokenPrediction = (tokenPrediction?: string | null) => {
+		if (tokenPrediction === 'auto') return 'auto';
 		return tokenPrediction === 'on' ||
 			tokenPrediction === 'stable' ||
 			tokenPrediction === 'aggressive'
@@ -4050,7 +4025,7 @@
 
 	const loadedLocalModelMatchesPlan = (loadedModel: LocalModel, loadPlan: LocalModelLoadPlan) => {
 		return (
-			(loadPlan.contextSize === 0 ? loadedModel.context_auto === true : loadedModel.n_ctx === loadPlan.contextSize) &&
+			(loadPlan.contextSize === 0 ? loadedModel.context_auto === true : loadedModel.n_ctx === loadPlan.contextSize && loadedModel.context_auto !== true) &&
 			(loadedModel.mmproj_filename ?? '') === loadPlan.mmprojFilename &&
 			normalizeLocalCacheType(loadedModel.cache_type) === loadPlan.cacheType &&
 			normalizeLocalSpeculativeDecoding(loadedModel.speculative_decoding) ===
@@ -4464,7 +4439,11 @@
 				? [atSelectedModel.id]
 				: selectedModels;
 
-		if (requestFeatures?.music_generation && !(await ensureLocalModelsReady(selectedModelIds, { textOnly: true }))) {
+		// Composer submissions already checked their load profile before clearing the draft.
+		// Edited/resubmitted branches bypass that path and must check it here too.
+		if (!requestFeatures.stable_diffusion && !requestFeatures.video_generation &&
+			(!newChat || requestFeatures.music_generation) &&
+			!(await ensureLocalModelsReady(selectedModelIds, { textOnly: true }))) {
 			return;
 		}
 
@@ -4627,7 +4606,7 @@
 				stable_diffusion_style: stableDiffusionStyle,
 				...(stableDiffusionQuality === 'qwen_image_2s' ? { stable_diffusion_mode_options: stableDiffusionModeOptions } : {}),
 				stable_diffusion_resolution:
-					['qwen_image_2s', 'qwen_image_2_1_official'].includes(stableDiffusionQuality) &&
+					['qwen_image_2s', 'qwen_image_2_1_official', 'minimax_h3_image'].includes(stableDiffusionQuality) &&
 					files.some(
 						(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
 					)
@@ -5007,6 +4986,7 @@
 					...(currentModelsUseLlamaCpp()
 						? {
 								reasoning_mode: thinkingEnabled ? 'reasoning' : 'quick',
+								context_compaction: getContextCompactionPreference(),
 								reasoning_extended: thinkingExtendedEnabled,
 								reasoning_unlimited: thinkingUnlimitedEnabled
 							}
@@ -5327,7 +5307,7 @@
 						const generatedQuality = message?.statusHistory?.find(
 							(status: any) => status.action === 'stable_diffusion'
 						)?.quality;
-						if (['neve_image', 'neve_image_2', 'qwen_image_2s', 'qwen_image_2_1_official'].includes(generatedQuality)) {
+						if (['qwen_image_2s', 'qwen_image_2_1_official', 'minimax_h3_image'].includes(generatedQuality)) {
 							stableDiffusionQuality = generatedQuality;
 						}
 						stableDiffusionStyle =
@@ -5349,10 +5329,10 @@
 					}
 				}
 
-				const mediaRequestFeatures = generatedAction === 'video_generation' || (generatedAction === 'stable_diffusion' && stableDiffusionQuality === 'qwen_image_2s')
+				const mediaRequestFeatures = generatedAction === 'video_generation' || (generatedAction === 'stable_diffusion' && ['qwen_image_2s', 'minimax_h3_image'].includes(stableDiffusionQuality))
 					? structuredClone(getFeatures()) : null;
 				try {
-					if (!(await ensureLocalModelsReady([model.id]))) {
+					if (!(generatedAction === 'stable_diffusion' && stableDiffusionQuality === 'minimax_h3_image') && !(await ensureLocalModelsReady([model.id]))) {
 						return;
 					}
 

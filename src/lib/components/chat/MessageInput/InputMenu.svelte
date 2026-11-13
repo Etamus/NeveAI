@@ -251,7 +251,7 @@
 
 	<div slot="content">
 		<DropdownMenu.Content
-			class="composer-integrations-menu overflow-x-hidden overflow-y-auto overscroll-contain rounded-2xl p-2 border bg-clip-border z-50 bg-white dark:bg-gray-850 text-gray-700 dark:text-gray-200 shadow-md"
+			class="composer-integrations-menu flex flex-col overflow-hidden rounded-2xl p-2 border bg-clip-border z-50 bg-white dark:bg-gray-850 text-gray-700 dark:text-gray-200 shadow-md"
 			style="font-family: 'Segoe UI', sans-serif; width: {menuWidth}px; max-width: calc(100vw - 16px); max-height: min(calc(100dvh - 16px), var(--bits-dropdown-menu-content-available-height, calc(100dvh - 16px)));"
 			strategy="fixed"
 			fitViewport={true}
@@ -262,6 +262,7 @@
 			align="start"
 			transition={(e) => fade(e, { duration: 100 })}
 		>
+			<div class="composer-integrations-scroll min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain">
 			{#if tab === ''}
 				<div>
 					<Tooltip
@@ -507,6 +508,7 @@
 				</div>
 
 			{/if}
+			</div>
 		</DropdownMenu.Content>
 	</div>
 </Dropdown>
@@ -523,7 +525,8 @@
 		border-color: rgb(56, 56, 56) !important;
 	}
 	@media (max-width: 767px) {
-		:global(.composer-integrations-menu) { border: 0 !important; scrollbar-width: none; }
-		:global(.composer-integrations-menu::-webkit-scrollbar) { display: none; }
+		:global(.composer-integrations-menu) { border: 0 !important; }
+		:global(.composer-integrations-scroll) { scrollbar-width: none; }
+		:global(.composer-integrations-scroll::-webkit-scrollbar) { display: none; }
 	}
 </style>

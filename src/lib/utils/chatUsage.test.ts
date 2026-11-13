@@ -97,6 +97,13 @@ describe('live measured usage', () => {
 describe('generation context persisted with token usage', () => {
 	it.each([
 		[{prompt_n: 27, predicted_n: 39, context_window: 8192}, 66],
+		[{cache_n: 8811, prompt_n: 4565, predicted_n: 3008, context_window: 16384}, 16384],
+		[{cache_n: '8811', prompt_n: '4565', predicted_n: '3008'}, 16384],
+		[{cache_n: 8811, prompt_n: 4565, predicted_n: 3008, total_tokens: 0}, 16384],
+		[{cache_n: 8811, prompt_n: 4565, prompt_tokens: 13376, completion_tokens: 3008}, 16384],
+		[{cache_n: 8811, prompt_n: 4565, input_tokens: 13376, output_tokens: 3008, total_tokens: 16384}, 16384],
+		[{prompt_tokens: 800, prompt_tokens_details: {cached_tokens: 600}, completion_tokens: 224}, 1024],
+		[{cache_n: -1, prompt_n: 27, predicted_n: 39}, 66],
 		[{prompt_n: 42, predicted_n: 11, context_window: 8192}, 53],
 		[{prompt_tokens: 800, completion_tokens: 224}, 1024],
 		[{input_tokens: 800, output_tokens: 224}, 1024],

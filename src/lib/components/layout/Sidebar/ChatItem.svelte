@@ -441,7 +441,7 @@
 			<div class="flex self-center z-10 items-center gap-1">
 				<Tooltip content={$i18n.t(isPinned ? 'Unpin' : 'Pin')}>
 					<button type="button" aria-label={$i18n.t(isPinned ? 'Unpin' : 'Pin')} aria-pressed={isPinned} disabled={pinPending} class="grid size-5 place-items-center dark:hover:text-white transition" on:click={togglePin}>
-						<OfficePin className="size-[0.84375rem]" filled={isPinned} />
+						<OfficePin className="sidebar-chat-action-icon size-[0.84375rem]" filled={isPinned} />
 					</button>
 				</Tooltip>
 				<ChatMenu
@@ -476,7 +476,7 @@
 							xmlns="http://www.w3.org/2000/svg"
 							viewBox="0 0 16 16"
 							fill="currentColor"
-							class="size-[0.84375rem]"
+							class="sidebar-chat-action-icon size-[0.84375rem]"
 						>
 							<path
 								d="M2 8a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0ZM6.5 8a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0ZM12.5 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"
@@ -514,6 +514,7 @@
 </div>
 
 <style>
+	.sidebar-chat-actions :global(.sidebar-chat-action-icon) { transform: translateY(0.5px); }
 	@media (max-width: 767px) {
 		:global(#sidebar) .sidebar-chat-actions {
 			background: transparent;

@@ -2,13 +2,18 @@
 	// socket.io-client (~75KB) is loaded lazily inside setupSocket() to avoid blocking the auth screen
 	import PyodideWorker from '$lib/workers/pyodide.worker?worker';
 	import { Toaster, toast } from 'svelte-sonner';
+	import { get } from 'svelte/store';
+	import { interfaceNotificationsEnabled, toastCategoryEnabled } from '$lib/utils/toastPreferences';
 
 	// Disable all non-error toast notifications (success, info, warning, message)
-	// Keep toast.error intact so error toasts still display
+	// Errors remain enabled unless the user explicitly disables that category.
 	toast.success = () => {};
 	toast.info = () => {};
 	toast.warning = () => {};
 	toast.message = () => {};
+	const originalErrorToast = toast.error;
+	toast.error = (...args) => toastCategoryEnabled(get(settings), 'errors') ? originalErrorToast(...args) : '';
+	$: if (!toastCategoryEnabled($settings, 'errors')) toast.dismiss();
 
 	import { onMount, tick, setContext, onDestroy } from 'svelte';
 	import { notifyDesktopReady } from '$lib/utils/desktopWindow';
@@ -658,7 +663,7 @@
 			console.error('Error loading backend config:', error);
 		}
 		// Portuguese is the default; a supported language saved locally takes precedence.
-		initI18n('pt-BR');
+		initI18n();
 
 		if (backendConfig) {
 			// Save Backend Status to Store
@@ -774,6 +779,7 @@
 	{/if}
 {/if}
 
+{#if interfaceNotificationsEnabled($settings)}
 <Toaster
 	theme={$theme.includes('dark')
 		? 'dark'
@@ -786,6 +792,7 @@
 	closeButton
 	expand
 />
+{/if}
 
 <style>
 	/* Only the visible notification surfaces should intercept pointer input. */

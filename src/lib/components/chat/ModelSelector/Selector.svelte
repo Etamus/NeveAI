@@ -287,7 +287,7 @@
 			frame = 0;
 			const viewport = window.visualViewport;
 			const bottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
-			const limit = 14.75 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+			const limit = node.scrollHeight;
 			const height = Math.max(34, Math.min(limit, bottom - node.getBoundingClientRect().top - 16));
 			node.style.maxHeight = `${height}px`;
 		};
@@ -592,7 +592,7 @@
 			{/if}
 
 			{#if showLoadSettings}
-				<div data-model-load-settings use:fitLoadSettings class="max-h-[14.75rem] overflow-y-auto py-1">
+				<div data-model-load-settings use:fitLoadSettings class="max-h-[calc(100dvh-7rem)] overflow-y-auto py-1">
 					<LocalModelLoadSettings />
 				</div>
 			{:else}

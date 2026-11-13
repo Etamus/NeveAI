@@ -58,6 +58,7 @@ export interface LocalModel {
 	cache_type: string | null;
 	speculative_decoding: string | null;
 	token_prediction: string | null;
+	speculative_method?: 'off' | 'ngram' | 'mtp' | null;
 	context_shift: string | null;
 }
 
@@ -113,7 +114,7 @@ export const normalizeLlamaCppErrorMessage = (
 		lower.includes('context type mtp') ||
 		lower.includes('draft-mtp')
 	) {
-		return 'Este modelo não tem suporte à predição de tokens. Selecione Normal em Velocidade e tente carregar novamente.';
+		return 'Este modelo não tem suporte a MTP neste runtime. Selecione Auto ou Ngram em Decodificação especulativa e tente carregar novamente.';
 	}
 	if (
 		lower.includes('exceed_context_size_error') ||

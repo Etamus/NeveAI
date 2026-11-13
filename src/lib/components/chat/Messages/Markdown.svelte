@@ -46,7 +46,7 @@
 	const scheduler = createStreamingMarkdownScheduler(() => {
 		const processed = replaceTokens(processResponseContent(snapshot), modelName, userName);
 		const parsed = parse(repairActive ? prepareStreamingMarkdown(processed) : processed);
-		const next = repairActive ? stabilizeStreamingBlocks(parsed) : parsed;
+		const next = repairActive ? stabilizeStreamingBlocks(parsed, snapshot) : parsed;
 		paintContext.suppress = repairActive && changesVisibleStructure(tokens, next);
 		tokens = next;
 	});

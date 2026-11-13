@@ -1,86 +1,18 @@
 <script lang="ts">
 	import { getContext, onMount } from 'svelte';
 	import { get } from 'svelte/store';
-	import { toast } from 'svelte-sonner';
-	import { getVersionUpdates, startAppUpdater } from '$lib/apis';
 	import Github from '$lib/components/icons/Github.svelte';
 	import HuggingFace from '$lib/components/icons/HuggingFace.svelte';
 	import Scale from '$lib/components/icons/Scale.svelte';
-	import { NEVEAI_VERSION, user } from '$lib/stores';
-	import { getAvailableUpdateTargets, versionUpdateStatus } from '$lib/utils/updateAvailability';
+	import { NEVEAI_VERSION } from '$lib/stores';
 	import bundledProjectVersion from '../../../../../version.txt?raw';
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
-
 	let projectVersion = get(NEVEAI_VERSION) || bundledProjectVersion.trim();
 	const githubUrl = 'https://github.com/Etamus/NeveAI';
 	const huggingFaceUrl = 'https://huggingface.co/NeveAI';
 	const licenseUrl = 'https://github.com/Etamus/NeveAI/blob/main/LICENSE.txt';
-	let versionRefreshInterval: ReturnType<typeof setInterval>;
-	let updateRefreshInterval: ReturnType<typeof setInterval>;
-	$: pendingTargets = getAvailableUpdateTargets($versionUpdateStatus, projectVersion);
-	$: latestProjectVersion = pendingTargets.join(' e ');
-	$: updateAvailable = pendingTargets.length > 0;
-	let startingUpdater = false;
-	let checkingUpdates = false;
-
-	$: if ($NEVEAI_VERSION && $NEVEAI_VERSION !== projectVersion) {
-		projectVersion = $NEVEAI_VERSION;
-	}
-
-	const loadProjectVersion = async () => {
-		const version = await fetch(`/api/version?t=${Date.now()}`, {
-			cache: 'no-store'
-		})
-			.then(async (res) => {
-				if (!res.ok) {
-					throw new Error('Failed to load version');
-				}
-
-				const data = await res.json();
-				return typeof data?.version === 'string' ? data.version.trim() : '';
-			})
-			.catch(() => '');
-
-		if (version) {
-			projectVersion = version;
-			NEVEAI_VERSION.set(version);
-		}
-	};
-
-	const checkForUpdateStatus = async () => {
-		if ($user?.role !== 'admin') {
-			return;
-		}
-
-		if (checkingUpdates) return;
-		checkingUpdates = true;
-		const data = await getVersionUpdates(localStorage.token)
-			.catch(() => null)
-			.finally(() => { checkingUpdates = false; });
-		if (!data) {
-			return;
-		}
-	};
-
-	const startUpdate = async () => {
-		if (startingUpdater) {
-			return;
-		}
-
-		startingUpdater = true;
-		const started = await startAppUpdater(localStorage.token).catch(() => false);
-
-		if (started) {
-			startingUpdater = false;
-			toast.success($i18n.t('Updater opened.'));
-			return;
-		}
-
-		startingUpdater = false;
-		toast.error($i18n.t('Failed to open updater.'));
-	};
-
+	$: if ($NEVEAI_VERSION) projectVersion = $NEVEAI_VERSION;
 	const openExternalUrl = async (url: string) => {
 		const opened = await fetch('/api/external/open', {
 			method: 'POST',
@@ -97,19 +29,10 @@
 			window.open(url, '_blank', 'noopener,noreferrer');
 		}
 	};
-
 	onMount(() => {
-		loadProjectVersion();
-		checkForUpdateStatus();
-		versionRefreshInterval = setInterval(loadProjectVersion, 5000);
-		updateRefreshInterval = setInterval(checkForUpdateStatus, 60000);
-		window.addEventListener('focus', checkForUpdateStatus);
-
-		return () => {
-			clearInterval(versionRefreshInterval);
-			clearInterval(updateRefreshInterval);
-			window.removeEventListener('focus', checkForUpdateStatus);
-		};
+		void fetch('/api/version', {cache: 'no-store'}).then(r => r.ok ? r.json() : null).then(data => {
+			if(data?.version) NEVEAI_VERSION.set(data.version);
+		}).catch(() => {});
 	});
 </script>
 
@@ -118,19 +41,6 @@
 		<div class="text-sm font-medium">{$i18n.t('Version')}</div>
 		<div class="flex items-center gap-3 text-sm text-gray-600 dark:text-gray-300">
 			<span>{projectVersion}</span>
-			{#if $user?.role === 'admin' && (updateAvailable || startingUpdater)}
-				<button
-					type="button"
-					class="bg-transparent p-0 text-sm font-medium text-gray-700 transition-opacity hover:opacity-60 disabled:cursor-default disabled:opacity-60 dark:text-gray-200"
-					aria-label={latestProjectVersion
-						? $i18n.t('Update NeveAI to {{version}}', { version: latestProjectVersion })
-						: $i18n.t('Update NeveAI')}
-					disabled={startingUpdater}
-					on:click={startUpdate}
-				>
-					{startingUpdater ? $i18n.t('Opening...') : $i18n.t('Update')}
-				</button>
-			{/if}
 		</div>
 	</section>
 

@@ -2616,10 +2616,8 @@ async def chat_stable_diffusion_handler(
     )
     image_features = extra_params.get("__features__") or {}
     from neveai.routers.stable_diffusion import (
-        normalize_image_style,
         normalize_image_quality,
         normalize_qwen_image_resolution,
-        quality_image_dimensions,
         qwen_image_dimensions,
         QWEN_IMAGE_21_OFFICIAL_QUALITY,
         QWEN_IMAGE_21_OFFICIAL_STEPS,
@@ -2633,22 +2631,19 @@ async def chat_stable_diffusion_handler(
     resolution = normalize_qwen_image_resolution(
         image_features.get("stable_diffusion_resolution")
     )
-    if quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY} and init_image_references:
+    if quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY, "minimax_h3_image"} and init_image_references:
         resolution = "auto"
     if quality == "neve_image":
         resolution = "1:1"
-    style = (
-        normalize_image_style(image_features.get("stable_diffusion_style"))
-        if quality == "neve_image_2"
-        else "none"
-    )
+    style = "none"
     generation_description = "Editando imagem..." if init_image_references else "Criando imagem..."
     progress_width = int(request.app.state.config.STABLE_DIFFUSION_WIDTH)
     progress_height = int(request.app.state.config.STABLE_DIFFUSION_HEIGHT)
-    if quality == "neve_image_2":
-        progress_width, progress_height = quality_image_dimensions(resolution)
-    elif quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY}:
+    if quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY}:
         progress_width, progress_height = qwen_image_dimensions(resolution)
+    elif quality == "minimax_h3_image":
+        from neveai.routers.image_h3_generation import canvas_size
+        progress_width, progress_height = canvas_size(resolution)
     last_progress = 0
     selected_mode_options = image_features.get("stable_diffusion_mode_options") if quality == "qwen_image_2s" else None
 
@@ -2683,7 +2678,7 @@ async def chat_stable_diffusion_handler(
     try:
         _validate_media_attachments(
             messages, metadata.get("parent_message"), "image",
-            max_images=0 if quality == "neve_image" else 1 if quality == "neve_image_2" else 10,
+            max_images=10,
             references=init_image_references,
         )
         from neveai.utils.image_progress import initial_image_dimensions
@@ -2730,10 +2725,7 @@ async def chat_stable_diffusion_handler(
         height         = request.app.state.config.STABLE_DIFFUSION_HEIGHT
         steps          = request.app.state.config.STABLE_DIFFUSION_STEPS
         guidance_scale = request.app.state.config.STABLE_DIFFUSION_GUIDANCE_SCALE
-        if quality == "neve_image_2":
-            width, height = quality_image_dimensions(resolution)
-            steps = 8
-        elif quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY}:
+        if quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY}:
             width, height = qwen_image_dimensions(resolution)
             steps = (
                 8 if quality == "qwen_image_2s"
@@ -2744,7 +2736,15 @@ async def chat_stable_diffusion_handler(
         async with media_model_standby(model_manager, _sd_pipeline.unload):
             # Generate image directly and skip the LLM response path.
             generation_details = {}
-            if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
+            if quality == "minimax_h3_image":
+                from neveai.routers.image_h3_generation import neve_image_3_runtime
+
+                data_uri = await neve_image_3_runtime.run(
+                    prompt=image_prompt, resolution=resolution, references=init_image_references,
+                    user_id=getattr(user, "id", None), progress=emit_image_progress,
+                    dimensions=emit_image_dimensions, details=generation_details,
+                )
+            elif quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
                 from neveai.routers.image_quality_generation import neve_image_21_runtime
 
                 runtime = neve_image_21_runtime
@@ -2815,6 +2815,7 @@ async def chat_stable_diffusion_handler(
                 metadata={
                     "source": (
                         "qwen-image-2s" if quality == "qwen_image_2s"
+                        else "neve-image-3" if quality == "minimax_h3_image"
                         else "neve-image-2.6" if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
                         else "z-image-turbo"
                     ),
@@ -6909,6 +6910,12 @@ def apply_params_to_form_data(form_data, model):
     params = form_data.pop("params", {})
     custom_params = params.pop("custom_params", {})
 
+    compaction = params.pop("context_compaction", False) is True
+    if isinstance(custom_params, dict):
+        custom_params.pop("context_compaction", None)
+    if model.get("owned_by") == "llamacpp":
+        form_data["context_compaction"] = compaction
+
     # Extract no_think before it gets removed with other internal params
     _no_think = params.pop("no_think", False)
     if _no_think:
@@ -9068,6 +9075,7 @@ async def streaming_chat_response_handler(response, ctx):
                     output = []
 
             usage = None
+            finish_reason = None
 
             reasoning_tags_param = metadata.get("params", {}).get("reasoning_tags")
             DETECT_REASONING_TAGS = reasoning_tags_param is not False
@@ -9110,6 +9118,7 @@ async def streaming_chat_response_handler(response, ctx):
                     nonlocal content
                     nonlocal usage
                     nonlocal output
+                    nonlocal finish_reason
 
                     response_tool_calls = []
                     delta_count = 0
@@ -9258,6 +9267,8 @@ async def streaming_chat_response_handler(response, ctx):
                                         if raw_usage:
                                             await flush_pending_delta_data()
                                             usage = normalize_usage(raw_usage)
+                                            # The later text flush must not replace normalized metrics with raw timings.
+                                            data["usage"] = usage
                                             await event_emitter(
                                                 {
                                                     "type": "chat:completion",
@@ -9280,6 +9291,10 @@ async def streaming_chat_response_handler(response, ctx):
                                                     }
                                                 )
                                             continue
+
+                                        if choices[0].get("finish_reason") is not None:
+                                            finish_reason = choices[0]["finish_reason"]
+                                            data["finish_reason"] = finish_reason
 
                                         delta = choices[0].get("delta", {})
 
@@ -10319,6 +10334,7 @@ async def streaming_chat_response_handler(response, ctx):
                     "content": serialize_output(output, hide_reasoning=should_hide_reasoning_output(form_data, metadata)),
                     "output": output,
                     "title": title,
+                    **({"finish_reason": finish_reason} if finish_reason is not None else {}),
                 }
 
                 # Persist the final status/cleanup even when intermediate saves are enabled.
@@ -10330,6 +10346,7 @@ async def streaming_chat_response_handler(response, ctx):
                         "content": data["content"],
                         "output": output,
                         **({"usage": usage} if usage else {}),
+                        **({"finish_reason": finish_reason} if finish_reason is not None else {}),
                     },
                 )
 

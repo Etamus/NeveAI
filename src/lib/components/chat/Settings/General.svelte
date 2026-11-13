@@ -4,11 +4,12 @@
 	const dispatch = createEventDispatcher();
 
 	import { settings, theme, user } from '$lib/stores';
-	import { updateNotificationsEnabled } from '$lib/utils/updateToast';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import ManageFloatingActionButtonsModal from './Interface/ManageFloatingActionButtonsModal.svelte';
 	import { changeLanguage } from '$lib/i18n';
+	import { getLanguagePreference, type LanguagePreference } from '$lib/i18n/languagePreferences';
 	import CheckCircle from '../../icons/CheckCircle.svelte';
+	import ThemePreview from './ThemePreview.svelte';
 
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
@@ -28,14 +29,12 @@
 		return themeSelectorOptions.includes(storedTheme) ? storedTheme : 'system';
 	};
 	let selectedTheme = getSelectedTheme();
-	let selectedLanguage = 'pt-BR';
+	let selectedLanguage: LanguagePreference = getLanguagePreference();
 	let showLanguageDropdown = false;
 	let themeSwitchGeneration = 0;
 
 	let enableMessageQueue = true;
 	let temporaryChatByDefault = false;
-	let showUpdateToast = true;
-	$: showUpdateToast = updateNotificationsEnabled($settings);
 	let showFloatingActionButtons = true;
 	let floatingActionButtons = null;
 	let showManageFloatingActionButtonsModal = false;
@@ -115,7 +114,7 @@
 
 	onMount(async () => {
 		selectedTheme = getSelectedTheme();
-		selectedLanguage = $i18n.language === 'en-US' ? 'en-US' : 'pt-BR';
+		selectedLanguage = getLanguagePreference();
 
 		enableMessageQueue = $settings?.enableMessageQueue ?? true;
 		temporaryChatByDefault = $settings?.temporaryChatByDefault ?? false;
@@ -205,7 +204,7 @@
 		});
 	};
 
-	const selectLanguage = (language: 'pt-BR' | 'en-US') => {
+	const selectLanguage = (language: LanguagePreference) => {
 		selectedLanguage = language;
 		showLanguageDropdown = false;
 		changeLanguage(language);
@@ -238,40 +237,18 @@
 
 
 			<div class="flex w-full justify-between">
-				<div class=" self-center text-sm font-medium">{$i18n.t('Theme')}</div>
+				<div class="shrink-0 whitespace-nowrap self-center text-sm font-medium">{$i18n.t('Theme')}</div>
 				<div class="flex items-center">
-					<div class="relative flex rounded-xl bg-gray-100 dark:bg-gray-850 p-0.5">
-						<div
-							class="absolute top-0.5 bottom-0.5 bg-white dark:bg-gray-700 rounded-lg shadow-sm pointer-events-none transition-transform duration-200 ease-in-out"
-							style="left: 2px; width: calc((100% - 4px) / 3); transform: translateX(calc({selectedTheme === 'system' ? 0 : selectedTheme === 'light' ? 1 : 2} * 100%))"
-						></div>
-						<button
-							class="relative z-10 flex items-center justify-center p-2 transition-colors duration-150 {selectedTheme === 'system' ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}"
-							on:click={() => { selectedTheme = 'system'; themeChangeHandler('system'); }}
-							title={$i18n.t('System')}
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-							</svg>
-						</button>
-						<button
-							class="relative z-10 flex items-center justify-center p-2 transition-colors duration-150 {selectedTheme === 'light' ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}"
-							on:click={() => { selectedTheme = 'light'; themeChangeHandler('light'); }}
-							title={$i18n.t('Light')}
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-							</svg>
-						</button>
-						<button
-							class="relative z-10 flex items-center justify-center p-2 transition-colors duration-150 {selectedTheme === 'dark' ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}"
-							on:click={() => { selectedTheme = 'dark'; themeChangeHandler('dark'); }}
-							title={$i18n.t('Dark')}
-						>
-							<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-								<path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-							</svg>
-						</button>
+					<div class="flex items-center gap-3 p-1" role="group" aria-label={$i18n.t('Theme')}>
+						{#each themeSelectorOptions as option}
+							<button type="button" data-theme-option={option} aria-pressed={selectedTheme === option}
+								aria-label={$i18n.t(option === 'system' ? 'System' : option === 'light' ? 'Light' : 'Dark')}
+								title={$i18n.t(option === 'system' ? 'System' : option === 'light' ? 'Light' : 'Dark')}
+								class="theme-option relative shrink-0 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+								on:click={() => { selectedTheme = option; themeChangeHandler(option); }}>
+								<ThemePreview mode={option} />
+							</button>
+						{/each}
 					</div>
 				</div>
 			</div>
@@ -286,13 +263,13 @@
 					aria-expanded={showLanguageDropdown}
 					on:click={() => { showLanguageDropdown = !showLanguageDropdown; }}
 					>
-						<span>{selectedLanguage === 'en-US' ? $i18n.t('English') : 'Português (Brasil)'}</span>
+						<span>{selectedLanguage === 'auto' ? $i18n.t('Automatic detection') : selectedLanguage === 'en-US' ? $i18n.t('English') : 'Português (Brasil)'}</span>
 						<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showLanguageDropdown ? '' : 'rotate-180'}" aria-hidden="true"><path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" /></svg>
 					</button>
 					{#if showLanguageDropdown}
 						<div class="absolute right-0 top-full z-50 mt-1.5 w-44 rounded-lg border border-gray-200 bg-white p-1 text-sm shadow-md dark:border-gray-800 dark:bg-gray-850">
-							{#each [{ id: 'pt-BR', label: 'Português (Brasil)' }, { id: 'en-US', label: $i18n.t('English') }] as language}
-								<button type="button" class="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800" on:click={() => selectLanguage(language.id as 'pt-BR' | 'en-US')}>
+							{#each [{ id: 'auto', label: $i18n.t('Automatic detection') }, { id: 'pt-BR', label: 'Português (Brasil)' }, { id: 'en-US', label: $i18n.t('English') }] as language}
+								<button type="button" class="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800" on:click={() => selectLanguage(language.id as LanguagePreference)}>
 									<span>{language.label}</span>{#if selectedLanguage === language.id}<CheckCircle className="size-4" strokeWidth="1.7" />{/if}
 								</button>
 							{/each}
@@ -375,20 +352,6 @@
 				</div>
 			{/if}
 
-			<div class="py-0.5 flex w-full justify-between gap-2">
-				<div id="update-notifications-label" class="self-center text-sm">
-					{$i18n.t('Allow update notifications')}
-				</div>
-				<div class="flex shrink-0 items-center gap-2 p-1">
-					<Switch
-						ariaLabelledbyId="update-notifications-label"
-						bind:state={showUpdateToast}
-						on:change={() => {
-							saveSettings({ showUpdateToast });
-						}}
-					/>
-				</div>
-			</div>
 
 
 		</div>
@@ -396,3 +359,18 @@
 	</div>
 
 </div>
+
+<style>
+	.theme-option::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		border: 2px solid transparent;
+		border-radius: inherit;
+		pointer-events: none;
+		transition: border-color 150ms;
+	}
+	.theme-option[aria-pressed='false']:hover::after { border-color: #d1d5db; }
+	:global(.dark) .theme-option[aria-pressed='false']:hover::after { border-color: #4b5563; }
+	.theme-option[aria-pressed='true']::after { border-color: #3b82f6; }
+</style>

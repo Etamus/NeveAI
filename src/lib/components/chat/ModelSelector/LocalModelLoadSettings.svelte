@@ -6,6 +6,12 @@
 	import Switch from '$lib/components/common/Switch.svelte';
 	import {
 		getLocalModelLoadPreferences,
+		getContextCompactionPreference,
+		setContextCompactionPreference,
+		getSpeculativeMethod,
+		initializeSpeculativePreferences,
+		setSpeculativeMethod,
+		type SpeculativeMethod,
 		LOCAL_MODEL_CONTEXT_OPTIONS,
 		getVisionPreferenceLabel,
 		getCachePreferenceLabel,
@@ -26,6 +32,9 @@
 	const stepClass =
 		'h-[1.6875rem] w-6 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition disabled:opacity-30';
 	let preferences = getLocalModelLoadPreferences();
+	let compactionEnabled = getContextCompactionPreference();
+	let speculativeMethod = getSpeculativeMethod();
+	const speculativeMethods: SpeculativeMethod[] = ['auto', 'ngram', 'mtp'];
 	type Preferences = typeof preferences;
 	const fields = [
 		{
@@ -71,8 +80,11 @@
 		if (value !== undefined) update('context', value);
 	}
 	onMount(() => {
+		initializeSpeculativePreferences();
 		const sync = () => {
 			preferences = getLocalModelLoadPreferences();
+			compactionEnabled = getContextCompactionPreference();
+			speculativeMethod = getSpeculativeMethod();
 		};
 		sync();
 		window.addEventListener(RESPONSE_SPEED_CHANGED, sync);
@@ -159,7 +171,20 @@
 				</button>
 				{/if}
 			</div>
+			{#if field.key === 'cache'}
+				<div class="setting-row flex min-h-[36px] w-full items-center justify-between gap-3 py-0">
+					<span class={labelClass}>{$i18n.t('Speculative decoding')}</span>
+					<button id="load-setting-speculative-method" type="button" class={`${controlClass} rounded-full`}
+						aria-label={$i18n.t('Speculative decoding')}
+						on:click={() => setSpeculativeMethod(speculativeMethods[(speculativeMethods.indexOf(speculativeMethod) + 1) % speculativeMethods.length])}
+						>{speculativeMethod === 'auto' ? $i18n.t('Dinâmico') : speculativeMethod === 'ngram' ? 'Ngram' : 'MTP'}</button>
+				</div>
+			{/if}
 		{/each}
+		<div class="setting-row flex min-h-[36px] w-full items-center justify-between gap-3 py-0">
+			<span id="load-setting-compaction-label" class={labelClass}>{$i18n.t('Context compaction')}</span>
+			<div class="shrink-0"><Switch id="load-setting-compaction" ariaLabelledbyId="load-setting-compaction-label" bind:state={compactionEnabled} on:change={(e) => setContextCompactionPreference(e.detail)} /></div>
+		</div>
 		<div class="setting-row flex min-h-[36px] w-full items-center justify-between gap-3 py-0">
 			<span id="load-setting-gpu-priority-label" class={labelClass}>{$i18n.t('Priorizar execução na GPU')}</span>
 			<div class="shrink-0"><Switch id="load-setting-gpu-priority" ariaLabelledbyId="load-setting-gpu-priority-label" bind:state={gpuPriorityEnabled} on:change={(e) => setLocalModelGpuPriorityPreference(e.detail)} /></div>

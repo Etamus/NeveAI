@@ -48,6 +48,25 @@ class LiveUsageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(value['tokens_per_second'], 49.5)
         self.assertEqual(value['context_window'], 8192)
 
+    def test_native_cache_counts_towards_context_but_not_generation_speed(self):
+        value = normalize_usage(dict(cache_n=8811, prompt_n=4565, predicted_n=3008, predicted_per_second=98, context_window=16384))
+        self.assertEqual(value['input_tokens'], 13376)
+        self.assertEqual(value['output_tokens'], 3008)
+        self.assertEqual(value['total_tokens'], 16384)
+        self.assertEqual(value['tokens_per_second'], 98)
+        self.assertEqual(normalize_usage(value), value)
+
+    def test_never_double_counts_cache_in_standard_usage(self):
+        for data in [dict(prompt_tokens=13376,completion_tokens=3008),dict(input_tokens=13376,output_tokens=3008)]:
+            with self.subTest(data=data):
+                value=normalize_usage({**data,'cache_n':8811,'prompt_n':4565,'predicted_n':3008})
+                self.assertEqual(value['total_tokens'],16384)
+
+    def test_string_and_invalid_counts_are_safe(self):
+        self.assertEqual(normalize_usage(dict(cache_n='8811',prompt_n='4565',predicted_n='3008'))['total_tokens'],16384)
+        for cached in [-1,float('nan'),'invalid',None]:
+            self.assertEqual(normalize_usage(dict(cache_n=cached,prompt_n=27,predicted_n=39))['total_tokens'],66)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -5,8 +5,9 @@ import { chromium } from '../logs/ui-image-26/node_modules/playwright/index.mjs'
 const browser = await chromium.launch();
 const results = [];
 try {
-  for (const [name, project, runtime] of [['project', true, false], ['runtime', false, true], ['both', true, true], ['current', false, false]]) {
+  for (const [name, project, runtime, receive] of [['project', true, false,true], ['runtime', false, true,true], ['both', true, true,true], ['current', false, false,true],['runtime-off',false,true,false]]) {
     const page = await browser.newPage();
+    await page.addInitScript(()=>localStorage.setItem('neveai.language','pt-BR'));
     const errors = [];
     let unavailable = false;
     let queries = 0;
@@ -15,7 +16,7 @@ try {
     await page.route('**/api/v1/users/user/settings', async route => {
       const response = await route.fetch();
       const settings = await response.json();
-      await route.fulfill({ response, json: { ...settings, ui: { ...settings.ui, showUpdateToast: true } } });
+      await route.fulfill({ response, json: { ...settings, ui: { ...settings.ui, showUpdateToast: true,receiveLlamaUpdates:receive } } });
     });
     await page.route('**/api/version/updates', route => {
       queries++;
@@ -36,15 +37,22 @@ try {
     } else assert.equal(await notifications.count(), 0);
     await page.getByRole('button', { name: /Usu/ }).click();
     await page.getByRole('menuitem').filter({ hasText: /Configura/ }).click();
-    await page.getByRole('tab', { name: 'Sobre', exact: true }).click();
-    const update = page.locator('#tab-about button').filter({ hasText: /^Atualizar$/ });
+    await page.route('**/api/updater/state',route=>route.fulfill({json:{status:'idle'}}));
+    await page.getByRole('tab', { name: 'Atualizações', exact: true }).click();
+    const update = page.locator('#tab-updates button').filter({ hasText: /^Atualizar agora$/ });
     await page.waitForTimeout(200);
-    assert.equal(await update.count(), project || runtime ? 1 : 0);
-    if (project || runtime) {
+    assert.equal(await update.count(), project || (runtime && receive) ? 1 : 0);
+    if(project || (runtime && receive))assert(await update.isEnabled());
+    assert.equal(await page.locator('[data-update-component="neve"]').count(),0);
+    assert.equal(await page.locator('[data-update-component="llama"]').count(),runtime&&receive?1:0);
+    assert.equal(await page.locator('#tab-updates h3').innerText(),project?'Atualização disponível (v3.0.21)':runtime&&receive?'Atualização disponível':'Você está na versão mais recente');
+    if (project || (runtime&&receive)) {
       unavailable = true;
       const before = queries;
-      await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-      await page.waitForResponse(response => response.url().includes('/api/version/updates') && response.status() === 503);
+      await page.getByRole('tab',{name:'Geral',exact:true}).click();
+      const failed = page.waitForResponse(response => response.url().includes('/api/version/updates') && response.status() === 503);
+      await page.getByRole('tab',{name:'Atualizações',exact:true}).click();
+      await failed;
       assert(queries > before);
       assert.equal(await update.count(), 1, 'A temporary failure must not erase a confirmed update');
     }

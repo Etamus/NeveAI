@@ -411,7 +411,8 @@ input[type='range']::-moz-range-thumb {
 .codespan {
 	padding: 0.15rem 0.4rem;
 	font-size: 0.84em;
-	@apply font-mono rounded text-gray-800 bg-gray-100 dark:text-gray-300 dark:bg-[#2a2a2a] mx-0.5 border border-gray-200/60 dark:border-gray-700/50;
+	border: 0;
+	@apply font-mono rounded text-gray-800 bg-[#f6f7f8] dark:text-gray-300 dark:bg-[#262626] mx-0.5;
 }
 
 .svelte-flow {

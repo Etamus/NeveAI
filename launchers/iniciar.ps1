@@ -1,6 +1,8 @@
-param(
+﻿param(
 	[switch]$ValidateOnly,
-	[switch]$DebugConsole
+	[switch]$DebugConsole,
+	[string]$UpdateJob,
+	[switch]$UpdateOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -23,6 +25,28 @@ function Write-StartLog {
 	param([string]$Message)
 	$stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
 	Add-Content -LiteralPath $LogPath -Value "[$stamp] $Message"
+}
+
+function Get-NevePreparedUpdateJob([string]$ProjectRoot) {
+	$updates = Join-Path $ProjectRoot 'backend\data\updates'
+	if (-not (Test-Path -LiteralPath $updates -PathType Container)) { return $null }
+	if ((Get-Item -LiteralPath $updates).Attributes -band [IO.FileAttributes]::ReparsePoint) { return $null }
+	$candidates = @()
+	foreach ($folder in @(Get-ChildItem -LiteralPath $updates -Directory -ErrorAction SilentlyContinue)) {
+		if ($folder.Name -notmatch '^[0-9a-f]{32}$' -or ($folder.Attributes -band [IO.FileAttributes]::ReparsePoint)) { continue }
+		try {
+			$path = Join-Path $folder.FullName 'manifest.json'
+			$file = Get-Item -LiteralPath $path -ErrorAction Stop
+			if ($file.Length -gt 8MB) { continue }
+			$prepared = ConvertFrom-Json ([IO.File]::ReadAllText($path,[Text.Encoding]::UTF8))
+			if ($prepared.status -ne 'ready' -or $prepared.id -ne $folder.Name) { continue }
+			if ([IO.Path]::GetFullPath([string]$prepared.root).TrimEnd('\') -ne [IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\')) { continue }
+			$candidates += [pscustomobject]@{ Id=$folder.Name; Updated=$file.LastWriteTimeUtc }
+		} catch { Write-StartLog "Manifesto de atualizacao ignorado: $($folder.Name)" }
+	}
+	$latest = $candidates | Sort-Object Updated -Descending | Select-Object -First 1
+	if ($latest) { return [string]$latest.Id }
+	return $null
 }
 
 function Quote-PsLiteral {
@@ -180,13 +204,20 @@ $xaml = @'
                        FontSize="11"
                        Margin="0,0,0,4" />
 
+            <Grid Grid.Row="2" Margin="0,0,0,10">
             <TextBlock x:Name="StatusText"
-                       Grid.Row="2"
                        Text="Iniciando..."
                        HorizontalAlignment="Left"
                        Foreground="#A9B1BC"
                        FontSize="11.5"
-                       Margin="0,0,0,10" />
+                       Margin="0" />
+            <TextBlock x:Name="UpdatePercentText"
+                       Text="0%"
+                       Visibility="Collapsed"
+                       HorizontalAlignment="Right"
+                       Foreground="#C2C7CD"
+                       FontSize="12.5" />
+            </Grid>
 
             <Grid Grid.Row="3">
                 <ProgressBar x:Name="Progress"
@@ -222,6 +253,7 @@ $window = [Windows.Markup.XamlReader]::Load($reader)
 $logo = $window.FindName('Logo')
 $versionText = $window.FindName('VersionText')
 $statusText = $window.FindName('StatusText')
+$updatePercentText = $window.FindName('UpdatePercentText')
 $progressBar = $window.FindName('Progress')
 
 if (Test-Path -LiteralPath $VersionPath) {
@@ -246,13 +278,19 @@ function Test-NeveInstallReady {
 	return $true
 }
 
+$automaticUpdate = $false
+if (-not $ValidateOnly -and -not $UpdateJob) {
+	$UpdateJob = Get-NevePreparedUpdateJob $Root
+	$automaticUpdate = -not [string]::IsNullOrWhiteSpace($UpdateJob)
+	if ($automaticUpdate) { Write-StartLog "Atualizacao preparada detectada: $UpdateJob" }
+}
 $installReady = Test-NeveInstallReady
 if ($ValidateOnly) {
 	if ($installReady) { exit 0 }
 	exit 1
 }
 
-if (-not $installReady) {
+if (-not $installReady -and -not $UpdateJob) {
 	$installer = Join-Path $LauncherDir 'instalar.vbs'
 	if (-not (Test-Path -LiteralPath $installer)) {
 		Write-StartLog '[FATAL] instalação incompleta e instalar.vbs não encontrado'
@@ -300,15 +338,79 @@ function Set-SplashProgress {
 		[string]$Text,
 		[int]$Value
 	)
-	$statusText.Text = $Text
+	$statusText.Text = if ($UpdateJob) { 'Atualizando' } else { $Text }
+	if ($UpdateJob) { $Value = [Math]::Max($Value, $progressBar.Value) }
 	$progressBar.Value = [Math]::Max(0, [Math]::Min(100, $Value))
+	if ($UpdateJob) { $updatePercentText.Text = "$([int]$progressBar.Value)%" }
 	Pump-Ui
+}
+
+function Sync-UpdateManifestProgress($State) {
+	# Download completion is not installation progress.
+	if ($State.status -eq 'applying') {
+		Set-SplashProgress ([string]$State.phase) ([Math]::Min(99, [int]$State.progress))
+	} elseif ($State.status -eq 'completed') {
+		Set-SplashProgress 'Atualizando' 100
+	}
 }
 
 try {
 	Write-StartLog "launcher started; root=$Root"
+	$normalStatusForeground = $statusText.Foreground
+	$normalStatusFontSize = $statusText.FontSize
+	if ($UpdateJob) {
+		$versionText.Visibility = 'Collapsed'
+		$statusText.Text = 'Atualizando'
+		$statusText.FontSize = 12.5
+		$statusText.Foreground = [Windows.Media.Brushes]::WhiteSmoke
+		$updatePercentText.Visibility = 'Visible'
+	}
 	$window.Show()
 	$window.Activate() | Out-Null
+
+	if ($UpdateJob) {
+		if ($UpdateJob -notmatch '^[0-9a-f]{32}$') { throw 'Atualizacao invalida.' }
+		$applyScript = Join-Path $LauncherDir 'apply-update.ps1'
+		$powerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+		$arguments = @('-NoProfile','-ExecutionPolicy','Bypass','-WindowStyle','Hidden','-File',"`"$applyScript`"",'-Root',"`"$Root`"",'-Job',$UpdateJob)
+		$validation = Start-Process -FilePath $powerShell -ArgumentList ($arguments + @('-ValidateOnly')) -WindowStyle Hidden -PassThru
+		while (-not $validation.HasExited) { Pump-Ui; Start-Sleep -Milliseconds 40 }
+		if ($validation.ExitCode -ne 0) {
+			if (-not $automaticUpdate) { throw 'Nao foi possivel validar os pacotes da atualizacao. A aplicacao atual foi preservada.' }
+			Write-StartLog 'Pacote automatico invalido ou obsoleto; preservando a instalacao atual.'
+			try {
+				$failedPath = Join-Path $Root "backend\data\updates\$UpdateJob\manifest.json"
+				$failedJob = ConvertFrom-Json ([IO.File]::ReadAllText($failedPath,[Text.Encoding]::UTF8))
+				$failedJob.status = 'failed'
+				$failedJob | Add-Member -NotePropertyName error -NotePropertyValue 'O pacote preparado esta invalido ou obsoleto. Prepare um novo download.' -Force
+				[IO.File]::WriteAllText("$failedPath.tmp",($failedJob | ConvertTo-Json -Depth 24),[Text.UTF8Encoding]::new($false))
+				Move-Item -LiteralPath "$failedPath.tmp" -Destination $failedPath -Force
+			} catch { Write-StartLog "Nao foi possivel registrar o pacote invalido: $_" }
+			$UpdateJob = $null
+			$versionText.Visibility = 'Visible'
+			$statusText.Foreground = $normalStatusForeground
+			$statusText.FontSize = $normalStatusFontSize
+			$updatePercentText.Visibility = 'Collapsed'
+			if ($UpdateOnly) { $window.Close(); exit 1 }
+		} else {
+		. (Join-Path $LauncherDir 'process-ownership.ps1')
+		foreach ($owned in @(Get-NeveProjectProcessIds $Root $PID @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue))) {
+			Stop-Process -Id $owned -Force -ErrorAction SilentlyContinue
+		}
+		$manifestPath = Join-Path $Root "backend\data\updates\$UpdateJob\manifest.json"
+		$process = Start-Process -FilePath $powerShell -ArgumentList $arguments -WindowStyle Hidden -PassThru
+		while (-not $process.HasExited) {
+			try {
+				$state = ConvertFrom-Json ([IO.File]::ReadAllText($manifestPath,[Text.Encoding]::UTF8))
+				Sync-UpdateManifestProgress $state
+			} catch { Pump-Ui }
+			Start-Sleep -Milliseconds 80
+		}
+		if ($process.ExitCode -ne 0) { throw 'A atualizacao nao foi concluida. Consulte logs\update.log; os mecanismos de recuperacao foram preservados.' }
+		Set-SplashProgress 'Atualizando' 100
+		if ($UpdateOnly) { $window.Close(); exit 0 }
+		}
+	}
 
 	Set-SplashProgress 'Preparando ambiente...' 8
 
@@ -424,6 +526,17 @@ try {
 	Write-StartLog "frontend window opened; launcher pid=$($frontendProcess.Id)"
 } catch {
 	Write-StartLog "[FATAL] $($_.Exception.Message)"
+	if ($UpdateJob -match '^[0-9a-f]{32}$') {
+		try {
+			$path = Join-Path $Root "backend\data\updates\$UpdateJob\manifest.json"
+			$jobState = ConvertFrom-Json ([IO.File]::ReadAllText($path,[Text.Encoding]::UTF8))
+			if ($jobState.status -in @('restarting','applying')) {
+				$jobState.status = 'failed'
+				$jobState | Add-Member -NotePropertyName error -NotePropertyValue 'A atualizacao nao foi concluida. Consulte logs/update.log e tente novamente.' -Force
+				[IO.File]::WriteAllText($path,($jobState | ConvertTo-Json -Depth 24),[Text.UTF8Encoding]::new($false))
+			}
+		} catch {}
+	}
 	if ($window) {
 		$window.Close()
 	}

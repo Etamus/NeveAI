@@ -5,6 +5,7 @@
 	import { keymap } from '@codemirror/view';
 	import { indentWithTab } from '@codemirror/commands';
 	import { html as htmlLang } from '@codemirror/lang-html';
+	import { javascript } from '@codemirror/lang-javascript';
 	import { oneDark } from '@codemirror/theme-one-dark';
 	import { indentUnit } from '@codemirror/language';
 	import { onMount, getContext, createEventDispatcher } from 'svelte';
@@ -15,6 +16,8 @@
 
 	import {
 		artifactCode,
+		artifactGenerating,
+		artifactSelection,
 		chatId,
 		settings,
 		showArtifacts,
@@ -31,9 +34,14 @@
 	import CodeBracket from '../icons/CodeBracket.svelte';
 	import Cube from '../icons/Cube.svelte';
 	import Code from '../icons/Code.svelte';
+	import ArtifactPreview from './ArtifactPreview.svelte';
+	import { observeArtifactPanel } from '$lib/utils/artifacts/activity';
+	import type { ArtifactResult } from '$lib/utils/artifactResults';
+	import { downloadArtifact as saveArtifact } from '$lib/utils/artifactPreview';
 	export let overlay = false;
 
-	let contents: Array<{ type: string; content: string; rawHtml?: string; rawCss?: string; rawJs?: string }> = [];
+	let contents: ArtifactResult[] = [];
+	let sourceContents: ArtifactResult[] = [];
 	let selectedContentIdx = 0;
 	let activeTab: 'preview' | 'code' = 'preview';
 
@@ -53,6 +61,7 @@
 	// Build the raw code shown in the editor from the separate parts
 	function getRawCode(item: typeof currentContent): string {
 		if (!item) return '';
+		if (item.files?.length) return item.files.find(file => file.path === item.entry)?.content ?? item.content;
 		if (item.type === 'svg') return item.content;
 		if (item.rawHtml !== undefined) {
 			let parts: string[] = [];
@@ -106,10 +115,20 @@
 	// CodeMirror editor state
 	let codeEditor: EditorView | null = null;
 	let editorTheme = new Compartment();
+	let editorLanguage = new Compartment();
+	let editorLanguageKey = '';
 	let editorIsSource = false;
+	const editorSyntax = () => {
+		const language = currentContent?.files?.find(file => file.path === currentContent.entry)?.language ?? 'html';
+		return ['js', 'jsx', 'ts', 'tsx'].includes(language) ? javascript({ jsx: true, typescript: ['ts', 'tsx'].includes(language) }) : htmlLang();
+	};
 
 	// Sync editor content when currentContent changes externally (new version from AI, index switch)
 	$: if (codeEditor && currentContent) {
+		if (editorLanguageKey !== currentContent.entry) {
+			editorLanguageKey = currentContent.entry;
+			codeEditor.dispatch({ effects: editorLanguage.reconfigure(editorSyntax()) });
+		}
 		if (editorIsSource) {
 			editorIsSource = false;
 		} else {
@@ -132,7 +151,7 @@
 					basicSetup,
 					keymap.of([indentWithTab]),
 					indentUnit.of('\t'),
-					htmlLang(),
+					editorLanguage.of(editorSyntax()),
 					editorTheme.of(isDark ? oneDark : []),
 					EditorView.theme({
 						'&': { height: '100%', fontSize: '13px' },
@@ -147,7 +166,9 @@
 							editorIsSource = true;
 							const newRawCode = update.state.doc.toString();
 							const item = contents[selectedContentIdx];
-							if (item.type === 'svg') {
+							if (item.files?.length) {
+								contents[selectedContentIdx] = { ...item, live: false, files: item.files.map(file => file.path === item.entry ? { ...file, content: newRawCode } : file) };
+							} else if (item.type === 'svg') {
 								contents[selectedContentIdx] = { ...item, content: newRawCode };
 							} else {
 								const parsed = parseRawCode(newRawCode);
@@ -183,43 +204,6 @@
 		};
 	}
 
-	const iframeLoadHandler = () => {
-		// Sandboxed previews have an opaque origin; never weaken the sandbox to inspect them.
-		try {
-			if (!iframeElement?.contentWindow?.document) return;
-		} catch {
-			return;
-		}
-		iframeElement.contentWindow.addEventListener(
-			'click',
-			function (e) {
-				const target = (e.target as Element).closest('a') as HTMLAnchorElement | null;
-				if (target && target.href) {
-					e.preventDefault();
-					const url = new URL(target.href, iframeElement.baseURI);
-					if (url.origin === window.location.origin) {
-						iframeElement.contentWindow.history.pushState(
-							null,
-							'',
-							url.pathname + url.search + url.hash
-						);
-					} else {
-						console.info('External navigation blocked:', url.href);
-					}
-				}
-			},
-			true
-		);
-
-		// Cancel drag when hovering over iframe
-		iframeElement.contentWindow.addEventListener('mouseenter', function (e) {
-			e.preventDefault();
-			iframeElement.contentWindow.addEventListener('dragstart', (event) => {
-				event.preventDefault();
-			});
-		});
-	};
-
 	const showFullScreen = () => {
 		if (iframeElement.requestFullscreen) {
 			iframeElement.requestFullscreen();
@@ -231,31 +215,34 @@
 	};
 
 	const downloadArtifact = () => {
-		const blob = new Blob([contents[selectedContentIdx].content], { type: 'text/html' });
-		const url = URL.createObjectURL(blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = `artifact-${$chatId}-${selectedContentIdx}.html`;
-		document.body.appendChild(a);
-		a.click();
-		document.body.removeChild(a);
-		URL.revokeObjectURL(url);
+		void saveArtifact(contents[selectedContentIdx]);
 	};
 
 	onMount(() => {
 		const unsubscribeArtifactCode = artifactCode.subscribe((value) => {
 			if (contents && value) {
-				const codeIdx = contents.findIndex((content) => content.content.includes(value));
+				const selectedId = get(artifactSelection);
+				const codeIdx = selectedId ? contents.findIndex(content => content.id === selectedId) : contents.findIndex((content) => content.content.includes(value));
 				selectedContentIdx = codeIdx !== -1 ? codeIdx : 0;
 			}
 		});
 
 		const unsubscribeArtifactContents = artifactContents.subscribe((value) => {
-			const newContents = value ?? [];
+			const newContents = (value ?? []).map(entry => {
+				const source = sourceContents.find(source => source.id === entry.id);
+				return entry === source ? contents.find(local => local.id === entry.id) ?? entry : entry;
+			});
+			const started = newContents.findLast(entry => entry.live && !sourceContents.some(previous => previous.id === entry.id && previous.live));
+			sourceContents = value ?? [];
+			if (started) {
+				artifactSelection.set(started.id);
+				artifactCode.set(null);
+			}
+			const selectedId = get(artifactSelection);
 			const requestedCode = get(artifactCode);
-			const requestedIndex = requestedCode
-				? newContents.findIndex((content) => content.content.includes(requestedCode))
-				: -1;
+			const requestedIndex = selectedId
+				? newContents.findIndex(content => content.id === selectedId)
+				: requestedCode ? newContents.findIndex((content) => content.content.includes(requestedCode)) : -1;
 
 			if (newContents.length === 0) {
 				showControls.set(false);
@@ -283,6 +270,7 @@
 <div
 	class="w-full h-full relative flex flex-col bg-white dark:bg-gray-850 overflow-hidden"
 	id="artifacts-container"
+	use:observeArtifactPanel
 >
 	{#if contents.length > 0}
 		<!-- ── Toolbar: tabs + actions + close ──────────────────── -->
@@ -356,7 +344,7 @@
 						       hover:bg-gray-200/70 dark:hover:bg-gray-700/70
 						       hover:text-gray-900 dark:hover:text-gray-100"
 						on:click={() => {
-							copyToClipboard(contents[selectedContentIdx].content);
+							copyToClipboard(getRawCode(contents[selectedContentIdx]));
 							copied = true;
 							setTimeout(() => { copied = false; }, 2000);
 						}}
@@ -417,18 +405,7 @@
 			{#if activeTab === 'preview'}
 				<!-- Preview tab -->
 				{#if currentContent?.type === 'iframe'}
-					<iframe
-						bind:this={iframeElement}
-						title="Content"
-						srcdoc={currentContent.content}
-						class="w-full border-0 h-full rounded-none"
-						sandbox="allow-scripts allow-downloads{($settings?.iframeSandboxAllowForms ?? false)
-							? ' allow-forms'
-							: ''}{($settings?.iframeSandboxAllowSameOrigin ?? false)
-							? ' allow-same-origin'
-							: ''}"
-						on:load={iframeLoadHandler}
-					></iframe>
+					<ArtifactPreview artifact={currentContent} requestedCode={$artifactCode} running={$artifactGenerating} bind:iframeElement allowForms={$settings?.iframeSandboxAllowForms ?? false} />
 				{:else if currentContent?.type === 'svg'}
 					<SvgPanZoom
 						className="w-full h-full max-h-full overflow-hidden"

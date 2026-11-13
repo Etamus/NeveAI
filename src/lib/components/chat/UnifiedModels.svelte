@@ -908,8 +908,8 @@
 	$: modelListViewportStyle = modelListPaginationCount === 0
 		? `height: ${modelListMaxHeight};`
 		: modelListHasOverflow
-			? `height: ${modelListMaxHeight}; max-height: ${modelListMaxHeight}; scrollbar-gutter: stable;`
-			: `max-height: ${modelListMaxHeight}; scrollbar-gutter: stable;`;
+			? `height: ${modelListMaxHeight}; max-height: ${modelListMaxHeight}; scrollbar-gutter: stable both-edges;`
+			: `max-height: ${modelListMaxHeight}; scrollbar-gutter: stable both-edges;`;
 	$: modelEmptyTitle = localAccessError
 		? $i18n.t('Could not access local models')
 		: llamacppStatus && !llamacppStatus.server_binary_exists
@@ -1648,7 +1648,7 @@
 		id={am ? `model-item-${am.id}` : undefined}
 	>
 		<div
-			class="unified-model-card flex h-full min-w-0 gap-1.5 sm:gap-3 w-full overflow-hidden px-1 sm:px-2 py-2 rounded-lg transition-colors cursor-pointer {(gm?.is_loaded || isProcessing) ? 'border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30' : 'hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
+			class="unified-model-card flex h-full min-w-0 gap-1.5 sm:gap-3 w-full overflow-hidden px-3 py-2 rounded-lg transition-colors cursor-pointer {(gm?.is_loaded || isProcessing) ? 'border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30' : 'hover:bg-gray-50 dark:hover:bg-gray-850/50'}"
 			on:click={(e) => {
 				if (am && (am?.is_active ?? true) && !(e.target as HTMLElement).closest('button') && !(e.target as HTMLElement).closest('[data-melt-dropdown-menu]')) {
 					selectedModelId = am.id;
@@ -1836,7 +1836,7 @@
 					{#if !$mobile}{@render vramMeter()}{/if}
 
 					{#if highlightedLoadedItem}
-						<div class="shrink-0 mb-2">
+						<div class="unified-highlighted-model shrink-0 mb-2">
 							{@render modelRow(highlightedLoadedItem, true)}
 						</div>
 					{/if}
@@ -1844,7 +1844,7 @@
 					{#if $mobile || !hasHighlightedLoadedModel || !modelsBelowLoadedCollapsed}
 						<div class="unified-model-list-section min-h-0 overflow-hidden {modelsBlocked ? 'opacity-50 grayscale' : ''}" transition:slide={{ duration: collapseAnimationEnabled ? 180 : 0 }}>
 							<div
-								class="unified-model-list min-h-0 pb-0 {$mobile ? 'overflow-visible' : `snap-y snap-mandatory overscroll-contain ${modelListPaginationCount === 0 ? 'mr-0 overflow-hidden pr-0' : 'mr-1 overflow-y-auto pr-1'}`}"
+								class="unified-model-list min-h-0 pb-0 {$mobile ? 'overflow-visible' : `snap-y snap-mandatory overscroll-contain ${modelListPaginationCount === 0 ? 'overflow-hidden' : 'overflow-y-auto'}`}"
 								style={$mobile ? undefined : modelListViewportStyle}
 							>
 								{#if localLoading && localModels.length === 0 && (adminModels?.length ?? 0) === 0}
@@ -1922,6 +1922,9 @@
 {/if}
 
 <style>
+	@media (min-width: 768px) {
+		.unified-highlighted-model { overflow: hidden; scrollbar-gutter: stable both-edges; }
+	}
 	@media (max-width: 767px) {
 		.unified-models-shell { height: 100%; max-height: 100%; }
 		.unified-model-editor { height: 100% !important; }
@@ -1930,7 +1933,7 @@
 		.unified-model-list-section { flex-shrink: 0; overflow: visible; }
 		.unified-model-name { max-width: 22ch; }
 		.unified-model-meta { margin-top: 3px; }
-		.unified-model-card { padding-inline: 10px; column-gap: 14px; }
+		.unified-model-card { padding-inline: 12px; column-gap: 14px; }
 		.unified-model-actions { flex-wrap: wrap; }
 		.unified-model-actions button { min-height: 36px; padding-inline: 0.5rem; }
 		.model-avatar { width: 2.25rem; height: 2.25rem; overflow: hidden; }

@@ -228,6 +228,7 @@
 </script>
 
 <ConfirmDialog
+	animated={false}
 	bind:show={showDeleteConfirmDialog}
 	on:confirm={() => {
 		if (selectedFileId) {

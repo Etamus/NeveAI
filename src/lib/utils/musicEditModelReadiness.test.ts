@@ -31,6 +31,27 @@ function compile(source: string, globals: Record<string, unknown>) {
 const sendSource = sourceFunction('src/lib/components/chat/Chat.svelte', 'sendMessage', true);
 const editSource = sourceFunction('src/lib/components/chat/Messages.svelte', 'editMessage');
 
+const matchesPlan = compile(sourceFunction('src/lib/components/chat/Chat.svelte', 'loadedLocalModelMatchesPlan'),
+	Object.fromEntries(['normalizeLocalCacheType','normalizeLocalSpeculativeDecoding','normalizeLocalTokenPrediction','normalizeLocalContextShift']
+		.map(name => [name, compile(sourceFunction('src/lib/components/chat/Chat.svelte', name), {})])));
+
+describe('local load profile equality', () => {
+	const plan = {contextSize:8192,mmprojFilename:'',cacheType:'q8_0',speculativeDecoding:'off',tokenPrediction:'off',contextShift:'off',prioritizeGpu:false};
+	const loaded = {n_ctx:8192,context_auto:false,mmproj_filename:null,cache_type:'q8_0',speculative_decoding:'off',token_prediction:'off',context_shift:'off',prioritize_gpu:false};
+	it('reuses unchanged manual and dynamic profiles', () => {
+		expect(matchesPlan(loaded,plan)).toBe(true);
+		expect(matchesPlan({...loaded,context_auto:true},{...plan,contextSize:0})).toBe(true);
+	});
+	it('reloads dynamic to manual even when the context values coincide', () => {
+		expect(matchesPlan({...loaded,context_auto:true},plan)).toBe(false);
+		expect(matchesPlan(loaded,{...plan,contextSize:0})).toBe(false);
+	});
+	it.each([
+		{contextSize:16384},{mmprojFilename:'vision.gguf'},{cacheType:'q4_0'},
+		{speculativeDecoding:'high'},{tokenPrediction:'auto'},{contextShift:'on'},{prioritizeGpu:true}
+	])('reloads a changed load option %j', patch => expect(matchesPlan(loaded,{...plan,...patch})).toBe(false));
+});
+
 function setup(features: Record<string, boolean>, ensure: ReturnType<typeof vi.fn>) {
 	const history: any = {currentId: 'reply', messages: {
 		original: {id: 'original', parentId: null, role: 'user', content: 'Original music request', childrenIds: ['reply']},
@@ -73,12 +94,31 @@ describe('edited music requests reload the selected planner model', () => {
 		await test.edit('original', {content: 'Edited request', files: []});
 		expect(test.sent).not.toHaveBeenCalled();
 	});
-	it.each([{}, {stable_diffusion: true}, {video_generation: true}])('leaves non-music send paths unchanged: %j', async features => {
+	it.each([{stable_diffusion: true}, {video_generation: true}])('leaves visual media send paths unchanged: %j', async features => {
 		const ensure = vi.fn().mockResolvedValue(true);
 		const test = setup(features, ensure);
 		await test.edit('original', {content: 'Edited request', files: []});
 		expect(ensure).not.toHaveBeenCalled();
 		expect(test.sent).toHaveBeenCalledOnce();
+	});
+	it('checks a text edit before generating its replacement', async () => {
+		const ensure = vi.fn().mockResolvedValue(true);
+		const test = setup({}, ensure);
+		await test.edit('original', {content: 'Edited text request', files: []});
+		expect(ensure).toHaveBeenCalledWith(['local/qwen'], {textOnly: true});
+		expect(test.sent).toHaveBeenCalledOnce();
+	});
+	it('does not repeat the composer preflight on a normal submission', async () => {
+		const ensure = vi.fn().mockResolvedValue(true);
+		const test = setup({}, ensure);
+		await test.send(test.history, 'original', {newChat: true});
+		expect(ensure).not.toHaveBeenCalled();
+	});
+	it('does not send an edited text branch when the new profile fails to load', async () => {
+		const ensure = vi.fn().mockResolvedValue(false);
+		const test = setup({}, ensure);
+		await test.edit('original', {content: 'Edited text request', files: []});
+		expect(test.sent).not.toHaveBeenCalled();
 	});
 	it('loads an explicitly selected model, not a different chat selection', async () => {
 		const ensure = vi.fn().mockResolvedValue(true);

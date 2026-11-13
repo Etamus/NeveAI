@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { parameterWheel } from '$lib/utils/parameterWheel';
 	import { toast } from 'svelte-sonner';
 	import { hideAll as tippyHideAll } from 'tippy.js';
 
@@ -673,6 +674,7 @@
 							<div class="min-h-0 pr-5">
 								<div
 									class="model-editor-advanced-params-window"
+									use:parameterWheel
 									on:scroll={() => tippyHideAll()}
 								>
 									<div class="model-editor-advanced-params">
@@ -725,8 +727,6 @@
 								'web_search',
 								'deep_search',
 								'guided_learning',
-								'stable_diffusion',
-								'video_generation',
 								'music_generation'
 							]}
 								bind:featureIds={defaultFeatureIds}

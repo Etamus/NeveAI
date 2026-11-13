@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 
-// Session-only result shared by the startup check and About. Never persisted.
+// Session-only result shared by the startup check and Updates. Never persisted.
 export const versionUpdateStatus = writable<Record<string, any> | null>(null);
 
 const normalizedVersion = (value: unknown) =>

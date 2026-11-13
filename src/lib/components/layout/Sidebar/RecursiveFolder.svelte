@@ -468,14 +468,26 @@
 		})}
 	</div>
 
-	<div class="flex items-center gap-1.5">
+	<label slot="actions-start" class="project-delete-option mr-auto flex min-w-0 items-center gap-2.5 pr-2">
 		<input type="checkbox" bind:checked={deleteFolderContents} />
 
-		<div class="text-xs text-gray-500">
+		<span class="text-xs text-gray-500">
 			{$i18n.t('Delete all contents inside this folder')}
-		</div>
-	</div>
+		</span>
+	</label>
 </DeleteConfirmDialog>
+
+<style>
+	:global(.project-delete-option ~ button) {
+		flex-shrink: 0;
+		white-space: nowrap;
+		align-self: center;
+	}
+	@media (max-width: 480px) {
+		:global(div:has(> .project-delete-option)) { flex-wrap: wrap; row-gap: 0.75rem; }
+		:global(.project-delete-option) { flex-basis: 100%; padding-right: 0; }
+	}
+</style>
 
 <FolderModal bind:show={showFolderModal} edit={true} {folderId} onSubmit={updateHandler} />
 

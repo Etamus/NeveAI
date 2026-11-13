@@ -163,7 +163,7 @@
 		{onSourceClick}
 		{onTaskClick}
 		{onSave}
-		onPreview={(value) => previewArtifactCode(value,messageId,history)}
+		onPreview={(value, language) => previewArtifactCode(value,messageId,history,language)}
 	/>
 </div>
 

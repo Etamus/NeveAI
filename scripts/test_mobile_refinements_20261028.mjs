@@ -57,11 +57,19 @@ try{
     metrics.selectionLeft=await page.locator('.catalog-selection-toggle').evaluate(e=>e.getBoundingClientRect().left);if(mobile)assert(metrics.selectionLeft>=22);
    }
    if(kind==='model'){
+    assert.equal(await page.locator('.model-editor-features').getByText('Criar imagem',{exact:true}).count(),0);
+    assert.equal(await page.locator('.model-editor-features').getByText('Criar vídeo',{exact:true}).count(),0);
     assert.equal(await page.locator('.model-editor-features').isVisible(),!mobile);
     metrics.identity=await page.locator('.model-editor-profile').evaluate(e=>{const image=e.querySelector('img').getBoundingClientRect(),identity=e.querySelector('.model-editor-identity').getBoundingClientRect(),name=e.querySelector('input[placeholder]').getBoundingClientRect(),description=e.querySelector('textarea').getBoundingClientRect();return{gap:identity.left-image.right,name:name.left,description:description.left};});
     if(mobile)assert(metrics.identity.gap>=19&&Math.abs(metrics.identity.name-metrics.identity.description)<=1,JSON.stringify(metrics.identity));
     metrics.params=await page.locator('.model-editor-advanced-params-window').evaluate(e=>({max:getComputedStyle(e).maxHeight,client:e.clientHeight,scroll:e.scrollHeight}));
-    if(mobile)assert.equal(metrics.params.max,'none');
+     if(mobile)assert.equal(metrics.params.max,'none');
+     else if(metrics.params.scroll>metrics.params.client){
+      const panel=page.locator('.model-editor-advanced-params-window');
+      await panel.evaluate(e=>e.scrollTop=0);await panel.hover();await page.mouse.wheel(0,120);await page.waitForTimeout(100);
+      metrics.parameterWheel=await panel.evaluate(e=>e.scrollTop);
+      assert(metrics.parameterWheel>0&&metrics.parameterWheel<=48,'Coarse wheel must advance at most 48px');
+     }
     assert.equal(await page.locator('.model-editor-params-scroll').evaluate(e=>getComputedStyle(e).paddingLeft),mobile?'24px':await page.evaluate(()=>getComputedStyle(document.documentElement).fontSize));
    }
    if(kind.startsWith('file-')){

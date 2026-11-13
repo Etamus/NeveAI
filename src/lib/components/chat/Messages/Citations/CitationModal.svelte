@@ -144,9 +144,11 @@
 
 		<div class="flex flex-col md:flex-row w-full px-5 pb-5 md:space-x-4">
 			<div
-				class="flex flex-col w-full dark:text-gray-200 overflow-y-scroll max-h-[22rem] scrollbar-thin gap-1"
+				class="flex flex-col w-full dark:text-gray-200 overflow-auto max-h-[22rem] gap-1"
 			>
 				{#each mergedDocuments as document, documentIdx}
+					{@const isPastedText = document.source?.pastedText === true ||
+						['Texto colado', 'Texto colado.txt'].includes(document.source?.name)}
 					<div class="flex flex-col w-full gap-2">
 						{#if document.metadata?.parameters}
 							<div>
@@ -214,7 +216,9 @@
 								{/if}
 							</div>
 
-							{#if document.metadata?.html}
+							{#if isPastedText}
+								<div class="citation-plain-text text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{document.document}</div>
+							{:else if document.metadata?.html}
 								<iframe
 									class="w-full border-0 h-auto rounded-none"
 									sandbox="allow-scripts allow-forms{($settings?.iframeSandboxAllowSameOrigin ??

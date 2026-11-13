@@ -19,9 +19,9 @@ describe('media attachment limits', () => {
 
 	it('uses the limit of each image model', () => {
 		const images = Array.from({ length: 12 }, () => ({ type: 'image/png' }));
-		expect(filterMediaAttachments(getMediaAttachmentPolicy(true, 'neve_image', false, false), images)).toHaveLength(0);
-		expect(filterMediaAttachments(getMediaAttachmentPolicy(true, 'neve_image_2', false, false), images)).toHaveLength(1);
-		for (const quality of ['qwen_image_2s', 'qwen_image_2_1_official']) {
+		expect(filterMediaAttachments(getMediaAttachmentPolicy(true, 'neve_image', false, false), images)).toHaveLength(10);
+		expect(filterMediaAttachments(getMediaAttachmentPolicy(true, 'neve_image_2', false, false), images)).toHaveLength(10);
+		for (const quality of ['qwen_image_2s', 'qwen_image_2_1_official', 'minimax_h3_image']) {
 			expect(filterMediaAttachments(getMediaAttachmentPolicy(true, quality, false, false), images)).toHaveLength(10);
 		}
 	});

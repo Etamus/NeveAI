@@ -9,9 +9,9 @@
 	import Bolt from '$lib/components/icons/Bolt.svelte';
 	import {
 		getLocalModelLoadPreferences,
-		getLocalModelAccelerationMode,
-		setLocalModelAccelerationMode,
-		type LocalModelAccelerationMode,
+		isSpeculativeSpeedEnabled,
+		initializeSpeculativePreferences,
+		setSpeculativeSpeedEnabled,
 		RESPONSE_SPEED_CHANGED
 	} from '$lib/utils/llamacppLoadPreferences';
 	import { REASONING_LEVELS, type ReasoningLevel } from '$lib/utils/reasoningModes';
@@ -26,19 +26,16 @@
 	const i18n = getContext<I18nStore>('i18n');
 	$: firstLevelLabel = effortBased ? `${$i18n.t('Raciocínio')} ${$i18n.t('Leve')}` : $i18n.t(REASONING_LEVELS[0]);
 	$: levelLabel = level === 0 ? firstLevelLabel : `${$i18n.t('Raciocínio')} ${$i18n.t(REASONING_LEVELS[level])}`;
-	let accelerationMode: LocalModelAccelerationMode = 'normal';
-	let fastSweepFinished = false;
-	const accelerationModes: LocalModelAccelerationMode[] = ['normal', 'de', 'mtp'];
-	$: accelerationLabel = $i18n.t(accelerationMode === 'normal' ? 'Normal' : accelerationMode === 'de' ? 'Rápido' : 'Predição');
+	let accelerationMode: 'normal' | 'speculative' = 'normal';
+	$: accelerationLabel = $i18n.t(accelerationMode === 'normal' ? 'Normal' : 'Speculative');
 	let predictionLocked = false;
 	function syncPrediction() {
 		const preferences = getLocalModelLoadPreferences();
-		const nextMode = getLocalModelAccelerationMode();
-		if (nextMode !== accelerationMode) fastSweepFinished = false;
-		accelerationMode = nextMode;
+		accelerationMode = isSpeculativeSpeedEnabled() ? 'speculative' : 'normal';
 		predictionLocked = preferences.contextShift === 'on';
 	}
 	onMount(() => {
+		initializeSpeculativePreferences();
 		syncPrediction();
 		window.addEventListener(RESPONSE_SPEED_CHANGED, syncPrediction);
 		window.addEventListener('storage', syncPrediction);
@@ -48,11 +45,10 @@
 		};
 	});
 	function chooseLevel(value: number) {
-		if (accelerationMode === 'de') fastSweepFinished = true;
 		onLevelChange(value as ReasoningLevel);
 	}
 	function resetDefinitions() {
-		setLocalModelAccelerationMode('normal', { reset: true });
+		setSpeculativeSpeedEnabled(false, { reset: true });
 		chooseLevel(0);
 	}
 </script>
@@ -133,18 +129,15 @@
 					<button
 						id="reasoning-speed-control"
 						type="button"
-						class="reasoning-tool"
+						class="reasoning-tool reasoning-speed-tool"
 						class:accelerated={accelerationMode !== 'normal'}
 						disabled={predictionLocked}
 						aria-label={`${$i18n.t('Velocidade')}: ${accelerationLabel}`}
 						aria-pressed={accelerationMode !== 'normal'}
 						data-mode={accelerationMode}
-						on:click={() => setLocalModelAccelerationMode(accelerationModes[(accelerationModes.indexOf(accelerationMode) + 1) % accelerationModes.length])}
+						on:click={() => setSpeculativeSpeedEnabled(accelerationMode === 'normal')}
 					>
-						<span class="reasoning-tool-icon"><Gauge className="size-[24px]" /></span>
-						<span class="acceleration-indicator" class:invisible={accelerationMode === 'normal'} aria-hidden="true">
-							<span></span><span class:hidden={accelerationMode !== 'mtp'}></span>
-						</span>
+						<Bolt className="size-[20px]" filled={accelerationMode !== 'normal'} />
 					</button>
 				</Tooltip>
 				<Tooltip content={$i18n.t('Reset')}>
@@ -164,12 +157,10 @@
 				</div>
 				<div
 					class="effort-track"
-					class:fast-flow={level > 0 && accelerationMode === 'de' && !predictionLocked}
-					class:fast-settled={fastSweepFinished}
-					class:prediction-flow={level > 0 && accelerationMode === 'mtp' && !predictionLocked}
+					class:speculative-flow={level > 0 && accelerationMode === 'speculative' && !predictionLocked}
 					style="--effort-progress: {(level / 3) * 100}%; --effort-fraction: {level / 3}"
 				>
-					{#if level > 0 && accelerationMode === 'mtp' && !predictionLocked}
+					{#if level > 0 && accelerationMode === 'speculative' && !predictionLocked}
 						<!-- Start the complete particle set together when its count changes. -->
 						{#key level}
 							<div class="effort-fluid" aria-hidden="true">
@@ -181,7 +172,7 @@
 					{/if}
 					<div class="effort-dots" aria-hidden="true">
 						{#each REASONING_LEVELS as _, index}
-							<span class:active={index <= level} style="--dot-index: {index}" on:animationend={() => { if (index === level) fastSweepFinished = true; }}></span>
+							<span class:active={index <= level}></span>
 						{/each}
 					</div>
 					<input
@@ -228,39 +219,17 @@
 	:global(.dark) .reasoning-tool:hover { background: rgb(255 255 255 / 0.06); }
 	.reasoning-tool.accelerated, :global(.dark) .reasoning-tool.accelerated { color: rgb(59 130 246); }
 	.reasoning-tool:disabled { opacity: 0.45; cursor: not-allowed; background: transparent; }
-	.reasoning-tool-icon {
-		position: absolute;
-		inset: 0;
-		pointer-events: none;
+	.reasoning-tool.reasoning-speed-tool {
+		box-sizing: border-box;
+		width: 32px;
+		height: 32px;
+		min-width: 32px;
+		min-height: 32px;
+		flex: 0 0 32px;
+		padding: 0;
 	}
-	.reasoning-tool.accelerated .reasoning-tool-icon,
-	.reasoning-tool.accelerated .acceleration-indicator {
-		transform: translateY(-1px);
-	}
-	.reasoning-tool-icon :global(svg) {
-		position: absolute;
-		top: 2.5px;
-		left: 50%;
-		transform: translateX(-50%);
-		display: block;
-	}
+	.reasoning-speed-tool :global(svg) { display: block; flex: none; }
 	.reasoning-level-label { position: relative; top: -5px; }
-	.acceleration-indicator {
-		position: absolute;
-		bottom: 3px;
-		left: 0;
-		right: 0;
-		display: flex;
-		justify-content: center;
-		gap: 2px;
-		pointer-events: none;
-	}
-	.acceleration-indicator span {
-		width: 3px;
-		height: 3px;
-		border-radius: 50%;
-		background: currentColor;
-	}
 	.effort-track {
 		position: relative;
 		height: 26px;
@@ -308,17 +277,7 @@
 	:global(.dark) .effort-dots span.active {
 		background: rgb(240 249 250 / 0.35);
 	}
-	.fast-flow:not(.fast-settled) .effort-dots span.active {
-		animation: effort-dot-flow 0.32s ease-out both;
-		animation-delay: calc(var(--dot-index) * 0.025s);
-	}
-	.fast-flow.fast-settled .effort-dots span.active { opacity: 0; }
-	@keyframes effort-dot-flow {
-		0% { transform: translateX(0); opacity: 1; }
-		60% { opacity: 0.45; }
-		100% { transform: translateX(calc(-1 * var(--dot-index) * (100cqw - 4px) / 3 - 4px)); opacity: 0; }
-	}
-	.prediction-flow .effort-dots span.active { opacity: 0; }
+	.speculative-flow .effort-dots span.active { opacity: 0; }
 	.effort-fluid {
 		--particle-duration: 0.66s;
 		position: absolute;
@@ -393,9 +352,6 @@
 		outline-offset: 3px;
 	}
 	@media (prefers-reduced-motion: reduce) {
-		.fast-flow:not(.fast-settled) .effort-dots span.active {
-			animation-duration: 0.55s;
-		}
 		.effort-fluid {
 			--particle-duration: 1.2s;
 		}

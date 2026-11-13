@@ -1483,12 +1483,6 @@ async def get_github_latest_release_tag(session, repo: str):
     raise api_error
 
 
-def launch_installer_update_page():
-    from neveai.utils.updater_launcher import launch_installer_update_page as launch
-
-    launch(BASE_DIR)
-
-
 @app.post("/api/shutdown")
 async def shutdown_app(background_tasks: BackgroundTasks, user=Depends(get_admin_user)):
     """Encerra o servidor NeveAI (backend + llama-server). Apenas admins."""
@@ -1527,19 +1521,37 @@ async def shutdown_app(background_tasks: BackgroundTasks, user=Depends(get_admin
     return {"status": True, "message": "Shutting down"}
 
 
-@app.post("/api/updater/start")
-async def start_app_updater(user=Depends(get_admin_user)):
-    """Abre o hub direto em Atualizar. O instalador encerra o app somente ao iniciar a ação."""
-    try:
-        await anyio.to_thread.run_sync(launch_installer_update_page)
-    except Exception as e:
-        log.exception("Failed to launch NeveAI updater")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Falha ao abrir o atualizador: {e}",
-        )
+from neveai.utils.prepared_updates import PreparedUpdates
+_prepared_updates = PreparedUpdates(BASE_DIR)
 
-    return {"status": True, "message": "Updater opened"}
+
+class UpdateDownloadForm(BaseModel):
+    targets: list[str]
+
+
+@app.get("/api/updater/state")
+async def update_download_state(user=Depends(get_admin_user)):
+    return await anyio.to_thread.run_sync(_prepared_updates.state, user.id)
+
+
+@app.post("/api/updater/download")
+async def prepare_app_update(form: UpdateDownloadForm, user=Depends(get_admin_user)):
+    try:
+        return await _prepared_updates.start(form.targets, user.id)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.post("/api/updater/restart")
+async def restart_prepared_update(request: Request, user=Depends(get_admin_user)):
+    if await list_tasks(request.app.state.redis):
+        raise HTTPException(status_code=409, detail="Aguarde ou pare as gerações antes de reiniciar.")
+    async with _prepared_updates.lock:
+        try:
+            return await anyio.to_thread.run_sync(_prepared_updates.restart, user.id)
+        except (ValueError, OSError) as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+
 
 
 @app.get("/api/version/updates")

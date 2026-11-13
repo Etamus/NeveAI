@@ -1500,11 +1500,11 @@ ENABLE_VIDEO_GENERATION = PersistentConfig(
 STABLE_DIFFUSION_MODEL = PersistentConfig(
     "STABLE_DIFFUSION_MODEL",
     "stable_diffusion.model",
-    os.environ.get("STABLE_DIFFUSION_MODEL", "leejet/Z-Image-Turbo-GGUF"),
+    os.environ.get("STABLE_DIFFUSION_MODEL", "unsloth/Qwen-Image-2.1-Turbo-GGUF"),
 )
 
-if str(STABLE_DIFFUSION_MODEL.value) != "leejet/Z-Image-Turbo-GGUF":
-    STABLE_DIFFUSION_MODEL.value = "leejet/Z-Image-Turbo-GGUF"
+if str(STABLE_DIFFUSION_MODEL.value) != "unsloth/Qwen-Image-2.1-Turbo-GGUF":
+    STABLE_DIFFUSION_MODEL.value = "unsloth/Qwen-Image-2.1-Turbo-GGUF"
     if ENABLE_PERSISTENT_CONFIG:
         STABLE_DIFFUSION_MODEL.save()
 

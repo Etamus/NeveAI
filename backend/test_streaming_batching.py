@@ -61,7 +61,7 @@ class ReasoningStreamTests(unittest.IsolatedAsyncioTestCase):
         }, self.scope)
         tag_handler = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "tag_output_handler")
         handler = next(n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == "stream_body_handler")
-        factory = ast.parse("def make_handler(initial_output=None):\n    content = ''\n    usage = {}\n    output = initial_output if initial_output is not None else []\n").body[0]
+        factory = ast.parse("def make_handler(initial_output=None):\n    content = ''\n    usage = {}\n    finish_reason = None\n    output = initial_output if initial_output is not None else []\n").body[0]
         factory.body.extend([tag_handler, handler, ast.Return(value=ast.Tuple(elts=[ast.Name(id="stream_body_handler", ctx=ast.Load()), ast.Name(id="output", ctx=ast.Load())], ctx=ast.Load()))])
         exec(compile(ast.fix_missing_locations(ast.Module(body=[factory], type_ignores=[])), "stream-test", "exec"), self.scope)
 
@@ -266,6 +266,25 @@ class StreamingBatchTests(ReasoningStreamTests):
         self.assertTrue(self.frames[-1]["data"]["done"])
         self.assertEqual(self.saved[-1]["content"], "a b")
         self.assertEqual(self.saved[-1]["output"][0]["status"], "completed")
+
+    async def test_cached_usage_is_not_overwritten_and_cutoff_reason_survives_final_save(self):
+        from neveai.utils.response import normalize_usage
+        self.scope['normalize_usage'] = normalize_usage
+        async def body():
+            yield self.delta('a')
+            yield self.sse({'choices':[{'delta':{'content':'b'}}], 'timings':{'cache_n':8811,'prompt_n':4565,'predicted_n':3008,'context_window':16384}})
+            yield self.delta('c')
+            yield self.sse({'choices':[{'delta':{},'finish_reason':'length'}]})
+            # Some providers send the final usage after the terminal choice.
+            yield self.sse({'choices':[], 'usage':{'cache_n':8811,'prompt_n':4565,'predicted_n':3008,'context_window':16384}})
+        await self.consume_outer(body())
+        self.assertEqual(self.contents()[-1], 'abc')
+        self.assertEqual(self.saved[-1]['finish_reason'], 'length')
+        self.assertEqual(self.frames[-1]['data']['finish_reason'], 'length')
+        self.assertEqual(self.saved[-1]['usage']['total_tokens'],16384)
+        for frame in self.frames:
+            if frame.get('data',{}).get('usage'):
+                self.assertEqual(frame['data']['usage']['total_tokens'],16384)
 
     async def test_outer_cancel_and_failure_save_partial_state_without_done(self):
         for realtime in (False, True):
@@ -587,7 +606,7 @@ async def benchmark():
                         node.value = ast.Constant(value=1)
                 tag = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)
                            and n.name == "tag_output_handler")
-                factory = ast.parse("def make_handler():\n    content = ''\n    usage = {}\n    output = []\n").body[0]
+                factory = ast.parse("def make_handler():\n    content = ''\n    usage = {}\n    finish_reason = None\n    output = []\n").body[0]
                 factory.body.extend([tag, handler, ast.Return(value=ast.Tuple(elts=[
                     ast.Name(id="stream_body_handler", ctx=ast.Load()), ast.Name(id="output", ctx=ast.Load()),
                 ], ctx=ast.Load()))])

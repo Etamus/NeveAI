@@ -3,6 +3,36 @@ import { lexChatMarkdown } from './chat-lexer';
 import { prepareStreamingMarkdown, stabilizeStreamingBlocks } from './streaming-display';
 
 describe('streaming display preparation', () => {
+	it.each(['*   **Tabela:** `dataset.table`', '* **Filtro:** valor', '***Importante***', '___Importante___'])('never flashes a thematic break while streaming %s', source => {
+		for (let length = 1; length <= source.length; length++) {
+			const tokens = lexChatMarkdown(prepareStreamingMarkdown('Intro.\n\n' + source.slice(0, length)));
+			const visible = stabilizeStreamingBlocks(tokens);
+			expect(visible.some(token => token.type === 'hr')).toBe(false);
+			expect(visible[0]).toBe(tokens[0]);
+			expect(visible.links).toBe(tokens.links);
+		}
+	});
+	it.each(['---', '***', '___', '* * *', '- - -'])('preserves intentional thematic breaks once the line is complete: %s', rule => {
+		const pending = lexChatMarkdown('Intro.\n\n' + rule);
+		expect(pending.at(-1)?.type).toBe('hr');
+		expect(stabilizeStreamingBlocks(pending).some(token => token.type === 'hr')).toBe(false);
+		const complete = lexChatMarkdown('Intro.\n\n' + rule + '\n');
+		expect(stabilizeStreamingBlocks(complete)).toBe(complete);
+		// Completed responses bypass the streaming stabilizer, even without a final newline.
+		expect(lexChatMarkdown('Intro.\n\n' + rule).at(-1)?.type).toBe('hr');
+	});
+	it('leaves literal rules in fenced and inline code unchanged', () => {
+		for (const source of ['```text\n***', '`***`', '    ---']) {
+			const tokens = lexChatMarkdown(prepareStreamingMarkdown(source));
+			expect(stabilizeStreamingBlocks(tokens)).toBe(tokens);
+		}
+	});
+	it('uses the original line ending when response preprocessing trims it', () => {
+		const source = 'Intro.\n\n---\n  ';
+		const tokens = lexChatMarkdown(source.trim());
+		expect(stabilizeStreamingBlocks(tokens, source)).toBe(tokens);
+		expect(stabilizeStreamingBlocks(tokens, source.trim()).some(token => token.type === 'hr')).toBe(false);
+	});
 	it.each(['**Analyze', '*Analyze', '~~Analyze', '`Analyze'])('does not close reasoning syntax outside details: %s', text => {
 		const source = `<details type="reasoning" done="false">\n<summary>Thinking</summary>\n&gt; ${text}\n</details>`;
 		expect(prepareStreamingMarkdown(source)).toBe(source);

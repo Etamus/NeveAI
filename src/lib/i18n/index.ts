@@ -6,6 +6,7 @@ export type I18nStore = Writable<i18nType>;
 import ptBR from './locales/pt-BR/translation.json';
 import enUS from './locales/en-US/translation.json';
 import dayjs from '$lib/dayjs';
+import { getLanguagePreference, resolveLanguage, type LanguagePreference } from './languagePreferences';
 
 const supportedLocales = ['pt-BR', 'en-US'] as const;
 type SupportedLocale = (typeof supportedLocales)[number];
@@ -29,13 +30,8 @@ const createI18nStore = (i18n: i18nType) => {
 };
 
 
-export const initI18n = (defaultLocale?: string | undefined) => {
-	const storedLocale = typeof localStorage !== 'undefined' ? localStorage.getItem('neveai.language') : null;
-	const locale = isSupportedLocale(storedLocale)
-		? storedLocale
-		: isSupportedLocale(defaultLocale)
-			? defaultLocale
-			: 'pt-BR';
+export const initI18n = () => {
+	const locale = resolveLanguage(getLanguagePreference(), typeof navigator === 'undefined' ? null : navigator.language);
 
 	if (i18next.isInitialized) {
 		document.documentElement.setAttribute('lang', i18next.language);
@@ -67,11 +63,12 @@ export const initI18n = (defaultLocale?: string | undefined) => {
 
 const i18n = createI18nStore(i18next);
 export const changeLanguage = (lang: string) => {
-	if (!isSupportedLocale(lang)) return;
+	if (lang !== 'auto' && !isSupportedLocale(lang)) return;
 	localStorage.setItem('neveai.language', lang);
-	document.documentElement.setAttribute('lang', lang);
-	dayjs.locale(lang === 'pt-BR' ? 'pt-br' : 'en');
-	void i18next.changeLanguage(lang);
+	const locale = resolveLanguage(lang as LanguagePreference, navigator.language);
+	document.documentElement.setAttribute('lang', locale);
+	dayjs.locale(locale === 'pt-BR' ? 'pt-br' : 'en');
+	void i18next.changeLanguage(locale);
 };
 
 export default i18n;

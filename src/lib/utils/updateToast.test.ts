@@ -117,18 +117,13 @@ describe('Update notification preference', () => {
 		expect(reloadedManager.visibleVersion(true)).toBe(enabled ? 'llama.cpp b11857' : '');
 	});
 
-	it('wires General below temporary chat, initializes from settings, and uses the existing saver', () => {
-		expect(generalSource.indexOf('update-notifications-label')).toBeGreaterThan(
-			generalSource.indexOf('temp-chat-default-label')
-		);
-		// Only store changes trigger synchronization; a bound switch change can reach
-		// saveSettings without the old store value resetting it in the same update.
-		expect(generalSource).toContain('$: showUpdateToast = updateNotificationsEnabled($settings);');
-		expect(generalSource.match(/showUpdateToast = updateNotificationsEnabled\(\$settings\)/g)).toHaveLength(1);
-		expect(generalSource).toContain('bind:state={showUpdateToast}');
-		expect(generalSource).toContain('saveSettings({ showUpdateToast })');
+	it('moves the notification switch to Updates and uses the existing saver', () => {
+		expect(generalSource).not.toContain('update-notifications-label');
+		const updates = readFileSync('src/lib/components/chat/Settings/Updates.svelte', 'utf8');
+		expect(updates).toContain('updateNotificationsEnabled($settings)');
+		expect(updates).toMatch(/saveSettings\(\{\s*showUpdateToast:\s*event.detail\s*\}\)/);
 		const portuguese = JSON.parse(readFileSync('src/lib/i18n/locales/pt-BR/translation.json', 'utf8'));
-		expect(portuguese['Allow update notifications']).toBe('Notificar sobre atualizações');
+		expect(portuguese['Notify about new updates']).toBe('Notificar sobre novas atualizações');
 		expect(portuguese['Stream response']).toBe('Exibir respostas em tempo real');
 	});
 
@@ -139,8 +134,8 @@ describe('Update notification preference', () => {
 		const checkBody = layoutSource.split('const checkForVersionUpdates = async () => {')[1].split('\n\t};')[0];
 		expect(checkBody).toContain('await getVersionUpdates(');
 		expect(checkBody).not.toMatch(/showUpdateToast|updateNotificationsEnabled|setSettings/);
-		const aboutSource = readFileSync('src/lib/components/chat/Settings/About.svelte', 'utf8');
+		const aboutSource = readFileSync('src/lib/components/chat/Settings/Updates.svelte', 'utf8');
 		expect(aboutSource).toContain('getAvailableUpdateTargets');
-		expect(aboutSource).not.toMatch(/showUpdateToast|updateToastManager/);
+		expect(aboutSource).not.toContain('updateToastManager');
 	});
 });

@@ -3,18 +3,66 @@ export type LocalModelVisionPreference = 'yes' | 'no';
 export type LocalModelCachePreference = 'default' | 'f16' | 'q8_0' | 'q4_0';
 export type LocalModelSpeculativePreference = 'default' | 'high' | 'off';
 export type LocalModelAccelerationMode = 'normal' | 'de' | 'mtp';
-export type LocalModelTokenPredictionPreference = 'default' | 'on' | 'off';
+export type LocalModelTokenPredictionPreference = 'default' | 'on' | 'off' | 'auto';
+export type SpeculativeMethod = 'auto' | 'ngram' | 'mtp';
 export type LocalModelContextShiftPreference = 'default' | 'on' | 'off';
 
 export const LOCAL_MODEL_CONTEXT_OPTIONS = [2048, 4096, 8192, 16384, 32768, 65536, 131072, 262144];
 
 const CONTEXT_KEY = 'llamacpp_load_context';
+const COMPACTION_KEY = 'llamacpp_context_compaction';
+export const getContextCompactionPreference = () =>
+	hasStorage() && localStorage.getItem(COMPACTION_KEY) === 'true';
+export const setContextCompactionPreference = (enabled: boolean) => {
+	if (!hasStorage()) return;
+	if (enabled) localStorage.setItem(COMPACTION_KEY, 'true');
+	else localStorage.removeItem(COMPACTION_KEY);
+	window.dispatchEvent(new Event(RESPONSE_SPEED_CHANGED));
+};
 const VISION_KEY = 'llamacpp_load_vision';
 const CACHE_KEY = 'llamacpp_cache_type';
 const GPU_PRIORITY_KEY = 'llamacpp_prioritize_gpu';
 const SPECULATIVE_KEY = 'llamacpp_speculative_decoding';
 const RESPONSE_SPEED_KEY = 'neveai.responseSpeed';
+const SPECULATIVE_METHOD_KEY = 'llamacpp_speculative_method';
+const SPECULATIVE_ENABLED_KEY = 'llamacpp_speculative_enabled';
 export const RESPONSE_SPEED_CHANGED = 'neve:response-speed-changed';
+
+export function initializeSpeculativePreferences() {
+	if (!hasStorage()) return;
+	if (localStorage.getItem(SPECULATIVE_ENABLED_KEY) === null) {
+		const enabled = localStorage.getItem(RESPONSE_SPEED_KEY) === 'fast' ||
+			['high', 'low'].includes(localStorage.getItem(SPECULATIVE_KEY) ?? '');
+		localStorage.setItem(SPECULATIVE_ENABLED_KEY, String(enabled));
+	}
+	if (localStorage.getItem(SPECULATIVE_METHOD_KEY) === null) {
+		localStorage.setItem(SPECULATIVE_METHOD_KEY, 'auto');
+	}
+}
+
+export function getSpeculativeMethod(): SpeculativeMethod {
+	const value = hasStorage() ? localStorage.getItem(SPECULATIVE_METHOD_KEY) : null;
+	return value === 'ngram' || value === 'mtp' ? value : 'auto';
+}
+
+export function isSpeculativeSpeedEnabled(): boolean {
+	if (!hasStorage() || localStorage.getItem(CONTEXT_SHIFT_KEY) === 'on') return false;
+	const saved = localStorage.getItem(SPECULATIVE_ENABLED_KEY);
+	if (saved !== null) return saved === 'true';
+	return getResponseSpeed() === 'fast' || ['high', 'low'].includes(localStorage.getItem(SPECULATIVE_KEY) ?? '');
+}
+
+export function setSpeculativeMethod(method: SpeculativeMethod) {
+	if (!hasStorage()) return;
+	localStorage.setItem(SPECULATIVE_METHOD_KEY, method);
+	window.dispatchEvent(new Event(RESPONSE_SPEED_CHANGED));
+}
+
+export function setSpeculativeSpeedEnabled(enabled: boolean, { reset = false } = {}) {
+	if (!hasStorage() || (localStorage.getItem(CONTEXT_SHIFT_KEY) === 'on' && !(reset && !enabled))) return;
+	localStorage.setItem(SPECULATIVE_ENABLED_KEY, String(enabled));
+	window.dispatchEvent(new Event(RESPONSE_SPEED_CHANGED));
+}
 
 export function getResponseSpeed(): 'normal' | 'fast' {
 	return hasStorage() &&
@@ -104,16 +152,22 @@ export const getLocalModelLoadPreferences = () => {
 		};
 	}
 
+	const newSpeculation = localStorage.getItem(SPECULATIVE_METHOD_KEY) !== null ||
+		localStorage.getItem(SPECULATIVE_ENABLED_KEY) !== null;
+	const enabled = isSpeculativeSpeedEnabled();
+	const method = getSpeculativeMethod();
 	return {
 		context: parseContextPreference(localStorage.getItem(CONTEXT_KEY)),
 		vision: parseVisionPreference(localStorage.getItem(VISION_KEY)),
 		cache: parseCachePreference(localStorage.getItem(CACHE_KEY)),
 		prioritizeGpu: localStorage.getItem(GPU_PRIORITY_KEY) === 'true',
 		speculative:
+			newSpeculation ? (enabled && method === 'ngram' ? 'high' : 'off') as LocalModelSpeculativePreference :
 			localStorage.getItem(CONTEXT_SHIFT_KEY) === 'on' || getResponseSpeed() === 'fast'
 				? ('off' as LocalModelSpeculativePreference)
 				: parseSpeculativePreference(localStorage.getItem(SPECULATIVE_KEY)),
 		tokenPrediction:
+			newSpeculation ? (enabled && method !== 'ngram' ? method === 'auto' ? 'auto' : 'on' : 'off') as LocalModelTokenPredictionPreference :
 			getResponseSpeed() === 'fast'
 				? ('on' as LocalModelTokenPredictionPreference)
 				: ((localStorage.getItem(CONTEXT_SHIFT_KEY) !== 'on' &&

@@ -13,15 +13,15 @@ export const shutdownApp = async (token: string) => {
 	return res?.ok ?? false;
 };
 
-export const startAppUpdater = async (token: string) => {
-	const res = await fetch(`${NEVEAI_BASE_URL}/api/updater/start`, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			Authorization: `Bearer ${token}`
-		}
-	}).catch(() => null);
-	return res?.ok ?? false;
+export const updateRequest = async (token: string, action: 'state' | 'download' | 'restart', targets?: string[]) => {
+	const response = await fetch(`${NEVEAI_BASE_URL}/api/updater/${action}`, {
+		method: action === 'state' ? 'GET' : 'POST', cache: 'no-store',
+		headers: {'Content-Type': 'application/json', Authorization: `Bearer ${token}`},
+		...(action === 'download' ? {body: JSON.stringify({targets})} : {})
+	});
+	const data = await response.json();
+	if (!response.ok) throw new Error(data.detail || 'Não foi possível atualizar.');
+	return data;
 };
 
 export const getModels = async (

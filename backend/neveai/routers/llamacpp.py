@@ -379,6 +379,7 @@ class _LoadedModelInfo:
         "cache_type",
         "speculative_decoding",
         "token_prediction",
+        "speculative_method",
         "context_shift",
         "reasoning_control",
         "unload_requested",
@@ -405,6 +406,7 @@ class _LoadedModelInfo:
             speculative_decoding = "off"
         self.token_prediction = _normalize_token_prediction(token_prediction)
         self.speculative_decoding = _normalize_speculative_decoding(speculative_decoding)
+        self.speculative_method = "mtp" if self.token_prediction == "on" else "ngram" if self.speculative_decoding == "high" else "off"
 
     def load_result(self) -> dict:
         return {
@@ -418,6 +420,7 @@ class _LoadedModelInfo:
             "cache_type": self.cache_type,
             "speculative_decoding": self.speculative_decoding,
             "token_prediction": self.token_prediction,
+            "speculative_method": self.speculative_method,
             "context_shift": self.context_shift,
             "prioritize_gpu": self.prioritize_gpu,
         }
@@ -448,6 +451,8 @@ def _speculative_decoding_args(mode: str) -> list[str]:
 
 def _normalize_token_prediction(value: Optional[str]) -> str:
     value = str(value or "off").strip().lower()
+    if value == "auto":
+        return "auto"
     if value in {"on", "stable", "aggressive"}:
         return "on"
     return "off"
@@ -469,8 +474,8 @@ def _token_prediction_args(mode: str) -> list[str]:
 
 
 MTP_UNSUPPORTED_MESSAGE = (
-    "Este modelo não tem suporte à predição de tokens. "
-    "Selecione Normal em Velocidade e tente carregar novamente."
+    "Este modelo não tem suporte a MTP neste runtime. "
+    "Selecione Auto ou Ngram em Decodificação especulativa e tente carregar novamente."
 )
 
 
@@ -577,6 +582,7 @@ class LocalModelManager:
                     "cache_type": info.cache_type if is_loaded else None,
                     "speculative_decoding": info.speculative_decoding if is_loaded else None,
                     "token_prediction": info.token_prediction if is_loaded else None,
+                    "speculative_method": info.speculative_method if is_loaded else None,
                     "context_shift": info.context_shift if is_loaded else None,
                     "prioritize_gpu": info.prioritize_gpu if is_loaded else False,
                     "process_rss_bytes": self._get_process_rss(model_id) if is_loaded else None,
@@ -754,6 +760,14 @@ class LocalModelManager:
         elif token_prediction != "off":
             speculative_decoding = "off"
 
+        effective_prediction, effective_speculative = token_prediction, speculative_decoding
+        if token_prediction == "auto":
+            from neveai.utils.speculative_decoding import supports_embedded_mtp
+
+            has_mtp = not mmproj_path and await asyncio.to_thread(supports_embedded_mtp, filepath, LLAMACPP_SERVER_BIN)
+            effective_prediction = "on" if has_mtp else "off"
+            effective_speculative = "off" if has_mtp or mmproj_path else "high"
+
         async with self._lock:
             # Recheck after waiting: another request may have loaded this exact profile.
             existing = self._loaded.get(model_id)
@@ -792,13 +806,13 @@ class LocalModelManager:
                 device = preferred_vulkan_device(LLAMACPP_SERVER_BIN) if sys.platform == "win32" and n_gpu_layers != 0 else None
                 n_ctx, n_gpu_layers = await asyncio.to_thread(
                     plan_auto_context, LLAMACPP_SERVER_DIR, filepath, n_gpu_layers, cache_type,
-                    mmproj_path, token_prediction != "off" and mmproj_path is None, device,
+                    mmproj_path, effective_prediction == "on" and mmproj_path is None, device,
                     prioritize_gpu=prioritize_gpu,
                 )
             # Retry smaller contexts only for automatic memory-allocation failures.
             for attempt in range(6):
                 try:
-                    await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type, speculative_decoding, token_prediction, context_shift, auto_context=auto_context, prioritize_gpu=prioritize_gpu)
+                    await self._start_server(filepath, n_gpu_layers, n_ctx, mmproj_path, port, model_id, cache_type, effective_speculative, effective_prediction, context_shift, auto_context=auto_context, prioritize_gpu=prioritize_gpu)
                     if auto_context:
                         try:
                             props_response = await _get_http_client(port).get("/props")
@@ -816,6 +830,16 @@ class LocalModelManager:
                     break
                 except Exception as error:
                     await self._kill_server(model_id)
+                    if token_prediction == "auto" and effective_prediction == "on" and (
+                        str(error) == MTP_UNSUPPORTED_MESSAGE or is_memory_failure(error)
+                    ) and attempt < 5:
+                        if str(error) == MTP_UNSUPPORTED_MESSAGE:
+                            from neveai.utils.speculative_decoding import mark_mtp_unavailable
+                            mark_mtp_unavailable(filepath, LLAMACPP_SERVER_BIN)
+                        effective_prediction, effective_speculative = "off", "high"
+                        self._ports[model_id] = port
+                        log.info("Automatic speculative decoding: falling back to Ngram for %s", model_id)
+                        continue
                     if not auto_context or not is_memory_failure(error) or attempt == 5:
                         if prioritize_gpu and is_memory_failure(error):
                             raise RuntimeError("Nao ha memoria suficiente para carregar todas as camadas na GPU com este contexto/cache. Reduza o contexto ou desative Priorizar execucao na GPU.") from error
@@ -844,6 +868,11 @@ class LocalModelManager:
                 prioritize_gpu,
             )
             self._loaded[model_id].context_auto = auto_context
+            self._loaded[model_id].speculative_method = (
+                "off" if mmproj_path or context_shift != "off" else
+                "mtp" if effective_prediction == "on" else
+                "ngram" if effective_speculative == "high" else "off"
+            )
 
             log.info(f"Model loaded via llama-server: {model_id} (port={port}, gpu_layers={n_gpu_layers}, ctx={n_ctx}, mmproj={mmproj_filename})")
             return self._loaded[model_id].load_result()
@@ -1423,7 +1452,7 @@ class LoadModelRequest(BaseModel):
     mmproj_filename: Optional[str] = None
     cache_type: str = "f16"  # f16 | q8_0 | q4_0
     speculative_decoding: str = "default"  # default/off | high (legacy low maps to high)
-    token_prediction: str = "off"  # on | off
+    token_prediction: str = "off"  # on | off | auto (embedded MTP, otherwise Ngram)
     context_shift: str = "off"  # on | off
     prioritize_gpu: bool = False
 
@@ -1757,6 +1786,7 @@ async def generate_chat_completion(
 
     # Apply model system prompt and params from Model Editor (same as ollama/openai routers)
     metadata = form_data.pop("metadata", {})
+    context_compaction = form_data.pop("context_compaction", False) is True
     model_info = Models.get_model_by_id(model_id)
 
     # Resolve custom model IDs to their base model ID (local/<stem>).
@@ -1897,6 +1927,57 @@ async def generate_chat_completion(
             "generate_chat_completion: reasoning effort=%s for model %s",
             reasoning_effort,
             model_id,
+        )
+
+    compaction_unsafe = (
+        form_data.get("continue_response") or metadata.get("continue_response")
+        or form_data.get("tools") or response_format or metadata.get("files")
+        or metadata.get("tool_ids")
+        or any((metadata.get("features") or {}).get(key) for key in (
+            "web_search", "deep_search", "file_generation", "code_execution",
+            "stable_diffusion", "video_generation", "music_generation",
+        ))
+    )
+    if context_compaction and not compaction_unsafe:
+        from neveai.utils.context_compaction import context_compactor
+
+        loaded = model_manager._loaded.get(model_id)
+        client = _get_http_client(model_manager._ports[model_id])
+        template_options = {}
+        if no_think:
+            template_options["enable_thinking"] = False
+        elif reasoning_effort:
+            template_options["reasoning_effort"] = reasoning_effort
+
+        async def count_context(items):
+            response = await client.post("/apply-template", json={
+                "messages": items, "add_generation_prompt": True,
+                "chat_template_kwargs": template_options,
+            }, timeout=10)
+            response.raise_for_status()
+            prompt = response.json()["prompt"]
+            response = await client.post("/tokenize", json={
+                "content": prompt, "add_special": True, "parse_special": True,
+            }, timeout=10)
+            response.raise_for_status()
+            return len(response.json()["tokens"])
+
+        async def summarize_context(items, budget):
+            control = await model_manager.get_reasoning_control(model_id)
+            summary_no_think, summary_budget, summary_effort = _resolve_reasoning_settings(control, "quick", False, False)
+            result = await model_manager.chat_completion(
+                model_id=model_id, messages=items, stream=False,
+                temperature=0, seed=0, max_tokens=budget,
+                no_think=summary_no_think, thinking_budget_tokens=summary_budget,
+                reasoning_effort=summary_effort,
+            )
+            choice = result["choices"][0]
+            return choice["message"].get("content") if choice.get("finish_reason") == "stop" else None
+
+        messages = await context_compactor.compact(
+            messages, context_window=getattr(loaded, "n_ctx", None),
+            scope=f"{getattr(user, 'id', '')}:{metadata.get('chat_id', '')}:{model_id}:{getattr(loaded, 'loaded_at', '')}:{getattr(loaded, 'n_ctx', '')}:{template_options}",
+            count=count_context, summarize=summarize_context,
         )
 
     if stream:

@@ -16,7 +16,6 @@
 	import { onChatDropdownDismiss } from '$lib/utils/chatDropdownDismissal';
 	import ImageModeSelector from './MessageInput/ImageModeSelector.svelte';
 	$: if ($mobile) {
-		showImageStyleDropdown = false;
 		showImageModeDropdown = false;
 	}
 	import ImageModeEditor from './MessageInput/ImageModeEditor.svelte';
@@ -177,103 +176,11 @@
 		dispatch('submit', submission.imageModeDisplay ? submission : submission.prompt);
 	}
 	export let stableDiffusionQuality:
-		| 'neve_image'
-		| 'neve_image_2'
+
 		| 'qwen_image_2s'
-		| 'qwen_image_2_1_official' = 'neve_image_2';
-	export let stableDiffusionStyle:
-		| 'none'
-		| 'minimalist'
-		| 'fantasy'
-		| 'spontaneous'
-		| 'realistic'
-		| 'manga' = 'none';
-	const imageStyleOptions = [
-		{ id: 'none', label: 'Sem estilo', image: '' },
-		{ id: 'realistic', label: 'Realista', image: '/static/realista.webp' },
-		{ id: 'spontaneous', label: 'Espontâneo', image: '/static/espontaneo.webp' },
-		{ id: 'minimalist', label: 'Minimalista', image: '/static/minimalista.webp' },
-		{ id: 'fantasy', label: 'Fantasia', image: '/static/fantasia.webp' },
-		{ id: 'manga', label: 'Mangá', image: '/static/manga.webp' }
-	] as const;
-	const noImageStyleOption = imageStyleOptions[0];
-	const imageStyleThumbnailOptions = imageStyleOptions.filter((style) => style.image);
-	let imageStyleThumbnailPreloads: HTMLImageElement[] = [];
-	let imageStyleThumbnailPreloadPromise: Promise<void> | null = null;
-	const imageStyleThumbnailCount = imageStyleThumbnailOptions.length;
-	let renderedImageStyleThumbnailCount = 0;
-	let renderedImageStyleThumbnailsReady = false;
-	let imageStyleOptionsViewport: HTMLElement;
-	const centerSelectedImageStyle = (viewport: HTMLElement) => {
-		const selected = viewport.querySelector<HTMLElement>('[aria-pressed="true"]');
-		viewport.scrollLeft = selected
-			? Math.max(0, selected.offsetLeft - (viewport.clientWidth - selected.offsetWidth) / 2)
-			: 0;
-		viewport.dispatchEvent(new Event('scroll'));
-	};
-	const preloadImageStyleThumbnails = () => {
-		if (imageStyleThumbnailPreloadPromise) return imageStyleThumbnailPreloadPromise;
-
-		imageStyleThumbnailPreloads = imageStyleOptions.flatMap((style) => {
-			if (!style.image) return [];
-			const image = new globalThis.Image();
-			image.decoding = 'async';
-			image.fetchPriority = 'low';
-			return [image];
-		});
-
-		imageStyleThumbnailPreloadPromise = Promise.all(
-			imageStyleThumbnailPreloads.map(
-				(image, index) =>
-					new Promise<void>((resolve) => {
-						let settled = false;
-						const finish = async () => {
-							if (settled) return;
-							settled = true;
-							if (image.naturalWidth > 0) {
-								try {
-									await image.decode();
-								} catch {
-									// A successful load is enough when the browser does not expose decode().
-								}
-							}
-							resolve();
-						};
-
-						image.addEventListener('load', finish, { once: true });
-						image.addEventListener('error', finish, { once: true });
-						image.src = imageStyleThumbnailOptions[index].image;
-						if (image.complete) void finish();
-					})
-			)
-		).then(() => undefined);
-
-		return imageStyleThumbnailPreloadPromise;
-	};
-	const markRenderedImageStyleThumbnailReady = () => {
-		renderedImageStyleThumbnailCount += 1;
-		if (renderedImageStyleThumbnailCount >= imageStyleThumbnailCount) {
-			centerSelectedImageStyle(imageStyleOptionsViewport);
-			renderedImageStyleThumbnailsReady = true;
-		}
-	};
-	const trackRenderedImageStyleThumbnail = (node: HTMLImageElement) => {
-		let settled = false;
-		const finish = () => {
-			if (settled) return;
-			settled = true;
-			markRenderedImageStyleThumbnailReady();
-		};
-		node.addEventListener('load', finish, { once: true });
-		node.addEventListener('error', finish, { once: true });
-		if (node.complete) queueMicrotask(finish);
-		return {
-			destroy() {
-				node.removeEventListener('load', finish);
-				node.removeEventListener('error', finish);
-			}
-		};
-	};
+		| 'minimax_h3_image'
+		| 'qwen_image_2_1_official' = 'qwen_image_2s';
+	export let stableDiffusionStyle: 'none' = 'none';
 	const styleOptionsHorizontalScroller = (node: HTMLElement) => {
 		let destroyed = false;
 		let cleanup = () => {};
@@ -382,9 +289,6 @@
 			}
 		};
 	};
-	$: selectedImageStyleLabel = $i18n.t(
-		imageStyleOptions.find((style) => style.id === stableDiffusionStyle)?.label ?? 'Sem estilo'
-	);
 	export let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	const imageResolutionOptions = [
 		{ id: '1:1', shape: 'h-4 w-4' },
@@ -809,26 +713,22 @@
 	let showThinkingDropdown = false;
 	let showImageQualityDropdown = false;
 	let showImageModeDropdown = false;
-	let showImageStyleDropdown = false;
-	let imageStyleDropdownRequest = 0;
+	
+	
 	let showImageResolutionDropdown = false;
 	let dropdownChatId = $chatId;
-	$: if (['qwen_image_2s', 'qwen_image_2_1_official'].includes(stableDiffusionQuality) && hasImageAttachment)
+	$: if (['qwen_image_2s', 'qwen_image_2_1_official', 'minimax_h3_image'].includes(stableDiffusionQuality) && hasImageAttachment)
 		showImageResolutionDropdown = false;
 	let showVideoModelDropdown = false;
 	let showVideoResolutionDropdown = false;
 	$: if ($mobile) showVideoResolutionDropdown = false;
 	let showVideoAspectRatioDropdown = false;
-	const closeImageStyleDropdown = () => {
-		imageStyleDropdownRequest += 1;
-		showImageStyleDropdown = false;
-	};
+	
 	const closeComposerDropdowns = () => {
 		showVideoModelDropdown = false;
 		showImageModeDropdown = false;
 		showThinkingDropdown = false;
 		showImageQualityDropdown = false;
-		closeImageStyleDropdown();
 		showImageResolutionDropdown = false;
 		showVideoResolutionDropdown = false;
 		showVideoAspectRatioDropdown = false;
@@ -847,30 +747,10 @@
 		showThinkingDropdown = false;
 	}
 
-	const toggleImageStyleDropdown = async () => {
-		showImageQualityDropdown = false;
-		showImageResolutionDropdown = false;
-		if (showImageStyleDropdown) {
-			closeImageStyleDropdown();
-			return;
-		}
-
-		const request = ++imageStyleDropdownRequest;
-		await preloadImageStyleThumbnails();
-		if (
-			request === imageStyleDropdownRequest &&
-			stableDiffusionEnabled &&
-			stableDiffusionQuality === 'neve_image_2'
-		) {
-			renderedImageStyleThumbnailCount = 0;
-			renderedImageStyleThumbnailsReady = false;
-			showImageStyleDropdown = true;
-		}
-	};
+	
 	$: if (!stableDiffusionEnabled) {
 		showImageModeDropdown = false;
 		showImageQualityDropdown = false;
-		closeImageStyleDropdown();
 		showImageResolutionDropdown = false;
 	}
 	$: if (stableDiffusionQuality !== 'qwen_image_2s') showImageModeDropdown = false;
@@ -878,17 +758,13 @@
 		stableDiffusionModeOptions = { ...stableDiffusionModeOptions, source_id: undefined, mask: null, crop: null, reference_crops: [] };
 	}
 	$: if (stableDiffusionModeOptions.source_id && imageModeSourceKey(imageModeFiles(files)[0]) !== stableDiffusionModeOptions.source_id) clearImageModeSource();
-	$: if (stableDiffusionQuality !== 'neve_image_2') {
-		closeImageStyleDropdown();
-	}
-	$: if (stableDiffusionQuality === 'neve_image') stableDiffusionQuality = 'neve_image_2';
+	
 	$: if (dropdownChatId !== $chatId) {
 		showVideoModelDropdown = false;
 		dropdownChatId = $chatId;
 		showThinkingDropdown = false;
 		showImageModeDropdown = false;
 		showImageQualityDropdown = false;
-		closeImageStyleDropdown();
 		showImageResolutionDropdown = false;
 		showVideoResolutionDropdown = false;
 		showVideoAspectRatioDropdown = false;
@@ -897,9 +773,9 @@
 	const isImageResolution = (value: string | null): value is typeof stableDiffusionResolution =>
 		['1:1', '16:9', '9:16', '4:3', '3:4'].includes(value ?? '');
 	const imageResolutionStorageKey = (quality: typeof stableDiffusionQuality) => {
-		if (quality === 'neve_image_2') return 'neveai.imageResolution.neve_image_1_4';
 		if (quality === 'qwen_image_2s') return 'neveai.imageResolution.neve_image_2';
 		if (quality === 'qwen_image_2_1_official') return 'neveai.imageResolution.neve_image_2_1';
+		if (quality === 'minimax_h3_image') return 'neveai.imageResolution.minimax_h3_image';
 		return null;
 	};
 	const saveImageResolution = (quality: typeof stableDiffusionQuality) => {
@@ -1650,6 +1526,7 @@
 	};
 
 	// --- Chat drag-and-drop onto the input bar ---
+	const pendingChatAttachments = new Set<string>();
 	const onInputDragOver = (e: DragEvent) => {
 		e.preventDefault();
 		if (e.dataTransfer?.types?.includes('text/plain')) {
@@ -1675,7 +1552,7 @@
 			return; // Not JSON — let the default behavior handle it
 		}
 
-		if (data?.type !== 'chat' || !data?.id) return;
+		if (data?.type !== 'chat' || typeof data?.id !== 'string' || !data.id) return;
 
 		// It's a chat drop — prevent the text from being inserted
 		e.preventDefault();
@@ -1686,23 +1563,29 @@
 		if (data.id === $chatId) return;
 
 		// Ignore duplicates
-		if (files.find((f) => f.id === data.id)) return;
-
-		const chat = await getChatById(localStorage.token, data.id);
-		if (!chat) return;
-
-		files = [
-			...files,
-			{
-				type: 'chat',
-				id: chat.id,
-				name: chat.title,
-				title: chat.title,
-				updated_at: chat.updated_at,
-				description: dayjs(chat.updated_at * 1000).fromNow(),
-				status: 'processed'
-			}
-		];
+		if (files.find((f) => f.id === data.id) || pendingChatAttachments.has(data.id)) return;
+		const destination = $chatId;
+		pendingChatAttachments.add(data.id);
+		try {
+			const chat = await getChatById(localStorage.token, data.id);
+			if (!chat || $chatId !== destination || files.some((file) => file.id === data.id)) return;
+			files = [
+				...files,
+				{
+					type: 'chat',
+					id: chat.id,
+					name: chat.title,
+					title: chat.title,
+					updated_at: chat.updated_at,
+					description: dayjs(chat.updated_at * 1000).fromNow(),
+					status: 'processed'
+				}
+			];
+		} catch (error) {
+			if ($chatId === destination) toast.error(String(error));
+		} finally {
+			pendingChatAttachments.delete(data.id);
+		}
 	};
 
 	const onKeyDown = (e: KeyboardEvent) => {
@@ -1735,7 +1618,6 @@
 	};
 
 	onMount(() => {
-		preloadImageStyleThumbnails();
 		videoPreferencesMounted = true;
 		videoPreferencesChatId = $chatId;
 		restoreVideoPreferences();
@@ -2012,14 +1894,6 @@
 			)
 		) {
 			showImageQualityDropdown = false;
-		}
-		if (
-			showImageStyleDropdown &&
-			!(e.target as HTMLElement).closest(
-				'#image-style-dropdown-container, #image-style-dropdown-panel'
-			)
-		) {
-			showImageStyleDropdown = false;
 		}
 		if (
 			showImageResolutionDropdown &&
@@ -2603,8 +2477,7 @@
 							{#if !isCompact}
 								<div
 									class="message-input-actions flex justify-between mt-2 mb-2 mx-0.5 max-w-full {stableDiffusionEnabled &&
-									(stableDiffusionQuality === 'neve_image_2' ||
-										stableDiffusionQuality === 'qwen_image_2s')
+									stableDiffusionQuality === 'qwen_image_2s'
 										? 'stable-image-actions'
 										: ''} {stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s'
 										? 'stable-image-actions-no-style'
@@ -2785,17 +2658,18 @@
 														aria-label={$i18n.t('Image model')}
 														aria-expanded={showImageQualityDropdown}
 														on:click|preventDefault={() => {
-															showImageStyleDropdown = false;
 															showImageResolutionDropdown = false;
 															showImageQualityDropdown = !showImageQualityDropdown;
 														}}
 													>
 														<span
-															>{stableDiffusionQuality === 'qwen_image_2_1_official'
+															>{stableDiffusionQuality === 'minimax_h3_image'
+																? 'Neve Image 3'
+															: stableDiffusionQuality === 'qwen_image_2_1_official'
 																? 'Neve Image 2.6'
 															: stableDiffusionQuality === 'qwen_image_2s'
 																? 'Neve Image 2'
-																	: 'Neve Image 1.5'}</span
+																	: 'Neve Image 2'}</span
 														>
 														<svg
 															viewBox="0 0 20 20"
@@ -2817,17 +2691,17 @@
 															class="fixed z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
 															in:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
 														>
-													{#each [{ id: 'neve_image_2', label: 'Neve Image 1.5' }, { id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.6' }] as quality}
+													{#each [{ id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.6' }, { id: 'minimax_h3_image', label: 'Neve Image 3' }] as quality}
 																<button
 																	type="button"
 																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
 																	on:click={() =>
 																		selectImageModel(
 																			quality.id as
-																				| 'neve_image'
-																				| 'neve_image_2'
+
 																						| 'qwen_image_2s'
 																				| 'qwen_image_2_1_official'
+																				| 'minimax_h3_image'
 																		)}
 																>
 																	<span>{quality.label}</span
@@ -2842,37 +2716,9 @@
 										{#if stableDiffusionQuality === 'qwen_image_2s' && !$mobile}
 											<ImageModeSelector bind:options={stableDiffusionModeOptions} bind:show={showImageModeDropdown} {files} locked={responseInProgress} disabled={sendDisabled || uploadPending || pendingImageAttachments > 0} ongoing={!!history?.currentId} position={viewportDropdown} scroller={styleOptionsHorizontalScroller} onOpen={closeComposerDropdowns} />
 										{/if}
-												{#if stableDiffusionQuality === 'neve_image_2' && !$mobile}
-													<div
-														class="image-style-control relative shrink-0"
-														id="image-style-dropdown-container"
-													>
-														<button
-															type="button"
-															class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-															aria-label={$i18n.t('Image style')}
-															aria-expanded={showImageStyleDropdown}
-															on:click|preventDefault={toggleImageStyleDropdown}
-														>
-															<span>{selectedImageStyleLabel}</span>
-															<svg
-																viewBox="0 0 20 20"
-																fill="currentColor"
-																class="size-3.5 transition-transform duration-150 {showImageStyleDropdown
-																	? ''
-																	: 'rotate-180'}"
-																aria-hidden="true"
-																><path
-																	fill-rule="evenodd"
-																	d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
-																	clip-rule="evenodd"
-																/></svg
-															>
-														</button>
-													</div>
-												{/if}
+												
 
-										{#if (stableDiffusionQuality === 'neve_image_2' || stableDiffusionQuality === 'qwen_image_2s' || stableDiffusionQuality === 'qwen_image_2_1_official') && !(stableDiffusionQuality === 'qwen_image_2s' && (hasImageAttachment || activeImageMode !== 'normal')) && !(stableDiffusionQuality === 'qwen_image_2_1_official' && hasImageAttachment)}
+										{#if !(stableDiffusionQuality === 'qwen_image_2s' && (hasImageAttachment || activeImageMode !== 'normal')) && !(['qwen_image_2_1_official', 'minimax_h3_image'].includes(stableDiffusionQuality) && hasImageAttachment)}
 													<div
 														class="image-resolution-control relative shrink-0"
 														id="image-resolution-dropdown-container"
@@ -2884,7 +2730,6 @@
 															aria-expanded={showImageResolutionDropdown}
 															on:click|preventDefault={() => {
 																showImageQualityDropdown = false;
-																showImageStyleDropdown = false;
 																showImageResolutionDropdown = !showImageResolutionDropdown;
 															}}
 														>
@@ -3184,110 +3029,7 @@
 								</div>
 							{/if}
 
-							{#if showImageStyleDropdown && stableDiffusionEnabled && stableDiffusionQuality === 'neve_image_2'}
-								<div
-									id="image-style-dropdown-panel"
-									use:viewportDropdown={{
-										immediate: true,
-										fullWidth: true,
-										positionAnchorId: 'message-input-container',
-										fitAvailableHeight: true
-									}}
-									class="fixed z-50 text-sm"
-									class:image-style-dropdown-ready={renderedImageStyleThumbnailsReady}
-									class:invisible={!renderedImageStyleThumbnailsReady}
-								>
-									<div class="image-style-card-strip flex w-full items-start gap-1.5">
-										<button
-											type="button"
-											class="group relative aspect-[4/5] w-[calc((100%_-_1.5rem)/5)] shrink-0 overflow-hidden rounded-md border-0 p-0 text-left outline-hidden transition-colors focus-visible:ring-2 focus-visible:ring-gray-400 {stableDiffusionStyle ===
-											noImageStyleOption.id
-												? 'bg-gray-200 dark:bg-gray-700'
-												: 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700'}"
-											aria-pressed={stableDiffusionStyle === noImageStyleOption.id}
-											on:click={() => {
-												stableDiffusionStyle = noImageStyleOption.id;
-												localStorage.setItem('neveai.imageStyle', stableDiffusionStyle);
-												closeImageStyleDropdown();
-											}}
-										>
-											<span
-												class="absolute inset-x-0 bottom-0 block truncate px-1 pb-2 text-[10px] font-medium leading-5 text-gray-700 sm:px-2 sm:text-xs dark:text-gray-200"
-												>{$i18n.t(noImageStyleOption.label)}</span
-											>
-											{#if stableDiffusionStyle === noImageStyleOption.id}
-												<CheckCircle
-													className="absolute right-2 top-2 size-4 text-gray-700 dark:text-gray-100"
-													strokeWidth="2"
-												/>
-											{/if}
-										</button>
-
-										<div class="min-w-0 flex-1" use:styleOptionsHorizontalScroller>
-											<div
-												bind:this={imageStyleOptionsViewport}
-												id="image-style-options-viewport"
-												data-style-options-viewport
-								class="style-options-scrollbar scrollbar-none overflow-x-auto overflow-y-hidden overscroll-x-none"
-											>
-											<div
-												class="grid grid-flow-col auto-cols-[calc((100%_-_1.125rem)/4)] gap-1.5"
-											>
-												{#each imageStyleOptions.slice(1) as style}
-											<button
-												type="button"
-												class="group relative aspect-[4/5] w-full overflow-hidden rounded-md border-0 bg-gray-200 p-0 text-left outline-hidden transition-[filter] hover:brightness-110 focus-visible:ring-2 focus-visible:ring-gray-400 dark:bg-gray-800"
-												aria-pressed={stableDiffusionStyle === style.id}
-												on:click={() => {
-													stableDiffusionStyle = style.id;
-													localStorage.setItem('neveai.imageStyle', stableDiffusionStyle);
-													closeImageStyleDropdown();
-												}}
-											>
-													<img
-														src={style.image}
-														alt={$i18n.t('Style example: {{style}}', {
-															style: $i18n.t(style.label)
-														})}
-														width="640"
-														height="360"
-														class="absolute inset-0 block size-full object-cover"
-														use:trackRenderedImageStyleThumbnail
-													/>
-													<span
-								class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/80 via-black/35 to-transparent px-1 pb-2 pt-8 text-[10px] font-medium leading-5 text-white sm:px-2 sm:text-xs"
-													>
-														<span class="block truncate">{$i18n.t(style.label)}</span>
-													</span>
-												{#if stableDiffusionStyle === style.id}
-													<CheckCircle
-														className="absolute right-2 top-2 size-4 text-white drop-shadow-md"
-														strokeWidth="2"
-													/>
-												{/if}
-											</button>
-												{/each}
-											</div>
-											</div>
-											<div
-												data-style-options-track
-												class="mt-1 flex h-2 cursor-pointer items-center rounded-full outline-hidden focus-visible:ring-2 focus-visible:ring-gray-400"
-												role="scrollbar"
-												aria-label={$i18n.t('Estilos de imagem')}
-												aria-controls="image-style-options-viewport"
-												aria-orientation="horizontal"
-												aria-valuemin="0"
-												tabindex="0"
-											>
-												<div
-													data-style-options-thumb
-													class="h-1 rounded-full bg-gray-300 dark:bg-gray-600"
-												></div>
-											</div>
-										</div>
-									</div>
-								</div>
-							{/if}
+							
 						</div>
 					</form>
 				</div>
@@ -3297,26 +3039,6 @@
 {/if}
 
 <style>
-	.image-style-card-strip {
-		position: relative;
-		isolation: isolate;
-	}
-	.image-style-card-strip::before {
-		content: '';
-		position: absolute;
-		inset: 0 0 0.75rem;
-		z-index: -1;
-		border-radius: 6px;
-		background: rgb(255 255 255 / 75%);
-		backdrop-filter: blur(10px);
-		clip-path: inset(0 round 6px);
-		-webkit-mask-image: linear-gradient(to bottom, transparent, #000 6%, #000 94%, transparent);
-		mask-image: linear-gradient(to bottom, transparent, #000 6%, #000 94%, transparent);
-		pointer-events: none;
-	}
-	:global(.dark) .image-style-card-strip::before {
-		background: rgb(0 0 0 / 72%);
-	}
 	.chat-input-scroll { overscroll-behavior-y: contain; overflow-anchor: none; }
 	:global(#message-input-container.flex-col) > .composer-editor { padding-inline-end: 0.375rem; }
 	.composer-editor:global(.composer-text-scrolled) .chat-input-scroll {
@@ -3369,20 +3091,6 @@
 			margin-inline-start: 0.375rem;
 		}
 		.composer-compact-controls { padding-right: 0.375rem; }
-	}
-	.image-style-dropdown-ready {
-		animation: enter-image-style-dropdown 180ms cubic-bezier(0.33, 1, 0.68, 1);
-	}
-
-	@keyframes enter-image-style-dropdown {
-		from {
-			opacity: 0;
-			transform: translateY(var(--image-style-dropdown-enter-y, -6px));
-		}
-		to {
-			opacity: 1;
-			transform: translateY(0);
-		}
 	}
 
 	.stable-image-toggle {
@@ -3540,21 +3248,19 @@
 		}
 		.message-input-active-controls button { min-height: 38px; white-space: nowrap; }
 		:global([data-composer-root] button.invisible) { visibility: visible; }
-		.stable-image-actions .image-quality-control,
-		.stable-image-actions .image-style-control { flex: 0 0 auto; }
+		.stable-image-actions .image-quality-control { flex: 0 0 auto; }
 		.stable-image-actions .image-resolution-control { flex: 0 0 auto; }
 		.message-input-active-controls .image-quality-control,
-		.message-input-active-controls .image-resolution-control,
-		.message-input-active-controls .image-style-control { flex: 0 0 auto; }
+		.message-input-active-controls .image-resolution-control { flex: 0 0 auto; }
 		.message-input-actions .message-input-active-controls > div > button {
 			width: max-content;
 			max-width: none;
 			padding-inline: 0.5rem;
 		}
-		.image-quality-control, .image-style-control { min-width: 0; }
-		.image-quality-control > button, .image-style-control > button { max-width: 100%; }
-		.image-quality-control > button > span, .image-style-control > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-		.image-quality-control svg, .image-style-control svg { flex-shrink: 0; }
+		.image-quality-control { min-width: 0; }
+		.image-quality-control > button { max-width: 100%; }
+		.image-quality-control > button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+		.image-quality-control svg { flex-shrink: 0; }
 		:global([data-token-usage-trigger]) { flex-shrink: 0; white-space: nowrap; min-height: 40px; }
 		:global([data-token-usage-trigger] > div:first-child) { align-items: center; }
 		:global([data-token-usage-trigger] > div:first-child > svg) { width: 20px; height: 20px; }

@@ -59,28 +59,15 @@ O instalador realiza automaticamente as seguintes ações:
 
 ## Atualizando a NeveAI
 
-```bat
-instalar.bat → Atualizar
-```
+Abra **Configurações > Atualizações** e selecione NeveAI, llama.cpp ou ambos.
 
-<h1 align="center">
-<img width="976" alt="2" src="https://github.com/user-attachments/assets/bec95849-b86b-48b5-92cb-f72bd69c0ee9" />
-</h1>
+1. **Atualizar agora** baixa e verifica os pacotes oficiais, mostrando o progresso sem fechar a interface.
+2. Ao terminar o download, o card oferece **Reiniciar**. Nenhum arquivo da instalação é trocado antes desse clique.
+3. O launcher abre sua janela de progresso, encerra somente os processos desta instalação e aplica os pacotes preparados.
+4. A atualização preserva chats, arquivos, modelos, ambientes e `.env`. O motor transacional mantém backup e rollback para falhas na aplicação dos arquivos.
+5. A NeveAI atualiza dependências/build quando necessário, valida a instalação e abre novamente a interface. O llama.cpp pode ser atualizado independentemente, preservando o tipo de aceleração instalado.
 
-O atualizador realiza automaticamente as seguintes ações:
-
-1. **Lê a versão local** do arquivo `version.txt` na raiz do projeto.
-2. **Consulta a última release** em [github.com/Etamus/NeveAI/releases/latest](https://github.com/Etamus/NeveAI/releases/latest) e mostra:
-   - versão instalada × versão disponível
-   - status: **Atualizado**, **Pendente** (`vX → vY`) ou **Erro de rede**
-3. Se já estiver na última versão, exibe **"Você já está na última versão"** e oferece apenas o botão **Fechar** (nada é baixado).
-4. Se houver atualização pendente, ao clicar em **Atualizar**:
-   - Baixa o `zipball` da release no `%TEMP%`
-   - Aplica os arquivos novos sobre o projeto via `robocopy`, **preservando** dados locais: `backend/neveai/venv/`, `backend/neveai/frontend/`, `backend/neveai/data/`, `backend/data/`, `models/`, `mmproj/`, `llamacpp-server/`, `node_modules/`, `build/`, `logs/`, `.git/`, `.svelte-kit/`, `.env` e `version.txt` (com backup automático do `.env`)
-   - Roda `npm install` e `npm run build`
-   - Recria `backend/neveai/frontend/` com o novo build
-   - Grava o novo tag em `version.txt`
-5. Painel final mostra **"Atualização concluída!"** com o resumo `versão anterior → versão instalada`.
+O `instalar.bat` continua responsável por instalar, reparar e publicar builds; atualizações ficam dentro da interface.
 
 ---
 
@@ -91,10 +78,10 @@ iniciar.bat
 ```
 
 O script:
-1. Encerra qualquer processo existente na porta 8080
+1. Verifica e gerencia somente os processos desta instalação
 2. Inicia o backend Uvicorn em segundo plano (que já serve o frontend compilado)
 3. Aguarda o health check (`http://localhost:8080/health`) por até 120 segundos
-4. Abre o NeveAI em uma **janela de app isolada** via `neve_window.py` (usa Chrome/Brave/Edge em modo `--app`, sem barra de URL)
+4. Abre o NeveAI em uma **janela de app isolada** via `neve_window.py`, com WebView2 Fixed incluído na instalação
 
 Acesse manualmente se preferir: **http://localhost:8080**
 
@@ -134,7 +121,7 @@ O backend auto-detecta o mmproj compatível pelo prefixo do nome do modelo (ex: 
 
 ```
 NeveAI/
-├── instalar.bat              # Abre o Neve Hub para instalar, atualizar ou buildar
+├── instalar.bat              # Abre o Neve Hub para instalar, reparar ou buildar
 ├── depurar.bat               # Inicia o NeveAI mantendo o console de diagnóstico
 ├── launchers/                # Scripts PowerShell e VBS usados pelos launchers
 ├── version.txt               # Versão (tag) atualmente instalada
@@ -205,7 +192,7 @@ NeveAI/
 ### Outras Funcionalidades
 - **Busca na web** via SearXNG (sem chave de API)
 - **Execução de código Python** via Pyodide (WebAssembly, no browser)
-- **Geração e edição de imagens local** com Neve Image 1.5 (estilos e resoluções selecionáveis), Neve Image 2 (ComfyUI isolado em 8 passos) e Neve Image 2.6 (Modelo com maior qualidade de edição)
+- **Geração e edição de imagens local** com Neve Image 2 (ComfyUI isolado em 8 passos), Neve Image 2.6 (maior qualidade de edição) e Neve Image 3.
 - **Geração de músicas** via Neve-Step 1.5 Turbo local, com orientação de estilo, letras em português e player integrado
 - **Geração de vídeos local** com Neve Video, suporte a texto ou imagem de referência e seletores de resolução e duração
 - **Ferramentas para documentos** com geração assistida pela LLM e OfficeCLI para saídas DOCX, XLSX e PPTX, mantendo o pipeline interno como fallback

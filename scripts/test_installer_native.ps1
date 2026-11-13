@@ -1,4 +1,4 @@
-param([ValidateSet('normal','slow','offline')][string]$Mode = 'normal', [ValidateSet('home','update','build')][string]$StartPage = 'home')
+﻿param([ValidateSet('normal')][string]$Mode = 'normal', [ValidateSet('home','install','build')][string]$StartPage = 'home')
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes,System.Drawing
 $root = Split-Path -Parent $PSScriptRoot
@@ -58,7 +58,7 @@ try {
     $env:NEVE_INSTALLER_READY_FILE = Join-Path $directory 'ready'
     $env:NEVE_INSTALLER_FIXTURE_CACHE = Join-Path $directory 'cache'
     [void][IO.Directory]::CreateDirectory($env:NEVE_INSTALLER_FIXTURE_CACHE)
-    $arguments = if ($Mode -eq 'normal') { @('-File','scripts/run_installer_diagnostics.ps1','-StartPage',$StartPage) } else { @('-File','scripts/run_installer_fixture.ps1','-Mode',$Mode) }
+    $arguments = @('-File','scripts/run_installer_diagnostics.ps1','-StartPage',$StartPage)
     $watch = [Diagnostics.Stopwatch]::StartNew()
     $process = Start-Process powershell.exe -ArgumentList (@('-NoProfile','-STA','-ExecutionPolicy','Bypass') + $arguments) -WorkingDirectory $root -WindowStyle Hidden -PassThru
     Wait-For { Test-Path -LiteralPath $env:NEVE_INSTALLER_READY_FILE }
@@ -75,28 +75,14 @@ try {
     Select-Language 0
     Save-Window 'install'
     Assert-FooterAction
-    Click-Control 'NavSettings'
-    Wait-For { Find-Control 'LblLatest' }
-    if ($Mode -eq 'slow') {
-        Wait-For { (Find-Control 'LblLatest').Current.Name -eq 'v999.0.0' }
-        if ((Find-Control 'LblLlamaLatest').Current.Name -ne '...') { throw 'Neve query waited for llama query' }
-        $check = Find-Control 'ChkUpdateNeve'
-        $check.GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Toggle()
-        Wait-For { (Find-Control 'LblLlamaLatest').Current.Name -eq 'b999999' }
-        if ((Find-Control 'ChkUpdateNeve').GetCurrentPattern([Windows.Automation.TogglePattern]::Pattern).Current.ToggleState -ne 'On') { throw 'Late result reset selection' }
-    } elseif ($Mode -eq 'offline') {
-        Wait-For { (Find-Control 'LblStatus').Current.Name -match 'Erro|Error' }
-        Wait-For { (Find-Control 'LblLlamaStatus').Current.Name -match 'Erro|Error' }
-    }
-    Save-Window 'update'
-    Assert-FooterAction $true
-    foreach ($page in @('build','update')) {
+    if (Find-Control 'NavSettings') { throw 'Retired Update tab still visible' }
+    foreach ($page in @('build','install')) {
         Remove-Item -LiteralPath $env:NEVE_INSTALLER_READY_FILE
         $wrapper = Start-Process cmd.exe -ArgumentList @('/c','instalar.bat','--page',$page) -WorkingDirectory $root -WindowStyle Hidden -Wait -PassThru
         if ($wrapper.ExitCode -ne 0) { throw 'BAT entrypoint failed' }
         Wait-For { Test-Path -LiteralPath $env:NEVE_INSTALLER_READY_FILE }
         if ($page -eq 'build') { Wait-For { Find-Control 'LblDeployPath' }; Save-Window 'publish'; Assert-FooterAction }
-        else { Wait-For { Find-Control 'LblLatest' } }
+        else { Wait-For { Find-Control 'CmbBackend' } }
     }
     Click-Control 'NavOverview'
     Select-Language $initialLanguage

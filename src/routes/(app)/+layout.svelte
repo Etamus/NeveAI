@@ -26,6 +26,7 @@
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
 	import NeveUpdateToast from '$lib/components/chat/NeveUpdateToast.svelte';
+	import { toastCategoryEnabled } from '$lib/utils/toastPreferences';
 	import DownloadProgressToast from '$lib/components/chat/DownloadNeveModelsProgressToast.svelte';
 	import LocalModelRuntimeToast from '$lib/components/chat/LocalModelRuntimeToast.svelte';
 	import {
@@ -82,14 +83,14 @@
 	$: if (typeof document !== 'undefined') {
 		document.documentElement.style.setProperty(
 			'--neve-download-toast-offset',
-			$neveDownloadToast ? `${Math.max(downloadToastHeight, 82) + 14}px` : '0px'
+			$neveDownloadToast && toastCategoryEnabled($settings, 'downloads') ? `${Math.max(downloadToastHeight, 82) + 14}px` : '0px'
 		);
 	}
 
 	$: if (typeof document !== 'undefined') {
 		document.documentElement.style.setProperty(
 			'--neve-model-runtime-toast-offset',
-			modelRuntimeToast ? `${Math.max(modelRuntimeToastHeight, 68) + 14}px` : '0px'
+			modelRuntimeToast && toastCategoryEnabled($settings, 'runtime') ? `${Math.max(modelRuntimeToastHeight, 68) + 14}px` : '0px'
 		);
 	}
 
@@ -130,9 +131,10 @@
 		updateToastShownVersion = '';
 	};
 
-	const openUpdateSettings = () => {
+	const openUpdateSettings = async () => {
 		closeUpdateToast();
-		showSettingsTab.set('about');
+		showSettingsTab.set('updates');
+		await tick();
 		showSettings.set(true);
 	};
 
@@ -467,7 +469,7 @@
 	</div>
 {/if}
 
-{#if $neveDownloadToast}
+{#if $neveDownloadToast && toastCategoryEnabled($settings, 'downloads')}
 	<div
 		data-neve-toast
 		data-neve-toast-kind="download"
@@ -486,7 +488,7 @@
 	</div>
 {/if}
 
-{#if modelRuntimeToast}
+{#if modelRuntimeToast && toastCategoryEnabled($settings, 'runtime')}
 	<div
 		data-neve-toast
 		data-neve-toast-kind="runtime"

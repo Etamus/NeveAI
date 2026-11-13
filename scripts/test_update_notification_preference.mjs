@@ -6,11 +6,11 @@ import { installMobileOfflineApi } from './fixtures/mobile-offline-api.mjs';
 
 const origin = 'http://localhost:5188';
 const output = 'logs/update-notification-preference';
-const label = 'Notificar sobre atualizações';
+const label = 'Notificar sobre novas atualizações';
 const updateSelector = '[data-neve-toast-kind="update"]';
 const hook = `onMount(() => {
  window.__updatePreferenceFixture = {
-  async open(tab = 'general') { showSettingsTab.set(tab); showSettings.set(true); await tick(); },
+  async open(tab = 'updates') { showSettingsTab.set(tab); showSettings.set(true); await tick(); },
   async close() { showSettings.set(false); await tick(); },
   async patch(patch) { settings.update(value => ({...value, ...patch})); await tick(); },
   async poll() { await checkForVersionUpdates(); await tick(); },
@@ -94,11 +94,12 @@ try {
     polls++;
     return route.fulfill({ json: payload() });
    });
+   await page.route('**/api/updater/state',route=>route.fulfill({json:{status:'idle'}}));
 
    const update = page.locator(updateSelector);
    const toggle = page.getByRole('switch', { name: label, exact: true });
-   const aboutUpdate = page.locator('#tab-about button').filter({ hasText: /^Atualizar$/ });
-   async function open(tab = 'general') {
+   const aboutUpdate = page.locator('#tab-updates button').filter({ hasText: /^Atualizar agora$/ });
+   async function open(tab = 'updates') {
     await page.evaluate(tab => window.__updatePreferenceFixture.open(tab), tab);
     await page.locator(tab === 'about' ? '#tab-about' : '#update-notifications-label').waitFor({ state: 'visible' });
    }
@@ -163,10 +164,10 @@ try {
    await checked(true);
    assert.equal(Object.hasOwn(ui, 'showUpdateToast'), false, 'Missing preference must not be written merely by opening General');
    const labelBox = await page.locator('#update-notifications-label').boundingBox();
-   const temporaryBox = await page.locator('#temp-chat-default-label').boundingBox();
+   const temporaryBox = await page.locator('#tab-updates > section').boundingBox();
    const switchBox = await toggle.boundingBox();
    assert(labelBox && temporaryBox && switchBox);
-   assert(labelBox.y >= temporaryBox.y + temporaryBox.height, 'Preference must sit below temporary chat');
+   assert(labelBox.y >= temporaryBox.y + temporaryBox.height, 'Preference must sit below the update card');
    assert(labelBox.x + labelBox.width <= switchBox.x, 'Wrapped label must not overlap switch');
    assert(switchBox.x + switchBox.width <= viewport.width);
    await screenshot('general-default');
@@ -178,6 +179,15 @@ try {
 
    // General itself hides update toasts behind its modal. Exercise the live settings
    // subscription separately while a toast is actually visible, without saving.
+   await visible('NeveAI v3.0.21');
+   await page.evaluate(() => window.__updatePreferenceFixture.others());
+   await othersIntact();
+   await page.evaluate(() => window.__updatePreferenceFixture.patch({ enableInterfaceNotifications: false }));
+   await hidden();
+   for (const kind of ['download', 'runtime']) await page.locator(`[data-neve-toast-kind="${kind}"]`).waitFor({ state: 'detached' });
+   await page.getByText('Fixture unrelated error', { exact: true }).waitFor({ state: 'detached' });
+   await screenshot('master-disabled');
+   await page.evaluate(() => window.__updatePreferenceFixture.patch({ enableInterfaceNotifications: true }));
    await visible('NeveAI v3.0.21');
    await page.evaluate(() => window.__updatePreferenceFixture.others());
    await othersIntact();
@@ -209,17 +219,15 @@ try {
     await page.evaluate(() => window.__updatePreferenceFixture.poll());
     assert(polls > before, `Polling stopped while disabled for ${next}`);
     await hidden();
-    await open('about');
+    await open();
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await aboutUpdate.waitFor({ state: 'visible' });
     await page.waitForFunction(target => {
-     const label = document.querySelector('#tab-about button')?.getAttribute('aria-label') ?? '';
-     return label.includes('NeveAI v3.0.21') === (target !== 'runtime') &&
-      label.includes('llama.cpp b11857') === (target !== 'project');
+     const heading=document.querySelector('#tab-updates h3')?.textContent || '';
+     const llama=document.querySelector('[data-update-component="llama"]');
+     return heading.includes('v3.0.21')===(target!=='runtime') && Boolean(llama)===(target!=='project');
     }, next);
-    const ariaLabel = await aboutUpdate.getAttribute('aria-label');
-    assert.equal(ariaLabel.includes('NeveAI v3.0.21'), next !== 'runtime');
-    assert.equal(ariaLabel.includes('llama.cpp b11857'), next !== 'project');
+    assert(await aboutUpdate.isEnabled());
     await screenshot(`about-disabled-${next}`);
     await close();
     await hidden();

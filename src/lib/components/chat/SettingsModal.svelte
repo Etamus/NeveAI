@@ -12,6 +12,10 @@
 	import DataControls from './Settings/DataControls.svelte';
 	import Personalization from './Settings/Personalization.svelte';
 	import About from './Settings/About.svelte';
+	import Notifications from './Settings/Notifications.svelte';
+	import Updates from './Settings/Updates.svelte';
+	import Bell from '../icons/Bell.svelte';
+	import UpdateClock from '../icons/UpdateClock.svelte';
 	import Search from '../icons/Search.svelte';
 	import XMark from '../icons/XMark.svelte';
 	import DatabaseSettings from '../icons/DatabaseSettings.svelte';
@@ -37,7 +41,7 @@
 	};
 
 	$: if (show) {
-		if (!wasShown) { wasShown = true; mobileSettingsPage = false; }
+		if (!wasShown) { wasShown = true; mobileSettingsPage = $mobile && Boolean($showSettingsTab); }
 		addScrollListener();
 		if ($showSettingsTab) {
 			selectedTab = $showSettingsTab;
@@ -46,7 +50,10 @@
 		}
 	} else {
 		wasShown = false;
-		mobileSettingsPage = false;
+		selectedTab = $showSettingsTab || 'general';
+		mobileSettingsPage = $mobile && Boolean($showSettingsTab);
+		search = '';
+		setFilteredSettings();
 		removeScrollListener();
 	}
 
@@ -89,6 +96,7 @@
 				'neveai settings'
 			]
 		},
+		{ id: 'notifications', title: 'Notifications', keywords: ['notificações', 'notificacoes', 'toasts', 'avisos'] },
 		{
 			id: 'personalization',
 			title: 'Personalization',
@@ -148,6 +156,7 @@
 				'messagehistory'
 			]
 		},
+		{ id: 'updates', title: 'Updates', keywords: ['atualizações', 'atualizacoes', 'llama.cpp', 'neveai'] },
 		{
 			id: 'about',
 			title: 'Sobre',
@@ -178,6 +187,7 @@
 
 	const getAvailableSettings = () => {
 		return allSettings.filter((tab) => {
+			if (tab.id === 'updates') return $user?.role === 'admin';
 			if (tab.id === 'personalization') {
 				return true;
 			}
@@ -344,6 +354,14 @@
 								<span>{$i18n.t('Data Controls')}</span>
 								<span class="mobile-settings-chevron hidden"><ChevronRight /></span>
 							</button>
+						{:else if tabId === 'notifications' || tabId === 'updates'}
+							<button role="tab" aria-controls={`tab-${tabId}`} aria-selected={selectedTab === tabId}
+								class="px-3 py-2 min-w-fit rounded-lg flex items-center gap-2 transition {selectedTab === tabId ? 'font-semibold text-gray-900 dark:text-white bg-gray-100 dark:bg-gray-800' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50'}"
+								on:click={() => selectTab(tabId)}>
+								<svelte:component this={tabId === 'notifications' ? Bell : UpdateClock} className="size-4" />
+								<span>{$i18n.t(tabId === 'notifications' ? 'Notifications' : 'Updates')}</span>
+								<span class="mobile-settings-chevron hidden"><ChevronRight /></span>
+							</button>
 						{:else if tabId === 'about'}
 							<button
 								role="tab"
@@ -388,6 +406,10 @@
 					/>
 				{:else if selectedTab === 'data_controls'}
 					<DataControls {saveSettings} />
+				{:else if selectedTab === 'notifications'}
+					<Notifications {saveSettings} />
+				{:else if selectedTab === 'updates'}
+					<Updates {saveSettings} />
 				{:else if selectedTab === 'about'}
 					<About />
 				{/if}

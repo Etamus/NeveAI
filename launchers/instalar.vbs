@@ -38,7 +38,7 @@ Next
 
 Select Case LCase(startPage)
     Case "instalar": startPage = "install"
-    Case "atualizar": startPage = "update"
+    Case "atualizar", "update": startPage = "install"
     Case "buildar": startPage = "build"
 End Select
 

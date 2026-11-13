@@ -34,7 +34,7 @@
 
 	export let onSave: (value: any) => void = () => {};
 	export let onUpdate: (value: any) => void = () => {};
-	export let onPreview: (value: any) => void = () => {};
+	export let onPreview: (value: any, language?: string) => void = () => {};
 
 	export let save = false;
 	export let run = true;
@@ -116,7 +116,7 @@
 	};
 
 	const previewCode = () => {
-		onPreview(code);
+		onPreview(code, lang);
 	};
 
 	const checkPythonCode = (str) => {
@@ -543,7 +543,7 @@
 						</button>
 					</Tooltip>
 
-					{#if preview && ['html', 'svg'].includes(lang)}
+					{#if preview && ['html', 'svg', 'js', 'javascript', 'jsx', 'react', 'ts', 'typescript', 'tsx', 'css'].includes(lang)}
 						<Tooltip content={$i18n.t('Artifact preview')} placement="top">
 							<button
 								class="flex items-center justify-center run-code-button bg-none border-none transition rounded-md p-1 hover:bg-gray-200 dark:hover:bg-gray-700"

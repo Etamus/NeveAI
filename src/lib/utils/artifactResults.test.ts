@@ -22,7 +22,7 @@ describe('completed artifact results', () => {
 				}
 			}
 		};
-		expect(getConversationArtifacts(history, [preview])).toEqual([preview]);
+		expect(getConversationArtifacts(history, [preview])).toEqual([{ ...preview, live: false }]);
 		history.messages.a.content = 'Replaced';
 		expect(getConversationArtifacts(history, [preview])).toEqual([]);
 	});
@@ -74,5 +74,46 @@ describe('completed artifact results', () => {
 		expect(getConversationArtifacts(history).map((result) => result.id)).toEqual(['b:html']);
 		history.messages.b.done = false;
 		expect(getConversationArtifacts(history)).toEqual([]);
+	});
+	it('includes the new live response only for an active panel, regardless of the old selection', () => {
+		const content = '```html\n<h1>Next request</h1>\n';
+		const history = {
+			currentId: 'next',
+			messages: {
+				old: { id: 'old', role: 'assistant', parentId: null, content: content + '```', done: true },
+				next: { id: 'next', role: 'assistant', parentId: 'old', content, done: false }
+			}
+		};
+		expect(getConversationArtifacts(history, [], 'old:html').map((entry) => entry.id)).toEqual([
+			'old:html'
+		]);
+		expect(
+			getConversationArtifacts(history, [], 'old:html', true).map((entry) => entry.id)
+		).toEqual(['old:html', 'next:html']);
+	});
+	it('keeps the selected preview while its replacement is waiting, but not across chats or after completion', () => {
+		const previous = extractArtifactResults('```html\n<h1>Previous</h1>\n```', 'reply')[0];
+		const history = {
+			currentId: 'reply',
+			messages: {
+				reply: { id: 'reply', role: 'assistant', parentId: null, content: '', done: false }
+			}
+		};
+		expect(getConversationArtifacts(history, [previous], previous.id, true)).toEqual([
+			{ ...previous, live: false }
+		]);
+		history.messages.reply.done = true;
+		expect(getConversationArtifacts(history, [previous], previous.id, true)).toEqual([]);
+		expect(
+			getConversationArtifacts(
+				{
+					currentId: 'other',
+					messages: { other: { id: 'other', role: 'assistant', content: '', done: false } }
+				},
+				[previous],
+				previous.id,
+				true
+			)
+		).toEqual([]);
 	});
 });
