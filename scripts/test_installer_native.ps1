@@ -9,7 +9,9 @@ $oldCache = $env:NEVE_INSTALLER_FIXTURE_CACHE
 $process = $null
 $initialLanguage = $null
 function Find-Control([string]$Id) {
+    if (-not $process -or $process.HasExited) { return $null }
     $process.Refresh()
+    if ($process.MainWindowHandle -eq [IntPtr]::Zero) { return $null }
     $view = [Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
     $matches = $view.FindAll([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.PropertyCondition]::new([Windows.Automation.AutomationElement]::AutomationIdProperty,$Id))
     foreach ($element in $matches) { if (-not $element.Current.IsOffscreen) { return $element } }
@@ -64,6 +66,11 @@ try {
     Wait-For { Test-Path -LiteralPath $env:NEVE_INSTALLER_READY_FILE }
     $readyMs = $watch.ElapsedMilliseconds
     Wait-For { Find-Control 'NavOverview' }
+    $process.Refresh()
+    $nativeWindow=[Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
+    if ([Math]::Abs($nativeWindow.Current.BoundingRectangle.Width-940) -gt 2) { throw 'Installer width is not 940 px' }
+    if ($nativeWindow.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern).Current.CanMaximize) { throw 'Installer still allows maximizing' }
+    if (Find-Control 'BtnMaximize') { throw 'Maximize button still visible' }
     Click-Control 'NavOverview'
     Wait-For { Find-Control 'CmbBackend' }
     if ((Find-Control 'BtnPrimary').Current.BoundingRectangle.Height -ne 34) { throw 'Native action button size changed' }
@@ -73,7 +80,14 @@ try {
     Select-Language 1
     Wait-For { (Find-Control 'LblNavInstall').Current.Name -match 'Repair|Install' }
     Select-Language 0
+    if ((Find-Control 'LblNavInstall').Current.Name -eq 'Reparar') {
+        if (Find-Control 'LblPageContext') { throw 'Repair header should be hidden' }
+        if ((Find-Control 'LblGpuCaption').Current.BoundingRectangle.Top -gt $nativeWindow.Current.BoundingRectangle.Top+150) { throw 'Repair content was not moved up' }
+    }
     Save-Window 'install'
+    $gpuCaptionBounds=(Find-Control 'LblGpuCaption').Current.BoundingRectangle
+    $backendCaptionBounds=(Find-Control 'LblBackendCaption').Current.BoundingRectangle
+    $gpuValueBounds=(Find-Control 'LblGpu').Current.BoundingRectangle
     Assert-FooterAction
     if (Find-Control 'NavSettings') { throw 'Retired Update tab still visible' }
     foreach ($page in @('build','install')) {
@@ -81,7 +95,16 @@ try {
         $wrapper = Start-Process cmd.exe -ArgumentList @('/c','instalar.bat','--page',$page) -WorkingDirectory $root -WindowStyle Hidden -Wait -PassThru
         if ($wrapper.ExitCode -ne 0) { throw 'BAT entrypoint failed' }
         Wait-For { Test-Path -LiteralPath $env:NEVE_INSTALLER_READY_FILE }
-        if ($page -eq 'build') { Wait-For { Find-Control 'LblDeployPath' }; Save-Window 'publish'; Assert-FooterAction }
+        if ($page -eq 'build') {
+            Wait-For { Find-Control 'LblDeployPath' }
+            if (Find-Control 'LblPageContext') { throw 'Build header should be hidden' }
+            foreach ($pair in @(@('LblBuildCaption',$gpuCaptionBounds),@('LblDestinationCaption',$backendCaptionBounds))) {
+                $bounds=(Find-Control $pair[0]).Current.BoundingRectangle
+                if ([Math]::Abs($bounds.Left-$pair[1].Left) -gt 1 -or [Math]::Abs($bounds.Top-$pair[1].Top) -gt 1) { throw "Build/repair caption alignment differs: $($pair[0])" }
+            }
+            if ([Math]::Abs((Find-Control 'LblBuildPath').Current.BoundingRectangle.Left-$gpuValueBounds.Left) -gt 1) { throw 'Build path column does not align with GPU value' }
+            Save-Window 'publish'; Assert-FooterAction
+        }
         else { Wait-For { Find-Control 'CmbBackend' } }
     }
     Click-Control 'NavOverview'

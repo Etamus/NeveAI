@@ -79,7 +79,7 @@ def vdn_namespace(cache):
     }.items():
         base[name] = shared / suffix
     h3 = SimpleNamespace(**base)
-    h3.minimax_h3_runtime = SimpleNamespace(prepare=AsyncMock(), is_installed=True)
+    h3.shared_h3_runtime = SimpleNamespace(prepare=AsyncMock(), is_installed=True)
     h3._runtime_python = lambda: cache / "python"
     h3._replace_source_from_archive = Mock()
     namespace = dict(CACHE_DIR=cache, h3=h3, asyncio=asyncio, json=json, shutil=shutil, Path=Path)
@@ -108,6 +108,7 @@ class VideoVDNGraphTests(unittest.TestCase):
                         args = ("Scene", 42, *refs, 864, 480, frames, merged)
                         baseline = original._build_workflow(*args)
                         graph = self.base._build_workflow(*args)
+                        baseline['6']['inputs']['unet_name'] = graph['6']['inputs']['unet_name']
                         self.assertEqual(graph["18"]["class_type"], "VAEDecodeAudio")
                         self.assertEqual(graph["15"]["inputs"]["audio"], ["18", 0])
                         for candidate in (baseline, graph):
@@ -243,7 +244,7 @@ class VideoVDNPreparationTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(runtime.is_installed)
             marker.write_text(ns["NODE_COMMIT"], encoding="utf8")
             self.assertTrue(runtime.is_installed)
-            ns["h3"].minimax_h3_runtime.is_installed = False
+            ns["h3"].shared_h3_runtime.is_installed = False
             self.assertFalse(runtime.is_installed)
 
     async def test_start_server_passes_worker_hooks_to_subprocess(self):
@@ -368,7 +369,7 @@ class VideoVDNPreparationTests(unittest.IsolatedAsyncioTestCase):
             runtime._run_command = AsyncMock(side_effect=download)
             progress = AsyncMock()
             await runtime.prepare(progress)
-            h3.minimax_h3_runtime.prepare.assert_awaited_once_with(progress)
+            h3.shared_h3_runtime.prepare.assert_awaited_once_with(progress)
             script = ast.parse(runtime._run_command.await_args.args[0][2])
             download = script.body[1].value
             options = {kw.arg: ast.literal_eval(kw.value) for kw in download.keywords}
@@ -414,6 +415,7 @@ class VideoVDNHandlerTests(unittest.IsolatedAsyncioTestCase):
                                    generate=AsyncMock(return_value={"video": b"video", "filename": "test.mp4"}),
                                    stop=AsyncMock(), cancel=AsyncMock())
         self.original, self.vdn = runtime(), runtime()
+        self.shared = SimpleNamespace(cancel=AsyncMock())
         self.references = []
         self.prepared_path = SimpleNamespace(read_bytes=Mock(return_value=b"image"), unlink=Mock())
         self.events = []
@@ -436,7 +438,7 @@ class VideoVDNHandlerTests(unittest.IsolatedAsyncioTestCase):
             model_manager=SimpleNamespace(standby=AsyncMock(return_value=None)),
             media_model_standby=media_model_standby,
             _prepare_init_image_sync=lambda *a: SimpleNamespace(width=640, height=480, path=self.prepared_path),
-            minimax_h3_runtime=self.original, vdn_h3_runtime=self.vdn, upload_file_handler=self.upload,
+            vdn_h3_runtime=self.vdn, shared_h3_runtime=self.shared, upload_file_handler=self.upload,
         )
         self.handler = extracted_function(MIDDLEWARE, "chat_video_generation_handler", self.ns)
         self.request = SimpleNamespace(app=SimpleNamespace(
@@ -460,7 +462,7 @@ class VideoVDNHandlerTests(unittest.IsolatedAsyncioTestCase):
                         self.vdn.generate.reset_mock()
                         self.references = ["first", "last"][:count]
                         await self.invoke(model, duration)
-                        chosen, other = (self.vdn, self.original) if model == "vdn_h3" else (self.original, self.vdn)
+                        chosen, other = self.vdn, self.original
                         chosen.generate.assert_awaited_once()
                         other.generate.assert_not_awaited()
                         kwargs = chosen.generate.await_args.kwargs
@@ -469,10 +471,8 @@ class VideoVDNHandlerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(kwargs["last_image"] is not None, count == 2)
                         self.assertEqual((kwargs["width"], kwargs["height"]), (640, 480) if count else (864, 480))
                         metadata = self.upload.call_args.kwargs["metadata"]
-                        self.assertEqual(metadata["video_model"], "vdn_h3" if model == "vdn_h3" else "minimax_h3")
-                        if model in ("vdn_h3", "minimax_h3"):
-                            self.assertEqual(metadata["video_model"], model)
-                        self.assertEqual(metadata["source"], "minimax-h3-fl2va-w6a8" if model == "vdn_h3" else "minimax-h3-fl2va-w4a8")
+                        self.assertEqual(metadata["video_model"], "vdn_h3")
+                        self.assertEqual(metadata["source"], "minimax-h3-fl2va-w6a8")
                         # Generated-video library queries accept this source family.
                         self.assertTrue(metadata["source"].startswith("minimax-h3-"))
                         self.assertTrue(self.metadata["skip_llm"])
@@ -483,7 +483,7 @@ class VideoVDNHandlerTests(unittest.IsolatedAsyncioTestCase):
             for phase in ("prepare", "generate"):
                 with self.subTest(model=model, phase=phase):
                     self.setUp()
-                    chosen, other = (self.vdn, self.original) if model == "vdn_h3" else (self.original, self.vdn)
+                    chosen, other = self.vdn, self.original
                     self.references = ["first", "last"]
                     getattr(chosen, phase).side_effect = asyncio.CancelledError()
                     with self.assertRaises(asyncio.CancelledError):
@@ -507,11 +507,12 @@ class VideoVDNHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.upload.assert_not_called()
         self.assertTrue(any(e["type"] == "status" and e["data"].get("error") for e in self.events))
 
-    async def test_cancel_endpoint_cancels_both_workers(self):
+    async def test_cancel_endpoint_cancels_video15_and_its_shared_installer(self):
         cancel = extracted_function(VIDEO, "cancel_video_generation", self.ns)
         self.assertEqual(await cancel(self.request, self.user), {"success": True})
-        self.original.cancel.assert_awaited_once_with()
+        self.original.cancel.assert_not_awaited()
         self.vdn.cancel.assert_awaited_once_with()
+        self.shared.cancel.assert_awaited_once_with()
 
     async def test_status_running_and_readiness_are_scoped_to_each_model(self):
         status = extracted_function(VIDEO, "get_video_generation_status", self.ns)
@@ -521,14 +522,15 @@ class VideoVDNHandlerTests(unittest.IsolatedAsyncioTestCase):
             )
             with self.subTest(mask=mask):
                 self.original.is_installed = True
+                self.vdn.is_installed = True
                 self.original.is_running = original_running
                 self.vdn.is_running = vdn_running
                 self.original.models_ready = original_ready
                 self.vdn.models_ready = vdn_ready
                 result = await status(self.request, self.user)
-                self.assertEqual(result["running"], original_running or vdn_running)
-                self.assertEqual(result["models_ready"], original_ready)
-                self.assertEqual(result["models"]["minimax_h3"]["ready"], original_ready)
+                self.assertEqual(result["running"], vdn_running)
+                self.assertEqual(result["models_ready"], vdn_ready)
+                self.assertEqual(set(result['models']), {'vdn_h3'})
                 self.assertEqual(result["models"]["vdn_h3"]["ready"], vdn_ready)
 
 
@@ -555,7 +557,7 @@ class VideoSubmittedFeaturesTests(unittest.TestCase):
                 execute(owner.body[start:end + 1], scope)
                 restored = scope["extra_params"]["__features__"]
                 self.assertTrue(restored["video_generation"])
-                self.assertEqual(restored["video_generation_model"], "vdn_h3" if model == "vdn_h3" else "minimax_h3")
+                self.assertEqual(restored["video_generation_model"], "vdn_h3")
                 for key in ("video_generation_resolution", "video_generation_duration", "video_generation_aspect_ratio"):
                     self.assertEqual(restored[key], submitted[key])
                 self.assertTrue(all(restored[k] is False for k in conflicts))

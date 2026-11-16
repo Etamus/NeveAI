@@ -13,7 +13,7 @@ function visit(node:ts.Node){
 }
 visit(tree);
 function setup(files:any[],catalog:any[]){
-	const scope:any={files,requestId:0,kind:'all',AbortController,localStorage:{token:'test'},
+	const scope:any={files,requestId:0,kind:'all',searchQuery:'',AbortController,localStorage:{token:'test'},
 		loadController:undefined,loading:false,error:'',hasMore:false,settledEmpty:false,refreshQueued:false,refreshedAt:0,
 		getGeneratedFiles:vi.fn(async(_token, _kind, _query, skip, _signal, limit)=>catalog.slice(skip,skip+limit))};
 	scope.load=runInNewContext(ts.transpile(`(${loadSource})`,{target:ts.ScriptTarget.ES2022}),scope);
@@ -21,6 +21,13 @@ function setup(files:any[],catalog:any[]){
 }
 const rows=(count:number)=>Array.from({length:count},(_,id)=>({id,filename:`File ${id}`,meta:{content_type:'image/png'},updated_at:1}));
 describe('library refresh batching',()=>{
+	it('sends the current search and category for initial, paginated and refreshed requests',async()=>{
+		const scope=setup([],rows(160));scope.searchQuery='Match';scope.kind='image';
+		await scope.load();await scope.load(true);await scope.load(false,true);
+		expect(scope.getGeneratedFiles.mock.calls.map((args:any[])=>[args[1],args[2],args[3],args[5]])).toEqual([
+			['image','Match',0,50],['image','Match',50,50],['image','Match',0,100]
+		]);
+	});
 	it('keeps unchanged object identity and refreshes 500 files in one request',async()=>{
 		const files=rows(500),scope=setup(files,rows(550));
 		await scope.load(false,true);

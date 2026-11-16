@@ -1,4 +1,4 @@
-"""VDN-H3 adapters in a separate ComfyUI worker; the original H3 stays unchanged."""
+"""Legacy isolated VDN adapter experiments; not the public Video 1.5 runtime."""
 from __future__ import annotations
 
 import asyncio
@@ -28,7 +28,7 @@ class VDNH3Runtime(h3.MiniMaxH3Runtime):
     def is_installed(self) -> bool:
         marker = ROOT / "custom_nodes" / "ComfyUI-VDN-H3" / ".neve-commit"
         try:
-            return (h3.minimax_h3_runtime.is_installed
+            return (h3.shared_h3_runtime.is_installed
                     and marker.read_text(encoding="utf-8").strip() == NODE_COMMIT)
         except OSError:
             return False
@@ -43,7 +43,7 @@ class VDNH3Runtime(h3.MiniMaxH3Runtime):
                    for name in MODEL_FILES)
 
     async def prepare(self, progress):
-        await h3.minimax_h3_runtime.prepare(progress)
+        await h3.shared_h3_runtime.prepare(progress)
         async with self._runtime_lock:
             # VDN's pruned-base adapter reads the Turbo grid by sibling path.
             for name, revision in (("ComfyUI-ClipProj", h3.CLIPPROJ_COMMIT),

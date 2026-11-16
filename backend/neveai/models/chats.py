@@ -2,6 +2,7 @@ import logging
 import json
 import time
 import uuid
+import unicodedata
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -592,6 +593,7 @@ class ChatTable:
         skip: Optional[int] = None,
         limit: Optional[int] = None,
         db: Optional[Session] = None,
+        sort: str = "recent",
     ) -> list[ChatTitleIdResponse]:
         with get_db_context(db) as db:
             query = db.query(Chat).filter_by(user_id=user_id)
@@ -605,7 +607,19 @@ class ChatTable:
             if not include_archived:
                 query = query.filter_by(archived=False)
 
-            query = query.order_by(Chat.updated_at.desc(), Chat.id).with_entities(
+            if sort == "name":
+                if db.get_bind().dialect.name == "sqlite":
+                    # Match the client's accent-insensitive UTF-16 name ordering across pages.
+                    def name_key(value):
+                        name = ''.join(char for char in unicodedata.normalize('NFKD', value or '') if not unicodedata.category(char).startswith('M')).lower()
+                        return name.encode('utf-16-be')
+                    db.connection().connection.driver_connection.create_function('neve_chat_name', 1, name_key, deterministic=True)
+                    query = query.order_by(func.neve_chat_name(Chat.title), Chat.id)
+                else:
+                    query = query.order_by(func.lower(Chat.title), Chat.id)
+            else:
+                query = query.order_by(Chat.updated_at.desc(), Chat.id)
+            query = query.with_entities(
                 Chat.id, Chat.title, Chat.updated_at, Chat.created_at
             )
 

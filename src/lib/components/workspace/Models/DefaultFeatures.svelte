@@ -9,7 +9,7 @@
 	import ImageIcon from '$lib/components/icons/Image.svelte';
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 	import Video from '$lib/components/icons/Video.svelte';
-	import BookOpen from '$lib/components/icons/BookOpen.svelte';
+	import AcademicCap from '$lib/components/icons/AcademicCap.svelte';
 	import { marked } from 'marked';
 
 	type I18nStore = Readable<{ t: (key: string) => string }>;
@@ -137,7 +137,7 @@
 						{:else if feature === 'deep_search'}
 							<Atom02 />
 						{:else if feature === 'guided_learning'}
-							<BookOpen className="size-[0.96875rem]" />
+							<AcademicCap className="size-4" />
 						{:else if feature === 'stable_diffusion'}
 							<ImageIcon className="size-4" strokeWidth="1.5" />
 						{:else if feature === 'music_generation'}

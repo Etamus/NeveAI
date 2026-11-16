@@ -195,6 +195,14 @@ export const updateModelById = async (token: string, id: string, model: object) 
 };
 
 
+export const deleteModelById = async (token: string, id: string) => {
+	const response = await fetch(`${NEVEAI_API_BASE_URL}/models/model/delete`, {
+		method: 'POST', headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ id })
+	});
+	if (!response.ok) throw await response.json();
+	return response.json();
+};
+
 export const deleteAllModels = async (token: string) => {
 	let error = null;
 

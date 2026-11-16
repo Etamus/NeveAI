@@ -24,7 +24,7 @@
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import Spinner from '$lib/components/common/Spinner.svelte';
 	import IntegrationOptionLabel from './IntegrationOptionLabel.svelte';
-	import BookOpen from '$lib/components/icons/BookOpen.svelte';
+	import AcademicCap from '$lib/components/icons/AcademicCap.svelte';
 
 	import { setFileGenerationPreference } from '$lib/utils/fileGenerationPreference';
 	import type { MediaAttachmentPolicy } from '$lib/utils/mediaAttachmentPolicy';
@@ -251,7 +251,7 @@
 
 	<div slot="content">
 		<DropdownMenu.Content
-			class="composer-integrations-menu flex flex-col overflow-hidden rounded-2xl p-2 border bg-clip-border z-50 bg-white dark:bg-gray-850 text-gray-700 dark:text-gray-200 shadow-md"
+			class="composer-integrations-menu flex flex-col overflow-hidden rounded-2xl p-2 border bg-clip-border z-50 bg-[color-mix(in_srgb,var(--color-gray-50)_50%,var(--color-gray-100))] dark:bg-[color-mix(in_srgb,var(--color-gray-850)_65%,var(--color-gray-900))] text-gray-700 dark:text-gray-200 shadow-md"
 			style="font-family: 'Segoe UI', sans-serif; width: {menuWidth}px; max-width: calc(100vw - 16px); max-height: min(calc(100dvh - 16px), var(--bits-dropdown-menu-content-available-height, calc(100dvh - 16px)));"
 			strategy="fixed"
 			fitViewport={true}
@@ -349,7 +349,7 @@
 								<div class="flex-1 truncate">
 									<div class="flex flex-1 gap-2 items-center">
 										<div class="shrink-0">
-											<BookOpen className="size-[0.96875rem]" />
+											<AcademicCap className="size-4" />
 										</div>
 										<IntegrationOptionLabel label="Learn" description="Learn step by step with guided explanations" />
 									</div>
@@ -515,7 +515,7 @@
 
 <style>
 	:global(.composer-integrations-menu .rounded-sm) {
-		border-radius: 0.375rem;
+		border-radius: 0.5rem;
 	}
 	:global(.composer-integrations-menu) {
 		container-type: inline-size;

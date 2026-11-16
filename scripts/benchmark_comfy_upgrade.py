@@ -49,8 +49,8 @@ async def main(args):
     if refs:
         prompt = "Change only the blue jacket to a green jacket. Preserve the man's face, pose, body, trousers and gray studio background."
     if args.engine == "video":
-        from neveai.routers.video_generation import minimax_h3_runtime
-        runtime = minimax_h3_runtime
+        from neveai.routers.video_quality_generation import video15_runtime
+        runtime = video15_runtime
         try:
             reference = ("main.png", refs[0], "image/png") if refs else None
             last = ("reference.png", refs[1], "image/png") if len(refs) > 1 else None

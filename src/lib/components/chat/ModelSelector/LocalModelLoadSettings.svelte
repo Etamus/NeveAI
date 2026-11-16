@@ -173,7 +173,11 @@
 			</div>
 			{#if field.key === 'cache'}
 				<div class="setting-row flex min-h-[36px] w-full items-center justify-between gap-3 py-0">
-					<span class={labelClass}>{$i18n.t('Speculative decoding')}</span>
+					{#if speculativeMethod === 'auto'}
+						<span class={labelClass}>{$i18n.t('Speculative decoding')}</span>
+					{:else}
+						<button type="button" class={resetClass} on:click={() => setSpeculativeMethod('auto')}>{$i18n.t('Speculative decoding')}</button>
+					{/if}
 					<button id="load-setting-speculative-method" type="button" class={`${controlClass} rounded-full`}
 						aria-label={$i18n.t('Speculative decoding')}
 						on:click={() => setSpeculativeMethod(speculativeMethods[(speculativeMethods.indexOf(speculativeMethod) + 1) % speculativeMethods.length])}

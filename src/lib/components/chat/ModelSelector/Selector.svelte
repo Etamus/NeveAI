@@ -20,6 +20,8 @@
 	import type { Model } from '$lib/stores';
 	import { toast } from 'svelte-sonner';
 	import { getModels } from '$lib/apis';
+	import { unloadLocalModel, normalizeLlamaCppErrorMessage, LOCAL_MODEL_RUNTIME_EVENT, getLatestLocalModelRuntimeEvent, type LocalModelRuntimeEventDetail } from '$lib/apis/llamacpp';
+	import { modelAvailability, refreshModelAvailability } from '$lib/stores/modelAvailability';
 	import { getModelsConfig, setModelsConfig } from '$lib/apis/configs';
 
 	import ChevronDown from '$lib/components/icons/ChevronDownCompact.svelte';
@@ -77,7 +79,7 @@
 	export let value = '';
 	export let placeholder = $i18n.t('Select a model');
 	export let searchEnabled = true;
-	export let searchPlaceholder = $i18n.t('Search...');
+	export let searchPlaceholder = $i18n.t('Search models');
 
 	export let items: {
 		label: string;
@@ -94,7 +96,40 @@
 
 
 	let show = false;
-	onMount(() => onChatDropdownDismiss(() => { show = false; }));
+	let unloading = false;
+	let unloadingSelectionId = '';
+	let runtimeBusy = false;
+	$: localSelectionId = items.find(item => item.value === value)?.model?.info?.base_model_id ?? value;
+	$: loadedSelection = $modelAvailability.loaded_models.find(model => model.id === localSelectionId);
+	$: unloadDisabled = unloading || runtimeBusy || !$modelAvailability.known || $modelAvailability.busy || !loadedSelection;
+	onMount(() => {
+		runtimeBusy = getLatestLocalModelRuntimeEvent()?.phase === 'start';
+		const dismiss = onChatDropdownDismiss(() => { show = false; });
+		const runtimeChanged = (event: Event) => {
+			runtimeBusy = (event as CustomEvent<LocalModelRuntimeEventDetail>).detail?.phase === 'start';
+			if (!runtimeBusy) void refreshModelAvailability();
+		};
+		window.addEventListener(LOCAL_MODEL_RUNTIME_EVENT, runtimeChanged);
+		return () => { dismiss(); window.removeEventListener(LOCAL_MODEL_RUNTIME_EVENT, runtimeChanged); };
+	});
+	const unloadSelection = async () => {
+		if (unloading || unloadDisabled) return;
+		const modelId = loadedSelection!.id;
+		const displayName = selectedModel ? selectedModel.label : loadedSelection?.filename;
+		unloadingSelectionId = value;
+		unloading = true;
+		try {
+			await refreshModelAvailability();
+			if ($modelAvailability.busy || !$modelAvailability.loaded_models.some(model => model.id === modelId)) return;
+			await unloadLocalModel(localStorage.token, modelId, displayName);
+			await refreshModelAvailability();
+		} catch (error) {
+			toast.error(normalizeLlamaCppErrorMessage(error, $i18n.t('Failed to unload model')));
+		} finally {
+			unloading = false;
+			unloadingSelectionId = '';
+		}
+	};
 	let showLoadSettings = false;
 	$: if (!show) showLoadSettings = false;
 	let tags = [];
@@ -474,6 +509,7 @@
 	bind:open={show}
 	onOpenChange={async (open) => {
 		if (!open) return;
+		void refreshModelAvailability();
 		searchValue = '';
 		preloadModelProfileImages(items, $i18n.language);
 		window.setTimeout(() => document.getElementById('model-search-input')?.focus(), 0);
@@ -539,6 +575,7 @@
 					{#if showLoadSettings}
 						<span class="min-w-0 flex-1 text-sm font-semibold text-gray-700 dark:text-gray-200">{$i18n.t('Predefinições')}</span>
 					{:else}
+					<div class="flex min-w-0 flex-1 items-center gap-3">
 					<Search className="size-4 shrink-0 text-gray-500 dark:text-gray-400" />
 					<input
 						id="model-search-input"
@@ -569,6 +606,7 @@
 							item?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
 						}}
 					/>
+					</div>
 					{/if}
 					<div class="ml-auto flex shrink-0 items-center gap-1" data-model-selector-tools>
 						{#if hasFavorites && !showLoadSettings}
@@ -622,6 +660,10 @@
 								profileImageUrl={modelProfileImageUrls.get(item.value) ?? ''}
 								reorderEnabled={canReorderModels}
 								{favoriteModelHandler}
+								canUnload={Boolean(loadedSelection) && value === item.value}
+								unloading={unloading && unloadingSelectionId === item.value}
+								{unloadDisabled}
+								onUnload={unloadSelection}
 								onClick={() => {
 									if (suppressNextModelClick) return;
 									value = item.value;

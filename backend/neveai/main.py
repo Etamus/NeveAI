@@ -54,6 +54,7 @@ from neveai.socket.main import (
 from neveai.routers import (
     audio,
     llamacpp,
+    hf_models,
     retrieval,
     tasks,
     auths,
@@ -808,6 +809,7 @@ app.mount("/ws", socket_app)
 
 
 app.include_router(llamacpp.router, prefix="/llamacpp", tags=["llamacpp"])
+app.include_router(hf_models.router, prefix="/llamacpp/huggingface", tags=["llamacpp"])
 app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
 app.include_router(stable_diffusion.router, prefix="/api/v1/stable-diffusion", tags=["stable-diffusion"])
 app.include_router(music_generation.router, prefix="/api/v1/music-generation", tags=["music-generation"])

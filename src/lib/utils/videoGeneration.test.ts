@@ -27,7 +27,7 @@ const videoFeatures = (model = 'vdn_h3') => ({
 	video_generation_aspect_ratio: '9:16'
 });
 
-describe('video generation model selection', () => {
+describe('single supported video model and legacy migration', () => {
 	it('reserves the server canvas before the first status without changing history', () => {
 		for (const resolution of ['480p','672p']) for (const aspect of ['16:9','9:16']) {
 			const message={done:false,video_generation_features:{...videoFeatures(),video_generation_resolution:resolution,video_generation_aspect_ratio:aspect}};
@@ -50,11 +50,11 @@ describe('video generation model selection', () => {
 			expect(status.width>status.height).toBe(width>height);
 		}
 	});
-	it('exposes exactly the two supported models and defaults old/unknown values', () => {
+	it('exposes only Video 1.5 and redirects old/unknown values to it', () => {
 		expect(videoGenerationModels).toEqual([
-			{id: 'minimax_h3', label: 'Neve Video 1'}, {id: 'vdn_h3', label: 'Neve Video 1.5'}
+			{id: 'vdn_h3', label: 'Neve Video 1.5'}
 		]);
-		for (const value of [undefined, null, '', 'old', 'minimax_h3']) expect(normalizeVideoGenerationModel(value)).toBe('minimax_h3');
+		for (const value of [undefined, null, '', 'old', 'minimax_h3']) expect(normalizeVideoGenerationModel(value)).toBe('vdn_h3');
 		expect(normalizeVideoGenerationModel('vdn_h3')).toBe('vdn_h3');
 	});
 	it('clones queued/explicit options so subsequent edits cannot change the request', () => {
@@ -64,7 +64,7 @@ describe('video generation model selection', () => {
 		features.nested.value = 2;
 		expect(snapshot.video_generation_model).toBe('vdn_h3');
 		expect(snapshot.nested.value).toBe(1);
-		expect(snapshotVideoRequestFeatures(videoFeatures('obsolete')).video_generation_model).toBe('minimax_h3');
+		expect(snapshotVideoRequestFeatures(videoFeatures('obsolete')).video_generation_model).toBe('vdn_h3');
 		expect(snapshotVideoRequestFeatures({music_generation: true})).toEqual({music_generation: true});
 	});
 	it('send uses explicit or historical options before falling back to the current composer', async () => {
@@ -79,13 +79,13 @@ describe('video generation model selection', () => {
 		historical.video_generation_model = 'minimax_h3';
 		expect(restored.video_generation_model).toBe('vdn_h3');
 		expect((await send(history, 'user', {features: videoFeatures()})).video_generation_model).toBe('vdn_h3');
-		expect((await send({messages: {}}, 'user')).video_generation_model).toBe('minimax_h3');
+		expect((await send({messages: {}}, 'user')).video_generation_model).toBe('vdn_h3');
 	});
 	it.each(['minimax_h3', 'vdn_h3'])('uses mobile defaults without mutating saved desktop choices: %s', async (model) => {
 		const features = videoFeatures(model);
 		const mobileFeatures = snapshotVideoRequestFeatures(features, true);
-		expect(mobileFeatures).toEqual({...features, video_generation_resolution: '480p', video_generation_duration: '5s'});
-		expect(snapshotVideoRequestFeatures(features, false)).toEqual(features);
+		expect(mobileFeatures).toEqual({...features, video_generation_model: 'vdn_h3', video_generation_resolution: '480p', video_generation_duration: '5s'});
+		expect(snapshotVideoRequestFeatures(features, false)).toEqual({...features, video_generation_model: 'vdn_h3'});
 		expect(features.video_generation_resolution).toBe('672p');
 		expect(features.video_generation_duration).toBe('8s');
 		const other = {music_generation: true, stable_diffusion: true};
@@ -103,7 +103,7 @@ describe('video generation model selection', () => {
 		expect(getVideoGenerationFeatures(saved)).toEqual(videoFeatures());
 		expect(getVideoGenerationFeatures({}, [saved])).toEqual(videoFeatures());
 		expect(getVideoGenerationFeatures({statusHistory: [{action: 'video_generation', model: 'unknown'}]})).toEqual({
-			video_generation: true, video_generation_model: 'minimax_h3',
+			video_generation: true, video_generation_model: 'vdn_h3',
 			video_generation_resolution: '480p', video_generation_duration: '5s', video_generation_aspect_ratio: '16:9'
 		});
 		expect(getVideoGenerationFeatures({statusHistory: [{action: 'video_generation', model: 'vdn_h3'}]})?.video_generation_model).toBe('vdn_h3');
@@ -116,21 +116,12 @@ describe('video generation model selection', () => {
 		runInNewContext(sourceFunction(input, 'restoreVideoPreferences'), context)();
 		expect(context.videoGenerationModel).toBe(normalizeVideoGenerationModel(saved));
 	});
-	it('places the responsive model dropdown before resolution and removes it immediately on selection', () => {
-		const start = input.indexOf('<div class="relative shrink-0" id="video-model-dropdown-container">');
-		const end = input.indexOf('<div class="relative shrink-0" id="video-resolution-dropdown-container">');
-		expect(start).toBeGreaterThan(0);
-		expect(end).toBeGreaterThan(start);
-		const selector = input.slice(start, end);
-		expect(selector).toContain('use:viewportDropdown');
-		expect(selector).toContain('in:fly=');
-		expect(selector).not.toContain('transition:fly=');
-		const click = selector.match(/on:click=\{(\(\) => \{[\s\S]*?)\}\}/)![1] + '}';
-		const context = {model: {id: 'vdn_h3'}, videoGenerationModel: 'minimax_h3', showVideoModelDropdown: true, localStorage: {setItem: vi.fn()}};
-		runInNewContext(`(${click})()`, context);
-		expect(context.videoGenerationModel).toBe('vdn_h3');
-		expect(context.showVideoModelDropdown).toBe(false);
-		expect(context.localStorage.setItem).toHaveBeenCalledWith('neveai.videoModel', 'vdn_h3');
+	it('keeps the video chip and settings without a model label or dropdown', () => {
+		expect(input).not.toContain('data-video-model-label');
+		expect(input).not.toContain('Neve Video 1.5');
+		expect(input.indexOf('id="video-resolution-dropdown-container"')).toBeGreaterThan(input.indexOf('data-video-integration'));
+		expect(input).not.toContain('showVideoModelDropdown');
+		expect(input).not.toContain('video-model-dropdown-container');
 	});
 	it('preserves the historical video model when editing a prompt', async () => {
 		const source = readFileSync('src/lib/components/chat/Messages.svelte', 'utf8');
@@ -163,9 +154,9 @@ describe('video generation model selection', () => {
 		context.videoGenerationModel = 'minimax_h3';
 		ready(true);
 		await pending;
-		expect(sendMessageSocket.mock.calls[0][5].video_generation_model).toBe(historicalModel ?? 'minimax_h3');
+		expect(sendMessageSocket.mock.calls[0][5].video_generation_model).toBe('vdn_h3');
 		expect(context.videoGenerationModel).toBe('vdn_h3');
 		expect(context.videoGenerationEnabled).toBe(false);
-		expect(history.messages.reply.video_generation_features.video_generation_model).toBe(historicalModel ?? 'minimax_h3');
+		expect(history.messages.reply.video_generation_features.video_generation_model).toBe('vdn_h3');
 	});
 });

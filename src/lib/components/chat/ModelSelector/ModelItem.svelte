@@ -3,12 +3,14 @@
 
 	import { getContext } from 'svelte';
 
-	import { settings } from '$lib/stores';
+	import { settings, mobile } from '$lib/stores';
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import { copyToClipboard } from '$lib/utils';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
+	import UnloadModel from '$lib/components/icons/UnloadModel.svelte';
+	import Spinner from '$lib/components/common/Spinner.svelte';
 	import Bookmark from '$lib/components/icons/Bookmark.svelte';
 	import Tag from '$lib/components/icons/Tag.svelte';
 	import Label from '$lib/components/icons/Label.svelte';
@@ -26,6 +28,10 @@
 	export let reorderEnabled = false;
 
 	export let onClick: () => void = () => {};
+	export let canUnload = false;
+	export let unloading = false;
+	export let unloadDisabled = false;
+	export let onUnload: () => void = () => {};
 
 	$: modelDescription =
 		typeof item?.model?.info?.meta?.description === 'string'
@@ -115,9 +121,11 @@
 			<div class="min-w-0 flex-1">
 				<div class="truncate dark:text-white dark:font-medium">{item.label}</div>
 				{#if modelDescription}
-					<div class="mt-0.5 max-w-[32ch] truncate text-xs font-normal text-gray-500 dark:text-gray-400" title={modelDescription}>
-						{modelDescriptionPreview}
-					</div>
+					<Tooltip as="span" content={modelDescription} allowHTML={false} interactive={false}
+						className="mt-0.5 block w-fit max-w-[32ch] truncate text-xs font-normal text-gray-500 dark:text-gray-400"
+						tippyOptions={{ trigger: 'mouseenter', delay: 0, interactive: false, zIndex: $mobile ? 1000000002 : 9999 }}>
+						<span data-model-selector-description>{modelDescriptionPreview}</span>
+					</Tooltip>
 				{/if}
 			</div>
 
@@ -191,8 +199,24 @@
 
 	<div class="ml-auto w-7 pl-2 pr-1 flex justify-end items-center gap-1.5 shrink-0">
 		{#if value === item.value}
-			<div>
+			<div class="relative grid size-6 shrink-0 place-items-center">
+				{#if unloading}
+					<span role="status" aria-label={$i18n.t('Unloading model')} data-model-selector-unloading><Spinner className="size-4" /></span>
+				{:else}
+				<div class={canUnload ? 'group-hover/item:invisible group-focus-within/item:invisible' : ''}>
 				<CheckCircle className="size-4" strokeWidth="1.7" />
+				</div>
+				{#if canUnload}
+					<span role="button" tabindex={unloadDisabled ? -1 : 0} aria-disabled={unloadDisabled} data-model-selector-unload
+						aria-label={$i18n.t('Unload model')} title={$i18n.t('Unload')}
+						class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 grid size-8 place-items-center rounded-lg invisible group-hover/item:visible group-focus-within/item:visible focus-visible:visible hover:bg-black/5 dark:hover:bg-white/5 {unloadDisabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}"
+						on:pointerdown|stopPropagation
+						on:click|stopPropagation|preventDefault={() => { if (!unloadDisabled) onUnload(); }}
+						on:keydown|stopPropagation={(event) => { if (['Enter', ' '].includes(event.key)) { event.preventDefault(); if (!unloadDisabled) onUnload(); } }}>
+						<UnloadModel />
+					</span>
+				{/if}
+				{/if}
 			</div>
 		{/if}
 	</div>

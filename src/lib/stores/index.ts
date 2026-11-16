@@ -14,6 +14,7 @@ export type NeveDownloadToastState = {
 	label: string;
 	cancelling: boolean;
 	onCancel: () => void;
+	onPause: () => void;
 };
 
 export const neveDownloadToast: Writable<NeveDownloadToastState | null> = writable(null);
@@ -160,6 +161,7 @@ type Settings = {
 	collapseCodeBlocks?: boolean;
 	expandDetails?: boolean;
 	streamResponse?: boolean;
+	enableSuggestions?: boolean;
 	notificationSound?: boolean;
 	notificationSoundAlways?: boolean;
 	stylizedPdfExport?: boolean;

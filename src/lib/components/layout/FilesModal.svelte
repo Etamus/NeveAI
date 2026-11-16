@@ -17,6 +17,7 @@
 	import Loader from '$lib/components/common/Loader.svelte';
 	import GarbageBin from '$lib/components/icons/GarbageBin.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
+	import Search from '$lib/components/icons/Search.svelte';
 	import ChevronUp from '$lib/components/icons/ChevronUp.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
@@ -240,12 +241,24 @@
 
 <FileItemModal bind:show={showFileItemModal} item={selectedFile} edit={false} animated={false} />
 
+{#snippet fileSearch()}
+	<div class="search-field search-surface flex min-w-0 items-center gap-2 px-2.5">
+		<Search className="size-3.5 shrink-0" />
+		<input class="min-w-0 w-full text-sm py-1.5 outline-hidden bg-transparent" bind:value={query}
+			placeholder={$i18n.t('Search files')} maxlength="500" />
+		{#if query}
+			<button type="button" aria-label={$i18n.t('Clear')} class="shrink-0 p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900" on:click={() => { query = ''; }}><XMark className="size-3" strokeWidth="2" /></button>
+		{/if}
+	</div>
+{/snippet}
+
 <Modal size="md" animated={false} bind:show>
 	<div class="flex h-[33rem] max-h-[calc(100dvh-2rem)] flex-col overflow-hidden">
-		<div class="flex shrink-0 justify-between dark:text-gray-300 px-5 pt-4 pb-1">
-			<div class="text-lg font-medium self-center"><MobileModalTitle>{$i18n.t('Files')}</MobileModalTitle></div>
+		<div class="grid grid-cols-2 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 shrink-0 dark:text-gray-300 px-5 pt-4 pb-3">
+			<div class="order-1 md:order-none text-lg font-medium self-center text-gray-700 dark:text-gray-100"><MobileModalTitle>{$i18n.t('Files')}</MobileModalTitle></div>
+			<div class="order-3 md:order-none col-span-2 md:col-span-1 justify-self-center max-w-full">{@render fileSearch()}</div>
 			<button data-mobile-modal-close
-				class="self-center"
+				class="order-2 md:order-none justify-self-end self-center"
 				on:click={() => {
 					show = false;
 				}}
@@ -265,46 +278,7 @@
 			</button>
 		</div>
 
-		<div class="flex min-h-0 flex-1 flex-col w-full px-5 pt-2 pb-4 dark:text-gray-200">
-			<!-- Search -->
-			<div class="flex w-full space-x-2 mb-3">
-				<div class="flex flex-1">
-					<div class="self-center ml-1 mr-3">
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							viewBox="0 0 20 20"
-							fill="currentColor"
-							class="w-4 h-4"
-						>
-							<path
-								fill-rule="evenodd"
-								d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z"
-								clip-rule="evenodd"
-							/>
-						</svg>
-					</div>
-					<input
-						class="w-full text-sm pr-4 py-1 rounded-r-xl outline-hidden bg-transparent"
-						bind:value={query}
-						placeholder={$i18n.t('Search Files')}
-						maxlength="500"
-					/>
-
-					{#if query}
-						<div class="self-center pl-1.5 pr-1 translate-y-[0.5px] rounded-l-xl bg-transparent">
-							<button
-								class="p-0.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-900 transition"
-								on:click={() => {
-									query = '';
-								}}
-							>
-								<XMark className="size-3" strokeWidth="2" />
-							</button>
-						</div>
-					{/if}
-				</div>
-			</div>
-
+		<div class="flex min-h-0 flex-1 flex-col w-full px-5 pt-2 pb-3 dark:text-gray-200">
 			<!-- Files List -->
 			<div class="flex min-h-0 flex-1 flex-col w-full">
 				<div class="flex min-h-0 flex-1 flex-col w-full">
@@ -355,7 +329,7 @@
 						</div>
 					{/if}
 
-					<div class="files-list-scroll min-h-0 flex-1 text-left text-sm mb-3 overflow-y-auto -mr-3 pr-3">
+					<div class="files-list-scroll min-h-0 flex-1 text-left text-sm mb-1 overflow-y-auto -mr-3 pr-3">
 						{#if files.length === 0}
 							<div
 								class="text-xs text-gray-500 dark:text-gray-400 text-center px-5 min-h-20 w-full h-full flex justify-center items-center"

@@ -1,8 +1,10 @@
-"""Restored Video 1.5: direct prompts and only diffusion differs from Video 1."""
+"""Video 1.5 retirement regressions: unchanged graphs and independent preparation."""
 import ast
 import asyncio
 from pathlib import Path
 import tempfile
+import json
+import subprocess
 import unittest
 from unittest.mock import AsyncMock
 
@@ -27,6 +29,33 @@ def populate(ns):
 
 
 class VideoQualityTests(unittest.IsolatedAsyncioTestCase):
+    def test_video15_graph_matches_pre_retirement_for_every_supported_setting(self):
+        from test_video_generation_regression import h3_builder
+        old = h3_builder(subprocess.check_output(['git', 'show', 'HEAD:backend/neveai/routers/video_generation.py'], cwd=ROOT, text=True, encoding='utf8'))
+        ns = quality_namespace(Path('test-cache'))
+        build = ns['NeveVideo15Runtime']._build_workflow
+        for width, height in ((864, 480), (1184, 672), (480, 864)):
+            for frames in (124, 196):
+                for refs in ((None, None), ('first.png', None), (None, 'last.png'), ('first.png', 'last.png')):
+                    for merged in (False, True):
+                        args = ('Original request with "literal words" and accents: caf\u00e9.', 12345, *refs, width, height, frames, merged)
+                        expected = old(*args)
+                        expected['6']['inputs']['unet_name'] = 'minimax_h3_fl2va_pruned_w6a8.safetensors'
+                        self.assertEqual(build(*args), expected)
+        evidence = ROOT / 'logs/video1-retirement-workflows-before.json'
+        if evidence.is_file():
+            for case in json.loads(evidence.read_text(encoding='utf8')):
+                self.assertEqual(build(*case['args']), case['graph'])
+
+    def test_shared_preparation_has_no_retired_diffusion_dependency(self):
+        ns = quality_namespace(Path('test-cache'))
+        self.assertTrue(all('w4a8' not in str(path) for path in ns['video15_runtime']._model_paths()))
+        self.assertEqual(len(ns['video15_runtime']._model_paths()), len(set(ns['video15_runtime']._model_paths())))
+        tree = ast.parse((ROOT / 'backend/neveai/routers/video_generation.py').read_text(encoding='utf8'))
+        runtime = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'MiniMaxH3Runtime')
+        preparation = next(node for node in runtime.body if getattr(node, 'name', None) == 'ensure_models')
+        self.assertNotIn('DIFFUSION_MODEL', ast.unparse(preparation))
+        self.assertNotIn('minimax_h3_runtime', ast.unparse(tree))
     def test_only_diffusion_changes_and_direct_prompts_audio_references_survive(self):
         ns = quality_namespace(Path('test-cache'))
         base, quality = ns['h3'].MiniMaxH3Runtime, ns['NeveVideo15Runtime']
@@ -39,7 +68,7 @@ class VideoQualityTests(unittest.IsolatedAsyncioTestCase):
                             args=(prompt,12345,*references,width,height,frames,merged)
                             original,graph=base._build_workflow(*args),quality._build_workflow(*args)
                             self.assertEqual(set(graph),set(original))
-                            self.assertEqual({k for k in graph if graph[k]!=original[k]},{'6'})
+                            self.assertEqual(graph, original)
                             self.assertEqual(graph['4']['inputs']['prompt'],prompt)
                             self.assertEqual(graph['4']['inputs']['clip'],['2',0])
                             self.assertEqual(graph['6']['inputs']['unet_name'],ns['DIFFUSION_MODEL'])

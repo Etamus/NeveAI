@@ -1,0 +1,61 @@
+import fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import {createServer} from 'vite';
+import {chromium} from '../logs/ui-image-26/node_modules/playwright/index.mjs';
+import {installMobileOfflineApi} from './fixtures/mobile-offline-api.mjs';
+let server,browser;
+try {
+ server=await createServer({cacheDir:'node_modules/.vite-search-placeholders',plugins:[{name:'search-placeholders',enforce:'pre',configResolved(config){config.server.proxy=undefined;},async load(id){
+  if(id.endsWith('/src/lib/components/chat/ModelsModal.svelte'))return(await fs.readFile(id,'utf8')).replace('</script>',`onMount(()=>{window.__fixtureModels=open=>{$showLocalModelsModal=open;};return()=>delete window.__fixtureModels;});\n</script>`);
+  if(id.endsWith('/src/routes/(app)/+layout.svelte'))return(await fs.readFile(id,'utf8')).replace('<script lang="ts">','<script lang="ts">\nimport FixtureFiles from "$lib/components/layout/FilesModal.svelte";').replace('</script>',`let fixtureFiles=false;onMount(()=>{window.__placeholders={search:()=>showSearch.set(true),files:()=>fixtureFiles=true};return()=>delete window.__placeholders;});\n</script>`)+`\n<FixtureFiles bind:show={fixtureFiles} />`;
+ }}],server:{port:5196,strictPort:true,watch:{ignored:['**/logs/**','**/scripts/**','**/docs/**']}}});
+ await server.listen();browser=await chromium.launch();
+ for(const width of [1440,390])for(const theme of ['dark','light']){
+  const page=await browser.newPage({viewport:{width,height:900}}),errors=[];
+  page.on('pageerror',e=>errors.push(e.message));await installMobileOfflineApi(page);
+  await page.route('**/api/v1/files/search?**',route=>route.fulfill({json:Array.from({length:40},(_,i)=>({id:`file-${i}`,filename:`Document ${i}.txt`,created_at:1700000000-i,meta:{size:1000}}))}));
+  await page.route('**/llamacpp/vram',route=>route.fulfill({json:{available:true,total:17179869184,used:4294967296,free:12884901888,gpus:[],storage:{available:true,total:1000000000000,used:600000000000,free:400000000000}}}));
+  await page.addInitScript(()=>localStorage.locale='pt-BR');
+  await page.goto('http://localhost:5196',{waitUntil:'networkidle',timeout:90000});await page.waitForFunction(()=>window.__placeholders);
+  await page.evaluate(theme=>{document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.classList.toggle('light',theme==='light');},theme);
+  await page.waitForFunction(()=>window.__fixtureModels);await page.evaluate(()=>window.__fixtureModels(true));
+  const shell=page.locator('.unified-models-shell');await shell.waitFor();
+  await shell.locator('[data-vram-meter]').getByText(/^Livre:/).waitFor();await shell.locator('[data-storage-meter]').getByText(/^Livre:/).waitFor();
+  const referenceWidth=await shell.locator('.search-field').evaluate(el=>el.getBoundingClientRect().width);
+  const referenceHeight=await shell.locator('.search-surface').evaluate(el=>el.getBoundingClientRect().height);
+  const expectedColor=theme==='dark'?'oklch(0.3 0 0)':'oklch(0.96 0 0)';
+  assert.equal(await shell.locator('.search-surface').evaluate(el=>getComputedStyle(el).backgroundColor),expectedColor);
+  await page.screenshot({path:`logs/centered-search-models-pt-${width}-${theme}.png`});
+  await page.evaluate(()=>window.__fixtureModels(false));await shell.waitFor({state:'hidden'});
+  const hasSurface=async input=>assert.equal(await input.evaluate(el=>getComputedStyle(el.closest('.search-surface')).backgroundColor),expectedColor,'matching modal search colors');
+  await page.locator('[id^="model-selector-"][id$="-button"]').first().click();
+  assert.equal(await page.locator('#model-search-input').getAttribute('placeholder'),'Pesquisar');
+  assert.equal(await page.locator('#model-search-input').evaluate(el=>Boolean(el.closest('.search-surface'))),false,'model selector search has no background');
+  await page.screenshot({path:`logs/search-surface-models-${width}-${theme}.png`});
+  await page.keyboard.press('Escape');
+  await page.evaluate(()=>window.__placeholders.search());await page.locator('#search-input').waitFor();
+  assert.equal(await page.locator('#search-input').getAttribute('placeholder'),'Buscar');
+  await page.locator('.search-modal-shell').getByText('Buscar',{exact:true}).waitFor();
+  await hasSurface(page.locator('#search-input'));
+  const chatSearch=await page.locator('#search-input').evaluate(el=>{const field=el.closest('.search-surface').getBoundingClientRect(),modal=el.closest('.search-modal-shell').getBoundingClientRect();return {width:field.width,center:field.x+field.width/2,modalCenter:modal.x+modal.width/2,expected:15*parseFloat(getComputedStyle(document.documentElement).fontSize)};});
+  assert(Math.abs(chatSearch.width-chatSearch.expected)<1);assert(Math.abs(chatSearch.width-referenceWidth)<1);assert(Math.abs(chatSearch.center-chatSearch.modalCenter)<1);
+  const chatHeight=await page.locator('#chat-search').evaluate(el=>el.getBoundingClientRect().height);assert(Math.abs(chatHeight-referenceHeight)<1,'model/search field heights match');
+  await page.screenshot({path:`logs/search-surface-chats-${width}-${theme}.png`});
+  await page.locator('#search-input').press('Escape');await page.locator('#search-input').waitFor({state:'hidden'});
+  await page.evaluate(()=>window.__placeholders.files());
+  const filesSearch=page.locator('input[placeholder="Pesquisar"][maxlength="500"]:not([id])');
+  await filesSearch.waitFor();assert.equal(await filesSearch.getAttribute('placeholder'),'Pesquisar');
+  await hasSurface(filesSearch);
+  const filesWidth=await filesSearch.evaluate(el=>el.closest('.search-field').getBoundingClientRect().width);assert(Math.abs(filesWidth-chatSearch.width)<1,'matching search widths');
+  const filesHeight=await filesSearch.evaluate(el=>el.closest('.search-surface').getBoundingClientRect().height);assert(Math.abs(filesHeight-chatHeight)<1,'files/search field heights match');
+  const list=page.locator('.files-list-scroll');
+  await list.getByText('Document 39.txt',{exact:true}).waitFor();
+  await list.evaluate(el=>el.scrollTop=el.scrollHeight);
+  const bottom=await list.evaluate(el=>{const row=el.querySelector('div.w-full.flex.justify-between:last-child').getBoundingClientRect(),viewport=el.getBoundingClientRect(),dialog=el.closest('[class*="h-[33rem]"]').getBoundingClientRect();return {row:row.bottom,viewport:viewport.bottom,space:dialog.bottom-viewport.bottom};});
+  assert(bottom.row<=bottom.viewport+1,'last file fully visible at end');
+  assert(bottom.space<=20,'reduced unused bottom area');
+  await page.screenshot({path:`logs/search-surface-files-${width}-${theme}.png`});
+  assert.deepEqual(errors,[]);await page.close();
+ }
+ console.log('PASS: model selector, chat search and files placeholders in desktop/mobile');
+}finally{await browser?.close();await server?.close();}

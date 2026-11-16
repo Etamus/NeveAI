@@ -1,4 +1,5 @@
 import { NEVEAI_API_BASE_URL } from '$lib/constants';
+import { inlineImageDisplaySource } from './inlineImageDisplay';
 
 export const userMessageAttachmentUrl = (file: any): string =>
 	file?.url?.startsWith('data') || file?.url?.startsWith('http')
@@ -17,7 +18,7 @@ export async function prepareUserMessageImageLayout(files: any[]): Promise<void>
 	if (images.length !== 1) return;
 	const file = images[0];
 	if (userMessageImageSize(file.image_width, file.image_height)) return;
-	const source = userMessageAttachmentUrl(file);
+	const source = inlineImageDisplaySource(userMessageAttachmentUrl(file));
 	const loaded = typeof document === 'undefined' ? undefined : Array.from(document.images).find(
 		image => image.complete && image.naturalWidth > 0 && image.src === source
 	);

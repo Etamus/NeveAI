@@ -174,7 +174,7 @@
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
 	import { normalizeVideoGenerationModel, snapshotVideoRequestFeatures, getVideoGenerationFeatures, type VideoGenerationModel } from '$lib/utils/videoGeneration';
-	let videoGenerationModel: VideoGenerationModel = 'minimax_h3';
+	let videoGenerationModel: VideoGenerationModel = 'vdn_h3';
 	let videoGenerationResolution: '480p' | '672p' = '480p';
 	let videoGenerationDuration: '5s' | '8s' = '5s';
 	let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
@@ -5053,7 +5053,8 @@
 						}
 					: {})
 			},
-			`${NEVEAI_BASE_URL}/api`
+			`${NEVEAI_BASE_URL}/api`,
+			() => Boolean(history.messages[responseMessageId]) && history.messages[responseMessageId].done !== true
 		).catch(async (error) => {
 			console.log(error);
 

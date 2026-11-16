@@ -201,8 +201,8 @@ if (-not (Test-Path $LOGO_PATH)) {
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="NeveAI"
-        Width="980" Height="600" MinWidth="980" MinHeight="600"
-        WindowStartupLocation="CenterScreen" ResizeMode="CanResize"
+        Width="940" Height="600" MinWidth="940" MinHeight="600"
+        WindowStartupLocation="CenterScreen" ResizeMode="CanMinimize"
         WindowStyle="None" AllowsTransparency="True"
         Background="Transparent" FontFamily="Segoe UI" TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True" SnapsToDevicePixels="True">
@@ -219,6 +219,7 @@ if (-not (Test-Path $LOGO_PATH)) {
         <SolidColorBrush x:Key="BorderBrush" Color="#303030"/>
         <SolidColorBrush x:Key="BorderStrongBrush" Color="#484848"/>
         <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F3F5F7"/>
+        <SolidColorBrush x:Key="TextValueBrush" Color="#D1D5DB"/>
         <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A9B1BC"/>
         <SolidColorBrush x:Key="TextMutedBrush" Color="#8B8B8B"/>
         <SolidColorBrush x:Key="AccentBrush" Color="#F1F3F5"/>
@@ -266,6 +267,9 @@ if (-not (Test-Path $LOGO_PATH)) {
             <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/><Setter Property="Background" Value="Transparent"/><Setter Property="Padding" Value="10,8"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem"><Border x:Name="ItemBorder" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}" Margin="3,1"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsHighlighted" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/></Trigger><Trigger Property="IsSelected" Value="True"><Setter TargetName="ItemBorder" Property="Background" Value="#303030"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
         </Style>
+        <Style x:Key="HardwareComboBoxItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource ComboBoxItemStyle}">
+            <Setter Property="Foreground" Value="{DynamicResource TextValueBrush}"/>
+        </Style>
         <Style x:Key="LanguageComboBoxItem" TargetType="ComboBoxItem">
             <Setter Property="Foreground" Value="#B8B8B8"/><Setter Property="FontFamily" Value="Segoe UI"/><Setter Property="FontSize" Value="14"/><Setter Property="FontWeight" Value="Normal"/><Setter Property="MinHeight" Value="38"/><Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ComboBoxItem">
@@ -293,7 +297,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <Border x:Name="ComboBorder" Background="{Binding BorderBrush, RelativeSource={RelativeSource AncestorType=ComboBox}}" Padding="{Binding BorderThickness, RelativeSource={RelativeSource AncestorType=ComboBox}}" CornerRadius="6">
                                     <Border Background="{Binding Background, RelativeSource={RelativeSource AncestorType=ComboBox}}" CornerRadius="5">
                                         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="34"/></Grid.ColumnDefinitions>
-                                            <ContentPresenter Margin="11,0,6,0" VerticalAlignment="Center" HorizontalAlignment="Stretch" TextElement.Foreground="{DynamicResource TextPrimaryBrush}" Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}" ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
+                                            <ContentPresenter x:Name="SelectedContent" Margin="11,0,6,0" VerticalAlignment="Center" HorizontalAlignment="Stretch" TextElement.Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ComboBox}}" Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}" ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"/>
                                             <Path Grid.Column="1" Width="10" Height="6" HorizontalAlignment="Center" VerticalAlignment="Center" Stroke="{DynamicResource TextSecondaryBrush}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 1 1 L 5 5 L 9 1"/>
                                         </Grid>
                                     </Border>
@@ -375,7 +379,6 @@ if (-not (Test-Path $LOGO_PATH)) {
                 <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
                         <Button x:Name="BtnMinimize" Style="{StaticResource WindowButton}" ToolTip="Minimizar"><Path Width="10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.4" Data="M 0 5 L 10 5"/></Button>
-                        <Button x:Name="BtnMaximize" Style="{StaticResource WindowButton}" ToolTip="Maximizar"><Path Width="10" Height="10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.2" Data="M 0.6 0.6 L 9.4 0.6 L 9.4 9.4 L 0.6 9.4 Z"/></Button>
                         <Button x:Name="BtnClose" Style="{StaticResource CloseWindowButton}" ToolTip="Fechar"><Path Width="10" Height="10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.4" Data="M 1 1 L 9 9 M 9 1 L 1 9"/></Button>
                     </StackPanel>
                 </Grid>
@@ -399,8 +402,8 @@ if (-not (Test-Path $LOGO_PATH)) {
                     </Grid>
                 </Border>
                 <Border Grid.Column="1" Background="{DynamicResource BackgroundBrush}" CornerRadius="0,0,17,0">
-                    <Grid><Grid.RowDefinitions><RowDefinition Height="70"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                        <Border Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Background="{DynamicResource BackgroundBrush}"><StackPanel Margin="28,0" VerticalAlignment="Center"><TextBlock x:Name="LblPageContext" Text="Instalação" FontSize="15" FontWeight="SemiBold"/><TextBlock x:Name="LblPageSubtitle" Text="Detecte o hardware e instale tudo o que a NeveAI precisa." Margin="0,3,0,0" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"/></StackPanel></Border>
+                    <Grid><Grid.RowDefinitions><RowDefinition x:Name="PageHeaderRow" Height="70"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <Border x:Name="PageHeader" Grid.Row="0" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,1" Background="{DynamicResource BackgroundBrush}"><StackPanel Margin="28,0" VerticalAlignment="Center"><TextBlock x:Name="LblPageContext" Text="Instalação" FontSize="15" FontWeight="SemiBold"/><TextBlock x:Name="LblPageSubtitle" Text="Detecte o hardware e instale tudo o que a NeveAI precisa." Margin="0,3,0,0" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}"/></StackPanel></Border>
                         <Grid x:Name="InstallBodyHost" Grid.Row="1" Margin="32,24,32,24">
 
                 <!-- WELCOME / CONFIG CARD -->
@@ -426,11 +429,11 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="GPU detectada:" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,0,24"/>
-                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="LblGpu" Text="Detectando..." FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,0,24" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="LblGpuCaption" Grid.Row="0" Grid.Column="0" Text="GPU detectada:" FontSize="14" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,0,24"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="LblGpu" Text="Detectando..." FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextValueBrush}" VerticalAlignment="Center" Margin="0,0,0,24" TextTrimming="CharacterEllipsis"/>
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Tipo de aceleração:" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,0,12"/>
-                            <ComboBox  Grid.Row="1" Grid.Column="1" x:Name="CmbBackend" Margin="0,0,0,12">
+                            <TextBlock x:Name="LblBackendCaption" Grid.Row="1" Grid.Column="0" Text="Tipo de aceleração:" FontSize="14" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,0,12"/>
+                            <ComboBox  Grid.Row="1" Grid.Column="1" x:Name="CmbBackend" Foreground="{DynamicResource TextValueBrush}" ItemContainerStyle="{StaticResource HardwareComboBoxItemStyle}" Margin="0,0,0,12">
                                 <ComboBoxItem Content="CPU (sem GPU)"/>
                                 <ComboBoxItem Content="NVIDIA - RTX 50xx (Blackwell, CUDA 13.5)"/>
                                 <ComboBoxItem Content="NVIDIA - RTX 40xx (Ada, CUDA 12.8)"/>
@@ -443,8 +446,8 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <ComboBoxItem Content="AMD - Vulkan"/>
                             </ComboBox>
 
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="VRAM (GB):" FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,0,12"/>
-                            <ComboBox  Grid.Row="2" Grid.Column="1" x:Name="CmbVram" Margin="0,0,0,12">
+                            <TextBlock x:Name="LblVramCaption" Grid.Row="2" Grid.Column="0" Text="VRAM (GB):" FontSize="14" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,0,12"/>
+                            <ComboBox  Grid.Row="2" Grid.Column="1" x:Name="CmbVram" Foreground="{DynamicResource TextValueBrush}" ItemContainerStyle="{StaticResource HardwareComboBoxItemStyle}" Margin="0,0,0,12">
                                 <ComboBoxItem Content="Pular"/>
                                 <ComboBoxItem Content="4 GB"/>
                                 <ComboBoxItem Content="6 GB"/>
@@ -557,7 +560,7 @@ if (Test-Path -LiteralPath $WINDOW_ICON_PATH) {
 
 # Atalhos para controles
 $ctl = @{}
-foreach ($name in 'TitleBar','BtnMinimize','BtnMaximize','BtnClose','SidebarColumn','SidebarPanel','NavOverview','NavDiagnostics','LblNavInstall','LblPageContext','LblPageSubtitle','FooterActions','InstallActions',
+foreach ($name in 'TitleBar','BtnMinimize','BtnClose','SidebarColumn','SidebarPanel','NavOverview','NavDiagnostics','LblNavInstall','LblPageContext','LblPageSubtitle','PageHeader','PageHeaderRow','FooterActions','InstallActions',
                   'CmbLanguage',
                   'LblGpu','CmbBackend','CmbVram','ChkInstallPython','ChkDesktopShortcut',
                   'ConfigPanel','InstallPanel','DonePanel',
@@ -700,6 +703,7 @@ $script:InstallerPtToEn = [ordered]@{
     'Release instalada:' = 'Installed release:'
     'Status: atualizado' = 'Status: up to date'
     'Build:' = 'Build:'
+    'Buildar:' = 'Build:'
     'Destino:' = 'Destination:'
     'Realizar build do projeto' = 'Build the project'
     'Compila e publica a pasta build no backend da NeveAI.' = 'Builds and publishes the build folder to the NeveAI backend.'
@@ -1129,11 +1133,7 @@ $window.Dispatcher.add_UnhandledException({
 # Drag da janela
 $ctl.TitleBar.Add_MouseLeftButtonDown({
     param($s, $e)
-    if ($e.ClickCount -eq 2) {
-        $window.WindowState = if ($window.WindowState -eq 'Maximized') { 'Normal' } else { 'Maximized' }
-        return
-    }
-    if ($e.ButtonState -eq 'Pressed') { try { $window.DragMove() } catch {} }
+    if ($e.ClickCount -eq 1 -and $e.ButtonState -eq 'Pressed') { try { $window.DragMove() } catch {} }
 })
 
 $window.Add_Loaded({
@@ -1273,14 +1273,10 @@ function Complete-PendingInstallCleanup {
 $ctl.BtnMinimize.Add_Click({
     try { $window.WindowState = [System.Windows.WindowState]::Minimized } catch {}
 })
-$ctl.BtnMaximize.Add_Click({
-    try {
-        $window.WindowState = if ($window.WindowState -eq [System.Windows.WindowState]::Maximized) {
-            [System.Windows.WindowState]::Normal
-        } else {
-            [System.Windows.WindowState]::Maximized
-        }
-    } catch {}
+$window.Add_StateChanged({
+    if ($window.WindowState -eq [System.Windows.WindowState]::Maximized) {
+        $window.WindowState = [System.Windows.WindowState]::Normal
+    }
 })
 $ctl.BtnClose.Add_Click({
     if ([string]$window.Tag -eq 'installing') { Request-InstallCancel $true; return }
@@ -3337,7 +3333,7 @@ if (-not (Test-Path $LOGO_PATH)) {
             </Grid>
 
             <Grid Grid.Row="1" Margin="32,8,32,0">
-                <Grid x:Name="IntroPanel">
+                <Grid x:Name="IntroPanel" Margin="0,40,0,0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -3353,18 +3349,18 @@ if (-not (Test-Path $LOGO_PATH)) {
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto" MinHeight="48"/>
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="220"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Build:" FontSize="13" Foreground="#52525B" Margin="0,0,0,12"/>
-                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="LblBuildPath" Text="build" FontSize="13" FontWeight="SemiBold" Foreground="#111111" Margin="0,0,0,12" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="LblBuildCaption" Grid.Row="0" Grid.Column="0" Text="Buildar:" FontSize="14" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,0,24"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" x:Name="LblBuildPath" Text="build" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextValueBrush}" VerticalAlignment="Center" Margin="0,0,0,24" TextTrimming="CharacterEllipsis"/>
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Destino:" FontSize="13" Foreground="#52525B"/>
-                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="LblDeployPath" Text="backend\neveai\frontend" FontSize="13" FontWeight="SemiBold" Foreground="#111111" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="LblDestinationCaption" Grid.Row="1" Grid.Column="0" Text="Destino:" FontSize="14" Foreground="{DynamicResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="0,0,0,12"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" x:Name="LblDeployPath" Text="backend\neveai\frontend" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextValueBrush}" VerticalAlignment="Center" Margin="0,0,0,12" TextTrimming="CharacterEllipsis"/>
 
                         </Grid>
                     </Border>
@@ -4118,7 +4114,7 @@ function Initialize-HubLegacyPage([string]$mode) {
 				$intro.Children[0].Visibility = 'Collapsed'
 				$card = $intro.Children[$intro.Children.Count - 1]
 				$card.VerticalAlignment = 'Top'
-				$card.Margin = New-Object System.Windows.Thickness(0, 16, 0, 0)
+				$card.Margin = New-Object System.Windows.Thickness(0)
 			}
 			$done = $page.FindName('DonePanel')
 			if ($done -and $done.Children.Count -gt 0) {
@@ -4158,6 +4154,9 @@ function Update-HubActionButtonStyles {
 
 function Set-HubHeaderState([string]$mode) {
 	$isRepair = $mode -eq 'install' -and (Test-HubProjectInstalled)
+	$showHeader = $mode -eq 'install' -and -not $isRepair
+	$ctl.PageHeader.Visibility = if ($showHeader) { 'Visible' } else { 'Collapsed' }
+	$ctl.PageHeaderRow.Height = [System.Windows.GridLength]::new($(if ($showHeader) { 70 } else { 0 }))
 	$context = switch ($mode) {
 		'install' { if ($isRepair) { 'Reparação' } else { 'Instalação' } }
 		'build' { 'Publicação' }
@@ -4181,6 +4180,8 @@ function Update-HubInstallModeState {
 	$ctl.ChkDesktopShortcut.Visibility = $firstInstallVisibility
 	$ctl.LblNavInstall.Text = Convert-InstallerText $(if ($installed) { 'Reparar' } else { 'Instalar' })
 	if ($script:HubActiveMode -eq 'install') {
+		$ctl.PageHeader.Visibility = if ($installed) { 'Collapsed' } else { 'Visible' }
+		$ctl.PageHeaderRow.Height = [System.Windows.GridLength]::new($(if ($installed) { 0 } else { 70 }))
 		$ctl.LblPageContext.Text = Convert-InstallerText $(if ($installed) { 'Reparação' } else { 'Instalação' })
 		$ctl.LblPageSubtitle.Text = Convert-InstallerText $(
 			if ($installed) { 'Verifique e repare os componentes instalados da NeveAI.' }

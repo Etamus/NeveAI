@@ -7,6 +7,7 @@
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 	import DocumentThumbnail from '$lib/components/common/DocumentThumbnail.svelte';
 	import Sidebar from '$lib/components/icons/Sidebar.svelte';
+	import Search from '$lib/components/icons/Search.svelte';
 	import { chatId, mobile, selectedFolder, showSidebar } from '$lib/stores';
 	const i18n = getContext('i18n');
 	const tabs = [
@@ -17,6 +18,8 @@
 		{ id: 'document', label: 'Documents' }
 	];
 	let kind = 'all';
+	let query = '';
+	$: searchQuery = query.trim();
 	let files: any[] = [];
 	let loading = true;
 	let settledEmpty = false;
@@ -131,10 +134,10 @@
 	const mediaKind = (file: any) => (file.meta?.content_type ?? '').split('/')[0];
 	$: visibleFiles = files.filter(
 		(file) =>
-			kind === 'all' ||
+			(kind === 'all' ||
 			(kind === 'document'
 				? !['image', 'video', 'audio'].includes(mediaKind(file))
-				: mediaKind(file) === kind)
+				: mediaKind(file) === kind)) && (!searchQuery || file.filename.toLocaleLowerCase().includes(searchQuery.toLocaleLowerCase()))
 	);
 	const load = async (more = false, preservePages = false) => {
 		const id = ++requestId;
@@ -142,6 +145,7 @@
 		const controller = new AbortController();
 		loadController = controller;
 		const requestedKind = kind;
+		const requestedQuery = searchQuery;
 		const windowSize = preservePages ? Math.max(50, Math.ceil(files.length / 50) * 50) : 50;
 		const start = more ? files.length : 0;
 		loading = true;
@@ -153,7 +157,7 @@
 			for (let offset = 0; offset < windowSize; offset += pageSize) {
 				pageSize = Math.min(1000, windowSize - offset);
 				lastPage = await getGeneratedFiles(
-					localStorage.token, requestedKind, '', start + offset, controller.signal, pageSize
+					localStorage.token, requestedKind, requestedQuery, start + offset, controller.signal, pageSize
 				);
 				if (id !== requestId) return;
 				results.push(...lastPage);
@@ -179,10 +183,17 @@
 			}
 		}
 	};
+	const restartListing = () => {
+		requestId++;
+		loadController?.abort();
+		loading = true;
+		clearTimeout(timer);
+		timer = setTimeout(() => load(), searchQuery ? 180 : 0);
+	};
 	$: if (mounted) {
 		kind;
-		clearTimeout(timer);
-		timer = setTimeout(() => load(), 0);
+		searchQuery;
+		restartListing();
 	}
 	const open = (file: any) => {
 		selectedFile = {
@@ -223,14 +234,17 @@
 	});
 </script>
 
-<div class="h-full flex flex-col bg-white dark:bg-black text-gray-900 dark:text-gray-100">
-	<header class="flex flex-wrap items-center gap-3 px-5 py-4 shrink-0">
+<div class="library-page h-full flex flex-col bg-white dark:bg-black text-gray-900 dark:text-gray-100">
+	<header class="flex items-center gap-3 px-5 py-4 shrink-0">
+		<div class="flex min-w-0 items-center gap-2">
 		{#if $mobile}
 			<button type="button" class="grid size-9 place-items-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={$i18n.t('Open Sidebar')} on:click={() => showSidebar.set(true)}><Sidebar className="size-5" /></button>
 		{/if}
 		<h1 class="text-xl font-semibold whitespace-nowrap shrink-0">{$i18n.t('Library')}</h1>
+		</div>
 	</header>
-	<nav class="flex gap-1 px-5 pb-4 overflow-x-auto shrink-0" aria-label={$i18n.t('Library')}>
+	<div class="library-toolbar flex flex-wrap items-center justify-between gap-3 px-5 pb-4 shrink-0">
+	<nav class="flex min-w-0 max-w-full gap-1 overflow-x-auto" aria-label={$i18n.t('Library')}>
 		{#each tabs as tab}<button
 				class="px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap {kind === tab.id
 					? 'bg-gray-100 dark:bg-gray-800'
@@ -246,6 +260,14 @@
 				}}>{$i18n.t(tab.label)}</button
 			>{/each}
 	</nav>
+		<div class="library-search search-field search-surface ml-auto shrink-0 flex items-center px-2.5">
+			<div class="flex min-w-0 flex-1 items-center">
+				<div class="self-center ml-1 mr-3"><Search className="size-3.5" /></div>
+				<input aria-label={$i18n.t('Search library')} placeholder={$i18n.t('Search models')} bind:value={query}
+					class="min-w-0 w-full text-sm py-1.5 rounded-r-xl outline-hidden bg-transparent" />
+			</div>
+		</div>
+	</div>
 	<main class="flex-1 min-h-0 overflow-y-auto px-5 pb-6" aria-busy={loading}>
 		{#if error}<div role="alert" class="py-8 text-sm text-gray-500">
 				{error} <button class="underline" on:click={() => load(false, true)}>{$i18n.t('Retry')}</button>
@@ -253,7 +275,7 @@
 		{#if visibleFiles.length === 0 && !error && (!loading || settledEmpty)}<p
 				class="py-12 text-center text-sm text-gray-500"
 			>
-				{$i18n.t('No creations yet')}
+				{$i18n.t(searchQuery ? 'No matching creations' : 'No creations yet')}
 			</p>{/if}
 		<div class="library-grid">
 			{#each visibleFiles as file, fileIndex (file.id)}
@@ -310,7 +332,8 @@
 <style>
 	@media (max-width: 767px) {
 		header { padding-inline: 0.875rem; }
-		nav { padding-inline: 0.875rem; flex-wrap: wrap; }
+		.library-toolbar { padding-inline: 0.875rem; }
+		nav { flex-wrap: wrap; }
 		nav button { padding-inline: 0.5rem; font-size: 0.75rem; min-height: 36px; }
 		main { padding-inline: 0.875rem; padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px)); }
 		main .library-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

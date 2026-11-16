@@ -225,8 +225,8 @@
 				class="flex flex-col gap-3 px-3.5 py-3 border border-gray-100 dark:border-gray-850 rounded-xl"
 			>
 				<div class="flex flex-col">
-					<div class="text-xs text-gray-500 mb-1">{$i18n.t('Nome de usuário')}</div>
 					<input
+						aria-label={$i18n.t('Nome de usuário')}
 						type="text"
 						bind:value={username}
 						maxlength={USER_NAME_MAX_LENGTH}

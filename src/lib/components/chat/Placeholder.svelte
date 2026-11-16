@@ -8,13 +8,16 @@
 
 	import { getChatList } from '$lib/apis/chats';
 
-	import { user, models as _models, temporaryChatEnabled, selectedFolder, chats, currentChatPage } from '$lib/stores';
+	import { user, config, settings, models as _models, temporaryChatEnabled, selectedFolder, chats, currentChatPage } from '$lib/stores';
 	import type { Model } from '$lib/stores';
 	import { getUserFirstName } from '$lib/utils/user';
 
 	import MessageInput from './MessageInput.svelte';
 	import FolderPlaceholder from './Placeholder/FolderPlaceholder.svelte';
 	import FolderTitle from './Placeholder/FolderTitle.svelte';
+	import ImageIcon from '../icons/Image.svelte';
+	import AcademicCap from '../icons/AcademicCap.svelte';
+	import GlobeAlt from '../icons/GlobeAlt.svelte';
 
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
@@ -48,7 +51,7 @@
 	export let stableDiffusionModeOptions: import('$lib/utils/imageModes').ImageModeOptions = { mode: 'normal' };
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
-	export let videoGenerationModel: import('$lib/utils/videoGeneration').VideoGenerationModel = 'minimax_h3';
+	export let videoGenerationModel: import('$lib/utils/videoGeneration').VideoGenerationModel = 'vdn_h3';
 	export let videoGenerationResolution: '480p' | '672p' = '480p';
 	export let videoGenerationDuration: '5s' | '8s' = '5s';
 	export let videoGenerationAspectRatio: '16:9' | '9:16' = '16:9';
@@ -74,6 +77,9 @@
 
 	$: models = selectedModels.map((id) => $_models.find((m) => m.id === id));
 	$: userName = getUserFirstName($user?.name);
+	$: showIntegrationSuggestions = ($settings?.enableSuggestions ?? true) && !$selectedFolder && !webSearchEnabled && !deepSearchEnabled &&
+		!learningEnabled && !stableDiffusionEnabled && !musicGenerationEnabled &&
+		!videoGenerationEnabled && selectedToolIds.length === 0;
 	$: greeting = userName
 		? $i18n.t('What would you like to explore today, {{name}}?', { name: userName })
 		: $i18n.t('What would you like to explore today?');
@@ -118,7 +124,7 @@
 
 			{/if}
 
-			<div class="text-base font-normal @md:max-w-2xl w-full py-3 {atSelectedModel ? 'mt-2' : ''}">
+			<div class="relative text-base font-normal @md:max-w-2xl w-full py-3 {atSelectedModel ? 'mt-2' : ''}">
 				<MessageInput
 					bind:this={messageInput}
 					{history}
@@ -159,6 +165,23 @@
 						dispatch('submit', e.detail);
 					}}
 				/>
+				{#if showIntegrationSuggestions}
+					<div data-new-chat-suggestions class="absolute inset-x-2.5 top-full mt-3 flex flex-col gap-1 text-left text-sm text-gray-500 dark:text-gray-400">
+						{#if $config?.features?.enable_stable_diffusion && ($user?.role === 'admin' || $user?.permissions?.features?.stable_diffusion)}
+							<button type="button" data-suggest-integration="stable_diffusion" class="suggestion-row grid min-h-11 w-full items-center gap-2 rounded-[10px] py-3 text-left hover:bg-gray-100/45 hover:text-gray-900 dark:hover:bg-gray-850/80 dark:hover:text-gray-100" on:click={() => onNativeIntegrationChange('stable_diffusion')}>
+								<ImageIcon className="size-4 shrink-0 justify-self-center" strokeWidth="1.75" /><span>{$i18n.t('Create an image')}</span>
+							</button>
+						{/if}
+						<button type="button" data-suggest-integration="guided_learning" class="suggestion-row grid min-h-11 w-full items-center gap-2 rounded-[10px] py-3 text-left hover:bg-gray-100/45 hover:text-gray-900 dark:hover:bg-gray-850/80 dark:hover:text-gray-100" on:click={() => onNativeIntegrationChange('guided_learning')}>
+							<AcademicCap className="size-4 shrink-0 justify-self-center" /><span>{$i18n.t('Learn something new')}</span>
+						</button>
+						{#if $user?.role === 'admin' || $user?.permissions?.features?.web_search}
+							<button type="button" data-suggest-integration="web_search" class="suggestion-row grid min-h-11 w-full items-center gap-2 rounded-[10px] py-3 text-left hover:bg-gray-100/45 hover:text-gray-900 dark:hover:bg-gray-850/80 dark:hover:text-gray-100" on:click={() => onNativeIntegrationChange('web_search')}>
+								<GlobeAlt className="size-4 shrink-0 justify-self-center" strokeWidth="1.75" /><span>{$i18n.t('Search the web')}</span>
+							</button>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -174,7 +197,19 @@
 </div>
 
 <style>
+	:global(html:not(.dark)) .chat-placeholder :global(#message-input-container) {
+		box-shadow: none;
+	}
+	.suggestion-row {
+		grid-template-columns: 36px minmax(0, 1fr);
+		padding-inline: calc(0.625rem + 1px);
+	}
+	:global(.chat-placeholder:has(#message-input-container.flex-col)) .suggestion-row {
+		padding-inline: calc(0.375rem + 1px);
+	}
 	@media (max-width: 767px) {
+		.suggestion-row { grid-template-columns: 38px minmax(0, 1fr); padding-inline: calc(0.5rem + 1px); }
+		:global(.chat-placeholder:has(#message-input-container.flex-col)) .suggestion-row { padding-inline: calc(0.625rem + 1px); }
 		.chat-placeholder { transform: none; translate: none; padding-block: 2rem; }
 		.chat-placeholder :global(.text-\[1\.75rem\]),
 		.chat-placeholder :global(.text-3xl) { font-size: 1.375rem; }

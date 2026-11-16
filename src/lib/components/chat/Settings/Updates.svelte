@@ -7,6 +7,8 @@
 	import { updateNotificationsEnabled } from '$lib/utils/updateToast';
 	import Switch from '$lib/components/common/Switch.svelte';
 	import Check from '$lib/components/icons/Check.svelte';
+	import Download from '$lib/components/icons/ModelDownload.svelte';
+	import Restart from '$lib/components/icons/UpdateRestart.svelte';
 	import { interfaceNotificationsEnabled } from '$lib/utils/toastPreferences';
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
@@ -43,7 +45,7 @@
 		}
 	].filter((component) => targets.includes(component.id));
 	$: progressing = job.status === 'downloading' || job.status === 'applying';
-	$: visibleComponents = progressing
+	$: visibleComponents = progressing || locked
 		? []
 		: components.filter((component) => component.id === 'llama');
 	$: neveVersion = components.find((component) => component.id === 'neve')?.version;
@@ -122,46 +124,43 @@
 		aria-label={$i18n.t('Updates')}
 	>
 		<header
-			class="flex min-h-[40px] items-center justify-between gap-3 px-4 py-3 {visibleComponents.length ||
-			progressing
-				? 'border-b border-gray-200 dark:border-gray-700/50'
-				: ''}"
+			class="flex min-h-[40px] items-center justify-between gap-3 px-4 py-3"
 		>
-			<h3 class="min-w-0 text-sm font-medium leading-5">
+			<div class="min-w-0">
+			<h3 class="relative min-w-0 text-sm font-medium leading-5">
+				{#if job.status === 'restarting'}
+					<span class="invisible block" aria-hidden="true">{$i18n.t('Restart to apply changes')}</span>
+					<span class="absolute inset-0">{$i18n.t(heading)}</span>
+				{:else}
 				{#if heading === 'Up to date'}<span class="mr-2 inline-flex align-middle"
 						><Check className="size-4" /></span
 					>{/if}{$i18n.t(heading)}{#if headingVersion}
 					{' '}({headingVersion})
 				{/if}
+				{/if}
 			</h3>
-			{#if job.status === 'ready' || (!locked && eligible.length > 0)}
+			{#each visibleComponents as component (component.id)}
+				<div data-update-component={component.id} class="mt-0.5 flex min-w-0 flex-wrap items-baseline gap-x-2 text-gray-500 dark:text-gray-400">
+					<span class="text-[13px] font-normal">{component.name}</span>
+					<span class="break-all text-xs tabular-nums">{component.version}</span>
+				</div>
+			{/each}
+			</div>
+			{#if job.status === 'ready' || job.status === 'restarting' || (!locked && eligible.length > 0)}
 				<button
 					type="button"
-					class="update-action inline-flex h-[30px] shrink-0 items-center justify-center rounded-md bg-black px-3 text-xs font-medium text-white hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-gray-100 dark:text-gray-900 dark:hover:bg-gray-300"
-					disabled={!stateReady || busy}
-					on:click={act}>{$i18n.t(job.status === 'ready' ? 'Restart' : 'Update now')}</button
+					class="update-action grid size-8 shrink-0 place-items-center rounded-lg p-0 text-gray-500 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800 {job.status === 'restarting' ? 'invisible' : ''}"
+					aria-label={$i18n.t(['ready', 'restarting'].includes(job.status) ? 'Restart' : 'Update now')}
+					title={$i18n.t(['ready', 'restarting'].includes(job.status) ? 'Restart' : 'Update now')}
+					aria-hidden={job.status === 'restarting' ? true : undefined}
+					disabled={!stateReady || busy || job.status === 'restarting'}
+					on:click={act}>{#if ['ready', 'restarting'].includes(job.status)}<Restart className="block size-5" />{:else}<Download className="block size-5" />{/if}</button
 				>
 			{/if}
 		</header>
-		{#if visibleComponents.length}
-			<div class="update-components divide-y divide-gray-200 dark:divide-gray-700/50">
-				{#each visibleComponents as component (component.id)}
-					<div
-						data-update-component={component.id}
-						class="flex min-h-[50px] min-w-0 items-center justify-between gap-4 px-4 py-3"
-					>
-						<span class="shrink-0 text-[13px] font-normal">{component.name}</span>
-						<span
-							class="min-w-0 break-all text-right text-xs tabular-nums text-gray-500 dark:text-gray-400"
-							>{component.version}</span
-						>
-					</div>
-				{/each}
-			</div>
-		{/if}
 		{#if progressing}
 			<div
-				class="px-4 py-3"
+				class="px-4 pb-3 pt-1"
 				role="progressbar"
 				aria-valuenow={job.progress || 0}
 				aria-valuemin="0"

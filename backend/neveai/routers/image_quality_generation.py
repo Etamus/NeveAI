@@ -136,6 +136,28 @@ def _pe_file_for_hardware() -> str:
     return PE_FILE if vram_mib is not None and vram_mib >= PE_Q6_MIN_VRAM_MIB else PE_LOW_VRAM_FILE
 
 
+def _reference_dimensions(raw: bytes) -> tuple[int, int]:
+    with Image.open(io.BytesIO(raw)) as source:
+        orientation = source.getexif().get(274)
+        return source.size[::-1] if orientation in (5, 6, 7, 8) else source.size
+
+
+def _encode_reference(raw: bytes, size: tuple[int, int], planning_size: Optional[tuple[int, int]]) -> tuple[bytes, Optional[bytes]]:
+    with Image.open(io.BytesIO(raw)) as opened:
+        image = ImageOps.exif_transpose(opened).convert("RGB")
+        planning_raw = None
+        if planning_size is not None and planning_size != size:
+            planning_output = io.BytesIO()
+            image.resize(planning_size, Image.Resampling.LANCZOS).save(planning_output, format="PNG")
+            planning_raw = planning_output.getvalue()
+        if size != image.size:
+            image = image.resize(size, Image.Resampling.LANCZOS)
+        output = io.BytesIO()
+        image.save(output, format="PNG")
+        prepared = output.getvalue()
+        return prepared, (planning_raw if planning_raw is not None else prepared) if planning_size is not None else None
+
+
 def _prefer_int8_edit(reference_count: int) -> bool:
     # Keep the bounded editing profile off smaller/unknown GPUs and other backends.
     if not 1 <= reference_count <= MAX_INT8_EDIT_REFERENCES or os.name != "nt" or not shutil.which("nvidia-smi"):
@@ -371,7 +393,7 @@ class NeveImage21Runtime:
                 log.warning("Neve Image 2.6: usando condicionador original apos falha no adaptador CFG1: %s", exc)
         if edit:
             PE_DIR.mkdir(parents=True, exist_ok=True)
-            pe_file = self._pe_file()
+            pe_file = await asyncio.to_thread(self._pe_file)
             for repo, filename in (
                 (PE_REPO, pe_file), (PE_REPO, PE_VISION_FILE),
                 (PE_SYSTEM_REPO, PE_SYSTEM_FILE),
@@ -457,7 +479,7 @@ class NeveImage21Runtime:
 
         if not LLAMACPP_SERVER_BIN.is_file():
             raise RuntimeError("llama-server nao instalado para o PE-I2I.")
-        pe_file = self._pe_file()
+        pe_file = await asyncio.to_thread(self._pe_file)
         pe_dir = self._pe_directory()
         command = [
             str(LLAMACPP_SERVER_BIN), "--host", "127.0.0.1", "--model", str(pe_dir / pe_file),
@@ -611,35 +633,23 @@ class NeveImage21Runtime:
                                        for reference in references]
                     source_sizes = []
                     for raw in reference_bytes[1:]:
-                        with Image.open(io.BytesIO(raw)) as source:
-                            orientation = source.getexif().get(274)
-                            source_sizes.append(source.size[::-1] if orientation in (5, 6, 7, 8) else source.size)
+                        source_sizes.append(await asyncio.to_thread(_reference_dimensions, raw))
                     adaptive_sizes = _adaptive_auxiliary_sizes(source_sizes)
                     self._adaptive_auxiliary_used = True
                 for index, reference in enumerate(references):
                     raw = reference_bytes[index] if reference_bytes is not None else await asyncio.to_thread(_read_image_reference_bytes, reference, user_id)
-                    with Image.open(io.BytesIO(raw)) as opened:
-                        image = ImageOps.exif_transpose(opened).convert("RGB")
-                        size = self._reference_size(*image.size, model_file, index, len(references), optimized_edit=optimized_edit)
-                        if adaptive_sizes is not None and index > 0:
-                            size = adaptive_sizes[index - 1]
-                        planning_raw = None
-                        if self._retry_prompt is None:
-                            # Canvas detail must not change the planner's previous visual input.
-                            planning_size = self._reference_size(*image.size, model_file, index, len(references), detail_canvas=False)
-                            if planning_size != size:
-                                planning_output = io.BytesIO()
-                                image.resize(planning_size, Image.Resampling.LANCZOS).save(planning_output, format="PNG")
-                                planning_raw = planning_output.getvalue()
-                        if size != image.size:
-                            image = image.resize(size, Image.Resampling.LANCZOS)
-                        if index == 0:
-                            width, height = size
-                        output = io.BytesIO()
-                        image.save(output, format="PNG")
-                        prepared.append(output.getvalue())
-                        if self._retry_prompt is None:
-                            planning_images.append(planning_raw if planning_raw is not None else prepared[-1])
+                    source_size = await asyncio.to_thread(_reference_dimensions, raw)
+                    size = self._reference_size(*source_size, model_file, index, len(references), optimized_edit=optimized_edit)
+                    if adaptive_sizes is not None and index > 0:
+                        size = adaptive_sizes[index - 1]
+                    # Pass only immutable inputs: cancellation cannot leave a worker mutating runtime state.
+                    planning_size = self._reference_size(*source_size, model_file, index, len(references), detail_canvas=False) if self._retry_prompt is None else None
+                    encoded, planning_raw = await asyncio.to_thread(_encode_reference, raw, size, planning_size)
+                    if index == 0:
+                        width, height = size
+                    prepared.append(encoded)
+                    if planning_raw is not None:
+                        planning_images.append(planning_raw)
                 if dimensions is not None:
                     await dimensions(width, height)
                 if prepared:

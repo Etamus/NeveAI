@@ -44,9 +44,8 @@ def inspect_video(path):
 
 async def main(args):
     from PIL import Image
-    from neveai.routers.video_generation import minimax_h3_runtime
-    from neveai.routers.video_vdn_generation import vdn_h3_runtime
-    runtime = vdn_h3_runtime if args.model == "vdn" else minimax_h3_runtime
+    from neveai.routers.video_quality_generation import video15_runtime
+    runtime = video15_runtime
     report = ROOT / "logs/vdn-study-20261031"
     report.mkdir(parents=True, exist_ok=True)
 
@@ -96,7 +95,7 @@ async def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", choices=["vdn", "original"], default="vdn")
+    parser.add_argument("--model", choices=["vdn"], default="vdn")
     parser.add_argument("--references", type=int, choices=[0, 1, 2], default=0)
     parser.add_argument("--width", type=int, default=864)
     parser.add_argument("--height", type=int, default=480)

@@ -1,12 +1,11 @@
 export const videoGenerationModels = [
-	{ id: 'minimax_h3', label: 'Neve Video 1' },
 	{ id: 'vdn_h3', label: 'Neve Video 1.5' }
 ] as const;
 
 export type VideoGenerationModel = (typeof videoGenerationModels)[number]['id'];
 
-export const normalizeVideoGenerationModel = (value: unknown): VideoGenerationModel =>
-	value === 'vdn_h3' ? 'vdn_h3' : 'minimax_h3';
+export const normalizeVideoGenerationModel = (_value: unknown): VideoGenerationModel =>
+	'vdn_h3';
 
 // Match the server's latent-patch dimensions so the first status does not resize the preview.
 export function pendingVideoGenerationStatus(message: any, parent?: any): {

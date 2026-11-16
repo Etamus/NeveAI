@@ -5,7 +5,8 @@
 	import ImagePreview from './ImagePreview.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import AttachmentThumbnail from './AttachmentThumbnail.svelte';
-	import { getContext } from 'svelte';
+	import { getContext, onDestroy } from 'svelte';
+	import { acquireInlineImageDisplay } from '$lib/utils/inlineImageDisplay';
 
 	export let src = '';
 	export let alt = '';
@@ -23,7 +24,16 @@
 	const i18n = getContext('i18n');
 
 	let _src = '';
-	$: _src = src.startsWith('/') ? `${NEVEAI_BASE_URL}${src}` : src;
+	let previousSource: string | undefined;
+	let releaseSource = () => {};
+	$: if (src !== previousSource) {
+		releaseSource();
+		previousSource = src;
+		const source = acquireInlineImageDisplay(src.startsWith('/') ? `${NEVEAI_BASE_URL}${src}` : src);
+		_src = source.url;
+		releaseSource = source.release;
+	}
+	onDestroy(() => releaseSource());
 
 	let showImagePreview = false;
 </script>

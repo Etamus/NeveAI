@@ -272,13 +272,13 @@
 		class="search-modal-shell py-3 dark:text-gray-300 text-gray-700 flex flex-col"
 		style="height: min(39rem, calc(100dvh - 1.5rem));"
 	>
-		<div class="mobile-search-title"><MobileModalTitle>{$i18n.t('Sidebar Search')}</MobileModalTitle></div>
-		<div class="px-4 pb-1.5 flex items-center gap-2">
-			<div class="min-w-0 flex-1">
+		<div class="grid grid-cols-2 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-5 pt-1 pb-3 shrink-0">
+			<div class="order-1 md:order-none text-lg font-semibold text-gray-700 dark:text-gray-100"><MobileModalTitle>{$i18n.t('Sidebar Search')}</MobileModalTitle></div>
+			<div class="search-field min-w-0 order-3 md:order-none col-span-2 md:col-span-1 justify-self-center">
 				<SearchInput
 					bind:value={query}
 					on:input={(event) => { query = event.detail; void searchHandler(); }}
-					placeholder={$i18n.t('Search')}
+					placeholder={$i18n.t('Search conversations')}
 					showClearButton={false}
 					onFocus={() => {
 						selectedIdx = null;
@@ -289,7 +289,7 @@
 			</div>
 			<button data-mobile-modal-close
 				aria-label={$i18n.t('Close search modal')}
-				class="search-modal-close text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
+				class="search-modal-close order-2 md:order-none justify-self-end text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
 				on:click={() => {
 					show = false;
 					onClose();
@@ -301,7 +301,7 @@
 
 		<!-- <hr class="border-gray-50 dark:border-gray-850/30 my-1" /> -->
 
-		<div class="flex px-4 pb-1 min-h-0 flex-1">
+		<div class="flex px-4 pt-2 pb-1 min-h-0 flex-1">
 			<div
 				class="flex flex-col overflow-y-auto h-full min-h-0 max-h-full scrollbar-hidden w-full flex-1 pr-2"
 			>
@@ -458,9 +458,7 @@
 </Modal>
 
 <style>
-	.mobile-search-title { display: none; }
 	@media (max-width: 767px) {
-		.mobile-search-title { display: block; padding: 0 16px 8px; font-size: 18px; font-weight: 600; }
 		.search-modal-shell { height: 100% !important; min-height: 0; }
 		.search-modal-close { display: none; }
 	}

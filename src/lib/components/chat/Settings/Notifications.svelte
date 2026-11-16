@@ -16,7 +16,7 @@
 
 <div id="tab-notifications" class="pt-2 text-sm">
 	<div class="flex w-full items-center justify-between gap-4">
-		<span id="notification-master-label" class="text-sm font-medium"
+		<span id="notification-master-label"
 			>{$i18n.t('Enable interface notifications')}</span
 		>
 		<div class="shrink-0 px-1">
@@ -30,7 +30,7 @@
 	{#each options as option}
 		<div
 			class="flex w-full items-center justify-between gap-4 py-0.5 {option.category === 'runtime'
-				? 'mt-2'
+				? 'mt-4'
 				: ''}"
 		>
 			<span

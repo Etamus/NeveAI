@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { getLastChatUsage, getChatContextWindow, getUsageTotalTokens, getUsageTokensPerSecond, formatUsageTokensPerSecond } from '$lib/utils/chatUsage';
+	import { registerInlineImageDisplay } from '$lib/utils/inlineImageDisplay';
+	import { getLastChatUsage, getChatContextWindow, getUsagePromptTokens, getUsageTotalTokens, getUsageTokensPerSecond, formatUsageTokensPerSecond } from '$lib/utils/chatUsage';
 	import { createTokenTotalSampler } from '$lib/utils/tokenTotalSampler';
 	import { toast } from 'svelte-sonner';
 
@@ -95,7 +96,7 @@
 	import Voice from '../icons/Voice.svelte';
 	import Cloud from '../icons/Cloud.svelte';
 	import Code from '../icons/Code.svelte';
-	import BookOpen from '../icons/BookOpen.svelte';
+	import AcademicCap from '../icons/AcademicCap.svelte';
 	import TerminalMenu from './MessageInput/TerminalMenu.svelte';
 	import Knobs from '../icons/Knobs.svelte';
 	import PlusAlt from '../icons/PlusAlt.svelte';
@@ -299,8 +300,8 @@
 	] as const;
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
-	import { normalizeVideoGenerationModel, videoGenerationModels, type VideoGenerationModel } from '$lib/utils/videoGeneration';
-	export let videoGenerationModel: VideoGenerationModel = 'minimax_h3';
+	import { normalizeVideoGenerationModel, type VideoGenerationModel } from '$lib/utils/videoGeneration';
+	export let videoGenerationModel: VideoGenerationModel = 'vdn_h3';
 	$: if (videoGenerationModel !== normalizeVideoGenerationModel(videoGenerationModel)) {
 		videoGenerationModel = normalizeVideoGenerationModel(videoGenerationModel);
 	}
@@ -719,13 +720,11 @@
 	let dropdownChatId = $chatId;
 	$: if (['qwen_image_2s', 'qwen_image_2_1_official', 'minimax_h3_image'].includes(stableDiffusionQuality) && hasImageAttachment)
 		showImageResolutionDropdown = false;
-	let showVideoModelDropdown = false;
 	let showVideoResolutionDropdown = false;
 	$: if ($mobile) showVideoResolutionDropdown = false;
 	let showVideoAspectRatioDropdown = false;
 	
 	const closeComposerDropdowns = () => {
-		showVideoModelDropdown = false;
 		showImageModeDropdown = false;
 		showThinkingDropdown = false;
 		showImageQualityDropdown = false;
@@ -738,7 +737,6 @@
 		showTokenPopup = false;
 	}));
 	$: if (!videoGenerationEnabled) {
-		showVideoModelDropdown = false;
 		showVideoResolutionDropdown = false;
 		showVideoAspectRatioDropdown = false;
 	}
@@ -760,7 +758,6 @@
 	$: if (stableDiffusionModeOptions.source_id && imageModeSourceKey(imageModeFiles(files)[0]) !== stableDiffusionModeOptions.source_id) clearImageModeSource();
 	
 	$: if (dropdownChatId !== $chatId) {
-		showVideoModelDropdown = false;
 		dropdownChatId = $chatId;
 		showThinkingDropdown = false;
 		showImageModeDropdown = false;
@@ -846,6 +843,14 @@
 
 	let chatInputElement;
 
+	const inlineDisplayOwners = new Map<string, () => void>();
+	$: for (const [source, release] of inlineDisplayOwners) {
+		if (!files.some(file => file.url === source)) {
+			inlineDisplayOwners.delete(source);
+			release();
+		}
+	}
+	onDestroy(() => { for (const release of inlineDisplayOwners.values()) release(); });
 	let filesInputElement: HTMLInputElement;
 
 	let inputFiles;
@@ -1431,6 +1436,10 @@
 								files.length + pendingImageAttachments >= activePolicy.maxCount)
 						)
 							return;
+						if (prepared && !inlineDisplayOwners.has(imageUrl)) {
+							const display = registerInlineImageDisplay(imageUrl, readableFile);
+							if (display) inlineDisplayOwners.set(imageUrl, display.release);
+						}
 						files = [...files, { type: 'image', url: imageUrl }];
 					} else {
 						const blob = await (await fetch(imageUrl)).blob();
@@ -1822,7 +1831,7 @@
 
 		{#if showTokenPopup}
 			<div
-				class="fixed z-[10030] w-56 rounded-xl border border-gray-200/70 dark:border-gray-700/60 bg-white dark:bg-gray-850 shadow-xl p-3.5"
+				class="fixed z-[10030] w-52 rounded-xl border border-gray-200/70 dark:border-gray-700/60 bg-white dark:bg-gray-850 shadow-xl p-3.5"
 				data-token-usage-popup
 				use:viewportDropdown={{ tokenUsage: true }}
 				style="font-family: 'Segoe UI', sans-serif;"
@@ -1849,6 +1858,10 @@
 				</div>
 				<div class="space-y-1.5">
 					<div class="flex justify-between items-center">
+						<span class="text-[14px] text-gray-500 dark:text-gray-400">Prompt</span>
+						<span class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200">{formatTokens(getUsagePromptTokens(lastUsage))}</span>
+					</div>
+					<div class="flex justify-between items-center">
 						<span class="text-[14px] text-gray-500 dark:text-gray-400"
 							>Tokens/s</span
 						>
@@ -1863,16 +1876,7 @@
 						>
 						<span
 							class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
-							>{formatTokens(totalTokens)}</span
-						>
-					</div>
-					<div class="flex justify-between items-center">
-						<span class="text-[14px] text-gray-500 dark:text-gray-400"
-							>{$i18n.t('Contexto')}</span
-						>
-						<span
-							class="text-[14px] font-semibold tabular-nums text-gray-700 dark:text-gray-200"
-							>{contextWindow ? formatTokens(contextWindow) : '--'}</span
+							>{formatTokens(totalTokens)} / {contextWindow ? formatTokens(contextWindow) : '--'}</span
 						>
 					</div>
 				</div>
@@ -1910,14 +1914,6 @@
 			)
 		) {
 			showVideoResolutionDropdown = false;
-		}
-		if (
-			showVideoModelDropdown &&
-			!(e.target as HTMLElement).closest(
-				'#video-model-dropdown-container, [data-composer-dropdown-anchor="video-model-dropdown-container"]'
-			)
-		) {
-			showVideoModelDropdown = false;
 		}
 		if (
 			showVideoAspectRatioDropdown &&
@@ -2092,7 +2088,7 @@
 									? 'border-dashed border-gray-100 dark:border-gray-800 hover:border-gray-200 focus-within:border-gray-200 hover:dark:border-gray-700 focus-within:dark:border-gray-700'
 									: ' border-gray-100/30 dark:border-gray-850/30 hover:border-gray-200 focus-within:border-gray-100 hover:dark:border-gray-800 focus-within:dark:border-gray-800'}  transition {isCompact
 								? 'px-1 py-2'
-								: 'px-1'} bg-white/5 dark:bg-gray-850 dark:text-gray-100"
+								: 'px-1'} bg-gray-50 dark:bg-gray-850 dark:text-gray-100"
 							dir={$settings?.chatDirection ?? 'auto'}
 						>
 							{#if !isCompact}
@@ -2615,7 +2611,7 @@
 												>
 													<div class="relative size-4 shrink-0 flex items-center justify-center">
 														<span class="group-hover:hidden flex items-center justify-center">
-															<BookOpen className="size-[0.96875rem]" />
+															<AcademicCap className="size-4" />
 														</span>
 														<span class="hidden group-hover:flex items-center justify-center">
 															<XMark className="size-4" strokeWidth="1.75" />
@@ -2806,6 +2802,7 @@
 
 											{#if videoGenerationEnabled}
 												<button
+													data-video-integration
 													on:click|preventDefault={() => {
 														videoGenerationEnabled = false;
 														onNativeIntegrationChange(null);
@@ -2827,46 +2824,6 @@
 													>
 												</button>
 
-												<div class="relative shrink-0" id="video-model-dropdown-container">
-													<button
-														type="button"
-														class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-														aria-label={$i18n.t('Video model')}
-														aria-expanded={showVideoModelDropdown}
-														on:click|preventDefault={() => {
-															const open = !showVideoModelDropdown;
-															closeComposerDropdowns();
-															showVideoModelDropdown = open;
-														}}
-													>
-														<span>{videoGenerationModels.find((model) => model.id === videoGenerationModel)?.label ?? 'Neve Video 1'}</span>
-														<svg viewBox="0 0 20 20" fill="currentColor" class="size-3.5 transition-transform duration-150 {showVideoModelDropdown ? '' : 'rotate-180'}" aria-hidden="true">
-															<path fill-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" clip-rule="evenodd" />
-														</svg>
-													</button>
-													{#if showVideoModelDropdown}
-														<div
-															use:viewportDropdown
-															class="fixed z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
-															in:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
-														>
-															{#each videoGenerationModels as model}
-																<button
-																	type="button"
-																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
-																	on:click={() => {
-																		videoGenerationModel = model.id;
-																		showVideoModelDropdown = false;
-																		localStorage.setItem('neveai.videoModel', videoGenerationModel);
-																	}}
-																>
-																	<span>{model.label}</span>
-																	{#if videoGenerationModel === model.id}<CheckCircle strokeWidth="1.7" />{/if}
-																</button>
-															{/each}
-														</div>
-													{/if}
-												</div>
 
 												{#if !$mobile}
 												<div class="relative shrink-0" id="video-resolution-dropdown-container">
@@ -2890,7 +2847,6 @@
 															on:click|preventDefault={() => {
 																showVideoResolutionDropdown = false;
 																showVideoAspectRatioDropdown = !showVideoAspectRatioDropdown;
-															showVideoModelDropdown = false;
 															}}
 														>
 															<span>{videoGenerationAspectRatio}</span>
@@ -3100,17 +3056,17 @@
 	.stable-image-toggle .chip-label {
 		white-space: nowrap;
 	}
-	.message-input-actions:has(.image-quality-control, #video-model-dropdown-container) .message-input-actions-primary {
+	.message-input-actions:has(.image-quality-control, [data-video-integration]) .message-input-actions-primary {
 		max-width: none;
 	}
-	.message-input-actions:has(.image-quality-control, #video-model-dropdown-container) .message-input-active-controls {
+	.message-input-actions:has(.image-quality-control, [data-video-integration]) .message-input-active-controls {
 		overflow-x: auto;
 		overscroll-behavior-x: contain;
 		scrollbar-width: none;
 	}
-	.message-input-actions:has(.image-quality-control, #video-model-dropdown-container) .message-input-active-controls::-webkit-scrollbar { display: none; }
-	.message-input-actions:has(.image-quality-control, #video-model-dropdown-container) .message-input-active-controls > button { flex-shrink: 0; }
-	.message-input-actions:has(.image-quality-control, #video-model-dropdown-container) .message-input-active-controls > div > button { white-space: nowrap; }
+	.message-input-actions:has(.image-quality-control, [data-video-integration]) .message-input-active-controls::-webkit-scrollbar { display: none; }
+	.message-input-actions:has(.image-quality-control, [data-video-integration]) .message-input-active-controls > button { flex-shrink: 0; }
+	.message-input-actions:has(.image-quality-control, [data-video-integration]) .message-input-active-controls > div > button { white-space: nowrap; }
 	:global(#input-menu-button),
 	:global(.composer-more-trigger) {
 		display: flex;

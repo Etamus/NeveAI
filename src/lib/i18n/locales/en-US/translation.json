@@ -1,4 +1,12 @@
 {
+	"Enable suggestions": "Enable suggestions",
+	"Create an image": "Create an image",
+	"Learn something new": "Learn something new",
+	"Search the web": "Search the web",
+	"Search_models": "Search",
+	"Search models": "Search",
+	"Search files": "Search",
+	"Search conversations": "Search",
 	"Automatic": "Automatic",
 	"Automatic detection": "Auto-detect",
 	"Software update": "Update in progress",
@@ -935,5 +943,12 @@
 	"Use no máximo cinco imagens, incluindo a base.": "Use up to five images, including the base.",
 	"Extend the image naturally into the added area. Preserve the existing image.": "Extend the image naturally into the added area. Preserve the existing image.",
 	"Dress the person in the base image in the clothes from the reference images.": "Dress the person in the base image in the clothes from the reference images.",
-	"Replace the person in the base image with the character from the reference images.": "Replace the person in the base image with the character from the reference images."
+	"Replace the person in the base image with the character from the reference images.": "Replace the person in the base image with the character from the reference images.",
+	"Modelo de uso geral e raciocínio para tarefas imediatas.": "General-purpose reasoning model for everyday tasks.",
+	"Modelo de uso geral e raciocínio para tarefas variadas.": "General-purpose reasoning model for a wide range of tasks.",
+	"Modelo de análise e resumo para documentos complexos.": "Analysis and summarization model for complex documents.",
+	"Modelo de programação e raciocínio para execução em escala.": "Coding and reasoning model for work at scale.",
+	"Modelo de programação e raciocínio para arquiteturas complexas.": "Coding and reasoning model for complex architectures.",
+	"Modelo de conversação para simulação de interações humanas.": "Conversational model for simulating human interactions.",
+	"Modelo de baixo consumo para hardware limitado.": "Low-resource model for limited hardware."
 }

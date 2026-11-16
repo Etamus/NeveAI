@@ -20,6 +20,8 @@
 	export let buttonClassName = 'text-gray-600 dark:text-gray-400';
 
 	export let chevron = true;
+	export let inlineChevron = false;
+	export let headerHover = true;
 	export let onAddLabel: string = '';
 	export let onAdd: null | Function = null;
 
@@ -129,7 +131,7 @@
 	});
 </script>
 
-<div bind:this={folderElement} class="relative {className}">
+<div bind:this={folderElement} data-sidebar-section={id} class="relative {className}">
 	{#if loaded}
 		{#if draggedOver}
 			<div
@@ -150,14 +152,21 @@
 				<!-- svelte-ignore a11y-no-static-element-interactions -->
 				<div
 					id="sidebar-folder-button"
-					class=" w-full group rounded-lg relative flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800 transition {buttonClassName}"
+					class=" w-full group rounded-lg relative flex items-center justify-between {headerHover ? 'hover:bg-gray-100 dark:hover:bg-gray-800' : ''} transition {buttonClassName}"
 				>
 					<button class="w-full py-1.5 pl-2 pr-2 flex items-center justify-between text-xs font-medium">
-						<div class="flex h-5 items-center pl-0.5 leading-5">
+						<div class="flex h-5 items-center gap-1.5 pl-0.5 leading-5">
 							{name}
+							{#if chevron && inlineChevron}
+								{#if open}
+									<ChevronDown className="size-3" strokeWidth="2" />
+								{:else}
+									<ChevronRight className="size-3" strokeWidth="2" />
+								{/if}
+							{/if}
 						</div>
 
-						{#if chevron}
+						{#if chevron && !inlineChevron}
 							<div class="p-[1px] {onAdd ? 'group-hover:invisible' : ''}">
 								{#if open}
 									<ChevronDown className="size-3" strokeWidth="2" />
@@ -167,6 +176,9 @@
 							</div>
 						{/if}
 					</button>
+					{#if $$slots.actions}
+						<div class="absolute right-1 top-1/2 -translate-y-1/2 z-10"><slot name="actions" /></div>
+					{/if}
 
 					{#if onAdd}
 						<button

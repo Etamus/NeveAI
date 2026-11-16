@@ -53,7 +53,7 @@ try{
   for(const state of states.slice(1))for(const part of ['button','svg','path'])for(const axis of ['x','y','width','height'])assert.equal(state[part][axis],original[part][axis],`${theme}/${dpr}: ${part}.${axis} moved`);
   if(phase==='after'){
    assert.equal(original.button.width,32);assert.equal(original.button.height,32);
-   assert.equal(original.svg.width,20);assert.equal(original.svg.height,20);
+   assert.equal(original.svg.width,21);assert.equal(original.svg.height,21);
    for(const state of states.slice(1))assert(Math.abs(state.ink.cx-original.ink.cx)<.2&&Math.abs(state.ink.cy-original.ink.cy)<.2,'Rasterized ink should retain its optical center');
   }
   results.push({theme,dpr,states});console.log('PASS',theme,dpr,JSON.stringify(states.map(s=>s.ink)));

@@ -90,7 +90,7 @@ async def monitor(samples):
         await asyncio.sleep(2)
 
 
-async def test_api(prompt=PROMPT, video_models=("minimax_h3", "vdn_h3")):
+async def test_api(prompt=PROMPT, video_models=("vdn_h3",)):
     results = []
     async with httpx.AsyncClient(base_url="http://127.0.0.1:8080", timeout=900) as client:
         catalog = await client.get("/api/models")
@@ -142,14 +142,12 @@ async def main(args):
         prompt=args.prompt or PROMPT
         if args.prompt_record:
             prompt=json.loads(args.prompt_record.read_text(encoding='utf8'))['original']
-        await test_api(prompt,args.model or ("minimax_h3", "vdn_h3"))
+        await test_api(prompt,args.model or ("vdn_h3",))
         return
-    from neveai.routers.video_generation import minimax_h3_runtime
     from neveai.routers.video_quality_generation import video15_runtime as vdn_h3_runtime
     cases = [
-        ("h3-text", minimax_h3_runtime, 0, 864, 480, 124),
         ("vdn-text", vdn_h3_runtime, 0, 864, 480, 124),
-        ("h3-first-frame", minimax_h3_runtime, 1, 480, 864, 124),
+        ("vdn-first-frame", vdn_h3_runtime, 1, 480, 864, 124),
         ("vdn-first-last", vdn_h3_runtime, 2, 864, 480, 196),
     ]
     results = []
@@ -166,7 +164,7 @@ async def main(args):
 
         images = []
         for extension in ("first", "last")[:references]:
-            source = OUTPUT / f"h3-text.{extension}.png"
+            source = OUTPUT / f"vdn-text.{extension}.png"
             images.append((source.name, source.read_bytes(), "image/png"))
         monitor_task = asyncio.create_task(monitor(gpu))
         try:
@@ -202,7 +200,7 @@ if __name__ == "__main__":
     parser.add_argument("--prompt")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--prompt-record", type=Path)
-    parser.add_argument("--model", action="append", choices=["minimax_h3", "vdn_h3"])
+    parser.add_argument("--model", action="append", choices=["vdn_h3"])
     args = parser.parse_args()
     if args.output:
         OUTPUT = args.output

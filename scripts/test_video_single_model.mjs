@@ -5,9 +5,9 @@ import {chromium} from '../logs/ui-image-26/node_modules/playwright/index.mjs';
 import {installMobileOfflineApi} from './fixtures/mobile-offline-api.mjs';
 
 const origin = 'http://localhost:5188';
-const output = 'logs/video-model-selector';
+const output = 'logs/video-single-model';
 const panelSelector = '[data-composer-dropdown-anchor="video-model-dropdown-container"]';
-const triggerSelector = '#video-model-dropdown-container > button';
+const triggerSelector = '[data-video-integration]';
 const chatHook = `onMount(() => {
  const fixtureSocket = (connected) => ({id:'video-selector-fixture',connected,on(){},off(){},emit(){},disconnect(){}});
  window.__videoFixture = {
@@ -27,7 +27,7 @@ const chatHook = `onMount(() => {
    if (kind === 'empty') history={currentId:null,messages:{}};
    else {
     const status = {action:'video_generation',done:true,resolution:'672p',duration:'8s',aspect_ratio:'9:16',
-     ...(kind === 'legacy' ? {} : {video_generation_model: kind === 'unknown' ? 'obsolete' : 'vdn_h3'})};
+     ...(kind === 'legacy' ? {} : {video_generation_model: kind === 'original' ? 'minimax_h3' : kind === 'unknown' ? 'obsolete' : 'vdn_h3'})};
     history={currentId:'reply',messages:{
      original:{id:'original',parentId:null,childrenIds:['reply'],role:'user',content:'Fixture video prompt',models:[model.id]},
      reply:{id:'reply',parentId:'original',childrenIds:[],role:'assistant',content:'Fixture result',done:true,model:model.id,statusHistory:[status]}
@@ -120,19 +120,7 @@ try {
     await page.evaluate(kind => window.__videoFixture.seed(kind),kind);
     await page.locator(triggerSelector).waitFor({state:'visible'});
    }
-   async function select(label) {
-    await page.locator(triggerSelector).click();
-    const panel = page.locator(panelSelector);
-    await panel.waitFor({state:'visible'});
-    const removed = await panel.getByRole('button',{name:label,exact:true}).evaluate(async (button,selector) => {
-     button.click();
-     await new Promise(requestAnimationFrame);
-     return !document.querySelector(selector);
-    },panelSelector);
-    assert(removed,'Dropdown persisted after the next frame (stale exit animation)');
-    assert.equal((await page.locator(triggerSelector).innerText()).trim(),label);
-   }
-   async function assertRequest(action,expected,changeTo) {
+   async function assertRequest(action,expected) {
     console.log(name,action,expected);
     const count = captured.length;
     await page.evaluate(action => {
@@ -142,7 +130,7 @@ try {
     await page.waitForFunction(() => window.__videoWaitingForSocket || window.__videoActionError, null, {timeout:15000});
     assert.equal(await page.evaluate(() => window.__videoActionError),null);
     assert.equal(captured.length,count,'Request escaped the disconnected fixture socket');
-    await select(changeTo);
+    await page.evaluate(() => localStorage.setItem('neveai.videoModel','minimax_h3'));
     const response = page.waitForResponse(response => response.url().endsWith('/api/chat/completions'),{timeout:15000});
     await page.evaluate(() => window.__videoFixture.release());
     await page.waitForFunction(() => !window.__videoFixture.state().submittingPrompt && !window.__videoActionError);
@@ -171,56 +159,44 @@ try {
     await page.waitForTimeout(150);
    }
    assert.deepEqual(forbidden,[],'Selecting a media integration must not unload the LLM');
-   assert.equal((await page.locator(triggerSelector).innerText()).trim(),'Neve Video 1');
-   await page.locator(triggerSelector).click();
-   const panel = page.locator(panelSelector);
-   await panel.waitFor({state:'visible'});
-   assert.deepEqual((await panel.getByRole('button').allTextContents()).map(label => label.trim()),['Neve Video 1','Neve Video 1.5']);
-   const bounds = await panel.boundingBox();
-   assert(bounds && bounds.x>=0 && bounds.y>=0 && bounds.x+bounds.width<=viewport.width && bounds.y+bounds.height<=viewport.height);
-   await page.screenshot({path:`${output}/${name}-open.png`});
+   assert.equal(await page.locator('[data-video-model-label]').count(),0);
+   assert.equal(await page.locator('#video-model-dropdown-container').count(),0);
+   assert.equal(await page.locator(panelSelector).count(),0);
    if(name==='desktop'){
     await page.locator('#video-resolution-dropdown-container > button').click();
-    assert.equal(await panel.count(),0,'Opening resolution must dismiss the model selector immediately');
     await page.locator('#video-resolution-dropdown-container > button').click();
    }else{
     assert.equal(await page.locator('#video-resolution-dropdown-container').count(),0);
-    await page.mouse.click(viewport.width-5,100);
-    await panel.waitFor({state:'detached'});
    }
-   await select('Neve Video 1.5');
    assert.equal(await page.evaluate(() => localStorage.getItem('neveai.videoModel')),'vdn_h3');
    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth>innerWidth),false);
    await page.screenshot({path:`${output}/${name}-selected.png`});
    await boot();
-   assert.equal((await page.locator(triggerSelector).innerText()).trim(),'Neve Video 1.5','Selection must survive reload');
+   assert.equal(await page.locator('[data-video-model-label]').count(),0);
 
-   const sent = await assertRequest('submit','vdn_h3','Neve Video 1');
+   const sent = await assertRequest('submit','vdn_h3');
    assert.equal(sent.parent_message.video_generation_features.video_generation_model,'vdn_h3');
    await seed('status');
-   await select('Neve Video 1');
-   const regenerated = await assertRequest('regenerate','vdn_h3','Neve Video 1');
+   const regenerated = await assertRequest('regenerate','vdn_h3');
    assert.equal(regenerated.features.video_generation_resolution,name==='mobile'?'480p':'672p');
    assert.equal(regenerated.features.video_generation_duration,name==='mobile'?'5s':'8s');
    await seed('status');
    await page.waitForFunction(() => window.__editVideoRequest);
-   await select('Neve Video 1');
-   const edited = await assertRequest('edit','vdn_h3','Neve Video 1');
+   const edited = await assertRequest('edit','vdn_h3');
    assert(edited.messages.some(message => message.content?.includes('Edited fixture video prompt')));
-   for (const kind of ['legacy','unknown']) {
+   for (const kind of ['legacy','unknown','original']) {
     await seed(kind);
-    await select('Neve Video 1.5');
-    await assertRequest('regenerate','minimax_h3','Neve Video 1.5');
+    await assertRequest('regenerate','vdn_h3');
    }
-   for (const saved of ['obsolete','']) {
+   for (const saved of ['obsolete','','minimax_h3']) {
     await page.evaluate(saved => {localStorage.setItem('neveai.videoModel',saved);sessionStorage.clear();},saved);
     await boot();
-    assert.equal((await page.locator(triggerSelector).innerText()).trim(),'Neve Video 1');
+    assert.equal(await page.locator('[data-video-model-label]').count(),0);
    }
    assert.deepEqual(errors,[]);
    assert.deepEqual(forbidden,[]);
    results.push({name,viewport,requests:captured.map(body => body.features.video_generation_model),
-    labels:true,immediateClose:true,responsive:true,persistence:true,frozenRequest:true,
+    labels:true,noModelDropdown:true,responsive:true,persistence:true,frozenRequest:true,
     statusFieldRestoration:true,edit:true,legacyDefaults:true,actualGenerations:0,chatPersistence:0,errors});
   } catch (error) {
    for (const page of context.pages()) {

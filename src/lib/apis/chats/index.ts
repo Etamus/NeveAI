@@ -1,5 +1,6 @@
 import { NEVEAI_API_BASE_URL } from '$lib/constants';
 import { getTimeRange } from '$lib/utils';
+import { getSidebarChatSort } from '$lib/utils/sidebarChatSort';
 
 export const createNewChat = async (token: string, chat: object, folderId: string | null) => {
 	let error = null;
@@ -72,6 +73,9 @@ export const getChatList = async (
 ) => {
 	let error = null;
 	const searchParams = new URLSearchParams();
+	const sidebarSort = !include_pinned && !include_folders;
+	const order = sidebarSort ? getSidebarChatSort() : 'recent';
+	if (order === 'name') searchParams.set('sort', 'name');
 
 	if (page !== null) {
 		searchParams.append('page', `${page}`);
@@ -113,6 +117,7 @@ export const getChatList = async (
 	if (!res) {
 		return [];
 	}
+	if (sidebarSort && order !== getSidebarChatSort()) return getChatList(token, page, include_pinned, include_folders);
 
 	return res.map((chat) => ({
 		...chat,

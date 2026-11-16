@@ -7,7 +7,7 @@ const results=[];
 try {
  for(const mobile of [false,true])for(const theme of ['light','dark']){
   const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1440,height:1000},isMobile:mobile,hasTouch:mobile});
-  const page=await context.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const page=await context.newPage();const errors=[];page.on('pageerror',error=>{errors.push(error.message);console.error(error.stack);});
   await page.addInitScript(theme=>{localStorage.setItem('theme',theme);localStorage.setItem('neveai.language','pt-BR');},theme);
   let job={status:'completed',versions:{neve:'v1.0.0',llama:'b1'}};let selected=[];let preferences=null;let persisted=[];
   let availability={current_tag:'v3.1.83',latest_tag:'v999.0.0',neve_update_available:true,llama_cpp:{current_tag:'b1',latest_tag:'b999999',update_available:true}};
@@ -48,6 +48,9 @@ try {
   };
   await tab(/Notificações|Notifications/);
   const switches=page.locator('#tab-notifications [role="switch"]');assert.equal(await switches.count(),4);
+  const notificationWeights=await page.locator('#notification-master-label,#notification-runtime-label').evaluateAll(nodes=>nodes.map(node=>getComputedStyle(node).fontWeight));
+  assert.deepEqual(notificationWeights,['400','400']);
+  assert.equal(await page.locator('#notification-runtime-label').evaluate(node=>parseFloat(getComputedStyle(node.parentElement).marginTop)/parseFloat(getComputedStyle(document.documentElement).fontSize)),1);
   for(let i=0;i<4;i++)assert.equal(await switches.nth(i).getAttribute('aria-checked'),'true');
   await switches.nth(1).click();
   for(let i=0;i<100 && !persisted.length;i++)await page.waitForTimeout(100);
@@ -75,7 +78,7 @@ try {
   await page.locator('#tab-updates h3').getByText('Atualização disponível (v999.0.0)',{exact:true}).waitFor();
   assert.equal(await page.locator('#tab-updates').getByText('v1.0.0',{exact:true}).count(),0);
   assert.equal(await page.locator('#tab-updates input[type="checkbox"]:not([hidden])').count(),0);
-  assert.equal(await page.locator('#tab-updates header svg').count(),0);
+  assert.equal(await page.locator('#tab-updates header h3 svg').count(),0);
   assert.equal(await page.locator('[data-update-component]').count(),1);
   assert.equal(await page.locator('[data-update-component="neve"]').count(),0);
   assert.equal(await page.locator('#tab-updates h3').innerText(),'Atualização disponível (v999.0.0)');
@@ -88,14 +91,24 @@ try {
    return {top:box.top,bottom:box.bottom,left:box.left,right:box.right,borderTop:parseFloat(style.borderTopWidth),borderBottom:parseFloat(style.borderBottomWidth),borderLeft:parseFloat(style.borderLeftWidth),borderRight:parseFloat(style.borderRightWidth)};
   }));
   const headerBottom=await page.locator('#tab-updates header').evaluate(node=>({bottom:node.getBoundingClientRect().bottom,border:parseFloat(getComputedStyle(node).borderBottomWidth)}));
-  assert(Math.abs(rows[0].top-headerBottom.bottom)<0.1);assert.equal(headerBottom.border,1);
+  assert(rows[0].bottom<headerBottom.bottom);assert.equal(headerBottom.border,0);
   assert(rows.every(row=>row.borderLeft===0&&row.borderRight===0));
   assert((await page.locator('#llama-updates-label').boundingBox()).y>(await page.locator('#update-notifications-label').boundingBox()).y);
   const header=await page.locator('#tab-updates header').boundingBox();
   const button=await page.locator('#tab-updates .update-action').boundingBox();
   const padding=await page.locator('#tab-updates header').evaluate(node=>parseFloat(getComputedStyle(node).paddingRight));
   assert(Math.abs(button.x+button.width-header.x-header.width+padding)<1);
-  assert.equal(button.height,30);
+  assert(Math.abs(button.height-button.width)<0.1,'icon action is square');
+  assert.equal(await page.locator('#tab-updates .update-action svg').count(),1);
+  assert.equal((await page.locator('#tab-updates .update-action').innerText()).trim(),'','update action is icon only');
+  const actionColors=await page.locator('#tab-updates .update-action').evaluate(button=>{
+   const reference=document.createElement('button');reference.className='text-gray-500 dark:text-gray-400';document.body.append(reference);
+   const actual=getComputedStyle(button),expected=getComputedStyle(reference);
+   const result={color:actual.color,expected:expected.color,background:actual.backgroundColor};reference.remove();return result;
+  });
+  assert.equal(actionColors.color,actionColors.expected,'same icon color as import model');
+  assert.equal(actionColors.background,'rgba(0, 0, 0, 0)','no inverted solid background');
+  assert(Math.abs(button.y+button.height/2-header.y-header.height/2)<1,'Update action must be centered within the card');
   await page.screenshot({path:`logs/settings-updates-available-${mobile?'mobile':'desktop'}-${theme}.png`});
   const llama=page.getByRole('switch',{name:'Receber atualizações do llama.cpp',exact:true});
   await llama.waitFor();
@@ -116,6 +129,10 @@ try {
   const phaseBox=await page.locator('[data-update-phase]').boundingBox();
   const trackBox=await page.getByRole('progressbar').locator('.h-1').boundingBox();
   assert(phaseBox.y>trackBox.y+trackBox.height);
+  const downloadHeader=await page.locator('#tab-updates header').boundingBox();
+  const progressPadding=await page.getByRole('progressbar').evaluate(node=>parseFloat(getComputedStyle(node).paddingTop));
+  assert(Math.abs(trackBox.y-downloadHeader.y-downloadHeader.height-progressPadding)<1);
+  assert(progressPadding<6);
   assert.equal(await page.locator('[data-update-component]').count(),0);
   assert.equal(await page.locator('#tab-updates header').count(),1);
   assert.notEqual(await page.locator('#tab-updates > section').evaluate(node=>getComputedStyle(node).backgroundColor),'rgba(0, 0, 0, 0)');
@@ -129,12 +146,16 @@ try {
   job={...job,status:'ready',progress:100};
   await page.locator('#tab-updates').getByRole('button',{name:'Reiniciar',exact:true}).waitFor({timeout:4000});
   assert.equal(await page.locator('#tab-updates h3').innerText(),'Reinicie para aplicar as alterações');
+  assert.equal(await page.locator('[data-update-component]').count(),0);
   await page.screenshot({path:`logs/settings-updates-ready-${mobile?'mobile':'desktop'}-${theme}.png`});
   await page.reload({waitUntil:'networkidle'});await menu();await page.getByRole('menuitem').filter({hasText:'Configurações'}).click();await tab('Atualizações');
   await page.locator('#tab-updates').getByRole('button',{name:'Reiniciar',exact:true}).waitFor();
   assert.equal(await page.locator('#tab-updates h3').innerText(),'Reinicie para aplicar as alterações');
+  const beforeRestart=await page.locator('#tab-updates section,#tab-updates header,#tab-updates h3').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,height:r.height};}));
   await page.locator('#tab-updates').getByRole('button',{name:'Reiniciar',exact:true}).click();
   await page.getByText('Reiniciando...', {exact:true}).waitFor();
+  const afterRestart=await page.locator('#tab-updates section,#tab-updates header,#tab-updates h3').evaluateAll(nodes=>nodes.map(node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,height:r.height};}));
+  assert.deepEqual(afterRestart,beforeRestart,'Restart must not shift the card, header or text');
   await tab('Sobre');assert.equal(await page.locator('#tab-about button').filter({hasText:/Atualizar/}).count(),0);
   await page.keyboard.press('Escape');await menu();
   await page.getByRole('menuitem').filter({hasText:'Personalização'}).click();await page.locator('#tab-personalization').waitFor();
@@ -143,7 +164,7 @@ try {
   await page.getByRole('menuitem').filter({hasText:'Configurações'}).click();await tab('Sobre');await page.locator('#tab-about').waitFor();
   job={status:'completed'};availability={current_tag:'v3.1.83',latest_tag:'v3.1.83',neve_update_available:false,llama_cpp:{current_tag:'b1',latest_tag:'b1',update_available:false}};
   await page.reload({waitUntil:'networkidle'});await menu();await page.getByRole('menuitem').filter({hasText:'Configurações'}).click();await tab('Atualizações');
-  await page.locator('#tab-updates h3').getByText('Você está na versão mais recente',{exact:true}).waitFor();
+  await page.locator('#tab-updates h3').getByText('Tudo está atualizado',{exact:true}).waitFor();
   assert.equal(await page.locator('#tab-updates h3 svg').count(),1);
   assert.notEqual(await page.locator('#tab-updates > section').evaluate(node=>getComputedStyle(node).backgroundColor),'rgba(0, 0, 0, 0)');
   assert.equal(await page.locator('[data-update-component]').count(),0);

@@ -17,6 +17,8 @@
 
 	import { onMount, tick, setContext, onDestroy } from 'svelte';
 	import { notifyDesktopReady } from '$lib/utils/desktopWindow';
+	import { installTitleTooltips } from '$lib/utils/titleTooltips';
+	onMount(() => installTitleTooltips(document));
 	import { applyModelAvailability, invalidateModelAvailability, refreshModelAvailability } from '$lib/stores/modelAvailability';
 	import {
 		config,

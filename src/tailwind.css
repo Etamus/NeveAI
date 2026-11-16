@@ -99,4 +99,21 @@
 	}
 }
 
+@layer components {
+	.search-field {
+		@apply w-60 max-w-full;
+	}
+	.search-surface {
+		@apply h-8 rounded-lg bg-gray-100 dark:bg-gray-800;
+	}
+	.modal .search-surface,
+	.library-search.search-surface {
+		background-color: oklch(0.96 0 0);
+	}
+	.dark .modal .search-surface,
+	.dark .library-search.search-surface {
+		background-color: oklch(0.30 0 0);
+	}
+}
+
 @custom-variant hover (&:hover);

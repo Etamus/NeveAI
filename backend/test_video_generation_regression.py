@@ -94,6 +94,7 @@ class VideoGraphTests(unittest.TestCase):
                             })
                             self.assertEqual(graph["15"]["inputs"].pop("audio"), ["18", 0])
                             baseline = old("Scene", 42, refs[0], **kwargs)
+                            baseline['6']['inputs']['unet_name'] = graph['6']['inputs']['unet_name']
                             # Allow the same regression to run after the audio change is committed.
                             baseline.pop("17", None)
                             baseline.pop("18", None)
@@ -169,7 +170,7 @@ class VideoHandlerTests(unittest.IsolatedAsyncioTestCase):
             model_manager=self.model_manager,
             media_model_standby=media_model_standby,
             _prepare_init_image_sync=lambda *args: prepared,
-            minimax_h3_runtime=self.runtime,
+            vdn_h3_runtime=self.runtime,
             upload_file_handler=self.upload,
         )
         exec(
@@ -224,7 +225,7 @@ class VideoHandlerTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(kwargs["last_image"] is not None, count == 2)
                     self.assertEqual(
                         self.upload.call_args.kwargs["metadata"]["source"],
-                        "minimax-h3-fl2va-w4a8",
+                        "minimax-h3-fl2va-w6a8",
                     )
                     self.assertTrue(self.metadata["skip_llm"])
                     self.assertTrue(any(e["type"] == "files" for e in self.events))

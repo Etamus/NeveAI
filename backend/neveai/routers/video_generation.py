@@ -36,6 +36,7 @@ ProgressCallback = Callable[[str, Optional[int]], Awaitable[None]]
 
 CLIPPROJ_COMMIT = "c01ba8fb8f41b4f2094dbd0b185cdc238fb6134c"
 TURBO_NODE_COMMIT = "4274783a23afcfdbea3b4876cb79effd6c510785"
+# Opaque shared-environment receipt, retained to avoid reinstalling a compatible runtime.
 VIDEO_RUNTIME_REVISION = "neve-minimax-h3-fl2va-w4a8-v2-comfy-0.43"
 
 VIDEO_ROOT = CACHE_DIR / "video_generation"
@@ -49,7 +50,7 @@ COMFYUI_CUSTOM_NODES = VIDEO_ROOT / "custom_nodes"
 COMFYUI_MARKER = VIDEO_ROOT / ".neve-runtime-ready"
 VIDEO_HF_CACHE = VIDEO_ROOT / "huggingface"
 
-DIFFUSION_MODEL = "minimax_h3_fl2va_pruned_w4a8_mixed.safetensors"
+DIFFUSION_MODEL = "minimax_h3_fl2va_pruned_w6a8.safetensors"
 TEXT_ENCODER = "qwen3vl_4b_fp8_scaled.safetensors"
 CLIP_PROJECTION = "mmh3-4b-ClipProj-v3.1.safetensors"
 VIDEO_VAE = "minimax_h3_video_vae_int8_convrot.safetensors"
@@ -278,7 +279,6 @@ class MiniMaxH3Runtime:
     @staticmethod
     def _model_paths() -> tuple[Path, ...]:
         return (
-            COMFYUI_MODELS / "diffusion_models" / DIFFUSION_MODEL,
             COMFYUI_MODELS / "text_encoders" / TEXT_ENCODER,
             COMFYUI_MODELS / "clip_projections" / CLIP_PROJECTION,
             COMFYUI_MODELS / "vae" / VIDEO_VAE,
@@ -460,7 +460,6 @@ class MiniMaxH3Runtime:
         script = f"""
 from huggingface_hub import hf_hub_download
 items = {[
-    ('Kijai/MiniMax-H3-experimental', DIFFUSION_MODEL, str(COMFYUI_MODELS / 'diffusion_models')),
     ('Comfy-Org/Krea-2', f'text_encoders/{TEXT_ENCODER}', str(COMFYUI_MODELS)),
     ('NicoLab28/ClipProj-MiniMax-H3', CLIP_PROJECTION, str(COMFYUI_MODELS / 'clip_projections')),
     ('Comfy-Org/MiniMax-H3', f'vae/{VIDEO_VAE}', str(COMFYUI_MODELS)),
@@ -1124,7 +1123,8 @@ for repo_id, filename, local_dir in items:
         await self.stop()
 
 
-minimax_h3_runtime = MiniMaxH3Runtime()
+# Preparation of the environment/assets shared by the public Video 1.5 runtime.
+shared_h3_runtime = MiniMaxH3Runtime()
 
 
 @router.get("/status")
@@ -1132,12 +1132,11 @@ async def get_video_generation_status(request: Request, user=Depends(get_verifie
     from neveai.routers.video_quality_generation import video15_runtime as vdn_h3_runtime
     return {
         "enabled": request.app.state.config.ENABLE_VIDEO_GENERATION,
-        "installed": minimax_h3_runtime.is_installed,
-        "models_ready": minimax_h3_runtime.models_ready,
-        "running": minimax_h3_runtime.is_running or vdn_h3_runtime.is_running,
-        "model": "MiniMax H3 FL2VA W4A8",
+        "installed": vdn_h3_runtime.is_installed,
+        "models_ready": vdn_h3_runtime.models_ready,
+        "running": vdn_h3_runtime.is_running,
+        "model": "MiniMax H3 FL2VA W6A8",
         "models": {
-            "minimax_h3": {"name": "Neve Video 1", "ready": minimax_h3_runtime.models_ready},
             "vdn_h3": {"name": "Neve Video 1.5", "ready": vdn_h3_runtime.models_ready},
         },
     }
@@ -1151,7 +1150,7 @@ async def cancel_video_generation(request: Request, user=Depends(get_verified_us
         request.app.state.config.USER_PERMISSIONS,
     ):
         raise HTTPException(status_code=403, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
-    await minimax_h3_runtime.cancel()
     from neveai.routers.video_quality_generation import video15_runtime as vdn_h3_runtime
     await vdn_h3_runtime.cancel()
+    await shared_h3_runtime.cancel()
     return {"success": True}

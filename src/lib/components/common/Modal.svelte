@@ -56,6 +56,16 @@
 	// https://www.w3.org/WAI/WCAG21/Understanding/focus-order.html
 	// https://www.w3.org/WAI/WCAG21/Understanding/keyboard.html
 	let focusTrap: FocusTrap.FocusTrap | null = null;
+	let nextFocusTarget: HTMLElement | null = null;
+	// Nested popups may request a safe return target without reselecting an input.
+	setContext('modal-request-focus', (element: HTMLElement) => { nextFocusTarget = element; });
+	const resolveInitialFocus = () => {
+		const target = nextFocusTarget;
+		nextFocusTarget = null;
+		if (!target?.isConnected || !modalElement?.contains(target) || !target.getClientRects().length) return initialFocus;
+		const active = document.activeElement;
+		return active instanceof HTMLElement && modalElement.contains(active) ? active : target;
+	};
 	let modalInBody = false;
 
 	const sizeToWidth = (size) => {
@@ -121,7 +131,7 @@
 	$: if (show && modalElement) {
 		appendModalElement();
 		focusTrap = FocusTrap.createFocusTrap(modalElement, {
-			initialFocus,
+			initialFocus: resolveInitialFocus,
 			checkCanFocusTrap: initialFocus ? () => tick() : undefined,
 			allowOutsideClick: (e) => {
 				const target = e.target as Element;

@@ -25,6 +25,7 @@
 
 	import Sidebar from '$lib/components/layout/Sidebar.svelte';
 	import SettingsModal from '$lib/components/chat/SettingsModal.svelte';
+	import ModelsModal from '$lib/components/chat/ModelsModal.svelte';
 	import NeveUpdateToast from '$lib/components/chat/NeveUpdateToast.svelte';
 	import { toastCategoryEnabled } from '$lib/utils/toastPreferences';
 	import DownloadProgressToast from '$lib/components/chat/DownloadNeveModelsProgressToast.svelte';
@@ -462,6 +463,9 @@
 </script>
 
 <SettingsModal bind:show={$showSettings} />
+{#if $user?.role === 'admin'}
+	<ModelsModal />
+{/if}
 
 {#if updateToastShownVersion}
 	<div data-neve-toast data-neve-toast-kind="update" role="status" aria-live="polite" class="fixed right-[9px] top-7 z-[1000000000] max-[600px]:left-[19px] max-[600px]:right-auto max-[600px]:top-4" bind:clientHeight={updateToastHeight}>
@@ -484,6 +488,7 @@
 			label={$neveDownloadToast.label}
 			cancelling={$neveDownloadToast.cancelling}
 			onCancel={$neveDownloadToast.onCancel}
+			onPause={$neveDownloadToast.onPause}
 		/>
 	</div>
 {/if}

@@ -15,6 +15,8 @@
 	import EditMemoryModal from './EditMemoryModal.svelte';
 	import localizedFormat from 'dayjs/plugin/localizedFormat';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
+	import Clear from '$lib/components/icons/Clear.svelte';
+	import AddFile from '$lib/components/icons/AddFile.svelte';
 
 	const i18n = getContext('i18n');
 	dayjs.extend(localizedFormat);
@@ -116,27 +118,23 @@
 	}
 </script>
 
-<Modal size="md" animated={false} bind:show>
-	<div>
+<Modal size="md" animated={false} initialFocus="[data-memory-manager]" bind:show>
+	<div data-memory-manager tabindex="-1" class="outline-none">
 		<div class=" flex justify-between dark:text-gray-300 px-5 pt-4 pb-1">
 			<div class=" text-lg font-medium self-center"><MobileModalTitle>{$i18n.t('Memory')}</MobileModalTitle></div>
 			<div class="flex items-center gap-1.5">
 				<button
-					class="px-4 py-1.5 text-xs font-medium bg-black text-white dark:bg-white dark:text-black hover:opacity-90 transition rounded-lg"
-					on:click={() => {
-						showAddMemoryModal = true;
-					}}>{$i18n.t('Adicionar')}</button
-				>
-				<button
-					class="px-4 py-1.5 text-xs font-medium bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 transition rounded-lg"
+					type="button" aria-label={$i18n.t('Limpar')} title={$i18n.t('Limpar')}
+					class="grid size-8 place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
 					on:click={() => {
 						if (memories.length > 0) {
 							showClearConfirmDialog = true;
 						} else {
 							toast.error($i18n.t('No memories to clear'));
 						}
-					}}>{$i18n.t('Limpar')}</button
+					}}><Clear /></button
 				>
+				<button type="button" aria-label={$i18n.t('Adicionar')} title={$i18n.t('Adicionar')} class="grid size-8 place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" on:click={() => { showAddMemoryModal = true; }}><AddFile /></button>
 			</div>
 		</div>
 
@@ -147,20 +145,26 @@
 				{#if loadFailed && !hasLoaded}
 					<div class="flex h-full w-full items-center justify-center text-sm text-gray-500">{$i18n.t('Failed to load memories')}</div>
 				{:else if memories.length > 0}
-					<div class="text-left text-sm w-full mb-4 overflow-y-scroll">
-						<div class="relative overflow-x-auto">
-							<table class="w-full text-sm text-left text-gray-600 dark:text-gray-400 table-auto">
+					<div class="flex min-h-0 flex-1 flex-col text-left text-sm w-full mb-3 overflow-hidden">
+						<div data-memory-list-header class="shrink-0 overflow-hidden [scrollbar-gutter:stable]">
+							<table class="w-full table-fixed text-sm text-left text-gray-600 dark:text-gray-400">
+								<colgroup><col /><col class="hidden md:table-column" style="width: 14rem" /><col style="width: 6rem" /></colgroup>
 								<thead
 									class="text-xs text-gray-700 bg-transparent dark:text-gray-200 border-b-2 border-gray-50 dark:border-gray-850/30"
 								>
 									<tr>
 										<th scope="col" class="px-3 py-2"> {$i18n.t('Name')} </th>
-										<th scope="col" class="px-3 py-2 hidden md:flex">
+										<th scope="col" class="px-3 py-2 hidden md:table-cell">
 											{$i18n.t('Last Modified')}
 										</th>
 										<th scope="col" class="px-3 py-2 text-right" />
 									</tr>
 								</thead>
+							</table>
+						</div>
+						<div data-memory-list-body class="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+							<table class="w-full table-fixed text-sm text-left text-gray-600 dark:text-gray-400">
+								<colgroup><col /><col class="hidden md:table-column" style="width: 14rem" /><col style="width: 6rem" /></colgroup>
 								<tbody>
 									{#each memories as memory}
 										<tr class="border-b border-gray-50 dark:border-gray-850/30 items-center">
@@ -169,8 +173,8 @@
 													{memory.content}
 												</div>
 											</td>
-											<td class=" px-3 py-1 hidden md:flex h-[2.5rem]">
-												<div class="my-auto whitespace-nowrap">
+											<td class="px-3 py-1 hidden md:table-cell h-[2.5rem]">
+												<div class="my-auto truncate whitespace-nowrap" title={dayjs(memory.updated_at * 1000).format('LLL')}>
 													{dayjs(memory.updated_at * 1000).format('LLL')}
 												</div>
 											</td>

@@ -34,6 +34,7 @@
 	let themeSwitchGeneration = 0;
 
 	let enableMessageQueue = true;
+	let enableSuggestions = true;
 	let temporaryChatByDefault = false;
 	let showFloatingActionButtons = true;
 	let floatingActionButtons = null;
@@ -117,6 +118,7 @@
 		selectedLanguage = getLanguagePreference();
 
 		enableMessageQueue = $settings?.enableMessageQueue ?? true;
+		enableSuggestions = $settings?.enableSuggestions ?? true;
 		temporaryChatByDefault = $settings?.temporaryChatByDefault ?? false;
 		showFloatingActionButtons = $settings?.showFloatingActionButtons ?? true;
 		floatingActionButtons = $settings?.floatingActionButtons ?? null;
@@ -329,6 +331,13 @@
 							}}
 						/>
 					</div>
+				</div>
+			</div>
+
+			<div class="py-0.5 flex w-full justify-between">
+				<div id="enable-suggestions-label" class="self-center text-sm">{$i18n.t('Enable suggestions')}</div>
+				<div class="flex items-center gap-2 p-1">
+					<Switch ariaLabelledbyId="enable-suggestions-label" bind:state={enableSuggestions} on:change={() => saveSettings({ enableSuggestions })} />
 				</div>
 			</div>
 

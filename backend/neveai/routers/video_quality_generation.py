@@ -30,7 +30,7 @@ class NeveVideo15Runtime(h3.MiniMaxH3Runtime):
         return super().models_ready and self._quality_model_ready()
 
     async def prepare(self, progress):
-        await h3.minimax_h3_runtime.prepare(progress)
+        await h3.shared_h3_runtime.prepare(progress)
         async with self._runtime_lock:
             if self._quality_model_ready():
                 return

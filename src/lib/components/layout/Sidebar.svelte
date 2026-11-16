@@ -32,10 +32,14 @@
 	import PencilSquare from '../icons/PencilSquare.svelte';
 	import Search from '../icons/Search.svelte';
 	import Library from '../icons/Library.svelte';
+	import Blocks from '../icons/Blocks.svelte';
+	import { showLocalModelsModal } from '$lib/stores';
 	import SearchModal from './SearchModal.svelte';
 	import FolderModal from './Sidebar/Folders/FolderModal.svelte';
 	import Sidebar from '../icons/Sidebar.svelte';
 	import HotkeyHint from '../common/HotkeyHint.svelte';
+	import ChatSortMenu from './Sidebar/ChatSortMenu.svelte';
+	import { getSidebarChatSort, saveSidebarChatSort, sortSidebarChats, type SidebarChatSort } from '$lib/utils/sidebarChatSort';
 
 
 	let scrollTop = 0;
@@ -52,6 +56,15 @@
 	// Pagination variables
 	let chatListLoading = false;
 	let allChatsLoaded = false;
+	let chatSort: SidebarChatSort = 'recent';
+	let chatListGeneration = 0;
+	$: sortedChats = sortSidebarChats($chats ?? [], chatSort);
+	const changeChatSort = async (order: SidebarChatSort) => {
+		if (order === chatSort) return;
+		chatSort = order;
+		saveSidebarChatSort(order);
+		await refreshChats();
+	};
 
 	let showCreateFolderModal = false;
 
@@ -177,11 +190,29 @@
 		}
 	};
 
-	const initChatList = async () => {
-		// Reset pagination variables
+	const refreshChats = async () => {
+		const generation = ++chatListGeneration;
 		currentChatPage.set(1);
 		allChatsLoaded = false;
 		scrollPaginationEnabled.set(false);
+		chatListLoading = true;
+		try {
+			const items = await getChatList(localStorage.token, 1);
+			if (generation !== chatListGeneration) return;
+			chats.set(items);
+			allChatsLoaded = items.length === 0;
+		} catch (error) {
+			console.error('Failed to load chat list:', error);
+			if (generation === chatListGeneration) allChatsLoaded = true;
+		} finally {
+			if (generation === chatListGeneration) {
+				chatListLoading = false;
+				scrollPaginationEnabled.set(true);
+			}
+		}
+	};
+
+	const initChatList = async () => {
 
 		initFolders();
 
@@ -204,35 +235,26 @@
 					pinnedChats.set([]);
 				}
 			})(),
-			(async () => {
-				try {
-					const _chats = await getChatList(localStorage.token, $currentChatPage);
-					chats.set(_chats);
-				} catch (e) {
-					console.error('Failed to load chat list:', e);
-					chats.set([]);
-				}
-			})()
+			refreshChats()
 		]);
-
-		// Enable pagination
-		scrollPaginationEnabled.set(true);
 	};
 
 	const loadMoreChats = async () => {
+		if (chatListLoading || allChatsLoaded || !$scrollPaginationEnabled) return;
+		const generation = chatListGeneration;
+		const page = $currentChatPage + 1;
 		chatListLoading = true;
-
-		currentChatPage.set($currentChatPage + 1);
-
-		let newChatList = [];
-
-		newChatList = await getChatList(localStorage.token, $currentChatPage);
-
-		// once the bottom of the list has been reached (no results) there is no need to continue querying
-		allChatsLoaded = newChatList.length === 0;
-		await chats.set([...($chats ? $chats : []), ...newChatList]);
-
-		chatListLoading = false;
+		try {
+			const items = await getChatList(localStorage.token, page);
+			if (generation !== chatListGeneration) return;
+			currentChatPage.set(page);
+			allChatsLoaded = items.length === 0;
+			chats.set([...new Map([...($chats ?? []), ...items].map(item => [item.id, item])).values()]);
+		} catch (error) {
+			console.error('Failed to load more chats:', error);
+		} finally {
+			if (generation === chatListGeneration) chatListLoading = false;
+		}
 	};
 
 	const importChatHandler = async (items, pinned = false, folderId = null) => {
@@ -399,6 +421,7 @@
 	};
 
 	onMount(() => {
+		chatSort = getSidebarChatSort();
 		// Clear any stale collapsed state for the sidebar-chats folder
 		localStorage.removeItem('sidebar-chats-folder-state');
 
@@ -712,6 +735,13 @@
 					</Tooltip>
 				</div>
 
+				{#if $user?.role === 'admin'}
+					<Tooltip content={$i18n.t('Models')} placement="right">
+						<button type="button" aria-label={$i18n.t('Models')} class="flex size-9 items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800" on:click|stopPropagation={() => { $showLocalModelsModal = true; }}>
+							<Blocks className="size-4.5" />
+						</button>
+					</Tooltip>
+				{/if}
 				<Tooltip content={$i18n.t('Library')} placement="right">
 					<a
 						href="/library"
@@ -876,6 +906,13 @@
 
 				</div>
 
+				{#if $user?.role === 'admin'}
+					<div class="px-[0.4375rem] pb-0.5 flex text-gray-800 dark:text-gray-200">
+						<button type="button" aria-label={$i18n.t('Models')} class="grow flex items-center gap-3 rounded-lg px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none" on:click={() => { $showLocalModelsModal = true; }}>
+							<Blocks className="size-4.5" /><span class="text-sm">{$i18n.t('Models')}</span>
+						</button>
+					</div>
+				{/if}
 				<div class="px-[0.4375rem] pb-0.5 flex text-gray-800 dark:text-gray-200">
 					<a href="/library" class="grow flex items-center gap-3 rounded-lg px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none" aria-label={$i18n.t('Library')} on:click={libraryClickHandler}>
 						<Library /><span class="text-sm">{$i18n.t('Library')}</span>
@@ -888,6 +925,8 @@
 				{#if $config?.features?.enable_folders && ($user?.role === 'admin' || ($user?.permissions?.features?.folders ?? true))}
 					<Folder
 						id="sidebar-folders"
+						inlineChevron={true}
+						headerHover={false}
 						bind:open={showFolders}
 						className="px-2 mt-0.5"
 						name={$i18n.t('Folders')}
@@ -946,6 +985,8 @@
 				{#if $pinnedChats.length > 0}
 					<Folder
 						id="sidebar-pinned-chats"
+						inlineChevron={true}
+						headerHover={false}
 						className="px-2 mt-0.5"
 						name={$i18n.t('Pinned')}
 						chevron={true}
@@ -1020,6 +1061,8 @@
 
 				<Folder
 					id="sidebar-chats"
+					inlineChevron={true}
+					headerHover={false}
 					className="px-2 mt-0.5"
 					name={$i18n.t('Chats')}
 					chevron={true}
@@ -1088,10 +1131,11 @@
 						}
 					}}
 				>
+					<svelte:fragment slot="actions"><ChatSortMenu value={chatSort} onChange={changeChatSort} /></svelte:fragment>
 					<div class=" flex-1 flex flex-col overflow-y-auto scrollbar-hidden">
 						<div class="pt-1.5">
 							{#if $chats}
-								{#each $chats as chat, idx (`chat-${chat?.id ?? idx}`)}
+								{#each sortedChats as chat, idx (`chat-${chat?.id ?? idx}`)}
 
 									<ChatItem
 										className=""

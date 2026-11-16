@@ -3129,7 +3129,7 @@ async def chat_video_generation_handler(
         limit=3,
     )
     video_features = extra_params.get("__features__") or {}
-    video_model = "vdn_h3" if video_features.get("video_generation_model") == "vdn_h3" else "minimax_h3"
+    video_model = "vdn_h3"
     requested_resolution = str(
         video_features.get("video_generation_resolution") or "480p"
     )
@@ -3217,13 +3217,8 @@ async def chat_video_generation_handler(
 
         from neveai.routers.llamacpp import model_manager
         from neveai.routers.stable_diffusion import _prepare_init_image_sync
-        from neveai.routers.video_generation import minimax_h3_runtime
-
-        if video_model == "vdn_h3":
-            from neveai.routers.video_quality_generation import video15_runtime as vdn_h3_runtime
-            runtime = vdn_h3_runtime
-        else:
-            runtime = minimax_h3_runtime
+        from neveai.routers.video_quality_generation import video15_runtime as vdn_h3_runtime
+        runtime = vdn_h3_runtime
         async with runtime.session_lock:
             # Downloads and environment preparation do not need VRAM. Keep the chat
             # model available until every disk/network prerequisite is ready.
@@ -3280,7 +3275,7 @@ async def chat_video_generation_handler(
             request,
             file=upload,
             metadata={
-                "source": "minimax-h3-fl2va-w6a8" if video_model == "vdn_h3" else "minimax-h3-fl2va-w4a8",
+                "source": "minimax-h3-fl2va-w6a8",
                 "video_model": video_model,
                 "prompt": prompt,
                 "width": width,
@@ -7388,9 +7383,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         # Preserve the user's explicit video choice even if an inlet/filter
         # rebuilt the payload. Video owns the request and is mutually exclusive.
         features["video_generation"] = True
-        features["video_generation_model"] = (
-            "vdn_h3" if submitted_features.get("video_generation_model") == "vdn_h3" else "minimax_h3"
-        )
+        features["video_generation_model"] = "vdn_h3"
         features["video_generation_resolution"] = submitted_features.get(
             "video_generation_resolution", "480p"
         )

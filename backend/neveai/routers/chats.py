@@ -1,7 +1,7 @@
 import json
 from copy import deepcopy
 import logging
-from typing import Optional
+from typing import Optional, Literal
 from sqlalchemy.orm import Session
 from neveai.utils.db_work import session_route, db_work
 import asyncio
@@ -41,6 +41,7 @@ def get_session_user_chat_list(
     include_pinned: Optional[bool] = False,
     include_folders: Optional[bool] = False,
     db: Session = Depends(get_session),
+    sort: Literal["recent", "name"] = "recent",
 ):
     try:
         if page is not None:
@@ -54,6 +55,7 @@ def get_session_user_chat_list(
                 skip=skip,
                 limit=limit,
                 db=db,
+                sort=sort,
             )
         else:
             return Chats.get_chat_title_id_list_by_user_id(
@@ -61,6 +63,7 @@ def get_session_user_chat_list(
                 include_folders=include_folders,
                 include_pinned=include_pinned,
                 db=db,
+                sort=sort,
             )
     except Exception as e:
         log.exception(e)

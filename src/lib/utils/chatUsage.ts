@@ -52,11 +52,15 @@ const tokenCount = (...values: unknown[]): number | null => {
 	return null;
 };
 
-export const getUsageTotalTokens = (usage: any): number => {
+export const getUsagePromptTokens = (usage: any): number => {
 	// Native llama.cpp timings count only freshly evaluated input in prompt_n.
 	// OpenAI/Responses counts already include their cached prefix.
-	const input = tokenCount(usage?.prompt_tokens, usage?.input_tokens) ??
+	return tokenCount(usage?.prompt_tokens, usage?.input_tokens) ??
 		((tokenCount(usage?.prompt_n) ?? 0) + (tokenCount(usage?.cache_n) ?? 0));
+};
+
+export const getUsageTotalTokens = (usage: any): number => {
+	const input = getUsagePromptTokens(usage);
 	const output = tokenCount(usage?.completion_tokens, usage?.output_tokens, usage?.predicted_n) ?? 0;
 	const total = tokenCount(usage?.total_tokens);
 	// Some providers send zero as an empty aggregate while retaining actual component counts.

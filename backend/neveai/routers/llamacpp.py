@@ -24,7 +24,7 @@ from typing import Optional
 
 import httpx
 import psutil
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -33,6 +33,8 @@ from neveai.models.models import ModelForm, Models
 from neveai.utils.model_defaults import get_effective_model_params
 from neveai.utils.payload import apply_model_params_to_body_openai, apply_system_prompt_to_body
 from neveai.utils.gpu_selection import preferred_vulkan_device
+from neveai.utils.local_model_files import project_storage, model_removal_paths, import_model_stream
+from neveai.utils.auth import get_admin_user
 from neveai.utils.local_model_context import (
     AUTO_CONTEXT_CAP, bounded_context, context_memory_margin, is_memory_failure,
     plan_auto_context, runtime_context, require_gpu_device,
@@ -49,6 +51,7 @@ router = APIRouter()
 
 MODELS_DIR = BASE_DIR / "models"
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
+_MODEL_FILES_LOCK = asyncio.Lock()
 
 # Separate directory for mmproj (vision encoder) files
 MMPROJ_DIR = BASE_DIR / "mmproj"
@@ -1566,6 +1569,7 @@ async def _get_vram_info_cached() -> dict:
             return cached
 
         data = await asyncio.to_thread(_get_vram_info)
+        data['storage'] = await asyncio.to_thread(project_storage, BASE_DIR)
         _vram_cache["data"] = data
         _vram_cache["timestamp"] = time.monotonic()
         return data
@@ -1580,6 +1584,22 @@ async def list_local_models():
     """List all .gguf models found in the models/ directory."""
     models = model_manager.scan_models()
     return {"models": models}
+
+
+@router.post('/models/import')
+async def import_local_model(request: Request, filename: str, user=Depends(get_admin_user)):
+    try:
+        result = await import_model_stream(MODELS_DIR, filename, request.stream())
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except OSError as exc:
+        log.exception('Local model import failed')
+        raise HTTPException(status_code=507, detail='Nao foi possivel salvar o modelo. Verifique o espaco e as permissoes da pasta models.') from exc
+    request.app.state.BASE_MODELS = None
+    _vram_cache['timestamp'] = 0.0
+    return result
 
 
 @router.get("/media-state")
@@ -1665,6 +1685,56 @@ async def unload_model(req: UnloadModelRequest, request: Request):
     except Exception as e:
         log.error(f"Error unloading model: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class DeleteLocalModelRequest(BaseModel):
+    filename: str
+
+
+@router.post('/models/delete')
+async def delete_local_model(req: DeleteLocalModelRequest, request: Request):
+    from neveai.utils.model_availability import get_model_availability
+    from neveai.utils.middleware import _MEDIA_GENERATION_LOCK
+
+    if _MEDIA_GENERATION_LOCK.locked():
+        raise HTTPException(status_code=409, detail='Aguarde a geracao de midia terminar antes de excluir modelos.')
+    async with _MODEL_FILES_LOCK, _MEDIA_GENERATION_LOCK, model_manager._lock:
+        if get_model_availability()['busy']:
+            raise HTTPException(status_code=409, detail='Aguarde a geracao de midia terminar antes de excluir modelos.')
+        if _find_active_download():
+            raise HTTPException(status_code=409, detail='Aguarde o download de modelos terminar antes de excluir modelos.')
+        try:
+            paths = await asyncio.to_thread(model_removal_paths, MODELS_DIR, req.filename)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail='Modelo nao encontrado')
+        # Reuse the compatibility/shared-encoder checks without deleting other quantizations.
+        mmproj_paths = await asyncio.to_thread(_catalog_mmproj_paths, {'repo': ''}, paths)
+        mmproj_paths = [path for path in mmproj_paths if not path.is_symlink() and _path_is_inside(path, MMPROJ_DIR)]
+        removed = []
+        try:
+            for path in paths:
+                model_id = f'local/{path.stem}'
+                if model_id in model_manager._loaded:
+                    model_manager._loaded[model_id].unload_requested = True
+                    await model_manager._kill_server(model_id)
+                    model_manager._loaded.pop(model_id, None)
+                if await asyncio.to_thread(_unlink_file_inside, path, MODELS_DIR):
+                    removed.append(path.name)
+                    def remove_records():
+                        records = Models.get_all_models()
+                        for record in records:
+                            if record.id == model_id or record.base_model_id == model_id:
+                                Models.delete_model_by_id(record.id)
+                    await asyncio.to_thread(remove_records)
+            for path in mmproj_paths:
+                await asyncio.to_thread(_unlink_file_inside, path, MMPROJ_DIR)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f'Nao foi possivel excluir o modelo: {exc}')
+        finally:
+            request.app.state.BASE_MODELS = None
+        return {'removed_models': removed, 'removed_mmproj': [path.name for path in mmproj_paths]}
 
 
 @router.post("/chat/completions")
@@ -2092,7 +2162,7 @@ NEVE_CATALOG = [
         "hardware_label": "4 GB",
         "hardware_kind": "gpu",
         "size_label": "3.9 GB",
-        "profile_image_url": "/static/logoechos.png",
+        "profile_image_url": "/static/logo.png",
         "description": "Modelo de uso geral e raciocínio para tarefas imediatas.",
         "params": {"temperature": 1, "min_p": 0.05, "dry_multiplier": 0.25},
         "default_feature_ids": ["web_search"],
@@ -2104,7 +2174,7 @@ NEVE_CATALOG = [
         "hardware_label": "6 GB",
         "hardware_kind": "gpu",
         "size_label": "6.3 GB",
-        "profile_image_url": "/static/logoecho.png",
+        "profile_image_url": "/static/logo.png",
         "description": "Modelo de uso geral e raciocínio para tarefas variadas.",
         "params": {"temperature": 1, "min_p": 0.05, "dry_multiplier": 0.15},
         "default_feature_ids": [],
@@ -2116,7 +2186,7 @@ NEVE_CATALOG = [
         "hardware_label": "12 GB",
         "hardware_kind": "gpu",
         "size_label": "11.1 GB",
-        "profile_image_url": "/static/logosense.png",
+        "profile_image_url": "/static/logo.png",
         "description": "Modelo de análise e resumo para documentos complexos.",
         "params": {"temperature": 0.3, "min_p": 0.1},
         "default_feature_ids": [],
@@ -2128,7 +2198,7 @@ NEVE_CATALOG = [
         "hardware_label": "6 GB",
         "hardware_kind": "gpu",
         "size_label": "5.7 GB",
-        "profile_image_url": "/static/logostratas.png",
+        "profile_image_url": "/static/logo.png",
         "description": "Modelo de programação e raciocínio para execução em escala.",
         "params": {"temperature": 0.4, "min_p": 0.1},
         "default_feature_ids": ["code_execution"],
@@ -2140,7 +2210,7 @@ NEVE_CATALOG = [
         "hardware_label": "16 GB",
         "hardware_kind": "gpu",
         "size_label": "18.2 GB",
-        "profile_image_url": "/static/logostrata.png",
+        "profile_image_url": "/static/logo.png",
         "description": "Modelo de programação e raciocínio para arquiteturas complexas.",
         "params": {"temperature": 0.6, "min_p": 0.1},
         "default_feature_ids": ["code_execution"],
@@ -2152,7 +2222,7 @@ NEVE_CATALOG = [
         "hardware_label": "12 GB",
         "hardware_kind": "gpu",
         "size_label": "12.1 GB",
-        "profile_image_url": "/static/logomuse.png",
+        "profile_image_url": "/static/logo.png",
         "description": "Modelo de conversação para simulação de interações humanas.",
         "params": {
             "temperature": 0.75,
@@ -2169,7 +2239,7 @@ NEVE_CATALOG = [
         "hardware_label": "CPU",
         "hardware_kind": "cpu",
         "size_label": "0.6 GB",
-        "profile_image_url": "/static/logocascade.png",
+        "profile_image_url": "/static/logo.png",
         "description": "Modelo de baixo consumo para hardware limitado.",
         "params": {
             "temperature": 0.25,
@@ -2185,7 +2255,32 @@ NEVE_CATALOG = [
 _DOWNLOAD_TASKS_LOCK = threading.Lock()
 _DOWNLOAD_MODEL_LOCKS: dict[str, asyncio.Lock] = {}
 _DOWNLOAD_MODEL_LOCKS_LOCK = threading.Lock()
-_DOWNLOAD_ACTIVE_STATUSES = {"queued", "resolving", "downloading", "cancelling"}
+_DOWNLOAD_ACTIVE_STATUSES = {"queued", "resolving", "downloading", "cancelling", "pausing"}
+_DOWNLOAD_RUNNERS: dict[str, asyncio.Task] = {}
+
+
+def _launch_download(task_id, coroutine):
+    task = asyncio.create_task(coroutine)
+    _DOWNLOAD_RUNNERS[task_id] = task
+
+    def finished(result):
+        _DOWNLOAD_RUNNERS.pop(task_id, None)
+        if not result.cancelled() and result.exception():
+            log.error("Download worker failed: %s", result.exception())
+            _set_task(task_id, status="error", error=str(result.exception()), resume_available=True)
+        elif result.cancelled() and _get_task(task_id).get("status") in _DOWNLOAD_ACTIVE_STATUSES:
+            _set_task(task_id, status="paused" if _get_task(task_id).get("pause_requested") else "cancelled")
+
+    task.add_done_callback(finished)
+    return task
+
+
+def _retire_paused_downloads(model_id):
+    with _DOWNLOAD_TASKS_LOCK:
+        paused = [task_id for task_id, task in _DOWNLOAD_TASKS.items()
+                  if task.get("model_id") == model_id and task.get("status") == "paused"]
+    for task_id in paused:
+        _set_task(task_id, status="resumed")
 NEVE_DOWNLOAD_STATE_DIR = DATA_DIR / "downloads"
 NEVE_DOWNLOAD_STATE_PATH = NEVE_DOWNLOAD_STATE_DIR / "neve_catalog_downloads.json"
 NEVE_DOWNLOAD_STATE_TMP_PATH = NEVE_DOWNLOAD_STATE_DIR / "neve_catalog_downloads.json.tmp"
@@ -2457,7 +2552,7 @@ def _catalog_mmproj_paths(entry: dict, main_paths: list[Path]) -> list[Path]:
             if not path.is_file() or path.suffix.lower() not in (".gguf", ".mmproj"):
                 continue
 
-            matches_this_model = repo_short in path.name.lower() or any(
+            matches_this_model = (bool(repo_short) and repo_short in path.name.lower()) or any(
                 _mmproj_compatible(main_path.name, path.name) for main_path in main_paths
             )
             if not matches_this_model:
@@ -2612,7 +2707,10 @@ print(f"NEVE_XET_DONE:{path}", flush=True)
 async def _terminate_xet_process(process: asyncio.subprocess.Process):
     if process.returncode is not None:
         return
-    process.terminate()
+    try:
+        process.terminate()
+    except ProcessLookupError:
+        return
     try:
         await asyncio.wait_for(process.wait(), timeout=2.0)
     except asyncio.TimeoutError:
@@ -2693,6 +2791,8 @@ async def _xet_download_file(
         downloaded_path = None
 
         while True:
+            if asyncio.current_task().cancelling():
+                raise asyncio.CancelledError()
             if _is_download_cancel_requested(task_id):
                 await _terminate_xet_process(process)
                 raise _DownloadCancelled()
@@ -2744,6 +2844,12 @@ async def _xet_download_file(
         if downloaded_path.resolve() != dest_path.resolve():
             raise RuntimeError(f"Destino inesperado retornado pelo Hugging Face: {downloaded_path}")
         return dest_path.is_file()
+    except asyncio.CancelledError:
+        if process is not None:
+            await _terminate_xet_process(process)
+        if _get_task(task_id).get("cancel_requested") and not _get_task(task_id).get("pause_requested"):
+            _cleanup_new_xet_incomplete_files(local_root, existing_incomplete)
+        raise
     except _DownloadCancelled:
         if process is not None:
             await _terminate_xet_process(process)
@@ -2973,6 +3079,7 @@ async def _run_download_task(task_id: str, model_id: str, app=None):
             _set_task(task_id, status="error", error=f"Nenhum .gguf encontrado em {repo_id}")
             return
         mmproj_file = _pick_mmproj(files)
+        _set_task(task_id, main_filename=main_file['path'])
 
         targets: list[tuple[dict, Path, bool]] = []
         if not _is_installed(main_file["path"]):
@@ -3039,7 +3146,13 @@ async def _run_download_task(task_id: str, model_id: str, app=None):
             current_tmp_path=None,
             current_dest_path=None,
         )
-    except _DownloadCancelled:
+    except (asyncio.CancelledError, _DownloadCancelled):
+        if not _get_task(task_id).get("cancel_requested"):
+            _set_task(task_id, status="error", error="Download interrompido", resume_available=True)
+            raise
+        if _get_task(task_id).get("pause_requested"):
+            _set_task(task_id, status="paused", resume_available=True)
+            return
         _cleanup_download_artifacts(task_id)
         _set_task(
             task_id,
@@ -3152,34 +3265,54 @@ async def start_download(req: DownloadModelRequest, request: Request):
         return {"task_id": active[0], "active": True}
 
     lock = _get_model_download_lock(req.model_id)
-    async with lock:
+    async with lock, _MODEL_FILES_LOCK:
         active = _find_active_download()
         if active:
             return {"task_id": active[0], "active": True}
 
         task_id = uuid.uuid4().hex
+        _retire_paused_downloads(req.model_id)
         _set_task(task_id, status="queued", model_id=req.model_id, progress=0.0)
-        asyncio.create_task(_run_download_task(task_id, req.model_id, request.app))
+        _launch_download(task_id, _run_download_task(task_id, req.model_id, request.app))
         return {"task_id": task_id}
 
 
 @router.post("/download/cancel/{task_id}")
 async def cancel_download(task_id: str):
     """Request cancellation of an active Neve catalog download."""
-    task = _get_task(task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Tarefa não encontrada")
+    return await _stop_download(task_id, pause=False)
 
-    if task.get("status") in ("completed", "error", "cancelled"):
-        return {"task": task}
 
-    _set_task(
-        task_id,
-        cancel_requested=True,
-        status="cancelling",
-        message="Cancelando download...",
-    )
-    return {"task": _get_task(task_id)}
+async def _stop_download(task_id: str, pause: bool):
+    async with _get_model_download_lock("control:" + task_id):
+        task = _get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Tarefa nao encontrada")
+        if task.get("status") in ("completed", "cancelled", "error", "resumed") or pause and task.get("status") == "paused":
+            return {"task": task}
+        runner = _DOWNLOAD_RUNNERS.get(task_id)
+        _set_task(task_id, cancel_requested=True, pause_requested=pause,
+                  status="pausing" if pause else "cancelling")
+        if runner and not runner.done():
+            runner.cancel()
+            await asyncio.wait({runner}, timeout=10)
+        else:
+            if not pause:
+                await asyncio.to_thread(_cleanup_download_artifacts, task_id)
+            _set_task(task_id, status="paused" if pause else "cancelled", resume_available=pause)
+        return {"task": _get_task(task_id)}
+
+
+@router.post("/download/pause/{task_id}")
+async def pause_download(task_id: str):
+    return await _stop_download(task_id, pause=True)
+
+
+@router.get("/download/paused")
+async def paused_downloads():
+    with _DOWNLOAD_TASKS_LOCK:
+        return {"tasks": [{**task, "task_id": task_id} for task_id, task in _DOWNLOAD_TASKS.items()
+                          if task.get("status") == "paused"]}
 
 
 @router.get("/download/status/{task_id}")
@@ -3197,7 +3330,7 @@ async def stream_download_status(task_id: str):
                 yield f"data: {payload}\n\n"
                 last_serialized = payload
             status = task.get("status")
-            if status in ("completed", "error", "cancelled"):
+            if status in ("completed", "error", "cancelled", "paused"):
                 break
             await asyncio.sleep(0.5)
 

@@ -1,4 +1,5 @@
 import { NEVEAI_BASE_URL } from '$lib/constants';
+import { prepareChatRequestBody } from '$lib/utils/chatRequestBody';
 
 export const chatCompletion = async (
 	token: string = '',
@@ -32,9 +33,12 @@ export const chatCompletion = async (
 export const generateOpenAIChatCompletion = async (
 	token: string = '',
 	body: object,
-	url: string = `${NEVEAI_BASE_URL}/api`
+	url: string = `${NEVEAI_BASE_URL}/api`,
+	shouldSend?: () => boolean
 ) => {
 	let error = null;
+	const requestBody = await prepareChatRequestBody(body);
+	if (shouldSend && !shouldSend()) return null;
 
 	const res = await fetch(`${url}/chat/completions`, {
 		method: 'POST',
@@ -43,7 +47,7 @@ export const generateOpenAIChatCompletion = async (
 			'Content-Type': 'application/json'
 		},
 		credentials: 'include',
-		body: JSON.stringify(body)
+		body: requestBody
 	})
 		.then(async (res) => {
 			if (!res.ok) throw await res.json();

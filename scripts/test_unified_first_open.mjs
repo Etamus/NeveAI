@@ -72,7 +72,7 @@ try {
             throw error;
         });
         assert.deepEqual(await page.evaluate(()=>window.__emptyFlashes),[]);
-        const search=page.getByPlaceholder('Search Models');
+        const search=page.getByPlaceholder('Search models');
         await search.fill('not-a-model');
         await page.getByText('No models found',{exact:true}).waitFor();
         await search.fill('');

@@ -6,7 +6,7 @@
 	import Gauge from '$lib/components/icons/Gauge.svelte';
 	import { mobile } from '$lib/stores';
 	import Restore from '$lib/components/icons/Restore.svelte';
-	import Bolt from '$lib/components/icons/Bolt.svelte';
+	import Bolt from '$lib/components/icons/SpeedBolt.svelte';
 	import {
 		getLocalModelLoadPreferences,
 		isSpeculativeSpeedEnabled,
@@ -137,7 +137,7 @@
 						data-mode={accelerationMode}
 						on:click={() => setSpeculativeSpeedEnabled(accelerationMode === 'normal')}
 					>
-						<Bolt className="size-[20px]" filled={accelerationMode !== 'normal'} />
+						<Bolt className="size-[21px]" filled={accelerationMode !== 'normal'} />
 					</button>
 				</Tooltip>
 				<Tooltip content={$i18n.t('Reset')}>

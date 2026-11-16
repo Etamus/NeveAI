@@ -43,7 +43,7 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => localStorage.setItem('neveai.reasoningLevel', '1'));
   await installMobileOfflineApi(page);
-  await page.route('**/api/v1/models/model/profile/image?**', async route => route.fulfill({contentType: 'image/png', body: await fs.readFile('static/static/logosense.png')}));
+  await page.route('**/api/v1/models/model/profile/image?**', async route => route.fulfill({contentType: 'image/png', body: await fs.readFile('static/static/logo.png')}));
   await page.route('**/llamacpp/models', route => route.fulfill({json: {models}}));
   await page.route('**/llamacpp/models/loaded', route => route.fulfill({json: {models: [models[0]]}}));
   await page.route('**/llamacpp/catalog', route => route.fulfill({json: {models: catalog}}));

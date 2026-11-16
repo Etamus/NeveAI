@@ -3,6 +3,36 @@
  */
 import { NEVEAI_BASE_URL } from '$lib/constants';
 
+export interface HFModel { id: string; downloads: number; likes: number; gated?: boolean; }
+export interface HFModelFile { path: string; size: number; parts?: number; local_filename: string; installed: boolean; }
+async function hfRequest(path: string, token: string, signal?: AbortSignal, body?: object) {
+	const response = await fetch(`${NEVEAI_BASE_URL}/llamacpp/huggingface/${path}`, {
+		method: body ? 'POST' : 'GET', signal,
+		headers: { Accept: 'application/json', ...(body && { 'Content-Type': 'application/json' }), ...(token && { authorization: `Bearer ${token}` }) },
+		...(body && { body: JSON.stringify(body) })
+	});
+	const data = await response.json();
+	if (!response.ok) throw new Error(data.detail || 'Hugging Face unavailable');
+	return data;
+}
+export const searchHFModels = (token: string, query = '', cursor = '', signal?: AbortSignal): Promise<{ models: HFModel[]; next_cursor: string | null }> =>
+	hfRequest(`search?${new URLSearchParams({ query, ...(cursor && { cursor }) })}`, token, signal);
+export const getHFModelFiles = (token: string, repo: string, signal?: AbortSignal): Promise<{ models: HFModelFile[]; encoders: HFModelFile[]; truncated?: boolean }> =>
+	hfRequest(`files?${new URLSearchParams({ repo })}`, token, signal);
+export const downloadHFModel = (token: string, repo: string, filename: string, encoder?: string) =>
+	hfRequest('download', token, undefined, { repo, filename, ...(encoder && { encoder }) });
+
+export const importLocalModel = async (token: string, file: File) => {
+	const response = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/import?${new URLSearchParams({ filename: file.name })}`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/octet-stream', ...(token && { authorization: `Bearer ${token}` }) },
+		body: file
+	});
+	const result = await response.json();
+	if (!response.ok) throw new Error(result.detail || 'Failed to import model');
+	return result;
+};
+
 export type LocalModelRuntimeAction = 'load' | 'unload';
 export type LocalModelRuntimePhase = 'start' | 'success' | 'error';
 
@@ -74,6 +104,7 @@ export interface LocalVramGpu {
 }
 
 export interface LocalVramInfo {
+	storage?: { available: boolean; total: number; used: number; free: number };
 	ram?: { available: boolean; source: string; total: number; used: number; free: number };
 	available: boolean;
 	source?: string;
@@ -324,6 +355,19 @@ export const loadLocalModel = async (
 	}
 };
 
+export const deleteLocalModel = async (token: string, filename: string): Promise<any> => {
+	const response = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/delete`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json', ...(token && { authorization: `Bearer ${token}` }) },
+		body: JSON.stringify({ filename })
+	});
+	if (!response.ok) {
+		const error = await response.json().catch(() => ({}));
+		throw new Error(error.detail || 'Falha ao excluir modelo');
+	}
+	return response.json();
+};
+
 export const unloadLocalModel = async (token: string = '', model_id: string, display_name?: string): Promise<any> => {
 	const operationId = createLocalModelOperationId();
 	emitLocalModelRuntimeEvent({
@@ -409,6 +453,10 @@ export interface NeveDownloadState {
 	status: string;
 	progress?: number;
 	current_file?: string;
+	filename?: string;
+	repo_id?: string;
+	encoder?: string;
+	main_filename?: string;
 	file_index?: number;
 	file_total?: number;
 	downloaded?: number;
@@ -512,7 +560,8 @@ export const streamNeveDownload = (
 	onUpdate: (state: NeveDownloadState) => void,
 	onDone: (state: NeveDownloadState) => void,
 	onError: (err: any) => void,
-	onCancel?: (state: NeveDownloadState) => void
+	onCancel?: (state: NeveDownloadState) => void,
+	onPause?: (state: NeveDownloadState) => void
 ): EventSource => {
 	const url = `${NEVEAI_BASE_URL}/llamacpp/download/status/${task_id}`;
 	const es = new EventSource(url);
@@ -520,12 +569,14 @@ export const streamNeveDownload = (
 		try {
 			const state = JSON.parse(e.data) as NeveDownloadState;
 			onUpdate(state);
-			if (state.status === 'completed' || state.status === 'error' || state.status === 'cancelled') {
+			if (['completed', 'error', 'cancelled', 'paused'].includes(state.status)) {
 				es.close();
 				if (state.status === 'completed') {
 					onDone(state);
 				} else if (state.status === 'cancelled') {
 					onCancel?.(state);
+				} else if (state.status === 'paused') {
+					onPause?.(state);
 				} else {
 					const retryMessage = 'Clique em Baixar novamente para continuar de onde parou.';
 					const rawError = state.error || '';
@@ -552,4 +603,18 @@ export const streamNeveDownload = (
 		onError(err);
 	};
 	return es;
+};
+
+export const pauseNeveDownload = async (token: string, taskId: string): Promise<NeveDownloadState> => {
+	const response = await fetch(`${NEVEAI_BASE_URL}/llamacpp/download/pause/${taskId}`, {
+		method: 'POST', headers: { ...(token && { authorization: `Bearer ${token}` }) }
+	});
+	if (!response.ok) throw new Error('Nao foi possivel pausar o download.');
+	return (await response.json()).task;
+};
+
+export const getPausedNeveDownloads = async (token: string): Promise<NeveDownloadState[]> => {
+	const response = await fetch(`${NEVEAI_BASE_URL}/llamacpp/download/paused`, { headers: { ...(token && { authorization: `Bearer ${token}` }) } });
+	if (!response.ok) return [];
+	return (await response.json()).tasks ?? [];
 };

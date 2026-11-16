@@ -139,8 +139,8 @@
 					class="flex flex-col gap-3 px-3.5 py-3 border border-gray-100 dark:border-gray-850 rounded-xl"
 				>
 					<div class="flex flex-col">
-						<div class="text-xs text-gray-500 mb-1">{$i18n.t('Nome do projeto')}</div>
 						<input
+							aria-label={$i18n.t('Nome do projeto')}
 							id="folder-name"
 							class="w-full text-sm bg-transparent outline-hidden placeholder:text-gray-300 dark:placeholder:text-gray-700"
 							type="text"

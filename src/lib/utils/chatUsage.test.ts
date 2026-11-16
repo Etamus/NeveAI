@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { getLastChatUsage, getChatContextWindow, getUsageContextWindow, getUsageTotalTokens, formatUsageTokensPerSecond } from './chatUsage';
+import { getLastChatUsage, getChatContextWindow, getUsageContextWindow, getUsagePromptTokens, getUsageTotalTokens, formatUsageTokensPerSecond } from './chatUsage';
+
+describe('prompt token counts', () => {
+	it.each([
+		[{prompt_tokens: 100, cache_n: 60}, 100],
+		[{input_tokens: 100, input_tokens_details: {cached_tokens: 60}}, 100],
+		[{prompt_n: 40, cache_n: 60}, 100],
+		[{prompt_tokens: 'invalid', prompt_n: '40', cache_n: '60'}, 100],
+		[{prompt_tokens: 0, prompt_n: 40, cache_n: 60}, 0],
+		[{prompt_n: -1, cache_n: 60}, 60],
+		[null, 0]
+	])('uses input including cache exactly once: %j', (usage, expected) => {
+		expect(getUsagePromptTokens(usage)).toBe(expected);
+	});
+});
 
 describe('visual generations do not supply chat token usage', () => {
 	const measured = {total_tokens:500, context_window:8192, tokens_per_second:60};

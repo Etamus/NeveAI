@@ -63,14 +63,12 @@ try {
     throw error;
    });
    await page.evaluate(()=>window.__videoSettingsFixture());
-   await page.locator('#video-model-dropdown-container > button').waitFor({state:'visible'});
+   await page.locator('[data-video-integration]').waitFor({state:'visible'});
   }
   await boot();
   assert.equal(await page.locator('#video-duration-dropdown-container').count(),0);
   if(name==='mobile'){
-   for(const model of ['Neve Video 1','Neve Video 1.5']){
-    await page.locator('#video-model-dropdown-container > button').click();
-    await page.locator('[data-composer-dropdown-anchor="video-model-dropdown-container"]').getByRole('button',{name:model,exact:true}).click();
+   for(const model of ['Neve Video 1.5']){
     assert.equal(await page.locator(trigger).count(),0);
     const features=await page.evaluate(()=>window.__videoSettingsFeatures());
     assert.equal(features.video_generation_resolution,'480p');
@@ -100,11 +98,9 @@ try {
    continue;
   }
   const chevron=await page.locator(trigger+' svg').evaluate(el=>({viewBox:el.getAttribute('viewBox'),path:el.querySelector('path').getAttribute('d'),width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height}));
-  const modelChevron=await page.locator('#video-model-dropdown-container > button > svg').evaluate(el=>({viewBox:el.getAttribute('viewBox'),path:el.querySelector('path').getAttribute('d'),width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height}));
+  const modelChevron=await page.locator('#video-aspect-ratio-dropdown-container > button > svg').evaluate(el=>({viewBox:el.getAttribute('viewBox'),path:el.querySelector('path').getAttribute('d'),width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height}));
   assert.deepEqual(chevron,modelChevron,'Chevron must exactly match the adjacent selector');
-  for(const model of ['Neve Video 1','Neve Video 1.5']){
-   await page.locator('#video-model-dropdown-container > button').click();
-   await page.locator('[data-composer-dropdown-anchor="video-model-dropdown-container"]').getByRole('button',{name:model,exact:true}).click();
+  for(const model of ['Neve Video 1.5']){
    await page.locator(trigger).click();
    await page.locator(panel).waitFor({state:'visible'});
    const slider=page.locator(panel).getByRole('slider');
@@ -122,7 +118,7 @@ try {
     assert.deepEqual(saved,[resolution,duration]);
     assert.deepEqual(await page.evaluate(()=>window.__videoSettingsState()),{
      videoGenerationResolution:resolution,videoGenerationDuration:duration,
-     videoGenerationModel:model==='Neve Video 1'?'minimax_h3':'vdn_h3'
+     videoGenerationModel:'vdn_h3'
     });
    }
    await slider.focus();
