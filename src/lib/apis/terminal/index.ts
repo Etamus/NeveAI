@@ -244,10 +244,12 @@ export const moveEntry = async (
 
 export const getListeningPorts = async (
 	baseUrl: string,
-	apiKey: string
+	apiKey: string,
+	signal?: AbortSignal
 ): Promise<ListeningPort[]> => {
 	const url = `${baseUrl.replace(/\/$/, '')}/ports`;
 	const res = await fetch(url, {
+		signal,
 		headers: { Authorization: `Bearer ${apiKey}` }
 	}).catch(() => null);
 	if (!res || !res.ok) return [];

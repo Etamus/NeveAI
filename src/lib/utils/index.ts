@@ -16,6 +16,7 @@ dayjs.extend(localizedFormat);
 
 import { TTS_RESPONSE_SPLIT } from '$lib/types';
 
+import { pdfAssets } from '$lib/utils/pdfAssets';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 import { marked } from 'marked';
@@ -1403,7 +1404,7 @@ export const extractContentFromFile = async (file: File) => {
 	async function extractPdfText(file: File) {
 		const pdfjsLib = await ensurePDFjsLoaded();
 		const arrayBuffer = await file.arrayBuffer();
-		const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+		const pdf = await pdfjsLib.getDocument({ ...pdfAssets(pdfjsLib.version), data: arrayBuffer }).promise;
 		let allText = '';
 		for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
 			const page = await pdf.getPage(pageNum);

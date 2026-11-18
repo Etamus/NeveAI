@@ -2,7 +2,7 @@
 	import {onDestroy} from 'svelte';
 	import {imageModeSource,type ImageModeOptions} from '$lib/utils/imageModes';
 	import {outpaintFrame} from '$lib/utils/outpaintGeometry';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import OrbitingSpheres from '$lib/components/common/OrbitingSpheres.svelte';
 	export let file:any;
 	export let options:ImageModeOptions;
 	let canvas:HTMLCanvasElement;
@@ -61,5 +61,5 @@
 	}
 </script>
 
-{#if !ready}<Spinner className="size-4" />{/if}
+{#if !ready}<OrbitingSpheres className="size-4" />{/if}
 <canvas bind:this={canvas} use:observe data-image-mode-thumbnail={options.mode} class="size-full object-cover" class:hidden={!ready} aria-hidden="true"></canvas>

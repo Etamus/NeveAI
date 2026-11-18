@@ -4,16 +4,49 @@ import hljs from 'highlight.js';
 export function createCodeBlockHighlighter() {
 	let previousCode: string | undefined;
 	let previousLanguage: string | undefined;
-	let html = '';
+	let html: string | null = null;
 	return (code: string, language: string) => {
 		if (code === previousCode && language === previousLanguage) return html;
 		const known = hljs.getLanguage(language);
-		const result = known
-			? hljs.highlight(code, { language, ignoreIllegals: true })
-			: hljs.highlightAuto(code);
+		html = known ? hljs.highlight(code, { language, ignoreIllegals: true }).value : null;
 		previousCode = code;
 		previousLanguage = language;
-		html = result.value;
 		return html;
 	};
+}
+
+type Job = { code: string; deliver: ((html: string) => void) | null };
+const queue = new Set<Job>();
+let active: Job | undefined;
+let worker: Worker | undefined;
+let idle: ReturnType<typeof setTimeout>;
+function drain() {
+	if (active || !queue.size) return;
+	clearTimeout(idle);
+	const job = queue.values().next().value!;
+	queue.delete(job);
+	try {
+		worker ??= new Worker(new URL('./autoHighlight.worker.ts', import.meta.url), { type: 'module' });
+		active = job;
+		worker.onmessage = ({ data }) => {
+			if (typeof data === 'string') job.deliver?.(data);
+			active = undefined;
+			idle = setTimeout(() => { worker?.terminate(); worker = undefined; }, 30000);
+			drain();
+		};
+		worker.onerror = () => {
+			worker?.terminate(); worker = undefined; active = undefined; queue.clear();
+		};
+		worker.postMessage(job.code);
+	} catch {
+		active = undefined; queue.clear();
+	}
+}
+
+export function detectCodeLanguage(code: string, deliver: (html: string) => void) {
+	const job: Job = { code, deliver };
+	// Streaming revisions coalesce; text is already visible. Bound expensive auto-detection.
+	const timer = typeof Worker !== 'undefined' && code && code.length <= 100_000
+		? setTimeout(() => { queue.add(job); drain(); }, 160) : undefined;
+	return () => { clearTimeout(timer); queue.delete(job); job.deliver = null; };
 }

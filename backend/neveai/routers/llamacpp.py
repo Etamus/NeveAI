@@ -2774,8 +2774,19 @@ async def _xet_download_file(
     process = None
     output_lines: list[str] = []
     try:
-        process = await asyncio.create_subprocess_exec(
-            sys.executable,
+        executable = sys.executable
+        worker_env = None
+        if sys.platform == "win32" and sys.prefix != sys.base_prefix:
+            import os
+
+            native = getattr(sys, "_base_executable", None)
+            if native and Path(native).is_file():
+                # The Windows venv redirector starts a second process. Track the
+                # actual interpreter so cancellation waits for the file owner.
+                executable = native
+                worker_env = {**os.environ, "__PYVENV_LAUNCHER__": sys.executable}
+        spawning = asyncio.create_task(asyncio.create_subprocess_exec(
+            executable,
             "-I",
             "-c",
             _HF_XET_DOWNLOAD_WORKER,
@@ -2785,7 +2796,13 @@ async def _xet_download_file(
             NEVE_DOWNLOAD_HEADERS["User-Agent"],
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
-        )
+            env=worker_env,
+        ))
+        try:
+            process = await asyncio.shield(spawning)
+        except asyncio.CancelledError:
+            process = await spawning
+            raise
         last_progress_update = time.monotonic()
         last_progress_bytes = 0
         downloaded_path = None

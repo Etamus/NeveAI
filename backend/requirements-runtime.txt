@@ -98,4 +98,5 @@ pydub
 av==14.0.1
 
 # Web search
-ddgs==9.16.0
+ddgs==9.16.1
+trafilatura==2.3.1

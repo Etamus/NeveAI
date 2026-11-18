@@ -7,6 +7,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
+const pdfVersion = JSON.parse(readFileSync('node_modules/pdfjs-dist/package.json', 'utf8')).version;
 const artifactRuntimeHash = createHash('sha256');
 for (const name of readdirSync('src/lib/utils/artifacts').filter(name => name.endsWith('.ts') && !name.endsWith('.test.ts')).sort()) {
 	artifactRuntimeHash.update(name).update(readFileSync(`src/lib/utils/artifacts/${name}`));
@@ -37,6 +38,7 @@ export default defineConfig({
 		sveltekit(),
 		viteStaticCopy({
 			targets: [
+				{ src: 'node_modules/pdfjs-dist/{cmaps,standard_fonts,wasm,iccs}', dest: `pdfjs/${pdfVersion}` },
 				{
 					src: 'node_modules/onnxruntime-web/dist/*.jsep.*',
 

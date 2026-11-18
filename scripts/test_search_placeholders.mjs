@@ -50,7 +50,18 @@ try {
   const filesHeight=await filesSearch.evaluate(el=>el.closest('.search-surface').getBoundingClientRect().height);assert(Math.abs(filesHeight-chatHeight)<1,'files/search field heights match');
   const list=page.locator('.files-list-scroll');
   await list.getByText('Document 39.txt',{exact:true}).waitFor();
+  const step=await list.evaluate(el=>el.children[1].getBoundingClientRect().top-el.children[0].getBoundingClientRect().top);
+  await list.hover();
+  for(const [delta,row] of [[120,1],[120,2],[-120,1]]) {
+   await page.mouse.wheel(0,delta);
+   await page.waitForFunction(({row,step})=>Math.abs(document.querySelector('.files-list-scroll').scrollTop-row*step)<1,{row,step});
+  }
   await list.evaluate(el=>el.scrollTop=el.scrollHeight);
+  const end=await list.evaluate(el=>el.scrollTop);
+  await page.mouse.wheel(0,-120);
+  await page.waitForFunction(({end,step})=>Math.abs(document.querySelector('.files-list-scroll').scrollTop-(end-step))<1,{end,step});
+  await page.mouse.wheel(0,120);
+  await page.waitForFunction(end=>Math.abs(document.querySelector('.files-list-scroll').scrollTop-end)<1,end);
   const bottom=await list.evaluate(el=>{const row=el.querySelector('div.w-full.flex.justify-between:last-child').getBoundingClientRect(),viewport=el.getBoundingClientRect(),dialog=el.closest('[class*="h-[33rem]"]').getBoundingClientRect();return {row:row.bottom,viewport:viewport.bottom,space:dialog.bottom-viewport.bottom};});
   assert(bottom.row<=bottom.viewport+1,'last file fully visible at end');
   assert(bottom.space<=20,'reduced unused bottom area');

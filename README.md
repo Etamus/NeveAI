@@ -192,7 +192,8 @@ NeveAI/
 ### Outras Funcionalidades
 - **Busca na web** via SearXNG (sem chave de API)
 - **Execução de código Python** via Pyodide (WebAssembly, no browser)
-- **Geração e edição de imagens local** com Neve Image 2 (ComfyUI isolado em 8 passos), Neve Image 2.6 (maior qualidade de edição) e Neve Image 3.
+- **Geração e edição de imagens local** com Neve Image 2 (ComfyUI isolado em 8 passos) e Neve Image 2.8 (maior qualidade de edição).
+- **Criar modelo** com Neve3D em INT8. Gerando um modelo pronto para uso em impressoras 3D e com visualização e ajustes diretos da interface
 - **Geração de músicas** via Neve-Step 1.5 Turbo local, com orientação de estilo, letras em português e player integrado
 - **Geração de vídeos local** com Neve Video, suporte a texto ou imagem de referência e seletores de resolução e duração
 - **Ferramentas para documentos** com geração assistida pela LLM e OfficeCLI para saídas DOCX, XLSX e PPTX, mantendo o pipeline interno como fallback

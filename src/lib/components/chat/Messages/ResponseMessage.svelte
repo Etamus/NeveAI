@@ -35,6 +35,7 @@
 	import ContentRenderer from './ContentRenderer.svelte';
 	import { KokoroWorker } from '$lib/workers/KokoroWorker';
 	import FileItem from '$lib/components/common/FileItem.svelte';
+	import MeshResult from '$lib/components/common/MeshResult.svelte';
 	import ArtifactCards from './ArtifactCards.svelte';
 	import { fade } from 'svelte/transition';
 	import StatusHistory from './ResponseMessage/StatusHistory.svelte';
@@ -217,7 +218,9 @@
 			(file) => file.type === 'video' || (file?.content_type ?? '').startsWith('video/')
 		) && message?.statusHistory?.some((status) => status.action === 'video_generation')
 	);
-	$: isGeneratedMediaResponse =
+	$: isGenerated3d = (message?.files ?? []).some((file) => file.type === 'model3d') ||
+		(message?.statusHistory ?? []).some((status) => status.action === 'model3d_generation');
+	$: isGeneratedMediaResponse = isGenerated3d ||
 		isGeneratedImageResponse || isGeneratedMusicResponse || isGeneratedVideoResponse;
 	$: reserveTextActionSpace = !readOnly && Boolean(message?.content?.trim()) &&
 		!isGeneratedMediaResponse && !(message?.statusHistory ?? []).some((status) =>
@@ -240,7 +243,7 @@
 				)
 	);
 	$: showVisualGenerationProgress = Boolean(
-		latestVisualGenerationStatus &&
+		latestVisualGenerationStatus && (message?.done !== true || latestVisualGenerationStatus.done === true) &&
 			!latestVisualGenerationStatus.error &&
 			!visualGenerationFileReady
 	);
@@ -261,7 +264,7 @@
 	);
 	$: generatedImageDisplayWidth = Math.min(26, 26 * generatedVisualAspectRatio);
 	$: isVisualGenerationInProgress = Boolean(
-		latestVisualGenerationStatus &&
+		message?.done !== true && latestVisualGenerationStatus &&
 			latestVisualGenerationStatus.done !== true &&
 			!latestVisualGenerationStatus.error
 	);
@@ -584,6 +587,9 @@
 							</div>
 						{/if}
 
+						{#each (message?.files ?? []).filter((file) => file.type === 'model3d') as file (file.id)}
+							<MeshResult id={file.id} name={file.name} />
+						{/each}
 						{#if message?.files && message.files.some((file) => file.type === 'image' || file.type === 'audio' || file.type === 'video' || (file?.content_type ?? '').startsWith('image/') || (file?.content_type ?? '').startsWith('audio/') || (file?.content_type ?? '').startsWith('video/'))}
 							<div
 								class="my-1 w-full flex overflow-x-auto gap-2 flex-wrap"
@@ -884,7 +890,7 @@
 									</button>
 								</div>
 							{/if}
-							{#if message.done && !readOnly && !isGeneratedMusicResponse && !isGeneratedVideoResponse}
+							{#if message.done && !readOnly && !isGeneratedMusicResponse && !isGeneratedVideoResponse && !isGenerated3d}
 								<Tooltip content={$i18n.t('Copy')} placement="bottom">
 									<button
 										aria-label={$i18n.t('Copy')}

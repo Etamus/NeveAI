@@ -11,7 +11,7 @@ Use supplied files as learning material when relevant. Never invent sources, dia
 
 def apply_guided_learning(messages: list[dict], features: dict, *, generated_file_ready: bool = False) -> list[dict]:
     if features.get('guided_learning') is not True or generated_file_ready or any(
-        features.get(key) for key in ('stable_diffusion','video_generation','music_generation')
+        features.get(key) for key in ('stable_diffusion','video_generation','music_generation','model3d_generation')
     ):
         return messages
     from neveai.utils.misc import add_or_update_system_message

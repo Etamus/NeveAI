@@ -1,7 +1,7 @@
 <script lang="ts">
 	import {getContext,onMount} from 'svelte';
 	import Restore from '$lib/components/icons/Restore.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import OrbitingSpheres from '$lib/components/common/OrbitingSpheres.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 	import {fly} from 'svelte/transition';
@@ -104,7 +104,7 @@
 			<span class="pointer-events-none absolute -top-6 left-1/2 h-6 border-l border-blue-500"></span>
 			<button type="button" data-outpaint-handle="rotate" class="absolute -top-9 left-1/2 grid size-6 -translate-x-1/2 place-items-center rounded-full bg-white text-blue-600 shadow-sm dark:bg-gray-800 dark:text-blue-400 cursor-grab" aria-label={$i18n.t('Rotação')} on:pointerdown={event=>start(event,'rotate')} on:keydown={event=>keyboard(event,'rotate')}><Restore className="size-4" /></button>
 		</div>
-	{:else if source}<div class="absolute inset-0 grid place-items-center"><Spinner className="size-5" /></div>
+	{:else if source}<div class="absolute inset-0 grid place-items-center"><OrbitingSpheres className="size-5" /></div>
 	{:else}<div class="absolute inset-0 grid place-items-center text-sm text-gray-500">{$i18n.t('Imagem principal')}</div>{/if}
 	{#if modified}<div class="absolute bottom-3 right-3 z-30"><Tooltip content={$i18n.t('Reset')}><button type="button" class="grid size-8 place-items-center rounded-md bg-white/90 text-gray-500 hover:bg-gray-100 dark:bg-gray-850/90 dark:text-gray-300 dark:hover:bg-gray-800" aria-label={$i18n.t('Reset')} on:click={reset}><svg viewBox="0 0 15 15" class="size-4" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" clip-rule="evenodd" d="M4.85355 2.14645C5.04882 2.34171 5.04882 2.65829 4.85355 2.85355L3.70711 4H9C11.4853 4 13.5 6.01472 13.5 8.5C13.5 10.9853 11.4853 13 9 13H5C4.72386 13 4.5 12.7761 4.5 12.5C4.5 12.2239 4.72386 12 5 12H9C10.933 12 12.5 10.433 12.5 8.5C12.5 6.567 10.933 5 9 5H3.70711L4.85355 6.14645C5.04882 6.34171 5.04882 6.65829 4.85355 6.85355C4.65829 7.04882 4.34171 7.04882 4.14645 6.85355L2.14645 4.85355C1.95118 4.65829 1.95118 4.34171 2.14645 4.14645L4.14645 2.14645C4.34171 1.95118 4.65829 1.95118 4.85355 2.14645Z" /></svg></button></Tooltip></div>{/if}
 	{#if ready&&manipulating}<div class="pointer-events-none absolute bottom-3 left-3 z-20 flex items-center gap-3 rounded-md bg-white/90 px-2 py-1.5 text-xs tabular-nums text-gray-500 dark:bg-gray-850/90 dark:text-gray-300" data-outpaint-info><span>{`${frame.width} \u00d7 ${frame.height}`}</span><span>{options.rotation??0}{'\u00b0'}</span></div>{/if}

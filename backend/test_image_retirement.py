@@ -6,13 +6,32 @@ from unittest.mock import AsyncMock, patch
 
 from neveai.routers import stable_diffusion as sd
 from neveai.routers.image_fast_generation import SIGMAS
+from neveai.routers import image_quality_generation as quality_runtime
 
 
 class ImageRetirementTests(unittest.IsolatedAsyncioTestCase):
+    def test_quality_rename_keeps_model_encoder_planner_and_workflow(self):
+        self.assertEqual(quality_runtime.NeveImage21Runtime.NAME, 'Neve Image 2.8')
+        self.assertEqual(quality_runtime.EDIT_MODEL_FILE, 'qwen-image-2.1-UC-int8_convrot.safetensors')
+        self.assertEqual(quality_runtime.ENCODER_FILE, 'qwen3vl_8b_int8_convrot.safetensors')
+        self.assertEqual(quality_runtime.PE_FILE, 'pe_i2i_heretic-Q6_K.gguf')
+        for count in (0, 1, 4, 10):
+            for optimized in (False, True):
+                graph = quality_runtime.NeveImage21Runtime.build_workflow(
+                    'Keep the requested edit', 1024, 1024,
+                    [f'ref-{i}.png' for i in range(count)], 42,
+                    model_file=quality_runtime.EDIT_MODEL_FILE, optimized_edit=optimized)
+                self.assertEqual(graph['5']['inputs']['steps'], 40)
+                self.assertEqual(graph['5']['inputs']['cfg'], 1.0)
+                self.assertEqual(graph['5']['inputs']['seed'], 42)
+                self.assertEqual(graph['2']['inputs']['clip_name'], quality_runtime.ENCODER_FILE)
+                for index in range(count):
+                    self.assertEqual(graph[str(9 + index)]['inputs']['image'], f'ref-{index}.png')
+
     def test_retired_and_unknown_preferences_resolve_to_active_qwen(self):
-        for quality in (None, '', 'neve_image', 'neve_image_2', 'unknown'):
+        for quality in (None, '', 'neve_image', 'neve_image_2', 'minimax_h3_image', 'unknown'):
             self.assertEqual(sd.normalize_image_quality(quality), 'qwen_image_2s')
-        for quality in ('qwen_image_2s','qwen_image_2_1_official','minimax_h3_image'):
+        for quality in ('qwen_image_2s','qwen_image_2_1_official'):
             self.assertEqual(sd.normalize_image_quality(quality), quality)
         self.assertEqual(sd.normalize_image_style('manga'),'none')
         self.assertEqual(sd.GenerateForm(prompt='test').quality,'qwen_image_2s')

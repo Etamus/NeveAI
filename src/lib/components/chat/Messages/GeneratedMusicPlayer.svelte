@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { getContext } from 'svelte';
-	import { getFileContentById } from '$lib/apis/files';
-	import { NEVEAI_BASE_URL } from '$lib/constants';
+	import { downloadChatFile } from '$lib/utils/chatFileSave';
+	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
 	import { mediaDuration } from '$lib/utils/mediaDuration';
 
 	export let src = '';
@@ -43,25 +43,13 @@
 		muted = audioElement.muted;
 	};
 
-	const download = async () => {
-		let content: BlobPart | null = null;
-		if (fileId) content = await getFileContentById(fileId);
-		if (!content) {
-			const response = await fetch(resolvedSrc);
-			if (!response.ok) return;
-			content = await response.blob();
+	const download = () => downloadChatFile(name || 'musica.mp3', async () => {
+		if (fileId) {
+			const response = await fetch(`${NEVEAI_API_BASE_URL}/files/${encodeURIComponent(fileId)}/content`, {credentials:'include'});
+			if (response.ok || !resolvedSrc) return response;
 		}
-
-		const blobUrl = URL.createObjectURL(content instanceof Blob ? content : new Blob([content]));
-		const anchor = document.createElement('a');
-		anchor.href = blobUrl;
-		anchor.download = name || 'musica.mp3';
-		anchor.style.display = 'none';
-		document.body.appendChild(anchor);
-		anchor.click();
-		anchor.remove();
-		setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-	};
+		return fetch(resolvedSrc, {credentials:'include'});
+	});
 </script>
 
 <div class="music-player mx-auto self-center flex h-14 w-full min-w-0 max-w-[30rem] items-center gap-2.5 rounded-lg bg-gray-100/70 px-2.5 text-gray-700 dark:bg-gray-800/55 dark:text-gray-200">

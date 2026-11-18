@@ -127,9 +127,10 @@ class LauncherTests(unittest.TestCase):
     def test_installer_and_update_prepare_runtime_and_preserve_generated_folder(self):
         source = (ROOT / "launchers/instalar.ps1").read_text(encoding="utf-8-sig")
         self.assertIn("Run $VENV_PY @($desktopSetup)", source)
-        self.assertIn("Run $desktopPython @($desktopSetup)", source)
-        self.assertIn("'.desktop'", source)
-        self.assertIn("$desktopStateBackup = Join-Path $rollbackRoot '.desktop\\installed.json'", source)
+        update = (ROOT / "launchers/update-core.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("Run $desktopPython @($desktopSetup)", update)
+        self.assertIn("'.desktop'", update)
+        self.assertIn("$desktopStateBackup = Join-Path $rollbackRoot '.desktop\\installed.json'", update)
         self.assertIn("/.desktop/", (ROOT / ".gitignore").read_text(encoding="utf-8"))
 
     def test_native_host_keeps_rendering_and_does_not_use_focus_polling(self):

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { getContext, onDestroy } from 'svelte';
-	import Spinner from '../../common/Spinner.svelte';
+	import OrbitingSpheres from '../../common/OrbitingSpheres.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -127,7 +127,7 @@
 
 <div class="sqlite-view flex flex-col h-full">
 	{#if loading}
-		<div class="flex items-center justify-center h-full"><Spinner className="size-4" /></div>
+		<div class="flex items-center justify-center h-full"><OrbitingSpheres className="size-4" /></div>
 	{:else if error}
 		<div class="p-3 text-xs text-red-500">{error}</div>
 	{:else}

@@ -899,15 +899,8 @@ class ChatTable:
             # Check if the database dialect is either 'sqlite' or 'postgresql'
             dialect_name = db.bind.dialect.name
             if dialect_name == "sqlite":
-                # SQLite case: using JSON1 extension for JSON searching
-                sqlite_content_sql = (
-                    "EXISTS ("
-                    "    SELECT 1 "
-                    "    FROM json_each(Chat.chat, '$.messages') AS message "
-                    "    WHERE LOWER(message.value->>'content') LIKE '%' || :content_key || '%'"
-                    ")"
-                )
-                sqlite_content_clause = text(sqlite_content_sql)
+                from neveai.utils.chat_search_index import content_clause
+                sqlite_content_clause = text(content_clause(db, user_id))
                 query = query.filter(
                     or_(
                         Chat.title.ilike(bindparam("title_key")), sqlite_content_clause

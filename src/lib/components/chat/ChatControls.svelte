@@ -280,6 +280,7 @@
 	{#if $showControls}
 		<Drawer
 			show={$showControls}
+			animated={!$showArtifacts}
 			onClose={() => showControls.set(false)}
 			className="min-h-[100dvh] !bg-white dark:!bg-gray-850 border-l border-gray-200/80 dark:border-gray-700/60"
 		>
@@ -309,7 +310,7 @@
 							<span class="px-2.5 py-1 text-sm font-medium text-gray-900 dark:text-white">
 								{$i18n.t('Files')}
 							</span>
-							<button
+							<button data-window-close
 								class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-500 dark:text-gray-400"
 								on:click={() => showControls.set(false)}
 								aria-label={$i18n.t('Close')}
@@ -404,7 +405,7 @@
 								<span class="px-2.5 py-1 text-sm font-medium text-gray-900 dark:text-white">
 									{$i18n.t('Files')}
 								</span>
-								<button
+								<button data-window-close
 									class="p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-500 dark:text-gray-400"
 									on:click={() => showControls.set(false)}
 									aria-label={$i18n.t('Close')}

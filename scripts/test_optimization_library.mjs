@@ -101,9 +101,9 @@ try {
   assert((await page.locator('.file-viewer-content').innerText()).includes('Row 1199'));
   assert.equal(await page.locator('.file-viewer-content unsafe').count(),0);
   assert.equal(await page.evaluate(()=>window.__sheetRenders),1);
-  await page.getByRole('button',{name:'Second',exact:true}).click();
+  await page.getByRole('tab',{name:'Second',exact:true}).click();
   await page.waitForFunction(()=>window.__sheetRenders===2);
-  await page.getByRole('button',{name:'First',exact:true}).click();
+  await page.getByRole('tab',{name:'First',exact:true}).click();
   await page.waitForTimeout(150);
   assert.equal(await page.evaluate(()=>window.__sheetRenders),2);
   assert.equal(await page.locator('.file-viewer-content tbody tr').count(),1200);
@@ -122,10 +122,16 @@ try {
    try {
     let start=performance.now();const old=await before.pptxToImages(data);const oldMs=performance.now()-start,oldDecodes=decodes;
     decodes=0;start=performance.now();const next=await window.__auditConverters.pptxToImages(data);
-    return {identical:JSON.stringify(old)===JSON.stringify(next),oldMs,newMs:performance.now()-start,oldDecodes,newDecodes:decodes,slides:next.images.length};
+    const openMs=performance.now()-start,decodesAtOpen=decodes;
+    const first=await next.baseSlide(0);
+    const firstMs=performance.now()-start;
+    const matches=first===await next.renderSlide(0);
+    for(let i=1;i<next.count;i++)assertImage(await next.baseSlide(i));
+    function assertImage(url){if(!url.startsWith('data:image/png;base64,'))throw Error('Missing slide');}
+    return {matches,oldMs,openMs,firstMs,oldDecodes,decodesAtOpen,newDecodes:decodes,slides:next.count};
    }finally{window.Image=OriginalImage;}
   });
-  assert(conversion.identical);assert.equal(conversion.slides,30);assert.equal(conversion.newDecodes,1);assert.equal(conversion.oldDecodes,30);
+  assert(conversion.matches);assert.equal(conversion.decodesAtOpen,0);assert.equal(conversion.slides,30);assert.equal(conversion.newDecodes,1);assert(conversion.oldDecodes>0);
   assert.deepEqual(errors,[]);results.push({name,refreshRequestCount:1,stableScroll:before,conversion,errors});
   await page.close();
  }

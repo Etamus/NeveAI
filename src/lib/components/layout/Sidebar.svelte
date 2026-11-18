@@ -249,6 +249,7 @@
 			if (generation !== chatListGeneration) return;
 			currentChatPage.set(page);
 			allChatsLoaded = items.length === 0;
+			if (allChatsLoaded) return;
 			chats.set([...new Map([...($chats ?? []), ...items].map(item => [item.id, item])).values()]);
 		} catch (error) {
 			console.error('Failed to load more chats:', error);
@@ -869,19 +870,7 @@
 				</div>
 			</div>
 
-			<div
-				class="sidebar-scroll-fade {scrollTop > 0
-					? 'sidebar-scroll-fade-top'
-					: ''} relative flex flex-col flex-1 overflow-y-auto scrollbar-hidden pb-3"
-				on:scroll={(e) => {
-					const target = e.currentTarget as HTMLElement;
-					if (target.scrollTop === 0) {
-						scrollTop = 0;
-					} else {
-						scrollTop = target.scrollTop;
-					}
-				}}
-			>
+
 				<div class="pb-0.5">
 					<div class="px-[0.4375rem] flex justify-center text-gray-800 dark:text-gray-200">
 						<button
@@ -918,6 +907,19 @@
 						<Library /><span class="text-sm">{$i18n.t('Library')}</span>
 					</a>
 				</div>
+			<div
+				class="sidebar-scroll-fade {scrollTop > 0
+					? 'sidebar-scroll-fade-top'
+					: ''} relative flex flex-col flex-1 overflow-y-auto scrollbar-hidden pb-3"
+				on:scroll={(e) => {
+					const target = e.currentTarget as HTMLElement;
+					if (target.scrollTop === 0) {
+						scrollTop = 0;
+					} else {
+						scrollTop = target.scrollTop;
+					}
+				}}
+			>
 				<div class="mt-2"></div>
 
 
@@ -1031,7 +1033,7 @@
 							}
 						}}
 					>
-						<div class="pt-1.5 flex flex-col overflow-y-auto scrollbar-hidden text-gray-900 dark:text-gray-200">
+						<div class="pt-1.5 flex flex-col text-gray-900 dark:text-gray-200">
 							{#each $pinnedChats as chat, idx (`pinned-chat-${chat?.id ?? idx}`)}
 								<ChatItem
 									className=""
@@ -1132,7 +1134,7 @@
 					}}
 				>
 					<svelte:fragment slot="actions"><ChatSortMenu value={chatSort} onChange={changeChatSort} /></svelte:fragment>
-					<div class=" flex-1 flex flex-col overflow-y-auto scrollbar-hidden">
+					<div class="flex flex-col">
 						<div class="pt-1.5">
 							{#if $chats}
 								{#each sortedChats as chat, idx (`chat-${chat?.id ?? idx}`)}
@@ -1170,6 +1172,8 @@
 									>
 										<div class="h-1" aria-hidden="true"></div>
 									</Loader>
+								{:else}
+									<div class="h-1" aria-hidden="true"></div>
 								{/if}
 							{:else}
 								<div class="h-1" aria-hidden="true"></div>

@@ -15,7 +15,7 @@ try{
   await press(page.locator('button[aria-label="Models"]'));await page.locator('.unified-models-shell').waitFor({state:'visible'});const models=await check();
   await press(dialog().getByText('Baixar modelos',{exact:true}));await page.locator('.download-models-shell').waitFor({state:'visible'});const download=await check();
   if(mobile){await back();assert(await page.locator('.unified-models-shell').isVisible());
-   if(process.env.DIALOG_BACK_BUTTON){await page.locator('.unified-model-name').first().click();await page.locator('.model-editor-features').waitFor({state:'attached'});assert(!(await page.locator('.model-editor-features').isVisible()));await back();assert(await page.locator('.unified-models-shell').isVisible());}
+   if(process.env.DIALOG_BACK_BUTTON){await page.locator('[data-edit-model]').first().click();await page.locator('.model-editor-features').waitFor({state:'attached'});assert(!(await page.locator('.model-editor-features').isVisible()));await back();assert(await page.locator('.unified-models-shell').isVisible());}
    await back();}else{await page.keyboard.press('Escape');await page.waitForTimeout(200);await page.keyboard.press('Escape');}
   await page.waitForTimeout(250);
   if(mobile){await page.locator('.chat-navbar-sidebar button').tap();await page.waitForTimeout(350);}

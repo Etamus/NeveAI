@@ -143,7 +143,27 @@ class FolderTable:
                 if not folder:
                     return None
 
-                return FolderModel.model_validate(folder)
+                result = FolderModel.model_validate(folder)
+                if not result.data or not isinstance(result.data.get("files"), list):
+                    return result
+                from neveai.models.files import Files
+                from neveai.models.knowledge import Knowledges
+
+                checks = {"file": Files.check_access_by_user_id, "collection": Knowledges.check_access_by_user_id}
+                allowed = {}
+                visible = []
+                for entry in result.data["files"]:
+                    if not isinstance(entry, dict):
+                        continue
+                    kind, identifier = entry.get("type"), entry.get("id")
+                    if kind in checks:
+                        key = kind, identifier
+                        if key not in allowed:
+                            allowed[key] = bool(identifier and checks[kind](identifier, user_id, "read", db=db))
+                        if not allowed[key]:
+                            continue
+                    visible.append(entry)
+                return result.model_copy(update={"data": {**result.data, "files": visible}})
         except Exception:
             return None
 
@@ -170,6 +190,13 @@ class FolderTable:
                 return folders
         except Exception:
             return None
+
+    def list_summaries(self, user_id: str, db: Session) -> list[FolderNameIdResponse]:
+        columns = [getattr(Folder, key) for key in FolderNameIdResponse.model_fields]
+        rows = db.query(*columns).filter(Folder.user_id == user_id).all()
+        owned = {row.id for row in rows}
+        return [FolderNameIdResponse(**{**row._mapping, "parent_id":
+                row.parent_id if row.parent_id in owned else None}) for row in rows]
 
     def get_folders_by_user_id(
         self, user_id: str, db: Optional[Session] = None

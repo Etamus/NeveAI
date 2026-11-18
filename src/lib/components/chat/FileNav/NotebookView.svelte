@@ -7,7 +7,7 @@
 		executeNotebookCell,
 		stopNotebookSession
 	} from '$lib/apis/terminal';
-	import Spinner from '../../common/Spinner.svelte';
+	import OrbitingSpheres from '../../common/OrbitingSpheres.svelte';
 	import Tooltip from '../../common/Tooltip.svelte';
 	import CellEditor from './CellEditor.svelte';
 
@@ -245,11 +245,11 @@
 			<div class="flex items-center select-none">
 				{#if kernelStarting}
 					<Tooltip content={$i18n.t('Starting kernel...')} placement="bottom"
-						><Spinner className="size-2" /></Tooltip
+						><OrbitingSpheres className="size-2" /></Tooltip
 					>
 				{:else if runningCell !== null}
 					<Tooltip content={$i18n.t('Running')} placement="bottom"
-						><Spinner className="size-2" /></Tooltip
+						><OrbitingSpheres className="size-2" /></Tooltip
 					>
 				{:else if kernelReady}
 					<Tooltip content="Jupyter" placement="bottom"
@@ -302,7 +302,7 @@
 				<div class="nb-code-wrap">
 					<div class="nb-cell-gutter">
 						{#if runningCell === i}
-							<div class="nb-cell-label"><Spinner className="size-3" /></div>
+							<div class="nb-cell-label"><OrbitingSpheres className="size-3" /></div>
 						{:else if baseUrl && apiKey && filePath}
 							<button
 								class="nb-run-btn"

@@ -5,10 +5,10 @@
 
 <div class="min-h-screen bg-white p-4 dark:bg-black">
     <main style="max-width:660px;margin:50px auto">
-        <section id="long"><StatusItem status={{action:'web_search_queries_generated',queries:[url]}} /></section>
-        <section id="short"><StatusItem status={{action:'web_search_queries_generated',queries:['clima hoje']}} /></section>
-        <section id="unbroken"><StatusItem status={{action:'web_search_queries_generated',queries:['a'.repeat(5000)]}} /></section>
-        <section id="deep"><StatusItem status={{action:'web_search_queries_generated',deep_search:true,queries:[url,'fontes oficiais','b'.repeat(2000)]}} /></section>
-        <section id="retrieval"><StatusItem status={{action:'queries_generated',queries:[url]}} /></section>
+        <section id="long"><StatusItem showQueries status={{action:'web_search_queries_generated',queries:[url]}} /></section>
+        <section id="short"><StatusItem showQueries status={{action:'web_search_queries_generated',queries:['clima hoje']}} /></section>
+        <section id="unbroken"><StatusItem showQueries status={{action:'web_search_queries_generated',queries:['a'.repeat(5000)]}} /></section>
+        <section id="deep"><StatusItem showQueries status={{action:'web_search_queries_generated',deep_search:true,queries:[url,'fontes oficiais','b'.repeat(2000)]}} /></section>
+        <section id="retrieval"><StatusItem showQueries status={{action:'queries_generated',queries:[url]}} /></section>
     </main>
 </div>

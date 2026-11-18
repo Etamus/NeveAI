@@ -134,7 +134,9 @@
 						}
 					}}><Clear /></button
 				>
-				<button type="button" aria-label={$i18n.t('Adicionar')} title={$i18n.t('Adicionar')} class="grid size-8 place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" on:click={() => { showAddMemoryModal = true; }}><AddFile /></button>
+				<Tooltip content={$i18n.t('Adicionar')} touch={false} tippyOptions={{ trigger: 'mouseenter' }}>
+					<button type="button" aria-label={$i18n.t('Adicionar')} class="grid size-8 place-items-center rounded-lg text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" on:click={() => { showAddMemoryModal = true; }}><AddFile /></button>
+				</Tooltip>
 			</div>
 		</div>
 

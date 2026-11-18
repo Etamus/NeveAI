@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { slide } from 'svelte/transition';
-	import { quintOut } from 'svelte/easing';
+	const revealDuration = () => 150;
 	import { notifyChatLayout } from '$lib/utils/notifyChatLayout';
 	import { getContext } from 'svelte';
 	import { embed, showControls, showEmbeds } from '$lib/stores';
@@ -138,7 +137,6 @@
 
 			return acc;
 		}, []);
-		console.log('citations', citations);
 
 		showRelevance = calculateShowRelevance(citations);
 		showPercentage = shouldShowPercentage(citations);
@@ -170,7 +168,7 @@
 				: $i18n.t('Toggle {{COUNT}} sources', { COUNT: citations.length })}
 			aria-expanded={showCitations}
 			on:click={(event) => {
-				notifyChatLayout(event.currentTarget, 200, !showCitations);
+				notifyChatLayout(event.currentTarget, revealDuration(), !showCitations);
 				showCitations = !showCitations;
 			}}
 		>
@@ -201,8 +199,9 @@
 	</div>
 {/if}
 
-{#if showCitations}
-	<div class="py-1.5" transition:slide={{ duration: 200, easing: quintOut }}>
+<div data-source-disclosure class="sources-reveal" class:expanded={showCitations} inert={!showCitations} aria-hidden={!showCitations}>
+	<div class="min-h-0 overflow-hidden">
+	<div class="source-links py-1.5">
 		<div class="text-xs gap-2 flex flex-col">
 			{#each citations as citation, idx}
 				<button
@@ -228,4 +227,14 @@
 			{/each}
 		</div>
 	</div>
-{/if}
+	</div>
+</div>
+<style>
+	.sources-reveal { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 150ms ease-out; }
+	.sources-reveal.expanded { grid-template-rows: 1fr; }
+	.source-links { opacity: 0; transition: opacity 150ms ease-out; }
+	.expanded .source-links { opacity: 1; }
+	@media (prefers-reduced-motion: reduce) {
+		.source-links { transition: none; }
+	}
+</style>

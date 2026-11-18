@@ -72,6 +72,7 @@
 </script>
 
 <script lang="ts">
+	import { modelGridWheel } from '$lib/utils/modelGridWheel';
 	import { createEventDispatcher, getContext, onDestroy, onMount, tick } from 'svelte';
 	import { fade } from 'svelte/transition';
 	import { DropdownMenu } from 'bits-ui';
@@ -91,6 +92,7 @@
 	import Download from '$lib/components/icons/ModelDownload.svelte';
 	import { modelDownloadKey, downloadFilename, type ModelDownloadRequest } from '$lib/utils/modelDownloadRequest';
 	import Spinner from '$lib/components/common/Spinner.svelte';
+	import { downloadGridScroll } from '$lib/utils/downloadGridScroll';
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
 	import { NEVEAI_BASE_URL } from '$lib/constants';
 	import { getModels } from '$lib/apis';
@@ -132,7 +134,6 @@
 	$: if (hfDetailOpen !== previousDetailOpen) {
 		previousDetailOpen = hfDetailOpen;
 		const opening = hfDetailOpen;
-		if (opening) catalogScrollTop = catalogScroller?.scrollTop ?? 0;
 		void tick().then(() => { if (catalogScroller && hfDetailOpen === opening) catalogScroller.scrollTop = opening ? 0 : catalogScrollTop; });
 	}
 	let hfRevision = 0;
@@ -508,9 +509,12 @@
 	$: if (show && !wasShown) {
 		wasShown = true;
 		query = '';
+		catalogScrollTop = 0;
+		void tick().then(() => { if (show && catalogScroller) catalogScroller.scrollTop = 0; });
 		void hydrateModal();
 	} else if (!show && wasShown) {
 		wasShown = false;
+		catalogScrollTop = 0;
 		openModelInfoId = null;
 		showDownloadDetails = false;
 	}
@@ -721,7 +725,7 @@
 									class="text-white transition-[stroke-dashoffset]"
 								/>
 							</svg>
-							<svg data-download-progress-icon aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="relative z-10 block size-5 text-gray-400">
+							<svg data-download-progress-icon aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="relative z-10 block size-[18px] text-gray-900 dark:text-gray-100">
 								<path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
 							</svg>
 						</span>
@@ -758,9 +762,9 @@
 								{/if}
 								{#if queuedModelIds.length || pausedKeys.length}
 									<div data-download-queue-section class={downloading ? 'mt-3 border-t border-gray-100 pt-2 dark:border-gray-800' : ''}>
-									<div data-download-queue class="max-h-36 overflow-y-auto overscroll-contain {queuedModelIds.length + pausedKeys.length > 3 ? 'pr-1 [scrollbar-gutter:stable]' : ''}">
+									<div data-download-queue data-model-grid use:modelGridWheel class="[overflow-anchor:none] max-h-36 overflow-y-auto overscroll-contain {queuedModelIds.length + pausedKeys.length > 3 ? 'pr-1 [scrollbar-gutter:stable]' : ''}">
 										{#each [...queuedModelIds, ...pausedKeys] as key (key)}
-											<div data-queued-download={key} class="flex min-w-0 items-center gap-1 { !downloading && queuedModelIds.length + pausedKeys.length === 1 ? 'py-0' : 'py-1' } text-xs text-gray-500 dark:text-gray-400"><span class="min-w-0 flex-1 truncate">{downloadLabel(key)}</span>{#if pausedKeys.includes(key)}<button data-resume-download type="button" aria-label={$i18n.t('Resume')} title={$i18n.t('Resume')} class="grid size-7 shrink-0 place-items-center rounded-md hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { const request = downloadRequests.get(key); if (request) queueDownload(request); }}><svg aria-hidden="true" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path stroke-linejoin="round" d="m8 5 11 7-11 7Z" /></svg></button>{/if}<button data-cancel-queued type="button" aria-label={$i18n.t('Cancel')} title={$i18n.t('Cancel')} class="grid size-7 shrink-0 place-items-center rounded-md hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => cancelQueuedDownload(key)}><XCircle /></button></div>
+											<div data-queued-download={key} class="flex min-w-0 items-center gap-1 { !downloading && queuedModelIds.length + pausedKeys.length === 1 ? 'h-7' : 'h-9' } text-xs text-gray-500 dark:text-gray-400"><span class="min-w-0 flex-1 truncate">{downloadLabel(key)}</span>{#if pausedKeys.includes(key)}<button data-resume-download type="button" aria-label={$i18n.t('Resume')} title={$i18n.t('Resume')} class="grid size-7 shrink-0 place-items-center rounded-md hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { const request = downloadRequests.get(key); if (request) queueDownload(request); }}><svg aria-hidden="true" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path stroke-linejoin="round" d="m8 5 11 7-11 7Z" /></svg></button>{/if}<button data-cancel-queued type="button" aria-label={$i18n.t('Cancel')} title={$i18n.t('Cancel')} class="grid size-7 shrink-0 place-items-center rounded-md hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => cancelQueuedDownload(key)}><XCircle /></button></div>
 										{/each}
 									</div>
 									</div>
@@ -781,8 +785,8 @@
 			</div>
 		</div>
 
-		<div class="download-models-body flex min-h-0 w-full flex-1 flex-col overflow-hidden px-4 pt-3 pb-7 dark:text-gray-200">
-			<div bind:this={catalogScroller} data-download-list class:catalog-section-scroll={!hfDetailOpen} class="download-models-list min-h-0 flex-1 pr-2 [scrollbar-gutter:stable] {hfDetailOpen ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain'}">
+		<div class="download-models-body flex min-h-0 w-full flex-1 flex-col overflow-hidden px-4 pt-3 pb-2 dark:text-gray-200">
+			<div bind:this={catalogScroller} data-download-list use:downloadGridScroll class:catalog-section-scroll={!hfDetailOpen} class="download-models-list min-h-0 flex-1 {hfDetailOpen ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable]'}">
 				<div data-catalog-section-heading class:hidden={hfDetailOpen || (query.trim().length > 0 && visibleCatalog.length === 0)} class="sticky top-0 z-20 h-10 bg-white dark:bg-gray-900">
 					<button type="button" data-neve-section-toggle class:invisible={hfHeaderActive} disabled={!hfHasResults} aria-expanded={neveExpanded} aria-controls="neve-catalog-items" class="mb-2 flex h-8 items-center gap-2 px-3 text-sm text-gray-500 dark:text-gray-400 disabled:cursor-default" on:click={() => { if (hfHasResults) neveExpanded = !neveExpanded; }}>
 						<img src={`${NEVEAI_BASE_URL}/static/logoselector.svg`} alt="" class="size-6 brightness-0 opacity-55 dark:invert dark:opacity-65" /><span>Neve</span>{#if hfHasResults}<span class="relative top-px inline-flex shrink-0"><ChevronUpCompact className={`size-3.5 shrink-0 transition-transform ${neveExpanded ? '' : 'rotate-180'}`} /></span>{/if}
@@ -859,7 +863,7 @@
 				{/if}
 				</div>
 			</section>
-			<div class={hfDetailOpen ? 'h-full min-h-0' : ''}><HuggingFaceModels bind:this={huggingFaceModels} {query} stickyActive={hfHeaderActive} onStickyChange={(stuck) => hfHeaderActive = stuck} collapsible={neveExpanded} active={show} bind:detailOpen={hfDetailOpen} bind:hasResults={hfHasResults} bind:settledQuery={hfSettledQuery} activeKey={activeDownloadKey} activeRequest={activeDownloadKey ? downloadRequests.get(activeDownloadKey) : undefined} queuedRequests={queuedModelIds.map(key => downloadRequests.get(key)).filter((request): request is ModelDownloadRequest => !!request)} queuedKeys={queuedModelIds} blocked={cancelling} revision={hfRevision} onQueue={queueDownload} /></div>
+			<div class={hfDetailOpen ? 'h-full min-h-0' : ''}><HuggingFaceModels bind:this={huggingFaceModels} {query} stickyActive={hfHeaderActive} onStickyChange={(stuck) => hfHeaderActive = stuck} onBeforeOpen={() => { catalogScrollTop = catalogScroller?.scrollTop ?? 0; }} collapsible={neveExpanded} active={show} bind:detailOpen={hfDetailOpen} bind:hasResults={hfHasResults} bind:settledQuery={hfSettledQuery} activeKey={activeDownloadKey} activeRequest={activeDownloadKey ? downloadRequests.get(activeDownloadKey) : undefined} queuedRequests={queuedModelIds.map(key => downloadRequests.get(key)).filter((request): request is ModelDownloadRequest => !!request)} queuedKeys={queuedModelIds} blocked={cancelling} revision={hfRevision} onQueue={queueDownload} /></div>
 			{#if !hfDetailOpen && query.trim() && visibleCatalog.length === 0 && !hfHasResults && hfSettledQuery === query.trim()}
 				<div data-catalog-empty class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">{$i18n.t('No models found')}</div>
 			{/if}

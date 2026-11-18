@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
+	import { pdfAssets } from '$lib/utils/pdfAssets';
 	import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 	import panzoom, { type PanZoom } from 'panzoom';
 	import Spinner from './Spinner.svelte';
@@ -16,7 +17,20 @@
 	let pzInstance: PanZoom | null = null;
 	let zoomLevel = 1;
 	let rerenderTimer: ReturnType<typeof setTimeout> | null = null;
-	let lastRenderedZoom = 1;
+	const visiblePages = new Set<HTMLCanvasElement>();
+	const resident = new Map<HTMLCanvasElement, number>();
+	const pixelBudget = 16_000_000;
+	let pixels = 0;
+	function trimPages() {
+		for (const [canvas, size] of resident) {
+			if (pixels <= pixelBudget) break;
+			if (visiblePages.has(canvas) || renders.has(canvas)) continue;
+			resident.delete(canvas);
+			pixels -= size;
+			canvas.width = canvas.height = 1; // CSS keeps the page's layout and scroll position.
+			delete canvas.dataset.rendered;
+		}
+	}
 	let pageObserver: IntersectionObserver | null = null;
 	let loadingTask: any = null;
 	let destroyed = false;
@@ -30,16 +44,34 @@
 		await previous?.promise?.catch(() => {});
 		if (destroyed || !pdfDoc) return;
 		const page = await pdfDoc.getPage(Number(canvas.dataset.page));
+		if (destroyed) return;
 		const viewport = page.getViewport({ scale: 1 });
-		const cssScale = (outerContainer?.clientWidth || 800) / viewport.width;
-		const requested = cssScale * forZoom * Math.min(window.devicePixelRatio || 1, 2);
+		// Use the actual CSS page width (the scrollbar can change the viewport width).
+		const cssScale = parseFloat(canvas.style.width) / viewport.width;
+		const dpr = window.devicePixelRatio || 1;
+		const requested = cssScale * Math.max(2, forZoom * dpr);
 		const scale = Math.min(requested, Math.sqrt(8000000 / (viewport.width * viewport.height)));
 		const scaledViewport = page.getViewport({ scale });
-		canvas.width = Math.ceil(scaledViewport.width);
-		canvas.height = Math.ceil(scaledViewport.height);
-		const task = page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport: scaledViewport });
+		const width = Math.ceil(scaledViewport.width);
+		const height = Math.ceil(scaledViewport.height);
+		if (canvas.dataset.rendered && canvas.width >= width && canvas.height >= height) return;
+		const buffer = document.createElement('canvas');
+		buffer.width = width;
+		buffer.height = height;
+		const task = page.render({ canvas: buffer, canvasContext: buffer.getContext('2d', { alpha: false }), viewport: scaledViewport });
 		renders.set(canvas, task);
-		try { await task.promise; canvas.dataset.rendered = 'true'; }
+		try {
+			await task.promise;
+			if (destroyed) return;
+			canvas.width = width;
+			canvas.height = height;
+			canvas.getContext('2d')!.drawImage(buffer, 0, 0);
+			canvas.dataset.rendered = 'true';
+			pixels += width * height - (resident.get(canvas) ?? 0);
+			resident.delete(canvas);
+			resident.set(canvas, width * height);
+			trimPages();
+		}
 		catch (error) { if (!destroyed && (error as Error).name !== 'RenderingCancelledException') throw error; }
 		finally { if (renders.get(canvas) === task) renders.delete(canvas); }
 	};
@@ -74,10 +106,8 @@
 				// Debounced re-render at new resolution so text stays crisp
 				if (rerenderTimer) clearTimeout(rerenderTimer);
 				rerenderTimer = setTimeout(() => {
-					if (Math.abs(zoomLevel - lastRenderedZoom) > 0.05) {
-						rerenderPages(zoomLevel);
-					}
-				}, 300);
+					rerenderPages();
+				}, 80);
 			});
 		}
 	};
@@ -103,20 +133,19 @@
 			pzInstance.moveTo(0, 0);
 			pzInstance.zoomAbs(0, 0, 1);
 			zoomLevel = 1;
-			rerenderPages(1);
+			rerenderPages();
 		}
 	};
 
 	// Re-render existing canvases at a new zoom level (preserves panzoom transform)
-	const rerenderPages = async (forZoom: number) => {
+	const rerenderPages = async () => {
 		if (!pdfDoc || !sceneElement) return;
 		renderQueue = renderQueue.then(async () => {
 			if (destroyed) return;
-			for (const canvas of sceneElement.querySelectorAll<HTMLCanvasElement>('canvas[data-rendered="true"]')) {
+			for (const canvas of visiblePages) {
 				if (destroyed) return;
-				await renderCanvas(canvas, forZoom);
+				await renderCanvas(canvas, zoomLevel);
 			}
-			lastRenderedZoom = forZoom;
 		}).catch(() => {});
 		await renderQueue;
 	};
@@ -125,10 +154,13 @@
 		if (!pdfDoc || !sceneElement) return;
 		pageObserver?.disconnect();
 		pageObserver = new IntersectionObserver((entries) => {
-			for (const entry of entries) if (entry.isIntersecting) {
-				pageObserver?.unobserve(entry.target);
-				renderQueue = renderQueue.then(() => renderCanvas(entry.target as HTMLCanvasElement, zoomLevel)).catch(() => {});
+			for (const entry of entries) {
+				const canvas = entry.target as HTMLCanvasElement;
+				if (!entry.isIntersecting) { visiblePages.delete(canvas); continue; }
+				visiblePages.add(canvas);
+				renderQueue = renderQueue.then(() => visiblePages.has(canvas) ? renderCanvas(canvas, zoomLevel) : undefined).catch(() => {});
 			}
+			trimPages();
 		}, { root: outerContainer, rootMargin: '500px' });
 
 		// Clear previous canvases
@@ -144,6 +176,7 @@
 			const cssScale = containerWidth / viewport.width;
 
 			const canvas = document.createElement('canvas');
+			canvas.width = canvas.height = 1;
 			canvas.dataset.page = String(i);
 			// CSS size stays at the CSS-pixel dimensions for layout
 			canvas.style.width = `${Math.round(cssScale * viewport.width)}px`;
@@ -156,12 +189,10 @@
 
 			sceneElement.appendChild(canvas);
 
-			if (i === 1) { await renderCanvas(canvas, 1); loading = false; }
-			else pageObserver.observe(canvas);
+			if (i === 1) { await renderCanvas(canvas, zoomLevel); loading = false; }
+			pageObserver.observe(canvas);
 		}
 
-		lastRenderedZoom = 1;
-		initPanzoom();
 	};
 
 	const loadPdf = async () => {
@@ -184,7 +215,7 @@
 				pdfData = await res.arrayBuffer();
 			}
 			if (destroyed) return;
-			loadingTask = pdfjs.getDocument({ data: pdfData });
+			loadingTask = pdfjs.getDocument({ ...pdfAssets(pdfjs.version), data: pdfData });
 			pdfDoc = await loadingTask.promise;
 			if (destroyed) return;
 			await renderAllPages();
@@ -196,9 +227,9 @@
 		}
 	};
 
-	onMount(() => {
-		loadPdf();
-	});
+	let mounted = false;
+	onMount(() => { initPanzoom(); mounted = true; });
+	$: if (mounted && (url || data)) loadPdf();
 
 	onDestroy(() => {
 		destroyed = true;
@@ -223,10 +254,10 @@
 	{/if}
 
 	<div class="overflow-y-auto h-full" bind:this={outerContainer}>
-		<div bind:this={sceneElement} class="w-full"></div>
+		<div bind:this={sceneElement} class="min-h-full w-full"></div>
 	</div>
 
-	{#if !loading && !error && pdfDoc}
+	{#if !error}
 		<div
 			class="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 rounded-lg bg-white/90 dark:bg-gray-850/90 backdrop-blur-sm shadow-lg border border-gray-200/60 dark:border-gray-700/60 px-1 py-0.5"
 		>

@@ -5,8 +5,6 @@
 
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 
-	import { slide } from 'svelte/transition';
-	import { quintOut } from 'svelte/easing';
 
 	export let status: any = { urls: [], query: '' };
 	export let done: boolean = false;
@@ -54,14 +52,13 @@
 	class="web-search-block mb-2 w-full min-w-0 overflow-hidden text-sm"
 	data-message-expanded={open}
 >
-	<!-- Trigger -->
-	<div
-		class="flex items-center gap-2 pt-1 pb-2 cursor-pointer group/ws-trigger select-none"
-		on:pointerup|stopPropagation={(event) => {
-			notifyChatLayout(event.currentTarget, 200, !open);
+	<button type="button"
+		class="flex w-full items-center gap-2 pt-1 pb-2 text-left cursor-pointer group/ws-trigger select-none"
+		aria-expanded={open}
+		on:click|stopPropagation={(event) => {
+			notifyChatLayout(event.currentTarget, 0, !open);
 			open = !open;
 		}}
-		on:click|stopPropagation
 	>
 		<div
 			class="flex min-w-0 items-center gap-2 text-sm font-normal text-gray-600 transition-colors hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100"
@@ -87,13 +84,12 @@
 					: 'rotate-0'}"
 			/>
 		</div>
-	</div>
+	</button>
 
 	<!-- Results content -->
 	{#if open && items.length > 0}
 		<div
 			class="ml-[7px] border-l border-[#dedede] dark:border-[#292929] px-4 pb-2.5 pt-1 select-text"
-			transition:slide={{ duration: 200, easing: quintOut, axis: 'y' }}
 		>
 			<div class="flex flex-wrap gap-1.5">
 				{#each visibleItems as item}
@@ -102,7 +98,7 @@
 						target="_blank"
 						rel="noopener noreferrer"
 						class="inline-flex items-center gap-1.5 rounded-md border border-gray-200 dark:border-gray-700/60 bg-white dark:bg-gray-900 px-2 py-1 text-xs text-gray-700 dark:text-gray-300 no-underline! font-normal! transition-colors hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600"
-						title={item.url}
+						data-tooltip-slow title={item.url}
 					>
 						<img
 							src="https://www.google.com/s2/favicons?sz=32&domain={item.url}"
@@ -119,7 +115,7 @@
 				{#if !expanded && hiddenCount > 0}
 					<button
 						class="inline-flex items-center rounded-md border border-gray-200 dark:border-gray-700/60 px-2 py-1 text-xs text-gray-500 dark:text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-						on:pointerup|stopPropagation={(event) => {
+						on:click|stopPropagation={(event) => {
 							notifyChatLayout(event.currentTarget, 0, true);
 							expanded = true;
 						}}
@@ -131,7 +127,7 @@
 				{#if expanded && hiddenCount > 0}
 					<button
 						class="inline-flex items-center rounded-md border border-gray-200 dark:border-gray-700/60 px-2 py-1 text-xs text-gray-500 dark:text-gray-400 transition-colors hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-						on:pointerup|stopPropagation={(event) => {
+						on:click|stopPropagation={(event) => {
 							notifyChatLayout(event.currentTarget, 0, false);
 							expanded = false;
 						}}

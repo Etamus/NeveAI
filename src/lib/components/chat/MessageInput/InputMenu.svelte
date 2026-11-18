@@ -21,8 +21,9 @@
 	import ImageIcon from '$lib/components/icons/Image.svelte';
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 	import Video from '$lib/components/icons/Video.svelte';
+	import Cube from '$lib/components/icons/Cube.svelte';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import OrbitingSpheres from '$lib/components/common/OrbitingSpheres.svelte';
 	import IntegrationOptionLabel from './IntegrationOptionLabel.svelte';
 	import AcademicCap from '$lib/components/icons/AcademicCap.svelte';
 
@@ -58,6 +59,8 @@
 	export let musicGenerationEnabled = false;
 	export let showVideoGenerationButton = false;
 	export let videoGenerationEnabled = false;
+	export let model3dEnabled = false;
+	export let showModel3dButton = false;
 	export let onNativeIntegrationChange: Function = () => {};
 	export let onShowValves: Function = () => {};
 
@@ -87,7 +90,7 @@
 		deepSearchEnabled ||
 		stableDiffusionEnabled ||
 		musicGenerationEnabled ||
-		videoGenerationEnabled;
+		videoGenerationEnabled || model3dEnabled;
 	$: effectiveFileGenerationEnabled = fileGenerationEnabled && !fileGenerationBlocked;
 
 	$: if (show) {
@@ -131,7 +134,8 @@
 		| 'guided_learning'
 		| 'stable_diffusion'
 		| 'music_generation'
-		| 'video_generation';
+		| 'video_generation'
+		| 'model3d_generation';
 
 	const clearNativeIntegrations = () => {
 		webSearchEnabled = false;
@@ -140,6 +144,7 @@
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
 		videoGenerationEnabled = false;
+		model3dEnabled = false;
 	};
 
 	const closeIntegrationsMenu = () => {
@@ -166,6 +171,8 @@
 				return musicGenerationEnabled;
 			case 'video_generation':
 				return videoGenerationEnabled;
+			case 'model3d_generation':
+				return model3dEnabled;
 		}
 	};
 
@@ -198,6 +205,9 @@
 				break;
 			case 'video_generation':
 				videoGenerationEnabled = true;
+				break;
+			case 'model3d_generation':
+				model3dEnabled = true;
 				break;
 		}
 
@@ -290,7 +300,7 @@
 					</Tooltip>
 
 
-					{#if showWebSearchButton || showLearningButton || showFileGenerationButton || showStableDiffusionButton || showMusicGenerationButton || showVideoGenerationButton || (tools && Object.keys(tools).length > 0)}
+					{#if showWebSearchButton || showLearningButton || showFileGenerationButton || showStableDiffusionButton || showMusicGenerationButton || showVideoGenerationButton || showModel3dButton || (tools && Object.keys(tools).length > 0)}
 				<hr class="my-1 border-gray-200 dark:border-gray-800 mx-auto w-[96%]" />
 					{/if}
 
@@ -311,7 +321,7 @@
 							</button>
 						{/if}
 					{:else}
-						<div class="py-2 flex justify-center"><Spinner /></div>
+						<div class="py-2 flex justify-center"><OrbitingSpheres /></div>
 					{/if}
 
 
@@ -357,6 +367,13 @@
 								<div class="size-4 shrink-0">{#if learningEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
 							</button>
 						</Tooltip>
+					{/if}
+
+					{#if showModel3dButton}
+						<button class="my-px flex w-full items-center justify-between gap-2 rounded-sm px-3 py-1.5 text-sm {integrationOptionClass(model3dEnabled)}" aria-pressed={model3dEnabled} on:click={() => toggleNativeIntegration('model3d_generation')}>
+							<div class="flex min-w-0 flex-1 items-center gap-2"><Cube className="size-4 shrink-0" /><IntegrationOptionLabel label="Create 3D model" description="Create a 3D model from an image" /></div>
+							<div class="size-4 shrink-0">{#if model3dEnabled}<CheckCircle strokeWidth="1.7" />{/if}</div>
+						</button>
 					{/if}
 
 					{#if showStableDiffusionButton}

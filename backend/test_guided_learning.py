@@ -22,7 +22,7 @@ class GuidedLearningTests(unittest.TestCase):
 
     def test_media_and_generated_document_are_not_modified(self):
         messages = [{'role': 'user', 'content': 'Create something'}]
-        for key in ('stable_diffusion', 'video_generation', 'music_generation'):
+        for key in ('stable_diffusion', 'video_generation', 'music_generation', 'model3d_generation'):
             self.assertIs(apply_guided_learning(messages, {'guided_learning': True, key: True}), messages)
         self.assertIs(apply_guided_learning(messages, {'guided_learning': True}, generated_file_ready=True), messages)
 

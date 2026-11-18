@@ -1,5 +1,42 @@
 @reference "./tailwind.css";
 
+:is(button[data-window-close], button[data-mobile-modal-close]:not(:where(#close-chat-parameters-button))) {
+	@apply inline-grid size-8 shrink-0 place-items-center rounded-md border-0 bg-transparent p-0 text-gray-900 dark:text-gray-100;
+}
+
+:is(button[data-window-close], button[data-mobile-modal-close]:not(:where(#close-chat-parameters-button))):is(:hover, :focus-visible) {
+	@apply bg-gray-100 dark:bg-gray-800;
+}
+
+:is(button[data-window-close], button[data-mobile-modal-close]:not(:where(#close-chat-parameters-button))) > svg {
+	@apply size-4;
+}
+
+.file-preview-window {
+	@apply overflow-hidden rounded-xl bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100;
+}
+
+.file-preview-header {
+	@apply flex min-w-0 items-center justify-between gap-2 px-3 py-2;
+}
+
+.file-preview-title {
+	@apply min-w-0 flex-1 truncate text-sm font-medium;
+}
+
+.file-preview-surface {
+	@apply min-h-0 rounded-lg bg-gray-100 dark:bg-gray-850;
+}
+
+.file-preview-immersive button[data-window-close],
+.file-preview-immersive button[data-mobile-modal-close] {
+	@apply text-white;
+}
+
+.file-preview-immersive button:is([data-window-close], [data-mobile-modal-close]):is(:hover, :focus-visible) {
+	@apply bg-gray-800;
+}
+
 @font-face {
 	font-family: 'Vazirmatn';
 	src: url('/assets/fonts/Vazirmatn-Variable.ttf');

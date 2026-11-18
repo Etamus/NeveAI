@@ -42,7 +42,7 @@ try{
  await page.locator('#input-menu-button').click();
  await page.getByText('Criar imagem',{exact:true}).click();
  await page.locator('#image-quality-dropdown-container > button').click();
- await page.getByText('Neve Image 2.6',{exact:true}).click();
+ await page.getByText('Neve Image 2.8',{exact:true}).click();
  console.log('SELECTED',await page.locator('#image-quality-dropdown-container').innerText());
  await page.locator('input[type=file]').nth(1).setInputFiles('backend/data/uploads/0e335168-40a8-473e-a233-1dd5f1cfb0c6_image.png');
  await page.waitForFunction(()=>[...document.querySelectorAll('#message-input-container img')].some(i=>i.complete && i.naturalWidth>0),null,{timeout:30000});

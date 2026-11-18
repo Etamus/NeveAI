@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { createEventDispatcher, getContext } from 'svelte';
-	import { getFileContentById } from '$lib/apis/files';
-	import { NEVEAI_BASE_URL } from '$lib/constants';
+	import { downloadChatFile } from '$lib/utils/chatFileSave';
+	import { NEVEAI_API_BASE_URL, NEVEAI_BASE_URL } from '$lib/constants';
 	import GeneratedVideoPreview from './GeneratedVideoPreview.svelte';
 	import { mediaDuration } from '$lib/utils/mediaDuration';
 
@@ -84,25 +84,13 @@
 		showExpanded = true;
 	};
 
-	const download = async () => {
-		let content: BlobPart | null = null;
-		if (fileId) content = await getFileContentById(fileId);
-		if (!content) {
-			const response = await fetch(resolvedSrc, { credentials: 'include' });
-			if (!response.ok) return;
-			content = await response.blob();
+	const download = () => downloadChatFile(name || 'video.mp4', async () => {
+		if (fileId) {
+			const response = await fetch(`${NEVEAI_API_BASE_URL}/files/${encodeURIComponent(fileId)}/content`, {credentials:'include'});
+			if (response.ok || !resolvedSrc) return response;
 		}
-
-		const objectUrl = URL.createObjectURL(content instanceof Blob ? content : new Blob([content]));
-		const anchor = document.createElement('a');
-		anchor.href = objectUrl;
-		anchor.download = name || 'video.mp4';
-		anchor.style.display = 'none';
-		document.body.appendChild(anchor);
-		anchor.click();
-		anchor.remove();
-		setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-	};
+		return fetch(resolvedSrc, {credentials:'include'});
+	});
 </script>
 
 <div

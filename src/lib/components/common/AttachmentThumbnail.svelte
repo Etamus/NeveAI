@@ -1,6 +1,6 @@
 <script lang="ts">
 	import {createEventDispatcher,onDestroy,onMount} from 'svelte';
-	import Spinner from './Spinner.svelte';
+	import OrbitingSpheres from './OrbitingSpheres.svelte';
 	import {acquireAttachmentThumbnail} from '$lib/utils/attachmentThumbnails';
 	export let src='';
 	export let alt='';
@@ -31,7 +31,7 @@
 </script>
 <span class="attachment-thumbnail relative block shrink-0 overflow-hidden {className}">
 	<img src={displaySource||undefined} decoding="async" {alt} {draggable} class="size-full object-cover" class:invisible={!ready} on:load={loaded} on:error={()=>dispatch('loading',false)} on:dragstart />
-	{#if !ready}<span class="absolute inset-0 grid place-items-center {loadingBackground?'bg-gray-200 dark:bg-gray-800':''}" aria-hidden="true"><Spinner className="size-4" /></span>{/if}
+	{#if !ready}<span class="absolute inset-0 grid place-items-center {loadingBackground?'bg-gray-200 dark:bg-gray-800':''}" aria-hidden="true"><OrbitingSpheres className="size-4" /></span>{/if}
 </span>
 <style>
 	.attachment-thumbnail img{border-radius:inherit;object-fit:inherit;}

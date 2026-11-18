@@ -22,6 +22,7 @@ onMount(()=>{
  },async chunk(content){await chatCompletionEventHandler({content},history.messages.tail,'layout-fixture');},
  async overshoot(){const limit=Math.max(textGenerationAnchorScrollTop??0,getMaxScrollWithoutGenerationSpacer());generationBottomSpacerHeight+=120;textGenerationAnchorUserMoved=true;flushSync();messagesContainerElement.scrollTop=limit+80;lastMessagesScrollTop=messagesContainerElement.scrollTop;await waitForLayout(2);},
  async finish(){await chatCompletionEventHandler({done:true},history.messages.tail,'layout-fixture');},
+ enableAutoScroll(){autoScroll=true;},
  state(){const row=messagesContainerElement.querySelector('[role="log"] > :first-child');const first=row?.querySelector('[role="listitem"]')??row;return {top:messagesContainerElement.scrollTop,last:lastMessagesScrollTop,max:getMessagesMaxScrollTop(),natural:getMaxScrollWithoutGenerationSpacer(),spacer:generationBottomSpacerHeight,anchor:textGenerationAnchorScrollTop,moved:textGenerationAnchorUserMoved,scrollbarHidden:messageScrollbarHidden,firstTop:first?.getBoundingClientRect().top,viewportTop:messagesContainerElement.getBoundingClientRect().top};}
  };return()=>delete window.__scrollAudit;
 });`;
@@ -46,6 +47,26 @@ try{
   page.setDefaultTimeout(60000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.route('**/api/**',r=>r.request().method()==='GET'||r.request().url().includes('/auths/')?r.continue():r.fulfill({json:{}}));
   await page.goto('http://localhost:5188',{waitUntil:'domcontentloaded',timeout:90000});await page.waitForFunction(()=>window.__scrollAudit);await page.evaluate(()=>document.fonts.ready);
+  if(process.env.SCROLL_STOP_ONLY){
+   await page.route('**/api/tasks/stop/fixture',async r=>{await new Promise(resolve=>setTimeout(resolve,250));await r.fulfill({json:{}});});
+   for(const count of [0,8]){
+    await page.evaluate(v=>window.__scrollAudit.seed(v),transcript(count));
+    await page.evaluate(text=>window.__scrollAudit.chunk(text),Array.from({length:28},(_,i)=>'Paragraph '+i+'. '+ 'A continuing response. '.repeat(8)).join('\n\n'));
+    await page.waitForTimeout(200);
+    await page.evaluate(()=>window.__scrollAudit.enableAutoScroll());
+    const before=await page.evaluate(()=>{const v=document.querySelector('#messages-container');window.__stopFrames=[];const sample=()=>{if(!window.__stopFrames)return;window.__stopFrames.push(v.scrollTop);requestAnimationFrame(sample);};requestAnimationFrame(sample);return v.scrollTop;});
+    const reply=page.waitForResponse(r=>r.url().endsWith('/api/tasks/stop/fixture'));
+    await page.locator('#send-message-button[type="button"]').click();
+    await reply;await page.waitForTimeout(150);
+    const frames=await page.evaluate(()=>{const data=window.__stopFrames;window.__stopFrames=null;return data;});
+    assert(frames.length>5);
+    assert(Math.max(...frames.map(y=>Math.abs(y-before)))<=1,JSON.stringify({viewport:viewport.width,count,before,frames}));
+    results.push({viewport:viewport.width,count,kind:'stop',before,frames});
+   }
+   assert.deepEqual(errors,[]);
+   if(!process.env.SCROLL_NATIVE)await page.close();
+   continue;
+  }
   for(const count of process.env.SCROLL_MEDIA_ONLY||process.env.SCROLL_FAST_ONLY?[]:[0,8,120]){
    await page.evaluate(v=>window.__scrollAudit.seed(v),transcript(count));await page.waitForTimeout(250);
    await page.evaluate(()=>window.__scrollAudit.chunk('First paragraph.\n\nNew text.'));await page.waitForTimeout(150);

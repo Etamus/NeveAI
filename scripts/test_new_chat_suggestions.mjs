@@ -6,11 +6,12 @@ import {installMobileOfflineApi} from './fixtures/mobile-offline-api.mjs';
 
 const output='logs/new-chat-suggestions',origin='http://localhost:5196';
 const hook=`import {showSettings as fixtureSettingsModal, showSettingsTab as fixtureSettingsTab} from '$lib/stores';
-onMount(()=>{window.__suggestions={openSettings(){fixtureSettingsTab.set('general');fixtureSettingsModal.set(true);},closeSettings(){fixtureSettingsModal.set(false);},async select(integration){setNativeIntegration(integration);await tick();},state(){return {webSearchEnabled,deepSearchEnabled,learningEnabled,stableDiffusionEnabled,musicGenerationEnabled,videoGenerationEnabled,prompt,selectedToolIds};},async existing(){history={currentId:'a',messages:{u:{id:'u',role:'user',content:'Question',parentId:null,childrenIds:['a']},a:{id:'a',role:'assistant',content:'Answer',done:true,parentId:'u',childrenIds:[],model:'local/mobile-fixture'}}};await tick();}};return()=>delete window.__suggestions;});`;
+onMount(()=>{window.__suggestionsTemporary=async(value)=>{temporaryChatEnabled.set(value);await tick();};return()=>delete window.__suggestionsTemporary;});
+onMount(()=>{window.__suggestions={async use(integration,text='Fixture request'){models.update(items=>items.map(model=>({...model,owned_by:'openai'})));setNativeIntegration(integration);await tick();await submitPrompt(text);},async fresh(){history={currentId:null,messages:{}};taskIds=[];setNativeIntegration(null);await tick();},openSettings(){fixtureSettingsTab.set('general');fixtureSettingsModal.set(true);},closeSettings(){fixtureSettingsModal.set(false);},async select(integration){setNativeIntegration(integration);await tick();},state(){return {webSearchEnabled,deepSearchEnabled,learningEnabled,stableDiffusionEnabled,musicGenerationEnabled,videoGenerationEnabled,prompt,selectedToolIds};},async existing(){history={currentId:'a',messages:{u:{id:'u',role:'user',content:'Question',parentId:null,childrenIds:['a']},a:{id:'a',role:'assistant',content:'Answer',done:true,parentId:'u',childrenIds:[],model:'local/mobile-fixture'}}};await tick();}};return()=>delete window.__suggestions;});`;
 let server,browser,page;
 try{
  await fs.mkdir(output,{recursive:true});
- server=await createServer({cacheDir:'node_modules/.vite-new-chat-suggestions',plugins:[{name:'new-chat-fixture',enforce:'pre',configResolved(c){c.server.proxy=undefined;},async load(id){if(id.endsWith('/src/lib/components/chat/Chat.svelte'))return(await fs.readFile(id,'utf8')).replace('</script>',hook+'\n</script>');}}],server:{port:5196,strictPort:true,watch:{ignored:['**/logs/**','**/scripts/**','**/docs/**']}}});
+ server=await createServer({cacheDir:'node_modules/.vite-new-chat-suggestions',plugins:[{name:'new-chat-fixture',enforce:'pre',configResolved(c){c.server.proxy=undefined;},async load(id){if(id.endsWith('/src/lib/components/chat/Chat.svelte'))return(await fs.readFile(id,'utf8')).replace('recordIntegrationUse($user?.id, requestFeatures);','recordIntegrationUse($user?.id, requestFeatures); if ((window as any).__suggestionSubmitOnly) return;').replace('</script>',hook+'\n</script>');}}],server:{port:5196,strictPort:true,watch:{ignored:['**/logs/**','**/scripts/**','**/docs/**']}}});
  await server.listen();browser=await chromium.launch();
  const results=[];
  for(const width of [1440,390])for(const theme of ['dark','light']){
@@ -23,11 +24,15 @@ try{
   await page.route('**/users/user/settings/update',r=>{saved.push(r.request().postDataJSON());return r.fulfill({json:{}});});
   const waitSaved=async value=>{for(let i=0;i<100&&!saved.some(body=>body.ui?.enableSuggestions===value);i++)await page.waitForTimeout(50);assert(saved.some(body=>body.ui?.enableSuggestions===value),'preference is persisted');};
   await page.route('**/api/config',r=>r.fulfill({json:{name:'Neve AI',version:'3.0.20',default_models:'local/mobile-fixture',features:{auth:false,enable_websocket:false,enable_web_search:true,enable_stable_diffusion:true,enable_music_generation:true,enable_video_generation:true},file:{max_file_count:10}}}));
-  await page.addInitScript(()=>{localStorage.token='fixture';localStorage.locale='pt-BR';});
+  await page.addInitScript(()=>{localStorage.token='fixture';localStorage.locale='pt-BR';window.__suggestionSubmitOnly=true;});
   await page.goto(origin,{waitUntil:'networkidle',timeout:120000});
   await page.waitForFunction(()=>window.__suggestions);await page.evaluate(()=>window.__suggestions.select(null));
   await page.evaluate(theme=>{document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.classList.toggle('light',theme==='light');},theme);
   const suggestions=page.locator('[data-new-chat-suggestions]');await suggestions.waitFor();
+  const originalSuggestions=await suggestions.getByRole('button').allTextContents();
+  await page.evaluate(()=>window.__suggestionsTemporary(true));await suggestions.waitFor({state:'hidden'});
+  await page.evaluate(()=>window.__suggestionsTemporary(false));await suggestions.waitFor();
+  assert.deepEqual(await suggestions.getByRole('button').allTextContents(),originalSuggestions,'leaving temporary chat restores the same suggestions');
   const composerShadow=await page.locator('#message-input-container').evaluate(el=>getComputedStyle(el).boxShadow);
   if(theme==='light')assert.equal(composerShadow,'none','new chat has no composer shadow in the light theme');
   else assert.notEqual(composerShadow,'none','dark theme composer shadow is preserved');
@@ -57,6 +62,9 @@ try{
   const order=await page.locator('#enable-message-queue-label,#enable-suggestions-label').evaluateAll(nodes=>nodes.map(el=>({id:el.id,y:el.getBoundingClientRect().top})));
   assert.equal(order[1].id,'enable-suggestions-label');assert(order[1].y>order[0].y,'new option follows message queue');
   await suggestionToggle.click();await suggestions.waitFor({state:'hidden'});
+  await page.evaluate(()=>window.__suggestionsTemporary(true));
+  await page.evaluate(()=>window.__suggestionsTemporary(false));
+  assert.equal(await suggestions.count(),0,'leaving temporary chat does not override disabled suggestions');
   await waitSaved(false);
   await page.waitForFunction(()=>document.querySelector('[aria-labelledby="enable-suggestions-label"]')?.getAttribute('aria-checked')==='false');
   await page.evaluate(()=>window.__suggestions.closeSettings());
@@ -109,6 +117,27 @@ try{
    await page.evaluate(i=>window.__suggestions.select(i),integration);await suggestions.waitFor({state:'hidden'});
    await page.evaluate(()=>window.__suggestions.select(null));await suggestions.waitFor();
   }
+  const defaults=['Crie uma imagem','Aprenda algo novo','Busque na web'];
+  assert.deepEqual(await suggestions.getByRole('button').allTextContents(),defaults,'selection alone does not change ranking');
+  await page.evaluate(()=>window.__suggestions.use('video_generation',''));await page.evaluate(()=>window.__suggestions.fresh());await suggestions.waitFor();
+  assert.deepEqual(await suggestions.getByRole('button').allTextContents(),defaults,'rejected empty submissions do not change ranking');
+  for(const [integration,expected] of [
+   ['video_generation',['Crie um vídeo','Crie uma imagem','Aprenda algo novo']],
+   ['music_generation',['Crie uma música','Crie um vídeo','Crie uma imagem']],
+   ['web_search',['Busque na web','Crie uma música','Crie um vídeo']],
+   ['web_search',['Busque na web','Crie uma música','Crie um vídeo']],
+   ['guided_learning',['Aprenda algo novo','Busque na web','Crie uma música']],
+   ['stable_diffusion',defaults],['deep_search',defaults],[null,defaults],
+   ['music_generation',['Crie uma música','Crie uma imagem','Aprenda algo novo']]
+  ]){
+   await page.evaluate(i=>window.__suggestions.use(i),integration);await page.evaluate(()=>window.__suggestions.fresh());await suggestions.waitFor();
+   assert.deepEqual(await suggestions.getByRole('button').allTextContents(),expected,`accepted ${integration} updates recency without duplicates`);
+  }
+  await page.reload({waitUntil:'networkidle'});await suggestions.waitFor();
+  await page.evaluate(theme=>{document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.classList.toggle('light',theme==='light');},theme);
+  assert.deepEqual(await suggestions.getByRole('button').allTextContents(),['Crie uma música','Crie uma imagem','Aprenda algo novo'],'ranking survives reloading the page');
+  await page.evaluate(()=>document.fonts.ready);await page.waitForTimeout(350);await page.mouse.move(1,1);
+  await page.screenshot({path:`${output}/${width}-${theme}-recent.png`});
   await page.evaluate(()=>window.__suggestions.existing());await suggestions.waitFor({state:'hidden'});
   await page.waitForFunction(()=>{const composer=document.querySelector('#message-input-container');return composer&&!composer.closest('.chat-placeholder')&&getComputedStyle(composer).boxShadow!=='none';});
   assert.equal(await page.locator('#message-input-container').evaluate(el=>getComputedStyle(el).backgroundColor),expectedBackground,'existing chats use the same composer surface');

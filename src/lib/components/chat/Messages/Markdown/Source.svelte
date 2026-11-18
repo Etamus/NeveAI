@@ -8,6 +8,7 @@
 
 	export let title: string = 'N/A';
 
+	export let plain = false;
 	export let onClick: Function = () => {};
 
 	// Helper function to return only the domain from a URL
@@ -41,7 +42,7 @@
 {#if title !== 'N/A'}
 	<button
 		aria-label={$i18n.t('View source: {{title}}', { title: formattedTitle(decodeString(title)) })}
-		class="text-[10px] w-fit translate-y-[2px] px-2 py-0.5 dark:bg-white/5 dark:text-white/80 dark:hover:text-white bg-gray-50 text-black/80 hover:text-black transition rounded-xl"
+		class="text-[10px] w-fit translate-y-[2px] px-2 py-0.5 {plain ? '' : 'bg-gray-50 dark:bg-white/5'} dark:text-white/80 dark:hover:text-white text-black/80 hover:text-black transition rounded-xl"
 		on:click={() => {
 			onClick(id);
 		}}

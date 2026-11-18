@@ -14,7 +14,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend'))
 from neveai.routers.image_fast_generation import neve_image_2s_runtime
 from neveai.routers.image_quality_generation import neve_image_21_runtime
-from neveai.routers.image_h3_generation import neve_image_3_runtime
 from neveai.routers.video_generation import shared_h3_runtime
 
 OUT = ROOT / 'logs/image-latency-20261114'
@@ -101,7 +100,7 @@ async def main():
     reference='data:image/png;base64,'+base64.b64encode(raw).decode()
     await shared_h3_runtime._apply_safe_power_limit()
     try:
-        for label,runtime in [('image2-cold',neve_image_2s_runtime),('image26-cold',neve_image_21_runtime),('image3-cold',neve_image_3_runtime),('image2-warm',neve_image_2s_runtime)]:
+        for label,runtime in [('image2-cold',neve_image_2s_runtime),('image28-cold',neve_image_21_runtime),('image2-warm',neve_image_2s_runtime)]:
             await measure(label,runtime,reference)
     finally:
         await shared_h3_runtime._restore_power_limit()

@@ -17,7 +17,7 @@
 	import DefaultFeatures from './DefaultFeatures.svelte';
 	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import LockClosed from '$lib/components/icons/LockClosed.svelte';
-	import EditPencil from '$lib/components/icons/EditPencil.svelte';
+
 
 	const i18n = getContext('i18n');
 
@@ -95,7 +95,7 @@
 	let modelNameInputElement: HTMLInputElement | null = null;
 	let fittedModelName = '';
 	let modelNameFieldWidth = `${MODEL_NAME_MIN_CHARS}ch`;
-	let modelNamePencilTop = '0.75rem';
+
 	let modelNameMeasureText = '';
 	let modelNameInputFocused = false;
 	let modelNameWidthRaf: number | null = null;
@@ -132,8 +132,7 @@
 		modelNameFieldWidth = `min(100%, max(${MODEL_NAME_MIN_CHARS}ch, ${widthOf(start) + 4}px))`;
 		await tick();
 		if (modelNameInputElement?.isConnected) {
-			const inputRect = modelNameInputElement.getBoundingClientRect();
-			modelNamePencilTop = `${inputRect.top - sizer.parentElement!.getBoundingClientRect().top + inputRect.height / 2}px`;
+
 			if (!modelNameInputFocused) modelNameInputElement.scrollLeft = 0;
 		}
 	};
@@ -160,57 +159,7 @@
 			document.fonts.removeEventListener('loadingdone', scheduleModelNameFieldMeasure);
 		} };
 	};
-	// Mirror native wrapping to keep the hint beside the text's end.
-	const positionDescriptionPencil = (element: HTMLElement) => {
-		let disposed = false;
-		let frame: number | null = null;
-		let cleanup = () => {};
-		void tick().then(() => {
-			if (disposed) return;
-			const field = element.querySelector('textarea');
-			const hint = element.querySelector<HTMLElement>('[data-model-description-edit-hint]');
-			if (!field || !hint) return;
-			const mirror = document.createElement('div');
-			mirror.setAttribute('aria-hidden', 'true');
-			mirror.style.cssText = 'position:fixed;left:-10000px;top:0;visibility:hidden;pointer-events:none;';
-			document.body.append(mirror);
-			const measure = () => {
-				frame = null;
-				if (disposed || !hint.isConnected || field.readOnly) return;
-				const style = getComputedStyle(field);
-				const paddingLeft = parseFloat(style.paddingLeft) || 0;
-				const contentWidth = field.clientWidth - paddingLeft - (parseFloat(style.paddingRight) || 0);
-				if (contentWidth <= 0) return;
-				Object.assign(mirror.style, { width: `${contentWidth}px`, font: style.font, lineHeight: style.lineHeight,
-					letterSpacing: style.letterSpacing, whiteSpace: style.whiteSpace, wordBreak: style.wordBreak,
-					overflowWrap: style.overflowWrap, tabSize: style.tabSize });
-				mirror.textContent = `${field.value || field.placeholder}\u200b`;
-				const range = document.createRange();
-				range.selectNodeContents(mirror);
-				const lines = Array.from(range.getClientRects());
-				const lineHeight = parseFloat(style.lineHeight);
-				const lastLine = lines[lines.length - 1];
-				const lineIndex = lastLine && lines[0] ? Math.round((lastLine.top - lines[0].top) / lineHeight) : 0;
-				const lineWidth = lastLine ? lastLine.right - mirror.getBoundingClientRect().left : 0;
-				const centerY = (parseFloat(style.paddingTop) || 0) + lineHeight * (lineIndex + 0.5) - field.scrollTop + 2;
-				hint.style.left = `${Math.min(field.offsetLeft + paddingLeft + lineWidth + 6, element.clientWidth - hint.offsetWidth)}px`;
-				hint.style.top = `${field.offsetTop + centerY}px`;
-				hint.style.visibility = centerY >= hint.offsetHeight / 2 && centerY <= field.clientHeight - hint.offsetHeight / 2 + 0.5 ? 'visible' : 'hidden';
-			};
-			const schedule = () => { if (!disposed && frame === null) frame = requestAnimationFrame(measure); };
-			const observer = new ResizeObserver(schedule);
-			observer.observe(element);
-			observer.observe(field);
-			field.addEventListener('input', schedule);
-			field.addEventListener('scroll', schedule);
-			document.fonts.addEventListener('loadingdone', schedule);
-			void document.fonts.ready.then(() => { if (!disposed) schedule(); });
-			schedule();
-			cleanup = () => { observer.disconnect(); field.removeEventListener('input', schedule); field.removeEventListener('scroll', schedule);
-				document.fonts.removeEventListener('loadingdone', schedule); mirror.remove(); };
-		});
-		return { destroy() { disposed = true; if (frame !== null) cancelAnimationFrame(frame); cleanup(); } };
-	};
+
 
 
 	$: if (!edit) {
@@ -509,7 +458,7 @@
 	<!-- Layout wrapper: flex column fills available height (e.g. 28rem in Settings modal) -->
 	<div class="flex flex-col h-full min-h-0">
 		{#if onBack}
-		<div class="flex justify-between items-center dark:text-gray-100 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20 shrink-0">
+		<div data-model-editor-header class="flex justify-between items-center dark:text-gray-100 px-5 pt-4 pb-3 border-b border-gray-200/30 dark:border-gray-700/20 shrink-0">
 			<div class="text-lg font-semibold font-primary">
 				<MobileModalTitle onBack={closeEditor}>{$i18n.t('Editar modelo')}</MobileModalTitle>
 			</div>
@@ -610,8 +559,8 @@
 			>
 				<div class="w-full px-4 sm:px-6" on:scroll={() => tippyHideAll()}>
 					<!-- Profile Image + Name/ID Header -->
-					<div class="model-editor-profile mx-auto flex w-full max-w-[34rem] min-w-0 flex-row items-center gap-2 py-4 sm:gap-4 md:gap-6">
-						<div class="flex justify-center my-2 shrink-0">
+					<div class="model-editor-profile mx-auto flex w-full max-w-[34rem] min-w-0 flex-row items-center gap-2 pt-2 pb-0 sm:gap-4 md:gap-6">
+						<div class="flex justify-center my-1 shrink-0">
 							<div class="self-center">
 								<div class="relative flex">
 									<button
@@ -708,9 +657,7 @@
 									disabled={isCatalogIdentityLocked}
 									required
 								/>
-								{#if !isCatalogIdentityLocked}
-									<span data-model-name-edit-hint class="model-name-edit-hint pointer-events-none absolute -translate-y-1/2 text-gray-500 dark:text-gray-400" style="left: calc({modelNameFieldWidth} + 2px); top: calc({modelNamePencilTop} + 0.09375rem);" aria-hidden="true"><EditPencil className="size-3.5" /></span>
-								{/if}
+
 								<input
 									data-model-original-id
 									class="text-[0.875rem] w-full bg-transparent outline-hidden text-gray-400 p-0 mt-px"
@@ -744,7 +691,7 @@
 								</div>
 							{/if}
 
-							<div use:positionDescriptionPencil class="relative mt-3">
+							<div class="relative mt-3">
 								<Textarea
 									ariaLabel={$i18n.t('Description')}
 									className="min-h-6 max-h-10 w-full pr-6 bg-transparent text-[16px]! leading-5 text-gray-400 outline-hidden resize-none overflow-y-auto"
@@ -755,9 +702,7 @@
 									readonly={isCatalogIdentityLocked}
 									bind:value={description}
 								/>
-								{#if !isCatalogIdentityLocked}
-									<span data-model-description-edit-hint class="model-description-edit-hint pointer-events-none absolute left-0 top-[0.625rem] -translate-y-1/2 text-gray-500 dark:text-gray-400" aria-hidden="true"><EditPencil className="size-3.5" /></span>
-								{/if}
+
 							</div>
 						</div>
 					</div>
@@ -772,7 +717,7 @@
 							<div class="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2 py-0 pl-6 pr-5 shrink-0">
 								{$i18n.t('Par\u00e2metros avan\u00e7ados')}
 							</div>
-							<div class="min-h-0 pr-5">
+							<div class="flex min-h-0 flex-col pr-5">
 								<div
 									class="model-editor-advanced-params-window"
 									use:parameterWheel
@@ -847,15 +792,13 @@
 {/if}
 
 <style>
-	.model-name-edit-hint, .model-description-edit-hint { opacity: 0; }
-	[data-model-editable-name]:hover ~ .model-name-edit-hint,
-	:global(textarea:hover) ~ .model-description-edit-hint { opacity: 1; }
+
 	.model-editor-feature-controls { padding-right: calc(1.5rem - 1px); }
-	.model-editor-advanced-params {
+	.model-editor-advanced-params-window {
 		--parameter-row-height: max(34px, calc(1.75rem + 2px));
 	}
 	@supports (height: round(up, 1rem, 1px)) {
-		.model-editor-advanced-params {
+		.model-editor-advanced-params-window {
 			--parameter-row-height: max(34px, round(up, calc(1.75rem + 2px), 1px));
 		}
 	}
@@ -874,7 +817,7 @@
 		min-height: var(--parameter-row-height);
 	}
 	@media (max-width: 767px) {
-		.model-editor-profile { gap: 20px; min-height: 8.5rem; }
+		.model-editor-profile { gap: 20px; min-height: 7rem; }
 		.model-editor-features, .model-editor-features-divider { display: none; }
 		.model-editor-params-layout { flex-direction: column; height: auto; }
 		.model-editor-params-scroll { overflow-y: auto; padding-left: 24px; }
@@ -883,12 +826,13 @@
 		.model-editor-advanced-params :global(.advanced-params > .flex:not(.flex-col)) { height: auto; }
 	}
 	.model-editor-advanced-params-window {
+		min-height: 0;
 		overflow-y: auto;
 		overflow-x: hidden;
 		overscroll-behavior: contain;
 		width: calc(100% + 10px);
 		padding-right: 14px;
-		max-height: 282px;
+		max-height: calc(8 * var(--parameter-row-height) + 42px);
 	}
 
 	.model-editor-advanced-params :global(.inline-tooltip) {

@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+	import { modelGridWheel } from '$lib/utils/modelGridWheel';
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import type { Writable } from 'svelte/store';
@@ -47,6 +48,18 @@
 	let shiftKey = false;
 
 	const PAGE_SIZE = 50;
+
+	function fitRows(node: HTMLElement) {
+		const resize = () => {
+			const height = node.clientHeight;
+			const preferred = 3.25 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+			if (height) node.style.setProperty('--file-row', (height / Math.max(1, Math.floor(height / preferred))) + 'px');
+		};
+		resize();
+		const observer = new ResizeObserver(resize);
+		observer.observe(node);
+		return { destroy: () => observer.disconnect() };
+	}
 
 	const formatFileSize = (bytes: number): string => {
 		if (bytes === 0) return '0 B';
@@ -151,6 +164,7 @@
 				bVal = b.filename?.toLowerCase() ?? '';
 			}
 
+			if (aVal === bVal) return 0;
 			if (direction === 'asc') {
 				return aVal > bVal ? 1 : -1;
 			} else {
@@ -329,7 +343,7 @@
 						</div>
 					{/if}
 
-					<div class="files-list-scroll min-h-0 flex-1 text-left text-sm mb-1 overflow-y-auto -mr-3 pr-3">
+					<div use:modelGridWheel use:fitRows data-model-grid class="files-list-scroll overscroll-contain [scrollbar-gutter:stable] [overflow-anchor:none] min-h-0 flex-1 text-left text-sm mb-1 overflow-y-auto -mr-3 pr-3">
 						{#if files.length === 0}
 							<div
 								class="text-xs text-gray-500 dark:text-gray-400 text-center px-5 min-h-20 w-full h-full flex justify-center items-center"
@@ -340,7 +354,7 @@
 
 						{#each files as file (file.id)}
 							<div
-								class="w-full flex justify-between items-center rounded-lg text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 cursor-pointer"
+								class="w-full flex h-[var(--file-row)] justify-between items-center rounded-lg text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 cursor-pointer"
 								on:click={() => openFileViewer(file)}
 							>
 								<div class="basis-3/5 min-w-0">
@@ -356,9 +370,10 @@
 									</div>
 
 									<div class="flex justify-end pl-2.5 text-gray-600 dark:text-gray-300">
-										<Tooltip content={shiftKey ? $i18n.t('Delete File') : $i18n.t('Delete File')}>
+										<Tooltip content={$i18n.t('Delete')}>
 											<button
-												class="self-center w-fit px-1 text-sm rounded-xl {shiftKey
+												aria-label={$i18n.t('Delete')}
+												class="grid size-8 place-items-center self-center rounded-lg hover:bg-black/5 dark:hover:bg-white/5 {shiftKey
 													? 'text-red-500'
 													: ''}"
 												on:click|stopPropagation={() => {

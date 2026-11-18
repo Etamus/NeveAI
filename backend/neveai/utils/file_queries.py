@@ -1,6 +1,9 @@
 """Small projections for file polling and content-free listings."""
 
+import hashlib
 import json
+
+from starlette.responses import JSONResponse, Response
 
 from sqlalchemy import JSON, cast, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -52,4 +55,15 @@ def files_without_content(user_id=None, filename=None, skip=0, limit=None, db=No
         if isinstance(item["data"], dict):
             item["data"] = {k: v for k, v in item["data"].items() if k != "content"}
         result.append(FileModel.model_validate(item))
+    return result
+
+
+def generated_files_response(rows, validator):
+    result = JSONResponse(rows)
+    tag = '"' + hashlib.sha256(result.body).hexdigest() + '"'
+    headers = {"ETag": tag, "Cache-Control": "private, no-cache", "Vary": "Authorization, Cookie"}
+    validators = validator.split(",")
+    if any(value.strip().removeprefix("W/") in (tag, "*") for value in validators):
+        return Response(status_code=304, headers=headers)
+    result.headers.update(headers)
     return result

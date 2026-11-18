@@ -21,7 +21,7 @@ describe('media attachment limits', () => {
 		const images = Array.from({ length: 12 }, () => ({ type: 'image/png' }));
 		expect(filterMediaAttachments(getMediaAttachmentPolicy(true, 'neve_image', false, false), images)).toHaveLength(10);
 		expect(filterMediaAttachments(getMediaAttachmentPolicy(true, 'neve_image_2', false, false), images)).toHaveLength(10);
-		for (const quality of ['qwen_image_2s', 'qwen_image_2_1_official', 'minimax_h3_image']) {
+		for (const quality of ['qwen_image_2s', 'qwen_image_2_1_official']) {
 			expect(filterMediaAttachments(getMediaAttachmentPolicy(true, quality, false, false), images)).toHaveLength(10);
 		}
 	});

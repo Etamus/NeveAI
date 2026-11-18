@@ -100,7 +100,7 @@
 					src={profileImageUrl || getModelProfileImageUrl(item.model, $i18n.language)}
 					alt={$i18n.t('{{modelName}} profile image', { modelName: item.label })}
 					class="rounded-full size-7 flex items-center group-hover/favorite:opacity-0 transition-opacity"
-					loading="eager"
+					loading={index < 8 || item.value === value ? "eager" : "lazy"}
 					decoding="async"
 				/>
 				<div
@@ -123,7 +123,7 @@
 				{#if modelDescription}
 					<Tooltip as="span" content={modelDescription} allowHTML={false} interactive={false}
 						className="mt-0.5 block w-fit max-w-[32ch] truncate text-xs font-normal text-gray-500 dark:text-gray-400"
-						tippyOptions={{ trigger: 'mouseenter', delay: 0, interactive: false, zIndex: $mobile ? 1000000002 : 9999 }}>
+						tippyOptions={{ trigger: 'mouseenter', delay: [180, 0], interactive: false, zIndex: $mobile ? 1000000002 : 9999 }}>
 						<span data-model-selector-description>{modelDescriptionPreview}</span>
 					</Tooltip>
 				{/if}

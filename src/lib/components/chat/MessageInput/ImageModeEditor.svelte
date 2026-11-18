@@ -4,7 +4,7 @@
 	import Modal from '$lib/components/common/Modal.svelte';
 	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import OrbitingSpheres from '$lib/components/common/OrbitingSpheres.svelte';
 	import Brush from '$lib/components/icons/Brush.svelte';
 	import Eraser from '$lib/components/icons/Eraser.svelte';
 	import SelectionBrush from '$lib/components/icons/SelectionBrush.svelte';
@@ -246,7 +246,7 @@
 							<canvas bind:this={overlay} class="absolute inset-0 h-full w-full touch-none opacity-50" style:cursor={pan?'grabbing':tool==='move'?'grab':tool==='select'?'crosshair':brushCursor} on:pointerdown={start} on:pointermove={stroke} on:pointerup={finishStroke} on:pointercancel={finishStroke}></canvas>
 						</div>
 					</div>
-					{#if loading}<div class="absolute inset-0 grid place-items-center bg-white/50 dark:bg-black/50"><Spinner className="size-5" /></div>{/if}
+					{#if loading}<div class="absolute inset-0 grid place-items-center bg-white/50 dark:bg-black/50"><OrbitingSpheres className="size-5" /></div>{/if}
 				</div>
 				<div class="absolute bottom-3 left-3 z-20 flex items-center gap-1 rounded-md bg-white/90 text-gray-600 dark:bg-gray-850/90 dark:text-gray-300" data-image-zoom-controls><button type="button" class="tool" aria-label={$i18n.t('Zoom out')} on:click={()=>changeZoom(zoom-.25)}><Minus className="size-4" /></button><output class="w-10 text-center text-xs tabular-nums" data-image-zoom>{Math.round(zoom*100)}%</output><button type="button" class="tool" aria-label={$i18n.t('Zoom in')} on:click={()=>changeZoom(zoom+.25)}><Plus className="size-4" /></button></div>
 				</div>

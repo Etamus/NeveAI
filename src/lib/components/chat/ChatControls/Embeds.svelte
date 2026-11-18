@@ -55,7 +55,7 @@
 				</a>
 			</div>
 
-			<button
+			<button data-window-close
 				class="self-center pointer-events-auto p-1 rounded-full bg-white dark:bg-gray-850"
 				aria-label="Close embed"
 				on:click={() => {
@@ -64,7 +64,7 @@
 					embed.set(null);
 				}}
 			>
-				<XMark className="size-3.5 text-gray-900 dark:text-white" />
+				<XMark className="size-4" />
 			</button>
 		</div>
 

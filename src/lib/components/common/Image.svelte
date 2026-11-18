@@ -38,7 +38,7 @@
 	let showImagePreview = false;
 </script>
 
-<ImagePreview bind:show={showImagePreview} src={_src} {alt} />
+<ImagePreview bind:show={showImagePreview} src={_src} originalSrc={src} {alt} />
 
 <div class="relative group flex items-center {containerClassName}">
 	<button

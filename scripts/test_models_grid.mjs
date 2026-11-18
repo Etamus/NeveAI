@@ -21,10 +21,11 @@ try{
   const errors=[],mutations=[];page.on('pageerror',e=>{errors.push(e.message);console.error(e.message);});
   await installMobileOfflineApi(page);
   const hfQueries=[];
-  let hfInstalled=false,hfDownloadBody,hfDownloadCount=0,hfFilesDelay=0;
+  let hfInstalled=false,hfDownloadBody,hfDownloadCount=0,hfFilesDelay=0,hfExtraCount=0,hfExtraFiles=0;
   let hfUnavailable=false;
-  await page.route('**/llamacpp/huggingface/search?**',async route=>{const query=new URL(route.request().url()).searchParams.get('query');hfQueries.push(query);if(query==='older')await new Promise(resolve=>setTimeout(resolve,800));if(hfUnavailable)return route.fulfill({status:503,json:{detail:'Fixture HF unavailable'}});return route.fulfill({json:{models:query==='empty'?[]:[{id:query==='older'?'Team/Old-GGUF':'Team/Demo-GGUF',downloads:100,likes:10}],next_cursor:null}});});
-  await page.route('**/llamacpp/huggingface/files?**',async route=>{if(hfFilesDelay)await new Promise(resolve=>setTimeout(resolve,hfFilesDelay));return route.fulfill({json:{models:[{path:'Demo-Q4_K_M.gguf',size:1024,parts:1,local_filename:'Team--Demo-GGUF--Demo-Q4_K_M.gguf',installed:hfInstalled},{path:'Demo-Q8.gguf',size:2048,parts:1,local_filename:'Team--Demo-GGUF--Demo-Q8.gguf',installed:true},{path:'Demo-Q5.gguf',size:1536,parts:1,local_filename:'Team--Demo-GGUF--Demo-Q5.gguf',installed:false}],encoders:[{path:'mmproj.gguf',size:512,local_filename:'Team--Demo-GGUF--mmproj.gguf',installed:false}]}});});
+  const longEncoder='vision-encoder-with-a-very-long-original-model-name-and-multimodal-projector-mmproj-Q8_0.gguf';
+  await page.route('**/llamacpp/huggingface/search?**',async route=>{const query=new URL(route.request().url()).searchParams.get('query');hfQueries.push(query);if(query==='older')await new Promise(resolve=>setTimeout(resolve,800));if(hfUnavailable)return route.fulfill({status:503,json:{detail:'Fixture HF unavailable'}});return route.fulfill({json:{models:query==='empty'?[]:[{id:query==='older'?'Team/Old-GGUF':'Team/Demo-GGUF',downloads:100,likes:10},...Array.from({length:hfExtraCount},(_,i)=>({id:`Team/Extra-${i}-GGUF`,downloads:1,likes:0}))],next_cursor:null}});});
+  await page.route('**/llamacpp/huggingface/files?**',async route=>{if(hfFilesDelay)await new Promise(resolve=>setTimeout(resolve,hfFilesDelay));return route.fulfill({json:{models:[{path:'Demo-Q4_K_M.gguf',size:1024,parts:1,local_filename:'Team--Demo-GGUF--Demo-Q4_K_M.gguf',installed:hfInstalled},{path:'Demo-Q8.gguf',size:2048,parts:1,local_filename:'Team--Demo-GGUF--Demo-Q8.gguf',installed:true},{path:'Demo-Q5.gguf',size:1536,parts:1,local_filename:'Team--Demo-GGUF--Demo-Q5.gguf',installed:false},...Array.from({length:hfExtraFiles},(_,i)=>({path:`Padding-Q4-${i}.gguf`,size:1024,installed:false}))],encoders:[{path:'mmproj.gguf',size:512,local_filename:'Team--Demo-GGUF--mmproj.gguf',installed:false},{path:longEncoder,size:1024,installed:false}]}});});
   await page.route('**/llamacpp/huggingface/download',route=>{hfDownloadBody=route.request().postDataJSON();return route.fulfill({json:{task_id:`fixture-hf-${++hfDownloadCount}`,model_id:'hf:test',name:'Team/Demo-GGUF',status:'queued'}});});
   let catalog=[],admin=[],loaded=[],revision=1,busy=false,failDelete=false,cpu=false;
   const memory=()=>({available:!cpu,total:17179869184,used:4294967296,free:12884901888,ram:{available:true,total:34359738368,used:10000000000,free:24359738368},gpus:[],storage:{available:true,total:1000000000000,used:600000000000,free:400000000000}});
@@ -54,6 +55,7 @@ try{
   await page.evaluate(async theme=>{document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.classList.toggle('light',theme==='light');await window.__gridFixture.open();},theme);
   const shell=page.locator('.unified-models-shell'),grid=shell.locator('[data-model-grid]');await grid.waitFor();
   assert.equal(await grid.locator('[data-model-key]').count(),14);
+  assert.equal(await grid.locator('[data-edit-model]').first().evaluate(el=>el.parentElement._tippy.props.delay[0]),350,'row actions wait while crossing a model grid');
   assert.equal(await shell.getByRole('switch').count(),0);
   const cardPaint=locator=>locator.evaluate(el=>{const style=getComputedStyle(el);return {background:style.backgroundColor,border:style.borderTopColor};});
   const assertPermanentBackground=async locator=>{await page.mouse.move(0,0);const normal=await cardPaint(locator);assert.notEqual(normal.background,'rgba(0, 0, 0, 0)','model cards have a permanent background');await locator.hover();assert.deepEqual(await cardPaint(locator),normal,'hover never changes the card surface');};
@@ -119,7 +121,7 @@ try{
   const started=[];
   await page.route('**/llamacpp/catalog',route=>route.fulfill({json:{models:downloads}}));
   await page.route('**/llamacpp/download/active',route=>route.fulfill({json:{task:null}}));
-  await page.route('**/llamacpp/download/paused',route=>route.fulfill({json:{tasks:[]}}));
+  await page.route('**/llamacpp/download/paused',route=>route.fulfill({json:{tasks:process.argv.includes('--paused-only') ? Array.from({length:13},(_,i)=>({task_id:'paused-'+i,status:'paused',repo_id:'Fixture/Model',filename:'file-'+i+'.gguf'})) : []}}));
   await page.route('**/llamacpp/download',route=>{started.push(route.request().postDataJSON().model_id);return route.fulfill({json:{task_id:`fixture-${started.length}`}});});
   await page.route('**/llamacpp/download/cancel/*',async route=>{
    const id=route.request().url().split('/').at(-1);
@@ -147,6 +149,77 @@ try{
   await downloadIcon.click();
   const hub=page.locator('[data-model-download-hub]:visible'),downloadGrid=hub.locator('[data-download-grid]');
   await downloadGrid.waitFor();
+  if(process.argv.includes('--paused-only')){
+   await hub.locator('[aria-label="Progresso do download"]').click();
+   const queue=page.locator('[data-download-queue]');
+   assert.equal(await queue.locator('[data-resume-download]').count(),13);
+   await queue.hover();
+   const step=await queue.locator('[data-queued-download]').first().evaluate(el=>el.getBoundingClientRect().height);
+   let previous=0;
+   for(const row of [1,2,3,4,5,6,7,8,9,9,8,7,6,5,4,3,2,1,0]){
+    await page.mouse.wheel(0,previous>row ? -120 : 120);
+    previous=row;
+    await page.waitForFunction(({row,step})=>Math.abs(document.querySelector('[data-download-queue]').scrollTop-row*step)<1,{row,step});
+    assert(Math.abs(await queue.evaluate(el=>el.clientHeight)-4*step)<1,'whole visible rows within CSS pixel rounding, including at the end');
+   }
+   results.push({width,theme,pausedRows:13});await page.close();continue;
+  }
+  if(process.argv.includes('--hf-clip-only')){
+   hfExtraFiles=40;
+   await hub.locator('[data-hf-repo="Team/Demo-GGUF"]').getByRole('button',{name:'Team/Demo-GGUF',exact:true}).click();
+   await page.waitForFunction(()=>document.querySelectorAll('[data-hf-file]').length===43);
+   const list=hub.locator('[data-hf-model-list]');
+   for(const scale of [1,1.35]){
+    await page.evaluate(scale=>document.documentElement.style.setProperty('--app-text-scale',String(scale)),scale);
+    for(const position of ['end','middle','start']){
+     await list.evaluate((el,position)=>{el.scrollTop=position==='end'?el.scrollHeight:position==='middle'?137.5:0;},position);
+     await page.waitForTimeout(100);
+     const state=await list.evaluate(el=>{
+      const grid=el.querySelector('[data-quantization-grid]'),box=el.getBoundingClientRect(),bounds=grid.getBoundingClientRect();
+      const inset=getComputedStyle(grid).clipPath.match(/inset\(([^)]+)\)/)?.[1].split(/\s+/).map(parseFloat)??[0,0,0,0];
+      const top=Math.max(box.top,bounds.top+inset[0]),bottom=Math.min(box.bottom,bounds.bottom-(inset[2]??inset[0]));
+      const rows=[...grid.children].map(card=>card.getBoundingClientRect());
+      return {partial:rows.some(row=>(row.top<top-.5&&row.bottom>top+.5)||(row.top<bottom-.5&&row.bottom>bottom+.5)),visible:rows.filter(row=>row.top>=top-.5&&row.bottom<=bottom+.5).length,lastVisible:rows.at(-1).top>=top-.5&&rows.at(-1).bottom<=bottom+.5,scroll:el.scrollTop,gap:box.bottom-rows.at(-1).bottom,padding:parseFloat(getComputedStyle(el).paddingBottom),rem:parseFloat(getComputedStyle(document.documentElement).fontSize),extra:parseFloat(el.style.getPropertyValue('--download-grid-row-padding')||'0'),firstTop:Math.min(...rows.filter(row=>row.top>=top-.5&&row.bottom<=bottom+.5).map(row=>row.top-box.top)),step:rows.find(row=>row.top>rows[0].top+.5).top-rows[0].top,clientHeight:el.clientHeight,scrollHeight:el.scrollHeight,height:box.height,first:rows[0].top-box.top,gridHeight:bounds.height};
+     });
+     assert.equal(state.partial,false,`${width}/${theme}/${scale}/${position}: no partial rows`);
+     assert(state.visible>0);
+     if(position==='end'){
+      assert(state.lastVisible,'last file remains fully visible');
+      assert(Math.abs(state.padding-state.extra-(state.rem*.5+3))<.1,'detail footer preserves the selected base spacing');
+      assert(state.extra>=0&&state.extra<state.step,'row alignment adds less than one row');
+      assert(Math.abs(state.firstTop)<1,`final row positions align with the top of the list: ${JSON.stringify({width,theme,scale,...state})}`);
+      if(width===1440&&scale===1)assert(state.visible>=13,'footer does not hide the upper row at the end');
+      assert(Math.abs(state.gap-state.padding)<1,'extra bottom space stays visible without a row-sized blank gap');
+      await page.screenshot({path:`${output}/${width}-${theme}-hf-end-${scale}.png`});
+     }
+     if(position==='start')assert.equal(state.scroll,0);
+    }
+   }
+   assert.deepEqual(errors,[]);
+   results.push({width,theme,clipping:'both edges; 43 files; scales 1/1.35; end/middle/start'});
+   await page.close();continue;
+  }
+  if(process.argv.includes('--pagination-only')){
+   let release;const gate=new Promise(resolve=>release=resolve);
+   await page.route('**/llamacpp/huggingface/search?**',async route=>{
+    const cursor=new URL(route.request().url()).searchParams.get('cursor');
+    if(cursor)await gate;
+    return route.fulfill({json:{models:cursor?[{id:'Team/Next-GGUF',downloads:1,likes:0}]:Array.from({length:31},(_,i)=>({id:`Team/Paging-${i}-GGUF`,downloads:1,likes:0})),next_cursor:cursor?null:'fixture-next'}});
+   });
+   await page.evaluate(()=>window.dispatchEvent(new Event('online')));
+   const more=hub.locator('[data-hf-load-more]');await more.waitFor();
+   await more.scrollIntoViewIfNeeded();await page.waitForTimeout(80);
+   const before=await more.boundingBox(),scroll=await hub.locator('[data-download-list]').evaluate(el=>el.scrollTop);
+   await more.click();await more.locator('svg').waitFor();
+   assert.equal(await more.isDisabled(),true,'pagination is disabled while pending');
+   const pending=await more.boundingBox(),spinner=await more.locator('svg').boundingBox();
+   for(const key of ['x','y','width','height'])assert(Math.abs(before[key]-pending[key])<.1,`pagination keeps ${key} during loading`);
+   assert(Math.abs(spinner.x+spinner.width/2-before.x-before.width/2)<.1&&Math.abs(spinner.y+spinner.height/2-before.y-before.height/2)<.1,'spinner is centered in the former button');
+   assert.equal(await hub.locator('[data-download-list]').evaluate(el=>el.scrollTop),scroll,'spinner does not shift the catalog scroll');
+   await page.screenshot({path:`${output}/${width}-${theme}-load-more-spinner.png`});
+   release();await hub.locator('[data-hf-repo="Team/Next-GGUF"]').waitFor();await more.waitFor({state:'hidden'});
+   assert.deepEqual(errors,[]);results.push({width,theme,pagination:'stable button footprint, centered spinner, appended next page'});await page.close();continue;
+  }
   assert.equal(await page.locator('.unified-models-shell').count(),0,'hub replaces manager');
   assert.equal(await hub.evaluate(el=>el.getBoundingClientRect().height),height,'same modal height');
   assert.equal(await downloadGrid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length),width<768?1:2);
@@ -183,7 +256,7 @@ try{
   const neveHeader=await hub.locator('[data-neve-section-toggle]').boundingBox(),catalogViewport=await hub.locator('[data-download-list]').boundingBox();
   const trackInset=await hub.locator('[data-download-list]').evaluate(el=>parseFloat(getComputedStyle(el,'::-webkit-scrollbar-track').marginTop));
   assert(catalogViewport.y+trackInset>=neveHeader.y+neveHeader.height&&catalogViewport.y+trackInset-(neveHeader.y+neveHeader.height)<=16,'scrollbar track starts directly below Neve heading');
-  assert(await hub.locator('.download-models-body').evaluate(el=>parseFloat(getComputedStyle(el).paddingBottom)>=1.25*parseFloat(getComputedStyle(document.documentElement).fontSize)-.1),'slightly larger bottom inset');
+  assert(await hub.locator('.download-models-body').evaluate(el=>Math.abs(parseFloat(getComputedStyle(el).paddingBottom)-.5*parseFloat(getComputedStyle(document.documentElement).fontSize))<.1),'compact bottom inset preserves room for the extra row');
   const showNeve=async()=>{if(await hub.locator('[data-hf-model-header]').count())await hub.getByRole('button',{name:'Back to models',exact:true}).click();};
   await assertPermanentBackground(hub.locator('[data-catalog-model="neve-echo-s"]'));
   await assertPermanentBackground(hub.locator('[data-catalog-model="neve-sense"]'));
@@ -193,10 +266,14 @@ try{
   assert(Math.abs(actualSearch.x-referenceSearch.x)<1&&Math.abs(actualSearch.y-referenceSearch.y)<1,'search matches manager position');
   const modelInfo=hub.locator('[aria-label="Model information"]').first();
   await modelInfo.hover();
+  const informationTip=page.locator('.tippy-box:visible').getByText('Information',{exact:true});await informationTip.waitFor();
   const infoPanel=page.locator('[data-model-info-panel]');
+  assert.equal(await infoPanel.count(),0,'hover does not open information');
+  await modelInfo.click();
   await infoPanel.waitFor({state:'visible'});
+  await informationTip.waitFor({state:'hidden'});
   await page.waitForTimeout(900);
-  assert(await infoPanel.isVisible(),'information stays open while hovering its button');
+  assert(await infoPanel.isVisible(),'information stays open after a click');
   assert.equal(await modelInfo.getAttribute('title'),null,'no duplicate native information tooltip');
   await page.getByText('Compact reasoning model',{exact:true}).waitFor();
   await page.locator('[data-model-info-size]').getByText(/1\.0 KB/).waitFor();
@@ -208,9 +285,8 @@ try{
   await page.screenshot({path:`logs/models-grid/${width}-${theme}-information-hover.png`});
   const panelBox=await infoPanel.boundingBox();
   await page.mouse.move(panelBox.x+panelBox.width/2,panelBox.y+panelBox.height/2);
-  await infoPanel.waitFor({state:'hidden'});
-  await page.waitForTimeout(250);
-  assert.equal(await infoPanel.isVisible(),false,'information does not stay open over its former content');
+  assert(await infoPanel.isVisible(),'moving into information does not dismiss it');
+  await modelInfo.click();await infoPanel.waitFor({state:'hidden'});
   await hubSearch.hover();
   await infoPanel.waitFor({state:'hidden'});
   await modelInfo.focus();
@@ -220,18 +296,93 @@ try{
   await infoPanel.waitFor({state:'hidden'});
   assert(await hub.isVisible(),'Escape dismisses information without closing the hub');
   for(let cycle=0;cycle<4;cycle++){
-   await modelInfo.hover();await infoPanel.waitFor({state:'visible'});
-   await page.mouse.move(1,1);await infoPanel.waitFor({state:'hidden'});
+   await modelInfo.click();await infoPanel.waitFor({state:'visible'});
+   await page.mouse.move(1,1);assert(await infoPanel.isVisible(),'pointer movement alone never dismisses click information');
+   await modelInfo.click();await infoPanel.waitFor({state:'hidden'});
   }
-  await modelInfo.hover();await infoPanel.waitFor({state:'visible'});
+  await modelInfo.click();await infoPanel.waitFor({state:'visible'});
   await hub.locator('[data-download-list]').dispatchEvent('scroll');
   await infoPanel.waitFor({state:'hidden'});await page.waitForTimeout(200);
   assert.equal(await infoPanel.count(),0,'scroll dismissal has no delayed reopen');
   await modelInfo.focus();await modelInfo.press('Enter');await infoPanel.waitFor({state:'visible'});
   await hubSearch.focus();await infoPanel.waitFor({state:'hidden'});
+  if(process.argv.includes('--information-only')){results.push({width,theme,information:'standard hover tooltip, click toggle, keyboard and dismissals'});await page.close();continue;}
   await hubSearch.fill('compact');assert.equal(await downloadGrid.locator('[data-catalog-model]').count(),1);
   await hubSearch.fill('missing');assert.equal(await downloadGrid.locator('[data-catalog-model]').count(),0);
   await hubSearch.fill('');
+  hfExtraCount=30;await page.evaluate(()=>window.dispatchEvent(new Event('online')));
+  const deepRepo=hub.locator('[data-hf-repo="Team/Extra-20-GGUF"]');await deepRepo.waitFor();
+  for(let cycle=0;cycle<3;cycle++){
+   await deepRepo.scrollIntoViewIfNeeded();await page.waitForTimeout(100);
+   const before=await hub.locator('[data-download-list]').evaluate(el=>el.scrollTop);assert(before>0,'test is scrolled inside a long HF catalog');
+   await deepRepo.getByRole('button',{name:'Team/Extra-20-GGUF',exact:true}).click();
+   await hub.locator('[data-hf-file]').first().waitFor();
+   await hub.getByRole('button',{name:'Back to models',exact:true}).click();
+   await page.waitForTimeout(200);
+   assert(Math.abs(await hub.locator('[data-download-list]').evaluate(el=>el.scrollTop)-before)<1,'returning from a repository preserves exact catalog scroll');
+  }
+  await page.evaluate(()=>window.__gridFixture.close());await page.evaluate(()=>window.__gridFixture.open());await grid.waitFor();
+  await shell.getByRole('button',{name:'Baixar modelos',exact:true}).click();await deepRepo.waitFor();
+  assert.equal(await hub.locator('[data-download-list]').evaluate(el=>el.scrollTop),0,'reopening the whole modal starts at the top');
+  await deepRepo.scrollIntoViewIfNeeded();
+  assert(await hub.locator('[data-download-list]').evaluate(el=>el.scrollTop>0));
+  await hub.getByRole('button',{name:width<768?'Back':'Close',exact:true}).click();await grid.waitFor();
+  await shell.getByRole('button',{name:'Baixar modelos',exact:true}).click();await deepRepo.waitFor();
+  assert.equal(await hub.locator('[data-download-list]').evaluate(el=>el.scrollTop),0,'leaving the hub and reopening it also starts at the top');
+  const catalogList=hub.locator('[data-download-list]');
+  {
+   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+   const trace=[];
+   for(let tick=0;tick<100;tick++){
+    const geometry=await catalogList.evaluate(el=>{
+     const box=el.getBoundingClientRect(),headings=[...el.querySelectorAll('[data-catalog-section-heading]')].map(h=>({top:h.getBoundingClientRect().top-box.top,height:h.getBoundingClientRect().height}));
+     const cards=[...el.querySelectorAll('[data-catalog-model], [data-hf-repo]')].map(c=>({id:c.dataset.catalogModel||c.dataset.hfRepo,top:c.getBoundingClientRect().top-box.top,bottom:c.getBoundingClientRect().bottom-box.top}));
+     return {scroll:el.scrollTop,max:el.scrollHeight-el.clientHeight,height:box.height,headings,cards:cards.filter(c=>c.top<box.height&&c.bottom>0)};
+    });
+    trace.push(geometry);
+    const rowPaint=await catalogList.evaluate(el=>{
+     const box=el.getBoundingClientRect(),header=Math.max(0,...[...el.querySelectorAll('[data-catalog-section-heading]')].map(h=>h.getBoundingClientRect().height));
+     return [...el.querySelectorAll('[data-download-grid], [data-hf-grid]')].every(grid=>{
+      const end=grid.getBoundingClientRect().bottom,clip=getComputedStyle(grid).clipPath;
+      const bottom=clip.includes('100%')?grid.getBoundingClientRect().top:Math.min(box.bottom,end-parseFloat(clip.match(/inset\(0px 0px ([\d.]+)px/)?.[1]??'0'));
+      return [...grid.children].every(card=>{const r=card.getBoundingClientRect();return !r.height||((r.top>=bottom-.5||r.bottom<=bottom+.5)&&!(r.top<box.top+header-1&&r.bottom>box.top+header+1));});
+     });
+    });
+    assert(rowPaint,`complete catalog rows before/after sticky header transition at tick ${tick}`);
+    assert(await catalogList.evaluate(el=>{
+     const heading=el.querySelector('[data-hf-section-toggle]')?.parentElement;
+     if(!heading||heading.getBoundingClientRect().top>el.getBoundingClientRect().top+.01)return true;
+     const button=heading.querySelector('button'),r=button.getBoundingClientRect();
+     return heading.contains(document.elementFromPoint(r.left+50,r.top+10));
+    }),`Hugging Face heading stays visible at row stop ${tick}`);
+    if(geometry.scroll>=geometry.max-1)break;
+    await catalogList.evaluate(el=>el.dispatchEvent(new WheelEvent('wheel',{deltaY:120,bubbles:true,cancelable:true})));
+    await page.waitForTimeout(35);
+   }
+   await fs.writeFile(`${output}/${width}-${theme}-catalog-row-trace.json`,JSON.stringify(trace,null,2));
+   await page.screenshot({path:`${output}/${width}-${theme}-catalog-row-end.png`});
+   const last=trace.at(-1);
+   if(width>=768){
+    const rows=new Set(last.cards.filter(card=>card.top>=last.headings[0].height-1&&card.bottom<=last.height+.5).map(card=>card.top));
+    assert(rows.size>=6,'main catalog uses the former bottom gap for a sixth complete row');
+    assert(last.height-Math.max(...last.cards.map(card=>card.bottom))<16,'no row-sized empty footer remains');
+   }
+   assert(last.scroll>=last.max-1,'whole catalog remains reachable');
+   assert(last.cards.some(card=>Math.abs(card.top-last.headings[0].height)<1),'last wheel stop stays aligned to a row');
+   for(let tick=0;tick<trace.length+2;tick++)await catalogList.evaluate(el=>el.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true,cancelable:true})));
+   assert.equal(await catalogList.evaluate(el=>el.scrollTop),0,'whole catalog reverse wheel returns to the top');
+   if(process.argv.includes('--scroll-only')){results.push({width,theme,steps:trace.length});await page.close();continue;}
+  }
+  for(let tick=0;tick<4;tick++){
+   await catalogList.evaluate(el=>el.dispatchEvent(new WheelEvent('wheel',{deltaY:120,bubbles:true,cancelable:true})));
+   assert(await catalogList.evaluate(el=>{
+    const top=el.getBoundingClientRect().top+el.querySelector('[data-catalog-section-heading]').getBoundingClientRect().height;
+    return [...el.querySelectorAll('[data-catalog-model], [data-hf-repo]')].some(card=>Math.abs(card.getBoundingClientRect().top-top)<1);
+   }),'main catalog wheel follows real rows across sections');
+  }
+  for(let tick=0;tick<4;tick++)await catalogList.evaluate(el=>el.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true,cancelable:true})));
+  assert.equal(await catalogList.evaluate(el=>el.scrollTop),0,'main catalog reverse wheel returns to first row');
+  hfExtraCount=0;await page.evaluate(()=>window.dispatchEvent(new Event('online')));await deepRepo.waitFor({state:'hidden'});
   const beforeDownload=await downloadGrid.locator('[data-catalog-model]').first().boundingBox();
   const infoBox=await hub.locator('[data-catalog-model="neve-echo-s"] [aria-label="Model information"]').boundingBox();
   const directBox=await hub.locator('[data-download-model="neve-echo-s"]').boundingBox();assert(directBox.x>infoBox.x,'download is right of information');
@@ -387,9 +538,77 @@ try{
   const afterEncoder=await headerPositions();
   for(const key of Object.keys(beforeEncoder))assert(Math.abs(beforeEncoder[key]-afterEncoder[key])<.1,`stable header ${key} after mmproj arrives`);
   assert(await hub.locator('[data-hf-file]').first().evaluate(el=>el.closest('[data-hf-model-list]').getBoundingClientRect().right-el.parentElement.getBoundingClientRect().right>=8),'GGUF cards separated from scrollbar');
+  const detailInsets=()=>hub.locator('[data-hf-model-list]').evaluate(el=>{
+   const shell=el.closest('.download-models-shell').getBoundingClientRect(),grid=el.querySelector('[aria-label="Quantization"]').getBoundingClientRect(),header=document.querySelector('[data-hf-model-header]').getBoundingClientRect(),vision=document.querySelector('[data-vision-selector]').getBoundingClientRect(),outer=el.closest('[data-download-list]');
+   return {left:grid.left-shell.left,right:shell.right-grid.right,headerLeft:header.left-shell.left,visionRight:shell.right-vision.right,outerGutter:getComputedStyle(outer).scrollbarGutter,overflow:el.scrollHeight>el.clientHeight};
+  });
+  const shortInsets=await detailInsets();
+  assert.equal(shortInsets.overflow,false,'short quantization list has no vertical scrollbar');
+  assert(Math.abs(shortInsets.left-shortInsets.right)<=12,'GGUF list has balanced side margins even without overflow');
+  assert(Math.abs(shortInsets.headerLeft-shortInsets.left)<1,'header and quantizations share the new inset');
+  assert.equal(shortInsets.outerGutter,'auto','detail mode does not reserve a second scrollbar gutter');
+  assert(shortInsets.visionRight>=12,'multimodal selector remains inside the modal');
+  await page.screenshot({path:`${output}/${width}-${theme}-hf-insets-short.png`});
+  hfExtraFiles=40;
+  await hub.getByRole('button',{name:'Back to models',exact:true}).click();await showHFFiles();
+  await page.waitForFunction(()=>document.querySelectorAll('[data-hf-file]').length===43);
+  const assertFullViewport=async()=>{
+   const fit=await hub.locator('[data-hf-model-list]').evaluate(el=>{const parent=el.closest('[data-hf-catalog]'),header=parent.querySelector('[data-hf-model-header]'),p=parent.getBoundingClientRect(),h=header.getBoundingClientRect(),list=el.getBoundingClientRect();return {height:list.height,available:p.bottom-h.bottom-parseFloat(getComputedStyle(header).marginBottom)};});
+   assert(Math.abs(fit.height-fit.available)<1,'quantizations use all available space without whole-row rounding');
+  };
+  await assertFullViewport();
+  const longInsets=await detailInsets();assert.equal(longInsets.overflow,true,'long quantization list has a scrollbar');
+  assert(Math.abs(longInsets.left-shortInsets.left)<1&&Math.abs(longInsets.right-shortInsets.right)<1,'scrollbar appearance does not change list alignment');
+  assert(Math.abs(longInsets.visionRight-shortInsets.visionRight)<1,'multimodal selector stays aligned with either list length');
+  const fileList=hub.locator('[data-hf-model-list]');
+  const assertNoPartialRow=async()=>{
+   await page.waitForTimeout(60);
+   assert(await fileList.evaluate(el=>{
+    const grid=el.querySelector('[data-quantization-grid]'),{top,bottom}=el.getBoundingClientRect();
+    const insets=getComputedStyle(grid).clipPath.match(/inset\(([^)]+)\)/)?.[1].split(/\s+/).map(parseFloat)??[0,0,0,0];
+    const trim=insets[2]??insets[0],paintedTop=Math.max(top,grid.getBoundingClientRect().top+insets[0]);
+    const paintedBottom=Math.min(bottom,grid.getBoundingClientRect().bottom-trim);
+    return [...grid.children].every(card=>{const r=card.getBoundingClientRect();return (r.top>=paintedBottom-.5||r.bottom<=paintedBottom+.5)&&(r.bottom<=paintedTop+.5||r.top>=paintedTop-.5);});
+   }),'no partial quantization row is painted at either edge');
+  };
+  await assertNoPartialRow();
+  await fileList.evaluate(el=>el.dispatchEvent(new WheelEvent('wheel',{deltaY:120,bubbles:true,cancelable:true})));
+  assert(await fileList.evaluate(el=>{
+   const top=el.getBoundingClientRect().top;
+   return [...el.querySelector('[data-quantization-grid]').children].some(card=>Math.abs(card.getBoundingClientRect().top-top)<1);
+  }),'coarse wheel lands exactly on a quantization row');
+  await assertNoPartialRow();
+  await fileList.evaluate(el=>el.dispatchEvent(new WheelEvent('wheel',{deltaY:-120,bubbles:true,cancelable:true})));
+  assert.equal(await fileList.evaluate(el=>el.scrollTop),0,'reverse wheel returns to the first row');
+  const expansion=await fileList.evaluate(el=>{
+   const height=el.getBoundingClientRect().height,grid=el.querySelector('[data-quantization-grid]'),top=grid.getBoundingClientRect().top,rem=parseFloat(getComputedStyle(document.documentElement).fontSize),oldAvailable=height-1.75*rem;
+   const bottoms=[...new Set([...grid.children].map(card=>card.getBoundingClientRect().bottom-top))];
+   return {current:bottoms.filter(bottom=>bottom<=height+1).length,previous:bottoms.filter(bottom=>bottom<=oldAvailable+.01).length,padding:parseFloat(getComputedStyle(el.closest('.download-models-body')).paddingBottom),rem};
+  });
+  assert(Math.abs(expansion.padding-expansion.rem*.5)<1,'smaller footer is limited to repository detail');
+  if(width>=768)assert(expansion.current>=expansion.previous+1,'one additional full row is visible on desktop');
+  await page.screenshot({path:`${output}/${width}-${theme}-quantization-expanded.png`});
+  const savedScale=await page.evaluate(()=>document.documentElement.style.getPropertyValue('--app-text-scale'));
+  await page.setViewportSize({width,height:650});await assertFullViewport();
+  await page.screenshot({path:`${output}/${width}-${theme}-quantization-expanded-short-window.png`});
+  await page.evaluate(()=>document.documentElement.style.setProperty('--app-text-scale','1.35'));await assertFullViewport();
+  await page.evaluate(value=>{if(value)document.documentElement.style.setProperty('--app-text-scale',value);else document.documentElement.style.removeProperty('--app-text-scale');},savedScale);
+  await page.setViewportSize({width,height:900});await assertFullViewport();
+  await fileList.evaluate(el=>el.scrollTop=el.scrollHeight);
+  await assertNoPartialRow();
+  assert(await fileList.evaluate(el=>el.querySelector('[data-hf-file]:last-child').getBoundingClientRect().bottom<=el.getBoundingClientRect().bottom+1),'last quantization remains fully reachable at the bottom');
+  await page.screenshot({path:`${output}/${width}-${theme}-hf-insets-long.png`});
+  hfExtraFiles=0;await hub.getByRole('button',{name:'Back to models',exact:true}).click();await showHFFiles();
+  await page.waitForFunction(()=>document.querySelectorAll('[data-hf-file]').length===3);
   assert.equal(await hub.locator('[data-hf-grid] [title]').count(),0);
   assert.equal(await hub.locator('select, [role="radio"], [role="checkbox"]').count(),0);
   await hub.locator('[data-vision-selector]').click();
+  const encoderOption=page.getByRole('menuitemradio').filter({hasText:longEncoder});await encoderOption.hover();
+  assert.equal(await encoderOption.evaluate(el=>el.parentElement._tippy.props.delay[0]),600,'full encoder name uses the slow tooltip delay');
+  const encoderTip=page.locator('.tippy-box:visible').getByText(longEncoder,{exact:true});await encoderTip.waitFor();
+  assert.equal(await encoderTip.evaluate(el=>getComputedStyle(el.closest('[data-tippy-root]')).zIndex),'10003','encoder tooltip appears above the dropdown');
+  assert((await encoderTip.boundingBox()).width<=width-16,'complete encoder name fits the viewport');
+  await page.screenshot({path:`${output}/${width}-${theme}-encoder-tooltip.png`});
   await page.getByRole('menuitemradio',{name:/mmproj.gguf/}).click();
   assert.equal(await hub.locator('[data-vision-selector]').innerText(),'mmproj.gguf');
   await hub.locator('[data-download-hf="Demo-Q4_K_M.gguf"]').click();
@@ -477,6 +696,12 @@ try{
   assert.equal(await queueList.locator('[data-queued-download]').count(),12);
   assert(await queueList.evaluate(el=>el.scrollHeight>el.clientHeight),'long queue scrolls internally');
   assert(await queueList.evaluate(el=>parseFloat(getComputedStyle(el).maxHeight)<10*parseFloat(getComputedStyle(document.documentElement).fontSize)),'slightly smaller maximum queue height');
+  const step=await queueList.locator('[data-queued-download]').first().evaluate(el=>el.getBoundingClientRect().height);
+  await queueList.hover();
+  for(const [delta,row] of [[120,1],[120,2],[-120,1],[-120,0]]) {
+    await page.mouse.wheel(0,delta);
+    await page.waitForFunction(({row,step})=>Math.abs(document.querySelector('[data-download-queue]').scrollTop-row*step)<1,{row,step});
+  }
   const queueSpacing=await queueList.evaluate(el=>{const area=el.getBoundingClientRect(),section=el.parentElement.getBoundingClientRect(),button=el.querySelector('[data-cancel-queued]').getBoundingClientRect();return {top:area.top-section.top,right:area.right-button.right,gutter:getComputedStyle(el).scrollbarGutter};});
   assert(queueSpacing.top>=8&&queueSpacing.right>=8,'scrollbar separated from divider and cancel hover');
   assert.equal(queueSpacing.gutter,'stable');
@@ -523,7 +748,15 @@ try{
   await assertSearchNotSelected('cancelling the last paused item does not select search text');
   await hubSearch.fill('');
   await hub.getByRole('button',{name:width<768?'Back':'Close',exact:true}).click();await grid.waitFor();
-  await grid.locator('.unified-model-name').first().click();
+  await grid.locator('.unified-model-name').first().click();assert.equal(await page.locator('.unified-model-editor').count(),0,'card text is no longer an editor trigger');
+  await grid.locator('.unified-model-card').first().click({position:{x:5,y:5}});assert.equal(await page.locator('.unified-model-editor').count(),0,'card background does not open editor');
+  const editButton=grid.locator('[data-edit-model]').first();
+  const editGeometry=await editButton.evaluate(el=>{const button=el.getBoundingClientRect(),icon=el.querySelector('svg').getBoundingClientRect(),root=parseFloat(getComputedStyle(document.documentElement).fontSize);return {size:icon.width,root,x:icon.left+icon.width/2-button.left-button.width/2,y:icon.top+icon.height/2-button.top-button.height/2};});
+  assert(Math.abs(editGeometry.size-editGeometry.root-2)<.1,'edit SVG is one more pixel larger than the previous size');
+  assert(Math.abs(editGeometry.x)<.1&&Math.abs(editGeometry.y)<.1,'larger edit SVG stays centered in the unchanged button');
+  const unloaded=grid.locator('[data-model-key="gguf:local/Model1"]');
+  assert((await unloaded.getByRole('button',{name:'Delete',exact:true}).boundingBox()).x<(await unloaded.locator('[data-edit-model]').boundingBox()).x,'edit button is right of Delete');
+  await editButton.click();
   const editor=page.locator('.unified-model-editor');await editor.waitFor();
   const profile=editor.locator('.model-editor-profile');
   await profile.locator('img').evaluate(image=>image.decode());
@@ -541,7 +774,8 @@ try{
   assert(Math.abs(parseFloat(identityGeometry.nameSize)-identityGeometry.root*1.5625)<.1,'editable title is slightly larger');
   assert(Math.abs(identityGeometry.idSize-identityGeometry.root*.875)<.1,'original model name is slightly larger');
   assert.equal(await editor.evaluate(el=>el.getBoundingClientRect().height),height,'model editor matches model manager height');
-  if(width>=768)assert.equal(await editor.locator('.model-editor-advanced-params-window').evaluate(el=>parseFloat(getComputedStyle(el).maxHeight)),282);
+  const editorLayout=await editor.evaluate(el=>{const header=el.querySelector('[data-model-editor-header]').getBoundingClientRect(),image=el.querySelector('.model-editor-profile img').getBoundingClientRect(),section=el.querySelector('.model-editor-params-scroll').getBoundingClientRect(),window=el.querySelector('.model-editor-advanced-params-window'),row=window.querySelector('.advanced-params > .flex').getBoundingClientRect();return {imageGap:image.top-header.bottom,sectionGap:section.top-image.bottom,max:parseFloat(getComputedStyle(window).maxHeight),height:window.getBoundingClientRect().height,row:row.height,root:parseFloat(getComputedStyle(document.documentElement).fontSize)};});
+  if(width>=768){assert(editorLayout.imageGap<=editorLayout.root+1,'identity block is closer to editor header');assert(editorLayout.sectionGap<=editorLayout.root+1,'sections follow the identity with a smaller gap');assert(Math.abs(editorLayout.max-(8*editorLayout.row+42))<1,'advanced list exposes eight rows at the current text scale');assert(editorLayout.height<=editorLayout.max+1);}
   await page.screenshot({path:`${output}/${width}-${theme}-editor.png`});
   const paramsContent=editor.locator('.model-editor-advanced-params .advanced-params');
   assert.equal(await paramsContent.evaluate(el=>[...el.children].filter(child=>!child.textContent.trim()).length),0,'no empty trailing block while system prompt is collapsed');
@@ -553,13 +787,13 @@ try{
   assert.equal(await paramsContent.evaluate(el=>[...el.children].filter(child=>!child.textContent.trim()).length),0);
   await page.evaluate(()=>window.__gridFixture.close());await page.evaluate(()=>window.__gridFixture.open());await grid.waitFor();
   const row=number=>grid.locator(`[data-model-key="gguf:local/Model${number}"]`);
-  const deleteButton=row(1).getByRole('button',{name:'Delete model',exact:true});await deleteButton.click();
-  const confirm=page.getByRole('button',{name:'Delete',exact:true});
+  const deleteButton=row(1).getByRole('button',{name:'Delete',exact:true});await deleteButton.click();
+  const confirm=page.getByRole('button',{name:'Delete',exact:true}).filter({hasText:/^Delete$/});
   await page.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(mutations.length,0);
   await deleteButton.click();failDelete=true;await confirm.click();await page.getByText('Fixture delete failed',{exact:true}).first().waitFor();assert.equal(await row(1).count(),1);
   failDelete=false;await deleteButton.click();await confirm.click();await row(1).waitFor({state:'hidden'});
   assert.equal(catalog.length,13);
-  assert.equal(await row(0).getByRole('button',{name:'Delete model',exact:true}).count(),0,'loaded model hides deletion');
+  assert.equal(await row(0).getByRole('button',{name:'Delete',exact:true}).count(),0,'loaded model hides deletion');
   const unloadSize=await row(0).getByRole('button',{name:'Descarregar',exact:true}).boundingBox();
   const actionSize=await page.evaluate(()=>2*parseFloat(getComputedStyle(document.documentElement).fontSize));
   assert(Math.abs(unloadSize.width-actionSize)<1);assert(Math.abs(unloadSize.height-actionSize)<1);
@@ -567,12 +801,12 @@ try{
   await row(0).getByRole('button',{name:'Carregar',exact:true}).waitFor();
   await page.waitForFunction(()=>!document.querySelector('[data-model-key="gguf:local/Model0"] button[aria-label="Carregar"]').disabled);
   assert.equal((await cardPaint(row(0).locator('.unified-model-card'))).border,'rgba(0, 0, 0, 0)','loaded border disappears after unload');
-  await row(0).getByRole('button',{name:'Delete model',exact:true}).waitFor();
+  await row(0).getByRole('button',{name:'Delete',exact:true}).waitFor();
   await row(0).getByRole('button',{name:'Carregar',exact:true}).click();
-  assert.equal(await row(0).getByRole('button',{name:'Delete model',exact:true}).count(),0,'delete hides while loading, before completion');
+  assert.equal(await row(0).getByRole('button',{name:'Delete',exact:true}).count(),0,'delete hides while loading, before completion');
   await row(0).getByRole('button',{name:'Descarregar',exact:true}).waitFor();
   assert.notEqual((await cardPaint(row(0).locator('.unified-model-card'))).border,'rgba(0, 0, 0, 0)','border returns only once model is loaded');
-  assert.equal(await row(0).getByRole('button',{name:'Delete model',exact:true}).count(),0);
+  assert.equal(await row(0).getByRole('button',{name:'Delete',exact:true}).count(),0);
   loaded=loaded.map(model=>({...model,n_gpu_layers:10,process_rss_bytes:2000000000}));
   await page.evaluate(state=>window.__gridFixture.state(state),{epoch:'grid',revision:revision++,busy:false,loaded_models:loaded});
   await shell.locator('[data-vram-meter]').getByText(/^RAM:/).waitFor();

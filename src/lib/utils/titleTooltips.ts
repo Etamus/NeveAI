@@ -1,9 +1,11 @@
+import { tooltipDelay } from './tooltipTiming';
 import tippy, { type Instance } from 'tippy.js';
 
 /** Use the existing tooltip theme for native titles, without scanning or observing the DOM. */
 export function installTitleTooltips(root: Document) {
 	type Entry = { owner: HTMLElement; anchor: Element; text: string; addedLabel: boolean; tooltip: Instance | null; borrowed: Instance | null };
 	let active: Entry | null = null;
+	let showTimer: ReturnType<typeof setTimeout> | undefined;
 	const pending = new Map<HTMLElement, Entry>();
 	function restore(entry: Entry) {
 		if (!entry.owner.hasAttribute('title')) entry.owner.setAttribute('title', entry.text);
@@ -14,6 +16,7 @@ export function installTitleTooltips(root: Document) {
 		for (const entry of pending.values()) if (!(target instanceof Node) || !entry.anchor.contains(target)) restore(entry);
 	}
 	function clear() {
+		clearTimeout(showTimer);
 		const previous = active;
 		active = null;
 		if (!previous) return;
@@ -23,6 +26,7 @@ export function installTitleTooltips(root: Document) {
 		else restore(previous);
 	}
 	function dismiss() {
+		clearTimeout(showTimer);
 		if (!active) return;
 		active.tooltip?.destroy();
 		active.borrowed?.hide();
@@ -46,7 +50,7 @@ export function installTitleTooltips(root: Document) {
 		if (!(owner instanceof HTMLElement) || owner.tagName === 'IFRAME') return;
 		const text = owner.getAttribute('title');
 		if (!text?.trim()) return;
-		const anchor = owner.closest('button, a, [role="button"]') ?? owner;
+		const anchor = owner.hasAttribute('data-title-self') ? owner : owner.closest('button, a, [role="button"]') ?? owner;
 		let borrowed: Instance | null = null;
 		for (let node: Element | null = anchor; node; node = node.parentElement) {
 			const existing = (node as Element & { _tippy?: Instance })._tippy;
@@ -63,7 +67,13 @@ export function installTitleTooltips(root: Document) {
 				: anchor.closest('[data-download-progress-menu]') ? { zIndex: 10003 } : {})
 		});
 		active = { owner, anchor, text, addedLabel, tooltip, borrowed };
-		if (!expanded) (tooltip ?? borrowed)?.show();
+		if (!expanded) {
+			const tip = tooltip ?? borrowed;
+			const show = () => { if (root.contains(anchor)) tip?.show(); };
+			const delay = event.type === 'focusin' ? 0 : tooltipDelay(anchor);
+			if (delay) showTimer = setTimeout(show, delay);
+			else show();
+		}
 	}
 	function leave(event: Event) {
 		const next = (event as MouseEvent | FocusEvent).relatedTarget;

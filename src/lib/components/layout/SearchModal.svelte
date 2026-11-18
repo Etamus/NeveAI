@@ -10,6 +10,30 @@
 		chatList: null,
 		allChatsLoaded: false
 	};
+	function fitChatRows(node: HTMLElement) {
+		const observer = new ResizeObserver(([entry]) => {
+			const height = entry.contentRect.height;
+			if (height > 0) node.style.setProperty('--chat-row', (height / Math.max(1, Math.floor(height / 38))) + 'px');
+		});
+		observer.observe(node);
+		return { destroy: () => observer.disconnect() };
+	}
+	function chatCardWheel(event: WheelEvent) {
+		if (event.ctrlKey || event.shiftKey || !event.deltaY || Math.abs(event.deltaX) > Math.abs(event.deltaY)
+			|| (!event.deltaMode && Math.abs(event.deltaY) < 50)) return;
+		const list = event.currentTarget as HTMLElement;
+		if (list.scrollHeight <= list.clientHeight) return;
+		const top = list.getBoundingClientRect().top;
+		const rows = list.querySelectorAll('a[href^="/c/"]');
+		const down = event.deltaY > 0;
+		let target = down ? list.scrollHeight : 0;
+		for (let i = down ? 0 : rows.length - 1; i >= 0 && i < rows.length; i += down ? 1 : -1) {
+			const distance = rows[i].getBoundingClientRect().top - top;
+			if (down ? distance > 1 : distance < -1) { target = list.scrollTop + distance; break; }
+		}
+		event.preventDefault();
+		list.scrollTop = target;
+	}
 </script>
 
 <script lang="ts">
@@ -64,6 +88,7 @@
 	let previewRequestId = 0;
 	let searchShell: HTMLDivElement;
 	let wasShown = false;
+	let resultsViewport: HTMLDivElement;
 
 	let selectedIdx = null;
 	let keyboardSelection = false;
@@ -218,6 +243,7 @@
 
 	$: if (show && !wasShown) {
 		wasShown = true;
+		void tick().then(() => { if (show && resultsViewport) resultsViewport.scrollTop = 0; });
 		keyboardSelection = false;
 		selectedIdx = null;
 		searchHandler();
@@ -303,7 +329,7 @@
 
 		<div class="flex px-4 pt-2 pb-1 min-h-0 flex-1">
 			<div
-				class="flex flex-col overflow-y-auto h-full min-h-0 max-h-full scrollbar-hidden w-full flex-1 pr-2"
+				class="flex flex-col overflow-hidden h-full min-h-0 max-h-full w-full flex-1 pr-2"
 			>
 				<div class="w-full text-xs text-gray-500 dark:text-gray-500 font-medium pb-2 px-2">
 					{$i18n.t('Actions')}
@@ -336,8 +362,9 @@
 					</button>
 				{/each}
 
+				{#if chatList}<hr class="border-gray-50 dark:border-gray-850/30 my-3" />{/if}
+				<div bind:this={resultsViewport} use:fitChatRows class="pr-2 min-h-0 flex-1 overflow-y-auto overscroll-contain" on:wheel|nonpassive={chatCardWheel}>
 				{#if chatList}
-					<hr class="border-gray-50 dark:border-gray-850/30 my-3" />
 
 					{#if chatList.length === 0}
 						<div class="text-xs text-gray-500 dark:text-gray-400 text-center px-5 py-4">
@@ -348,9 +375,7 @@
 					{#each chatList as chat, idx (chat.id)}
 						{#if idx === 0 || (idx > 0 && chat.time_range !== chatList[idx - 1].time_range)}
 							<div
-								class="w-full text-xs text-gray-500 dark:text-gray-500 font-medium {idx === 0
-									? ''
-									: 'pt-5'} pb-2 px-2"
+								class="w-full text-xs text-gray-500 dark:text-gray-500 font-medium flex items-center h-[var(--chat-row,38px)] px-2"
 							>
 								{$i18n.t(chat.time_range)}
 								<!-- localisation keys for time_range to be recognized from the i18next parser (so they don't get automatically removed):
@@ -375,7 +400,7 @@
 						{/if}
 
 						<a
-							class=" w-full flex justify-between items-center rounded-xl text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 {keyboardSelection && selectedIdx ===
+							class="w-full h-[var(--chat-row,38px)] flex justify-between items-center rounded-xl text-sm py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-850 {keyboardSelection && selectedIdx ===
 							idx + actions.length
 								? 'bg-gray-50 dark:bg-gray-850'
 								: ''}"
@@ -412,6 +437,7 @@
 					{/each}
 
 					{#if !allChatsLoaded}
+						<div class="relative h-0"><div class="absolute inset-x-0 bottom-0">
 						<Loader
 							on:visible={(e) => {
 								if (!chatListLoading) {
@@ -421,10 +447,12 @@
 						>
 							<div class="h-px w-full" aria-hidden="true"></div>
 						</Loader>
+						</div></div>
 					{/if}
 				{:else}
 					<div class="w-full h-full"></div>
 				{/if}
+				</div>
 			</div>
 			<div
 				id="chat-preview"

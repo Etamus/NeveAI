@@ -9,12 +9,6 @@ import {installMobileOfflineApi} from './fixtures/mobile-offline-api.mjs';
 const directory=new URL('../src/routes/__editor_scroll_end/',import.meta.url),file=new URL('+page.svelte',directory),output='logs/editor-scroll-end';
 let server,browser,page;
 const results=[];
-const inkCenter=async(locator,firstLine=false)=>{
- const box=await locator.boundingBox(),limit=firstLine?await locator.evaluate(el=>parseFloat(getComputedStyle(el).lineHeight)):box.height;
- const {data,info}=await sharp(await locator.screenshot()).ensureAlpha().raw().toBuffer({resolveWithObject:true});let top=info.height,bottom=-1;
- for(let y=0;y<Math.min(info.height,limit);y++)for(let x=0;x<info.width;x++){const i=(y*info.width+x)*4;if(data[i]>100&&data[i+1]>100&&data[i+2]>100){top=Math.min(top,y);bottom=Math.max(bottom,y);}}
- return box.y+(top+bottom)/2;
-};
 await fs.mkdir(directory,{recursive:true});await fs.copyFile(new URL('./fixtures/models-grid.svelte',import.meta.url),file,constants.COPYFILE_EXCL);
 try{
  await fs.mkdir(output,{recursive:true});
@@ -33,7 +27,7 @@ try{
   admin[0].name=editableName;
   admin[0].id=`local/${originalId}`;local[0].id=`local/${originalId}`;local[0].filename=`${originalId}.gguf`;
   await page.evaluate(({originalId,editableName})=>{window.__gridFixture.admin[0].name=editableName;window.__gridFixture.admin[0].id=`local/${originalId}`;window.__gridFixture.local[0].id=`local/${originalId}`;window.__gridFixture.local[0].filename=`${originalId}.gguf`;document.documentElement.classList.add('dark');return window.__gridFixture.open();},{originalId,editableName});
-  await page.locator('[data-model-grid] .unified-model-name').first().click();const editor=page.locator('.unified-model-editor');await editor.waitFor();
+  await page.locator('[data-model-grid] [data-edit-model]').first().click();const editor=page.locator('.unified-model-editor');await editor.waitFor();
   const panel=editor.locator('.model-editor-advanced-params-window');
   await editor.locator('[data-model-editable-name]').waitFor();
   const typography=await editor.evaluate(el=>({root:parseFloat(getComputedStyle(document.documentElement).fontSize),name:parseFloat(getComputedStyle(el.querySelector('[data-model-editable-name]')).fontSize),original:parseFloat(getComputedStyle(el.querySelector('[data-model-original-id]')).fontSize),description:parseFloat(getComputedStyle(el.querySelector('.model-editor-identity textarea')).fontSize)}));
@@ -49,48 +43,18 @@ try{
    assert(fit.width+3<=fit.available,'the final visible character fits completely');assert.equal(fit.scroll,0,'unfocused title is never horizontally scrolled');
   };
   await assertWholeName();
-  const nameHint=editor.locator('[data-model-name-edit-hint]'),descriptionHint=editor.locator('[data-model-description-edit-hint]'),description=editor.getByRole('textbox',{name:'Description',exact:true});
-  await page.mouse.move(0,0);
-  assert.equal(await nameHint.evaluate(el=>getComputedStyle(el).opacity),'0','name pencil hidden without hover');
-  assert.equal(await descriptionHint.evaluate(el=>getComputedStyle(el).opacity),'0','description pencil hidden without hover');
+  const description=editor.getByRole('textbox',{name:'Description',exact:true});
   const fieldBounds=await editableTitle.boundingBox();
-  assert(Math.abs(fieldBounds.x-(await editor.locator('[data-model-original-id]').boundingBox()).x+2)<.1,'only the editable name starts two pixels farther left');
-  await editableTitle.hover();assert.equal(await nameHint.evaluate(el=>getComputedStyle(el).opacity),'1','name hover reveals edit pencil');
-  assert.deepEqual(await editableTitle.boundingBox(),fieldBounds,'pencil does not move or resize the name field');
-  const namePencilBounds=await nameHint.boundingBox();assert(namePencilBounds.x>=fieldBounds.x+fieldBounds.width,'name pencil stays outside editable text');
-  await page.screenshot({path:`${output}/${width}-name-pencil.png`});
-  const nameInkOffset=(await inkCenter(nameHint.locator('svg')))-(await inkCenter(editableTitle));
-  console.log('name pencil ink offset',width,nameInkOffset);assert(Math.abs(nameInkOffset)<1.1,'name pencil optically centered on actual text');
-  await description.hover();assert.equal(await descriptionHint.evaluate(el=>getComputedStyle(el).opacity),'1','description hover reveals its pencil');
-  assert.equal(await nameHint.evaluate(el=>getComputedStyle(el).opacity),'0','name pencil disappears when pointer leaves');
-  await page.screenshot({path:`${output}/${width}-description-pencil.png`});
-  const assertDescriptionEnd=async()=>{
-   const position=await description.evaluate(el=>{
-    const hint=el.parentElement.querySelector('[data-model-description-edit-hint]'),style=getComputedStyle(el),mirror=document.createElement('div');
-    Object.assign(mirror.style,{position:'fixed',left:'-10000px',visibility:'hidden',width:`${el.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight)}px`,font:style.font,lineHeight:style.lineHeight,letterSpacing:style.letterSpacing,whiteSpace:style.whiteSpace,wordBreak:style.wordBreak,overflowWrap:style.overflowWrap});
-    mirror.textContent=(el.value||el.placeholder)+'\u200b';document.body.append(mirror);const range=document.createRange();range.selectNodeContents(mirror);const lines=[...range.getClientRects()],last=lines.at(-1),lineHeight=parseFloat(style.lineHeight),index=Math.round((last.top-lines[0].top)/lineHeight),box=el.getBoundingClientRect(),h=hint.getBoundingClientRect();
-    const x=Math.min(box.x+parseFloat(style.paddingLeft)+last.right-mirror.getBoundingClientRect().left+6,el.parentElement.getBoundingClientRect().right-h.width),y=box.y+parseFloat(style.paddingTop)+lineHeight*(index+.5)-el.scrollTop+2,visible=y-box.y>=h.height/2&&y-box.y<=el.clientHeight-h.height/2+.5;
-    mirror.remove();return {x,y,actualX:h.x,actualY:h.y+h.height/2,index,lineHeight,visible,visibility:getComputedStyle(hint).visibility};
-   });
-   assert.equal(position.visibility,position.visible?'visible':'hidden','end hint is clipped when its line is outside the textarea');
-   assert(Math.abs(position.actualX-position.x)<1&&Math.abs(position.actualY-position.y)<1,'pencil tracks the text end after wrapping and scrolling');return position;
-  };
-  await assertDescriptionEnd();
+  assert(Math.abs(fieldBounds.x-(await editor.locator('[data-model-original-id]').boundingBox()).x+2)<.1);
+  for(const field of [editableTitle,description]){
+   await field.hover();
+   assert.equal(await editor.locator('[data-model-name-edit-hint], [data-model-description-edit-hint]').count(),0);
+  }
+  assert.deepEqual(await editableTitle.boundingBox(),fieldBounds);
   const originalDescription=await description.inputValue();
-  await description.fill('Curta.');await description.hover();await page.waitForTimeout(80);
-  await assertDescriptionEnd();
-  await description.fill('Primeira linha.\nFinal.');await description.evaluate(el=>el.scrollTop=0);await page.waitForTimeout(80);
-  const twoLines=await assertDescriptionEnd();assert.equal(twoLines.index,1,'pencil moves to the second line rather than staying on the first');assert(twoLines.visible);
-  const lastLineGap=await description.evaluate(el=>{const hint=el.parentElement.querySelector('[data-model-description-edit-hint]'),style=getComputedStyle(el),mirror=document.createElement('span');mirror.style.cssText='position:fixed;visibility:hidden;white-space:pre;';mirror.style.font=style.font;mirror.textContent=el.value.split('\n').at(-1);document.body.append(mirror);const width=mirror.getBoundingClientRect().width;mirror.remove();return hint.getBoundingClientRect().left-el.getBoundingClientRect().left-parseFloat(style.paddingLeft)-width;});
-  assert(Math.abs(lastLineGap-6)<1,'six-pixel gap is preserved after the last word');
-  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-  await page.screenshot({path:`${output}/${width}-description-last-line-pencil.png`});
-  await description.fill('Uma descricao suficientemente longa para quebrar de linha e terminar bem aqui.');await description.evaluate(el=>el.scrollTop=el.scrollHeight);await page.waitForTimeout(80);
-  const wrapped=await assertDescriptionEnd();assert(wrapped.index>=1&&wrapped.visible,'pencil follows the final automatically wrapped line');
-  await description.evaluate(el=>el.scrollTop=0);await page.waitForTimeout(80);await assertDescriptionEnd();
-  await description.fill('Final.\n');await page.waitForTimeout(80);assert.equal((await assertDescriptionEnd()).index,1,'trailing newline places the pencil at the new line end');
-  await description.fill(originalDescription);await page.waitForTimeout(80);
-  await page.mouse.move(0,0);assert.equal(await descriptionHint.evaluate(el=>getComputedStyle(el).opacity),'0','description pencil disappears on exit');
+  await description.fill('Primeira linha.\nSegunda linha.');
+  assert.equal(await description.inputValue(),'Primeira linha.\nSegunda linha.');
+  await description.fill(originalDescription);
   if(width===1440)assert.equal(await editableTitle.inputValue(),editableName.slice(0,30),'desktop shows exactly thirty characters, spaces included');
   assert.equal(await editableTitle.getAttribute('maxlength'),'50','editing limit remains unchanged');
   await editableTitle.focus();assert.equal(await editableTitle.inputValue(),editableName.slice(0,50),'focus preserves existing editing logic');
@@ -134,7 +98,7 @@ try{
   const closed=await measure();
   await page.screenshot({path:`${output}/${width}-${process.argv.includes('--measure')?'before':'after'}.png`});
   if(!process.argv.includes('--measure')){
-   if(width>=768){assert.equal(closed.max,'282px');assert.equal(closed.height,282);}
+   if(width>=768){const rowHeight=await panel.locator('.advanced-params > .flex').first().evaluate(el=>el.getBoundingClientRect().height);assert(Math.abs(parseFloat(closed.max)-(rowHeight*8+42))<1);assert(closed.height<=parseFloat(closed.max)+1);assert(closed.height>282,'larger visible parameter window');}
    const emptyTail=closed.children.filter(row=>!row.text);assert.equal(emptyTail.length,0,'no empty custom-parameter block after closed prompt');
    if(width>=768){const first=closed.children.find(row=>row.text&&row.bottom>0);assert(first.y>=-.5,'first visible row is not clipped at the lower scroll limit');}
    const systemRow=editor.getByText('Prompt do sistema',{exact:true}).locator('..');
@@ -192,7 +156,7 @@ try{
   admin[1].meta=lockedMeta;
   await page.reload({waitUntil:'networkidle'});await page.waitForFunction(()=>window.__gridFixture);
   await page.evaluate(meta=>{window.__gridFixture.admin[1].meta=meta;return window.__gridFixture.open();},lockedMeta);
-  await page.locator('[data-model-key="gguf:local/Model1"] .unified-model-name').click();
+  await page.locator('[data-model-key="gguf:local/Model1"] [data-edit-model]').click();
   await page.waitForFunction(()=>document.querySelector('[data-model-editable-name]')?.disabled===true);
   assert.equal(await editor.locator('[data-model-name-edit-hint], [data-model-description-edit-hint]').count(),0,'locked catalog fields never advertise editing');
   assert(await editor.getByRole('textbox',{name:'Description',exact:true}).evaluate(el=>el.readOnly),'catalog description stays readonly');

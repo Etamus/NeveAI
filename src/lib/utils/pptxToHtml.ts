@@ -27,7 +27,7 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
  */
 export async function pptxToImages(
 	buffer: ArrayBuffer
-): Promise<{ images: string[]; width: number; height: number }> {
+) {
 	const JSZip = (await import('jszip')).default;
 	const zip = await JSZip.loadAsync(buffer);
 
@@ -45,29 +45,6 @@ export async function pptxToImages(
 		}
 	}
 
-	// ── Collect media files (images) as base64 data URIs ─────────────
-	const media: Record<string, string> = {};
-	const mediaFiles = Object.keys(zip.files).filter((f) => f.startsWith('ppt/media/'));
-	await Promise.all(
-		mediaFiles.map(async (path) => {
-			const file = zip.file(path);
-			if (!file) return;
-			const base64 = await file.async('base64');
-			const ext = path.split('.').pop()?.toLowerCase() ?? '';
-			const mime =
-				ext === 'png'
-					? 'image/png'
-					: ext === 'gif'
-						? 'image/gif'
-						: ext === 'svg'
-							? 'image/svg+xml'
-							: ext === 'emf' || ext === 'wmf'
-								? 'image/x-emf'
-								: 'image/jpeg';
-			media[path] = `data:${mime};base64,${base64}`;
-		})
-	);
-
 	// ── Discover slide files ─────────────────────────────────────────
 	const slideFiles = Object.keys(zip.files)
 		.filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f))
@@ -77,12 +54,18 @@ export async function pptxToImages(
 			return na - nb;
 		});
 
-	const images: string[] = [];
 	const decodedImages = new Map<string, Promise<HTMLImageElement>>();
 	const decodeImage = (source: string) => {
 		let result = decodedImages.get(source);
 		if (!result) {
-			result = loadImage(source).then(image => {
+			result = (async () => {
+				const file = zip.file(source);
+				if (!file) throw new Error('Missing image');
+				const ext = source.split('.').pop()?.toLowerCase() ?? '';
+				const mime = ({ png: 'image/png', gif: 'image/gif', svg: 'image/svg+xml' } as Record<string,string>)[ext] ?? 'image/jpeg';
+				const url = URL.createObjectURL(new Blob([await file.async('arraybuffer')], {type: mime}));
+				try { return await loadImage(url); } finally { URL.revokeObjectURL(url); }
+			})().then(image => {
 				if (image.naturalWidth * image.naturalHeight > 4_000_000) decodedImages.delete(source);
 				return image;
 			}).catch(error => { decodedImages.delete(source); throw error; });
@@ -95,7 +78,8 @@ export async function pptxToImages(
 		return result;
 	};
 
-	for (const slidePath of slideFiles) {
+	const renderSlide = async (index: number, requestedScale = 1) => {
+		const slidePath = slideFiles[index];
 		const slideText = await zip.file(slidePath)!.async('text');
 		const slideDoc = new DOMParser().parseFromString(slideText, 'application/xml');
 
@@ -122,9 +106,11 @@ export async function pptxToImages(
 
 		// ── Create canvas and render slide ───────────────────────────
 		const canvas = document.createElement('canvas');
-		canvas.width = slideW;
-		canvas.height = slideH;
+		const scale = Math.min(requestedScale, Math.sqrt(8_000_000 / (slideW * slideH)));
+		canvas.width = Math.ceil(slideW * scale);
+		canvas.height = Math.ceil(slideH * scale);
 		const ctx = canvas.getContext('2d')!;
+		ctx.scale(scale, scale);
 
 		// White background
 		ctx.fillStyle = '#ffffff';
@@ -132,8 +118,7 @@ export async function pptxToImages(
 
 		const spTree = slideDoc.getElementsByTagName('p:spTree')[0];
 		if (!spTree) {
-			images.push(canvas.toDataURL('image/png'));
-			continue;
+			return canvas.toDataURL('image/png');
 		}
 
 		const shapes = [
@@ -164,10 +149,9 @@ export async function pptxToImages(
 				if (blip) {
 					const rEmbed = blip.getAttribute('r:embed') ?? '';
 					const mediaPath = rels[rEmbed];
-					const dataUri = mediaPath ? media[mediaPath] : '';
-					if (dataUri && !dataUri.includes('image/x-emf')) {
+					if (mediaPath && !/\.(emf|wmf)$/i.test(mediaPath)) {
 						try {
-							const img = await decodeImage(dataUri);
+							const img = await decodeImage(mediaPath);
 							ctx.drawImage(img, x, y, w, h);
 						} catch {
 							// Skip images that fail to load
@@ -182,6 +166,7 @@ export async function pptxToImages(
 			if (!txBody) continue;
 
 			ctx.save();
+			ctx.beginPath();
 			ctx.rect(x, y, w, h);
 			ctx.clip();
 
@@ -211,8 +196,9 @@ export async function pptxToImages(
 					}
 				}
 
-				const lineHeight = maxFontPt * 1.4;
-				cursorY += maxFontPt; // baseline offset
+				const maxFontPx = maxFontPt * 96 / 72;
+				const lineHeight = maxFontPx * 1.2;
+				cursorY += maxFontPx; // baseline offset
 
 				let cursorX = x + 4; // small left padding
 
@@ -242,7 +228,9 @@ export async function pptxToImages(
 						}
 					}
 
-					ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${fontPt}pt Calibri, Arial, sans-serif`;
+					const family = rPr?.getElementsByTagName('a:latin')[0]?.getAttribute('typeface');
+					const face = family && !family.startsWith('+') ? JSON.stringify(family) + ', ' : '';
+					ctx.font = `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${fontPt}pt ${face}Calibri, Arial, sans-serif`;
 					ctx.fillStyle = color;
 					ctx.textBaseline = 'alphabetic';
 
@@ -266,8 +254,17 @@ export async function pptxToImages(
 			ctx.restore();
 		}
 
-		images.push(canvas.toDataURL('image/png'));
-	}
-
-	return { images, width: slideW, height: slideH };
+		return canvas.toDataURL('image/png');
+	};
+	const base = new Map<number, Promise<string>>();
+	const baseSlide = (index: number) => {
+		if (index < 0 || index >= slideFiles.length) throw new RangeError('Invalid slide');
+		const old = base.get(index);
+		base.delete(index);
+		const result = old ?? renderSlide(index).catch(error => { base.delete(index); throw error; });
+		base.set(index, result);
+		if (base.size > 3) base.delete(base.keys().next().value!);
+		return result;
+	};
+	return { count: slideFiles.length, width: slideW, height: slideH, renderSlide, baseSlide };
 }

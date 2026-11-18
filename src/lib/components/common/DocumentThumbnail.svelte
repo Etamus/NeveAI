@@ -19,6 +19,7 @@
 	import { onMount } from 'svelte';
 	import Document from '$lib/components/icons/Document.svelte';
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
+	import { pdfAssets } from '$lib/utils/pdfAssets';
 	import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 	export let file: any;
 	let element: HTMLDivElement;
@@ -52,6 +53,7 @@
 						if (controller.signal.aborted) return;
 						pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 						task = pdfjs.getDocument({
+							...pdfAssets(pdfjs.version),
 							url,
 							httpHeaders: { Authorization: `Bearer ${localStorage.token}` },
 							maxImageSize: 4000000

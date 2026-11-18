@@ -2631,7 +2631,7 @@ async def chat_stable_diffusion_handler(
     resolution = normalize_qwen_image_resolution(
         image_features.get("stable_diffusion_resolution")
     )
-    if quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY, "minimax_h3_image"} and init_image_references:
+    if quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY} and init_image_references:
         resolution = "auto"
     if quality == "neve_image":
         resolution = "1:1"
@@ -2641,9 +2641,6 @@ async def chat_stable_diffusion_handler(
     progress_height = int(request.app.state.config.STABLE_DIFFUSION_HEIGHT)
     if quality in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY}:
         progress_width, progress_height = qwen_image_dimensions(resolution)
-    elif quality == "minimax_h3_image":
-        from neveai.routers.image_h3_generation import canvas_size
-        progress_width, progress_height = canvas_size(resolution)
     last_progress = 0
     selected_mode_options = image_features.get("stable_diffusion_mode_options") if quality == "qwen_image_2s" else None
 
@@ -2736,15 +2733,7 @@ async def chat_stable_diffusion_handler(
         async with media_model_standby(model_manager, _sd_pipeline.unload):
             # Generate image directly and skip the LLM response path.
             generation_details = {}
-            if quality == "minimax_h3_image":
-                from neveai.routers.image_h3_generation import neve_image_3_runtime
-
-                data_uri = await neve_image_3_runtime.run(
-                    prompt=image_prompt, resolution=resolution, references=init_image_references,
-                    user_id=getattr(user, "id", None), progress=emit_image_progress,
-                    dimensions=emit_image_dimensions, details=generation_details,
-                )
-            elif quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
+            if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
                 from neveai.routers.image_quality_generation import neve_image_21_runtime
 
                 runtime = neve_image_21_runtime
@@ -2815,8 +2804,7 @@ async def chat_stable_diffusion_handler(
                 metadata={
                     "source": (
                         "qwen-image-2s" if quality == "qwen_image_2s"
-                        else "neve-image-3" if quality == "minimax_h3_image"
-                        else "neve-image-2.6" if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
+                        else "neve-image-2.8" if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY
                         else "z-image-turbo"
                     ),
                     "generated": True,
@@ -3107,6 +3095,73 @@ async def chat_music_generation_handler(
     finally:
         _release_media_generation_slot(media_slot_acquired)
 
+    return form_data
+
+
+async def chat_model3d_handler(request, form_data, extra_params, user):
+    import tempfile
+    from neveai.routers.llamacpp import model_manager
+    from neveai.routers.model3d_generation import ROOT, mesh_runtime, prepare_image
+    from neveai.utils.image_memory import is_image_memory_error, monotonic_progress
+
+    metadata = extra_params["__metadata__"]
+    metadata["skip_llm"] = True
+    emit = extra_params["__event_emitter__"]
+
+    async def status(description, progress=0, done=False, error=False):
+        await emit({"type": "status", "data": {
+            "action": "model3d_generation", "description": description,
+            "progress": progress, "done": done, "error": error,
+        }})
+
+    progress = monotonic_progress(lambda value: status(
+        "Preparando modelo..." if value < 24 else "Criando modelo", value))
+    acquired = False
+    try:
+        if user.role != "admin" or not request.app.state.config.ENABLE_STABLE_DIFFUSION:
+            raise ValueError("Criar 3D nao esta disponivel para esta conta.")
+        messages, parent = form_data.get("messages", []), metadata.get("parent_message")
+        references = _collect_stable_diffusion_image_references(messages, parent, limit=2)
+        _validate_media_attachments(messages, parent, "image", max_images=1, references=references)
+        if len(references) != 1:
+            raise ValueError("Anexe uma imagem para criar o modelo 3D.")
+        await progress(0)
+        await _acquire_media_generation_slot(lambda: status("Aguardando a criacao anterior..."))
+        acquired = True
+        await mesh_runtime.prepare(progress)
+        with tempfile.TemporaryDirectory(prefix="job-", dir=ROOT) as directory:
+            job = Path(directory)
+            alpha = await asyncio.to_thread(prepare_image, references[0], user.id, job / "reference.png")
+            async with media_model_standby(model_manager, mesh_runtime._stop):
+                try:
+                    output = await mesh_runtime.generate(job, alpha, progress)
+                except RuntimeError as exc:
+                    if not is_image_memory_error(exc):
+                        raise
+                    output = await mesh_runtime.generate(job, alpha, progress, compact=True)
+            filename = f"modelo-neve-{uuid4().hex[:8]}.glb"
+            def persist():
+                with output.open("rb") as content:
+                    return upload_file_handler(
+                        request, file=UploadFile(content, filename=filename, headers={"content-type": "model/gltf-binary"}),
+                        metadata={"source": "neve-model3d", "generated": True},
+                        process=False, user=user)
+            file_item = await asyncio.to_thread(persist)
+        url = str(request.app.url_path_for("get_file_content_by_id", id=file_item.id))
+        await emit({"type": "files", "data": {"files": [{
+            "id": file_item.id, "name": filename, "url": url, "type": "model3d",
+            "content_type": "model/gltf-binary",
+        }]}})
+        await status("Modelo criado", 100, done=True)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log.exception("3D generation failed")
+        message = str(exc) if isinstance(exc, ValueError) else "Consulte o log do backend para detalhes."
+        await status(f"Falha ao criar modelo 3D: {message}", done=True, error=True)
+    finally:
+        _release_media_generation_slot(acquired)
+    await emit({"type": "chat:completion", "data": {"done": True, "content": ""}})
     return form_data
 
 
@@ -7284,6 +7339,10 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     events = []
     sources = []
+    if (metadata.get("features") or {}).get("model3d_generation") is True:
+        form_data.pop("features", None)
+        form_data = await chat_model3d_handler(request, form_data, extra_params, user)
+        return form_data, metadata, events
 
     # Folder "Project" handling
     # Check if the request has chat_id and is inside of a folder

@@ -62,14 +62,14 @@ try {
 		await page.screenshot({ path: `logs/chat-attachment-menu-${viewport.width}.png` });
 		await page.keyboard.press('Escape');
 		await page.evaluate(() => window.__attachmentStudy.image());
-		await page.screenshot({ path: `logs/image3-selector-${viewport.width}.png` });
+		await page.screenshot({ path: `logs/image28-selector-${viewport.width}.png` });
 		console.log('Image selector state', viewport, await page.evaluate(() => window.__attachmentStudy.state()), await page.locator('#message-input-container').innerText());
 		await page.locator('#image-quality-dropdown-container > button').click();
-		await page.getByRole('button', { name: /Neve Image 3/ }).click();
-		assert.equal((await page.evaluate(() => window.__attachmentStudy.state())).quality, 'minimax_h3_image');
+		await page.getByRole('button', { name: /Neve Image 2.8/ }).click();
+		assert.equal((await page.evaluate(() => window.__attachmentStudy.state())).quality, 'qwen_image_2_1_official');
 		assert.deepEqual(errors, []);
 		result.push({ viewport, metrics, attached: state.files[0] }); await page.close();
 	}
 	await fs.writeFile('logs/chat-attachment-menu-results.json', JSON.stringify(result, null, 2));
-	console.log('PASS chat drop, duplicate/self exclusion, menu clipping, Image 3 selection', result);
+	console.log('PASS chat drop, duplicate/self exclusion, menu clipping, Image 2.8 selection', result);
 } finally { await browser?.close(); await server?.close(); }

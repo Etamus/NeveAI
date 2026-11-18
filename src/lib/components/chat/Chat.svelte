@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { recordIntegrationUse } from '$lib/utils/integrationSuggestions';
 	import { v4 as uuidv4 } from 'uuid';
 	import { toast } from 'svelte-sonner';
 	import { PaneGroup, Pane, type PaneAPI } from 'paneforge';
@@ -92,7 +93,7 @@
 	import Placeholder from './Placeholder.svelte';
 	import FilesOverlay from './MessageInput/FilesOverlay.svelte';
 	import NotificationToast from '../NotificationToast.svelte';
-	import Spinner from '../common/Spinner.svelte';
+	import OrbitingSpheres from '../common/OrbitingSpheres.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
 	import Sidebar from '../icons/Sidebar.svelte';
 	import Image from '../common/Image.svelte';
@@ -111,6 +112,7 @@
 	let messageInput: MessageInput | undefined;
 
 	let autoScroll = true;
+	let reopenedTurnId: string | null = null;
 	let anchoredGeneratingMessageId: string | null = null;
 	let visualMediaGenerationAnchorId: string | null = null;
 	let showScrollToBottomButton = false;
@@ -165,7 +167,6 @@
 	let stableDiffusionQuality:
 
 		| 'qwen_image_2s'
-		| 'minimax_h3_image'
 		| 'qwen_image_2_1_official' = 'qwen_image_2s';
 	let stableDiffusionStyle: 'none' = 'none';
 	let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
@@ -173,6 +174,7 @@
 	let stableDiffusionModeOptions: import('$lib/utils/imageModes').ImageModeOptions = { mode: 'normal' };
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
+	let model3dEnabled = false;
 	import { normalizeVideoGenerationModel, snapshotVideoRequestFeatures, getVideoGenerationFeatures, type VideoGenerationModel } from '$lib/utils/videoGeneration';
 	let videoGenerationModel: VideoGenerationModel = 'vdn_h3';
 	let videoGenerationResolution: '480p' | '672p' = '480p';
@@ -186,7 +188,7 @@
 		localStorage.setItem('neveai.videoAspectRatio', videoGenerationAspectRatio);
 	}
 	let previousMediaGenerationEnabled =
-		stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
+		stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled || model3dEnabled;
 	let stableDiffusionStandbyModel: LocalModel | null = null;
 	let restoringStableDiffusionStandbyModel = false;
 	let thinkingEnabled = true;
@@ -364,6 +366,7 @@
 	};
 
 	let taskIds = null;
+	const awaitingTaskId = new Map<string, { stopped: boolean }>();
 
 	// Chat Input
 	let prompt = '';
@@ -469,7 +472,7 @@
 
 	$: {
 		const mediaGenerationEnabled =
-			stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled;
+			stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled || model3dEnabled;
 		if (previousMediaGenerationEnabled && !mediaGenerationEnabled) {
 			void restoreStableDiffusionStandbyModel();
 		}
@@ -513,6 +516,7 @@
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
 		videoGenerationEnabled = false;
+		model3dEnabled = false;
 
 		const storageChatInput = sessionStorage.getItem(
 			`chat-input${chatIdProp ? `-${chatIdProp}` : ''}`
@@ -532,6 +536,7 @@
 					stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
 					musicGenerationEnabled = input.musicGenerationEnabled ?? false;
 					videoGenerationEnabled = input.videoGenerationEnabled ?? false;
+					model3dEnabled = input.model3dEnabled ?? false;
 					videoGenerationModel = normalizeVideoGenerationModel(localStorage.getItem('neveai.videoModel') ?? input.videoGenerationModel);
 					normalizeExclusiveFeatureToggles();
 					thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
@@ -539,8 +544,10 @@
 			} catch (e) {}
 		};
 
-		if (chatIdProp && (await loadChat())) {
-			const loadedChatId = chatIdProp;
+		const loadedChatId = chatIdProp;
+		const loaded = loadedChatId && await loadChat();
+		if (chatIdProp !== loadedChatId) return;
+		if (loaded) {
 			loading = false;
 			flushSync();
 			await setDefaults();
@@ -646,6 +653,7 @@
 		stableDiffusionEnabled = false;
 		musicGenerationEnabled = false;
 		videoGenerationEnabled = false;
+		model3dEnabled = false;
 		params = {};
 
 		if (selectedModelIds.filter((id) => id).length > 0) {
@@ -659,7 +667,8 @@
 		| 'guided_learning'
 		| 'stable_diffusion'
 		| 'music_generation'
-		| 'video_generation';
+		| 'video_generation'
+		| 'model3d_generation';
 
 	const normalizeExclusiveFeatureToggles = (preferred?: ChatIntegrationId) => {
 		const enabledIntegrations: ChatIntegrationId[] = [
@@ -668,7 +677,8 @@
 			learningEnabled ? 'guided_learning' : null,
 			stableDiffusionEnabled ? 'stable_diffusion' : null,
 			musicGenerationEnabled ? 'music_generation' : null,
-			videoGenerationEnabled ? 'video_generation' : null
+			videoGenerationEnabled ? 'video_generation' : null,
+			model3dEnabled ? 'model3d_generation' : null
 		].filter(Boolean) as ChatIntegrationId[];
 
 		if (enabledIntegrations.length > 0) {
@@ -683,6 +693,7 @@
 			stableDiffusionEnabled = keep === 'stable_diffusion';
 			musicGenerationEnabled = keep === 'music_generation';
 			videoGenerationEnabled = keep === 'video_generation';
+			model3dEnabled = keep === 'model3d_generation';
 			selectedToolIds = [];
 			return;
 		}
@@ -699,6 +710,7 @@
 		stableDiffusionEnabled = integration === 'stable_diffusion';
 		musicGenerationEnabled = integration === 'music_generation';
 		videoGenerationEnabled = integration === 'video_generation';
+		model3dEnabled = integration === 'model3d_generation';
 		selectedToolIds = [];
 	};
 
@@ -881,7 +893,7 @@
 					if (message?.statusHistory) {
 						const lastStatus = message.statusHistory.at(-1);
 						if (
-							['stable_diffusion', 'video_generation'].includes(data?.action) &&
+						['stable_diffusion', 'video_generation', 'model3d_generation'].includes(data?.action) &&
 							lastStatus?.action === data?.action &&
 							lastStatus?.done !== true &&
 							(data?.progress !== undefined || lastStatus?.description === data?.description)
@@ -1791,7 +1803,6 @@
 			storedImageQuality === 'qwen_image_2_2_experimental' ? 'qwen_image_2_1_official' : storedImageQuality === 'qwen_image_2_1' ? 'qwen_image_2s' : storedImageQuality === 'neve_image' ? 'qwen_image_2s' : storedImageQuality;
 		stableDiffusionQuality = [
 			'qwen_image_2s',
-			'minimax_h3_image',
 			'qwen_image_2_1_official'
 		].includes(savedImageQuality ?? '')
 			? (savedImageQuality as typeof stableDiffusionQuality)
@@ -1836,7 +1847,7 @@
 				? imageResolutionKeys[0]
 				: stableDiffusionQuality === 'qwen_image_2_1_official'
 					? imageResolutionKeys[1]
-					: stableDiffusionQuality === 'minimax_h3_image' ? 'neveai.imageResolution.minimax_h3_image' : null;
+					: null;
 		const savedImageResolution = activeImageResolutionKey
 			? localStorage.getItem(activeImageResolutionKey)
 			: null;
@@ -1948,6 +1959,7 @@
 				stableDiffusionEnabled = false;
 				musicGenerationEnabled = false;
 				videoGenerationEnabled = false;
+				model3dEnabled = false;
 
 				try {
 					const input = JSON.parse(storageChatInput);
@@ -1965,6 +1977,7 @@
 						stableDiffusionEnabled = input.stableDiffusionEnabled ?? false;
 						musicGenerationEnabled = input.musicGenerationEnabled ?? false;
 						videoGenerationEnabled = input.videoGenerationEnabled ?? false;
+						model3dEnabled = input.model3dEnabled ?? false;
 						videoGenerationModel = normalizeVideoGenerationModel(localStorage.getItem('neveai.videoModel') ?? input.videoGenerationModel);
 						normalizeExclusiveFeatureToggles();
 						thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
@@ -2309,21 +2322,22 @@
 
 	const loadChat = async () => {
 		cancelBottomNavigation?.();
-		chatId.set(chatIdProp);
+		const requestedId = chatIdProp;
+		chatId.set(requestedId);
+		taskIds = null;
 
 		if ($temporaryChatEnabled) {
 			temporaryChatEnabled.set(false);
 		}
 
-		chat = await getChatById(localStorage.token, $chatId).catch(async (error) => {
-			await goto('/');
-			return null;
-		});
+		const loadedChat = await getChatById(localStorage.token, requestedId).catch(() => null);
+		if ($chatId !== requestedId || chatIdProp !== requestedId) return false;
+		chat = loadedChat;
 
 		if (chat) {
-			tags = await getTagsById(localStorage.token, $chatId).catch(async (error) => {
-				return [];
-			});
+			const loadedTags = await getTagsById(localStorage.token, requestedId).catch(() => []);
+			if ($chatId !== requestedId || chatIdProp !== requestedId) return false;
+			tags = loadedTags;
 
 			const chatContent = chat.chat;
 
@@ -2368,21 +2382,18 @@
 
 				await tick();
 
-				if (history.currentId) {
-					for (const message of Object.values(history.messages) as any[]) {
-						if (message && message.role === 'assistant') {
-							message.done = true;
-						}
-					}
+				const taskRes = await getTaskIdsByChatId(localStorage.token, requestedId).catch(() => null);
+				if ($chatId !== requestedId || chatIdProp !== requestedId) return false;
+				taskIds = taskRes?.task_ids?.length ? taskRes.task_ids : null;
+				const current = history.messages[history.currentId];
+				reopenedTurnId = taskIds && current?.role === 'assistant' && !current.done ? current.id : null;
+				if (reopenedTurnId) autoScroll = false;
+				for (const message of Object.values(history.messages) as any[]) {
+					if (message?.role !== 'assistant') continue;
+					// Keep unfinished replies in the active turn live; do not revive completed siblings.
+					if (!taskIds || message.parentId !== current?.parentId) message.done = true;
 				}
-
-				const taskRes = await getTaskIdsByChatId(localStorage.token, $chatId).catch((error) => {
-					return null;
-				});
-
-				if (taskRes) {
-					taskIds = taskRes.task_ids;
-				}
+				history = history;
 
 				await tick();
 
@@ -2499,7 +2510,7 @@
 	const updateScrollStateFromContainer = ({
 		updateAutoScroll = !anchoredGeneratingMessageId
 	}: { updateAutoScroll?: boolean } = {}) => {
-		if (cancelBottomNavigation) updateAutoScroll = false;
+		if (cancelBottomNavigation || (reopenedTurnId && reopenedTurnId === history.currentId && !history.messages[reopenedTurnId]?.done)) updateAutoScroll = false;
 		if (!messagesContainerElement) {
 			showScrollToBottomButton = false;
 			return;
@@ -3491,6 +3502,7 @@
 			return null;
 		});
 
+		if ($chatId !== _chatId) return;
 		if (res !== null && res.messages) {
 			// Update chat history with the new messages
 			for (const message of res.messages) {
@@ -3524,9 +3536,10 @@
 			}
 		}
 
-		taskIds = null;
+		if ($chatId !== _chatId) return;
+		if (history.messages[history.currentId]?.done !== false) taskIds = null;
 
-		if (!stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled) {
+		if (!stableDiffusionEnabled && !musicGenerationEnabled && !videoGenerationEnabled && !model3dEnabled) {
 			await restoreStableDiffusionStandbyModel();
 		}
 
@@ -4054,7 +4067,7 @@
 	};
 
 	const ensureLocalModelsReady = async (modelIds: string[], { textOnly = false } = {}) => {
-		if (!textOnly && (stableDiffusionEnabled || videoGenerationEnabled)) {
+		if (!textOnly && (stableDiffusionEnabled || videoGenerationEnabled || model3dEnabled)) {
 			// Standby belongs to the submitted backend job, including retries.
 			return true;
 		}
@@ -4071,7 +4084,7 @@
 				const loadedModel = loadedModels.find((lm) => lm.id === modelId) ?? null;
 
 				const mediaGenerationRequested = !textOnly && (
-					stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled
+					stableDiffusionEnabled || musicGenerationEnabled || videoGenerationEnabled || model3dEnabled
 				);
 				if (mediaGenerationRequested) {
 					stableDiffusionStandbyModel =
@@ -4191,6 +4204,13 @@
 		} else {
 			imageModeDisplay = undefined;
 		}
+		if (requestFeatures.model3d_generation) {
+			if (files.length !== 1 || !files.some((file) => file?.type === 'image' || file?.content_type?.startsWith('image/'))) {
+				toast.error($i18n.t('Attach one image to create a 3D model.'));
+				return;
+			}
+			if (!userPrompt.trim()) userPrompt = $i18n.t('Create 3D model');
+		}
 		const _selectedModels = selectedModels.map((modelId) =>
 			$models.map((m) => m.id).includes(modelId) ? modelId : ''
 		);
@@ -4216,7 +4236,7 @@
 		for (const selectedModelId of selectedModels) {
 			// These pipelines do not use the selected chat LLM. Loading it here can
 			// compete with a media job that still owns the GPU in another chat.
-			if (requestFeatures.stable_diffusion || requestFeatures.video_generation) break;
+			if (requestFeatures.stable_diffusion || requestFeatures.video_generation || requestFeatures?.model3d_generation) break;
 			const localSelection = resolveLocalModelSelection(selectedModelId);
 			if (localSelection?.model) {
 				const { model, modelId } = localSelection;
@@ -4438,10 +4458,11 @@
 			: atSelectedModel !== undefined
 				? [atSelectedModel.id]
 				: selectedModels;
+		if (requestFeatures.model3d_generation) selectedModelIds = selectedModelIds.slice(0, 1);
 
 		// Composer submissions already checked their load profile before clearing the draft.
 		// Edited/resubmitted branches bypass that path and must check it here too.
-		if (!requestFeatures.stable_diffusion && !requestFeatures.video_generation &&
+		if (!requestFeatures.stable_diffusion && !requestFeatures.video_generation && !requestFeatures.model3d_generation &&
 			(!newChat || requestFeatures.music_generation) &&
 			!(await ensureLocalModelsReady(selectedModelIds, { textOnly: true }))) {
 			return;
@@ -4460,7 +4481,7 @@
 					role: 'assistant',
 					content: '',
 					...(requestFeatures.video_generation ? { video_generation_features: structuredClone(requestFeatures) } : {}),
-					token_usage_eligible: !(requestFeatures.stable_diffusion || requestFeatures.video_generation),
+					token_usage_eligible: !(requestFeatures.stable_diffusion || requestFeatures.video_generation || requestFeatures?.model3d_generation),
 					done: false,
 					model: model.id,
 					modelName: model.name ?? model.id,
@@ -4490,7 +4511,8 @@
 		history = history;
 
 		if (initialResponseMessageId) {
-			if (requestFeatures?.stable_diffusion || requestFeatures?.video_generation) {
+			recordIntegrationUse($user?.id, requestFeatures);
+			if (requestFeatures?.stable_diffusion || requestFeatures?.video_generation || requestFeatures?.model3d_generation) {
 				await anchorVisualMediaGeneration(parentId, initialResponseMessageId);
 			} else if (requestFeatures?.music_generation) {
 				await anchorMusicGeneration(parentId, initialResponseMessageId);
@@ -4529,7 +4551,7 @@
 						hasImages &&
 						!(model.info?.meta?.capabilities?.vision ?? true) &&
 						!requestFeatures?.stable_diffusion &&
-						!requestFeatures?.video_generation
+						!requestFeatures?.video_generation && !requestFeatures?.model3d_generation
 					) {
 						toast.error(
 							$i18n.t('Model {{modelName}} is not vision capable', {
@@ -4592,6 +4614,7 @@
 				guided_learning: learningEnabled,
 				file_generation:
 					fileGenerationEnabled &&
+					!model3dEnabled &&
 					!learningEnabled &&
 					!deepSearchEnabled &&
 					!stableDiffusionEnabled &&
@@ -4606,7 +4629,7 @@
 				stable_diffusion_style: stableDiffusionStyle,
 				...(stableDiffusionQuality === 'qwen_image_2s' ? { stable_diffusion_mode_options: stableDiffusionModeOptions } : {}),
 				stable_diffusion_resolution:
-					['qwen_image_2s', 'qwen_image_2_1_official', 'minimax_h3_image'].includes(stableDiffusionQuality) &&
+					['qwen_image_2s', 'qwen_image_2_1_official'].includes(stableDiffusionQuality) &&
 					files.some(
 						(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
 					)
@@ -4617,6 +4640,7 @@
 					($user?.role === 'admin' || $user?.permissions?.features?.music_generation)
 						? musicGenerationEnabled
 						: false,
+				model3d_generation: model3dEnabled && $user?.role === 'admin' && !!$config?.features?.enable_model3d_generation,
 				video_generation:
 					$config?.features?.enable_video_generation &&
 					($user?.role === 'admin' || $user?.permissions?.features?.video_generation)
@@ -4789,7 +4813,7 @@
 		}
 		const effectiveRequestFeatures = normalizeLearningRequestFeatures(snapshotVideoRequestFeatures(requestFeatures ?? getFeatures(), $mobile));
 		const isVisualMediaRequest = Boolean(
-			effectiveRequestFeatures?.stable_diffusion || effectiveRequestFeatures?.video_generation
+			effectiveRequestFeatures?.stable_diffusion || effectiveRequestFeatures?.video_generation || effectiveRequestFeatures?.model3d_generation
 		);
 		responseMessage.token_usage_eligible = !isVisualMediaRequest;
 
@@ -4974,6 +4998,8 @@
 		// Use the user-selected terminal from the dropdown
 		const activeTerminalId = $selectedTerminalId ?? null;
 
+		const pending = { stopped: false };
+		awaitingTaskId.set(responseMessageId, pending);
 		const res = await generateOpenAIChatCompletion(
 			localStorage.token,
 			{
@@ -5056,6 +5082,7 @@
 			`${NEVEAI_BASE_URL}/api`,
 			() => Boolean(history.messages[responseMessageId]) && history.messages[responseMessageId].done !== true
 		).catch(async (error) => {
+			if (_chatId !== $chatId || pending.stopped) return null;
 			console.log(error);
 
 			let errorMessage = error;
@@ -5084,6 +5111,12 @@
 			return null;
 		});
 
+		awaitingTaskId.delete(responseMessageId);
+		if (pending.stopped) {
+			if (res?.task_id) await stopTask(localStorage.token, res.task_id).catch(error => toast.error(String(error)));
+			return;
+		}
+		if (_chatId !== $chatId) return;
 		if (res) {
 			if (res.error) {
 				await handleOpenAIError(res.error, responseMessage);
@@ -5151,6 +5184,9 @@
 	};
 
 	const stopResponse = async () => {
+		cancelBottomNavigation?.();
+		const viewport = messagesContainerElement;
+		const stoppedTop = viewport?.scrollTop;
 		// Commit the last buffered frame before ending the stream. Dropping it here leaves
 		// partially rendered Markdown (especially an open code fence) in the DOM until reload.
 		if (_flushRAF) {
@@ -5168,6 +5204,10 @@
 		_contentBuffers.clear();
 
 		const currentResponse = history?.messages?.[history.currentId];
+		for (const id of history.messages[currentResponse?.parentId]?.childrenIds ?? []) {
+			const pending = awaitingTaskId.get(id);
+			if (pending) pending.stopped = true;
+		}
 		if (currentResponse?.role === 'assistant' && currentResponse.done !== true) {
 			currentResponse.done = true;
 			history.messages[currentResponse.id] = currentResponse;
@@ -5178,6 +5218,18 @@
 			generating = false;
 			generationController?.abort();
 			generationController = null;
+		}
+
+		if (viewport && stoppedTop !== undefined) {
+			// Settle the finalized Markdown and controls before restoring the reading position.
+			flushSync();
+			if (getMessagesMaxScrollTop() + 0.5 < stoppedTop) {
+				void fitGenerationSpacerToViewport(stoppedTop, true);
+				flushSync();
+			}
+			setGenerationSpacerScrollLimit(stoppedTop);
+			viewport.scrollTop = stoppedTop;
+			lastMessagesScrollTop = viewport.scrollTop;
 		}
 
 		if (musicGenerationEnabled) {
@@ -5200,30 +5252,28 @@
 			}).catch(() => null);
 		}
 
-		if (taskIds) {
-			for (const taskId of taskIds) {
+		const stoppingTasks = taskIds;
+		if (stoppingTasks) {
+			for (const taskId of stoppingTasks) {
 				const res = await stopTask(localStorage.token, taskId).catch((error) => {
 					toast.error(`${error}`);
 					return null;
 				});
 			}
 
+			if (taskIds !== stoppingTasks) return;
 			taskIds = null;
 
-			const responseMessage = history.messages[history.currentId];
+			const responseMessage = currentResponse && history?.messages?.[currentResponse.id];
 			// Set all response messages to done
-			if (responseMessage.parentId && history.messages[responseMessage.parentId]) {
+			if (responseMessage?.parentId && history.messages[responseMessage.parentId]) {
 				for (const messageId of history.messages[responseMessage.parentId].childrenIds) {
 					history.messages[messageId].done = true;
 					releaseGeneratingMessageAnchor(messageId);
 				}
 			}
 
-			history.messages[history.currentId] = responseMessage;
-
-			if (autoScroll) {
-				scrollToBottom();
-			}
+			if (responseMessage) history.messages[responseMessage.id] = responseMessage;
 		}
 	};
 
@@ -5277,7 +5327,8 @@
 				}
 
 				const videoRequestFeatures = getVideoGenerationFeatures(message) ?? getVideoGenerationFeatures(userMessage);
-				const generatedAction = videoRequestFeatures || message?.statusHistory?.some(
+				const generatedAction = message?.statusHistory?.some((status: any) => status.action === 'model3d_generation')
+					? 'model3d_generation' : videoRequestFeatures || message?.statusHistory?.some(
 					(status: any) => status.action === 'video_generation'
 				)
 					? 'video_generation'
@@ -5290,6 +5341,7 @@
 					stableDiffusionEnabled,
 					musicGenerationEnabled,
 					videoGenerationEnabled,
+					model3dEnabled,
 					stableDiffusionQuality,
 					videoGenerationModel,
 					stableDiffusionStyle,
@@ -5304,11 +5356,12 @@
 					stableDiffusionEnabled = generatedAction === 'stable_diffusion';
 					musicGenerationEnabled = generatedAction === 'music_generation';
 					videoGenerationEnabled = generatedAction === 'video_generation';
+					model3dEnabled = generatedAction === 'model3d_generation';
 					if (generatedAction === 'stable_diffusion') {
 						const generatedQuality = message?.statusHistory?.find(
 							(status: any) => status.action === 'stable_diffusion'
 						)?.quality;
-						if (['qwen_image_2s', 'qwen_image_2_1_official', 'minimax_h3_image'].includes(generatedQuality)) {
+						if (['qwen_image_2s', 'qwen_image_2_1_official'].includes(generatedQuality)) {
 							stableDiffusionQuality = generatedQuality;
 						}
 						stableDiffusionStyle =
@@ -5330,10 +5383,10 @@
 					}
 				}
 
-				const mediaRequestFeatures = generatedAction === 'video_generation' || (generatedAction === 'stable_diffusion' && ['qwen_image_2s', 'minimax_h3_image'].includes(stableDiffusionQuality))
+				const mediaRequestFeatures = generatedAction === 'model3d_generation' || generatedAction === 'video_generation' || (generatedAction === 'stable_diffusion' && stableDiffusionQuality === 'qwen_image_2s')
 					? structuredClone(getFeatures()) : null;
 				try {
-					if (!(generatedAction === 'stable_diffusion' && stableDiffusionQuality === 'minimax_h3_image') && !(await ensureLocalModelsReady([model.id]))) {
+					if (!(await ensureLocalModelsReady([model.id]))) {
 						return;
 					}
 
@@ -5361,7 +5414,7 @@
 					history = history;
 
 					await tick();
-					if (generatedAction === 'stable_diffusion' || generatedAction === 'video_generation') {
+					if (generatedAction === 'stable_diffusion' || generatedAction === 'video_generation' || generatedAction === 'model3d_generation') {
 						await anchorVisualMediaGeneration(userMessage.id, message.id);
 					} else if (generatedAction === 'music_generation') {
 						await anchorMusicGeneration(userMessage.id, message.id);
@@ -5395,6 +5448,7 @@
 						stableDiffusionEnabled = previousMediaState.stableDiffusionEnabled;
 						musicGenerationEnabled = previousMediaState.musicGenerationEnabled;
 						videoGenerationEnabled = previousMediaState.videoGenerationEnabled;
+						model3dEnabled = previousMediaState.model3dEnabled;
 						videoGenerationModel = previousMediaState.videoGenerationModel;
 						stableDiffusionQuality = previousMediaState.stableDiffusionQuality;
 						stableDiffusionStyle = previousMediaState.stableDiffusionStyle;
@@ -5835,7 +5889,7 @@
 											{chatActionHandler}
 											{addMessages}
 											topPadding={true}
-											bottomPadding={files.length > 0 && !imageModeOwnsAttachmentSpacing(stableDiffusionEnabled, stableDiffusionQuality, stableDiffusionModeOptions.mode)}
+											bottomPadding={files.length > 0 && !model3dEnabled && !imageModeOwnsAttachmentSpacing(stableDiffusionEnabled, stableDiffusionQuality, stableDiffusionModeOptions.mode)}
 											bottomSpacerHeight={generationBottomSpacerHeight}
 											{onSelect}
 										/>
@@ -5866,6 +5920,7 @@
 									bind:stableDiffusionModeOptions
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
+									bind:model3dEnabled
 									bind:videoGenerationModel
 									bind:videoGenerationResolution
 									bind:videoGenerationDuration
@@ -5953,6 +6008,7 @@
 									bind:stableDiffusionModeOptions
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
+									bind:model3dEnabled
 									bind:videoGenerationModel
 									bind:videoGenerationResolution
 									bind:videoGenerationDuration
@@ -6021,7 +6077,7 @@
 	{/if}
 	{#if loading || !loadedChatViewportReady}
 		<div class="absolute inset-0 z-20 flex items-center justify-center">
-			<Spinner className="size-5" />
+			<OrbitingSpheres className="size-5" />
 		</div>
 	{/if}
 </div>

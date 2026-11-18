@@ -58,6 +58,18 @@ try{
   await page.getByRole('button',{name:'Delete',exact:true}).last().click();await page.waitForFunction(()=>!document.querySelector('[data-memory-list-body]')?.textContent.includes('Memory 00'));assert.equal(deletes,1);
   await body.locator('tr').first().getByRole('button',{name:'Edit',exact:true}).click();
   const edit=page.locator('.modal[aria-hidden="false"]').last();await edit.locator('textarea').fill('Updated preference');await edit.getByRole('button',{name:'Update',exact:true}).click();await body.getByRole('cell',{name:'Updated preference',exact:true}).waitFor();assert.equal(updates,1);
+  const addTip=page.locator('[data-tippy-root]:visible').filter({hasText:'Adicionar'});
+  for(const dismissal of ['escape',width<768?'back':'close']){
+   await add.hover();await addTip.waitFor();
+   await add.click();const modal=page.locator('.modal[aria-hidden="false"]').last();await modal.locator('textarea').waitFor();
+   if(dismissal==='escape'){await page.mouse.move(width-5,895);await page.keyboard.press('Escape');}
+   else if(dismissal==='close')await modal.locator('[data-mobile-modal-close]').click();
+   else await modal.getByRole('button',{name:'Back',exact:true}).click();
+   await modal.locator('textarea').waitFor({state:'hidden'});await page.waitForTimeout(350);
+   assert.equal(await addTip.count(),0,'restoring Add focus must not show a tooltip without pointer hover');
+   assert(await add.evaluate(el=>document.activeElement===el),'keyboard focus still returns to Add');
+   await page.screenshot({path:`${output}/${width}-${theme}-add-closed-${dismissal}.png`});
+  }
   await add.click();const adding=page.locator('.modal[aria-hidden="false"]').last();await adding.locator('textarea').fill('New preference');await adding.getByRole('button',{name:'Add',exact:true}).click();await body.getByRole('cell',{name:'New preference',exact:true}).waitFor();assert.equal(adds,1);
   await clear.click();await page.getByRole('button',{name:'Cancel',exact:true}).last().click();assert.equal(clears,0);
   await clear.click();await page.getByRole('button',{name:'Confirm',exact:true}).last().click();await manager.getByText('Memories accessible by LLMs will be shown here.',{exact:true}).waitFor();assert.equal(clears,1);

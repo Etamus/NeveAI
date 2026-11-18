@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { createEventDispatcher, getContext } from 'svelte';
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
-	import { getFileContentById } from '$lib/apis/files';
+	import { downloadChatFile } from '$lib/utils/chatFileSave';
 
 	import { formatFileSize } from '$lib/utils';
 	import { settings } from '$lib/stores';
 
 	import FileItemModal from './FileItemModal.svelte';
 	import GarbageBin from '../icons/GarbageBin.svelte';
-	import Spinner from './Spinner.svelte';
+	import OrbitingSpheres from './OrbitingSpheres.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import AttachmentFile from '$lib/components/icons/AttachmentFile.svelte';
 	import AttachmentRemoveButton from './AttachmentRemoveButton.svelte';
@@ -71,22 +71,8 @@
 			? 'presentation'
 			: null;
 
-	const downloadGeneratedFile = async () => {
-		const content = await getFileContentById(item.id);
-		if (!content) return;
-
-		const blobUrl = URL.createObjectURL(
-			new Blob([content], { type: contentType || 'application/octet-stream' })
-		);
-		const anchor = document.createElement('a');
-		anchor.href = blobUrl;
-		anchor.download = item?.name ?? item?.meta?.name ?? name ?? 'arquivo';
-		anchor.style.display = 'none';
-		document.body.appendChild(anchor);
-		anchor.click();
-		anchor.remove();
-		setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-	};
+	const downloadGeneratedFile = () => downloadChatFile(item?.name ?? item?.meta?.name ?? name ?? 'arquivo',
+		() => fetch(`${NEVEAI_API_BASE_URL}/files/${encodeURIComponent(item.id)}/content`, {credentials:'include'}));
 	const openAttachment = () => {
 		if (item?.generated || item?.file?.data?.content || item?.type === 'file' || item?.content || modal) {
 			showModal = !showModal;
@@ -105,9 +91,9 @@
 
 {#if composerTile}
 	<div class="composer-file-tile relative group group/attachment shrink-0 {className}">
-		<button type="button" disabled={loading} aria-busy={loading} class="flex size-full flex-col overflow-hidden rounded-lg border border-gray-200/70 bg-gray-100/90 text-left text-gray-700 hover:bg-gray-200/80 dark:border-gray-700/50 dark:bg-gray-800/80 dark:text-gray-200 dark:hover:bg-gray-700/70" title={decodeString(name)} aria-label={decodeString(name)} on:click={openAttachment}>
+		<button type="button" disabled={loading} aria-busy={loading} class="flex size-full flex-col overflow-hidden rounded-lg border border-gray-200/70 bg-gray-100/90 text-left text-gray-700 hover:bg-gray-200/80 dark:border-gray-700/50 dark:bg-gray-800/80 dark:text-gray-200 dark:hover:bg-gray-700/70" aria-label={decodeString(name)} on:click={openAttachment}>
 			<span class="flex min-h-0 flex-1 items-center justify-center">
-				{#if loading}<Spinner className="size-5" />
+				{#if loading}<OrbitingSpheres className="size-5" />
 				{:else if type==='collection'}<Database className="size-5" />
 				{:else if type==='note'}<PageEdit className="size-5" />
 				{:else if type==='chat'}<ChatBubble className="size-5" />
@@ -115,7 +101,7 @@
 				{:else}<AttachmentFile {name} {contentType} kindOverride={attachmentKind} className="size-5" />{/if}
 			</span>
 			<span class="block w-full min-w-0 shrink-0 bg-black/5 px-1 py-1 text-[11px] leading-[14px] dark:bg-black/20">
-				<span class="block truncate">{decodeString(name)}</span>
+				<span data-title-self title={decodeString(name)} class="block w-fit max-w-full truncate">{decodeString(name)}</span>
 			</span>
 		</button>
 		{#if dismissible}<AttachmentRemoveButton label={$i18n.t('Remove file')} on:click={()=>dispatch('dismiss')} />{/if}
@@ -180,7 +166,7 @@
 					{#if !loading}
 						<AttachmentFile {name} {contentType} kindOverride={attachmentKind} className="size-5" />
 					{:else}
-						<Spinner />
+						<OrbitingSpheres className="size-5" />
 					{/if}
 				</div>
 			{:else}
@@ -221,7 +207,7 @@
 							/>
 						{/if}
 					{:else}
-						<Spinner className={inputChip ? 'size-3.5' : 'size-4'} />
+						<OrbitingSpheres className={inputChip ? 'size-3.5' : 'size-4'} />
 					{/if}
 				</div>
 			{/if}

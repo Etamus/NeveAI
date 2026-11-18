@@ -3,8 +3,7 @@
 	import Folder from '../../icons/Folder.svelte';
 	import NewFolderAlt from '../../icons/NewFolderAlt.svelte';
 	import FilePlusAlt from '../../icons/FilePlusAlt.svelte';
-	import Spinner from '../../common/Spinner.svelte';
-	import { continuousSpinner } from '$lib/utils/continuousSpinner';
+	import OrbitingSpheres from '../../common/OrbitingSpheres.svelte';
 	import Tooltip from '../../common/Tooltip.svelte';
 
 	const i18n = getContext('i18n');
@@ -31,7 +30,7 @@
 	});
 </script>
 
-<div class="flex items-center px-2 pb-1.5 shrink-0 gap-1">
+<div class="shrink-0 {selectedFile ? 'file-preview-header' : 'flex items-center gap-1 px-2 pb-1.5'}">
 	<div
 		bind:this={breadcrumbEl}
 		class="flex items-center flex-1 min-w-0 overflow-x-auto scrollbar-none"
@@ -75,7 +74,7 @@
 		{/each}
 		{#if selectedFile}
 			<span class="text-gray-300 dark:text-gray-600 text-xs shrink-0 select-none mx-0.5">/</span>
-			<span class="text-xs shrink-0 px-1.5 py-0.5 text-gray-700 dark:text-gray-300">
+			<span class="text-sm font-medium shrink-0 px-1.5 py-0.5 text-gray-900 dark:text-gray-100">
 				{selectedFile.split('/').pop()}
 			</span>
 		{/if}
@@ -87,19 +86,22 @@
 			on:click={onRefresh}
 			aria-label={$i18n.t('Refresh')}
 		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				viewBox="0 0 20 20"
-				fill="currentColor"
-				class="size-3.5 {loading ? 'animate-spin' : ''}"
-				use:continuousSpinner={loading}
-			>
-				<path
-					fill-rule="evenodd"
-					d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.451a.75.75 0 0 0 0-1.5H4.5a.75.75 0 0 0-.75.75v3.75a.75.75 0 0 0 1.5 0v-2.127l.13.13a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm-10.624-2.85a5.5 5.5 0 0 1 9.201-2.465l.312.31H11.75a.75.75 0 0 0 0 1.5h3.75a.75.75 0 0 0 .75-.75V3.42a.75.75 0 0 0-1.5 0v2.126l-.13-.129A7 7 0 0 0 3.239 8.555a.75.75 0 0 0 1.449.39Z"
-					clip-rule="evenodd"
-				/>
-			</svg>
+			{#if loading}
+				<OrbitingSpheres className="block size-3.5" />
+			{:else}
+				<svg
+					xmlns="http://www.w3.org/2000/svg"
+					viewBox="0 0 20 20"
+					fill="currentColor"
+					class="size-3.5"
+				>
+					<path
+						fill-rule="evenodd"
+						d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.451a.75.75 0 0 0 0-1.5H4.5a.75.75 0 0 0-.75.75v3.75a.75.75 0 0 0 1.5 0v-2.127l.13.13a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm-10.624-2.85a5.5 5.5 0 0 1 9.201-2.465l.312.31H11.75a.75.75 0 0 0 0 1.5h3.75a.75.75 0 0 0 .75-.75V3.42a.75.75 0 0 0-1.5 0v2.126l-.13-.129A7 7 0 0 0 3.239 8.555a.75.75 0 0 0 1.449.39Z"
+						clip-rule="evenodd"
+					/>
+				</svg>
+			{/if}
 		</button>
 	</Tooltip>
 

@@ -4,7 +4,7 @@
 	import XMark from '$lib/components/icons/XMark.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import OrbitingSpheres from '$lib/components/common/OrbitingSpheres.svelte';
 	import MapSelector from '$lib/components/common/Valves/MapSelector.svelte';
 
 	const i18n = getContext('i18n');
@@ -339,7 +339,7 @@
 								{/each}
 							</div>
 						{:else}
-							<Spinner className="size-5" />
+							<OrbitingSpheres className="size-5" />
 						{/if}
 					</div>
 

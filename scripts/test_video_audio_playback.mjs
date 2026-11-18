@@ -138,7 +138,14 @@ try {
   await preview.evaluate(async video=>{video.currentTime=video.duration*0.2;await video.play();});
   await page.waitForTimeout(200);
   const resumedTime=await preview.evaluate(video=>video.currentTime);
-  await page.locator(width<768?'.mobile-modal-back':'.video-preview-close').click();
+  const toolbar = page.locator('.video-preview-surface.expanded .file-preview-header');
+  const [downloadBox, closeBox] = await Promise.all([
+   toolbar.locator('button').first().boundingBox(),
+   toolbar.locator('[data-window-close]').boundingBox()
+  ]);
+  assert(closeBox.x > downloadBox.x + downloadBox.width);
+  assert.equal(closeBox.y, downloadBox.y);
+  await toolbar.locator('[data-window-close]').click();
   await page.waitForFunction(()=>!document.querySelector('.video-player video').paused);
   const returnedTime=await inline.evaluate(video=>video.currentTime);
   assert(returnedTime>=resumedTime-0.05&&returnedTime<resumedTime+0.7,JSON.stringify({resumedTime,returnedTime}));

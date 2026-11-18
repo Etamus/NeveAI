@@ -1,6 +1,5 @@
 <script lang="ts">
-	import fileSaver from 'file-saver';
-	const { saveAs } = fileSaver;
+	import { downloadChatFile } from '$lib/utils/chatFileSave';
 
 	import { toast } from 'svelte-sonner';
 
@@ -42,7 +41,7 @@
 
 	const downloadAsSVG = () => {
 		const svgBlob = new Blob([svg], { type: 'image/svg+xml' });
-		saveAs(svgBlob, `diagram.svg`);
+		void downloadChatFile(`diagram.svg`, () => svgBlob);
 	};
 </script>
 

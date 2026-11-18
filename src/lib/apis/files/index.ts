@@ -6,7 +6,7 @@ export const getGeneratedFiles = async (
 ) => {
 	const params = new URLSearchParams({ kind, query, skip: String(skip), limit: String(limit) });
 	const response = await fetch(`${NEVEAI_API_BASE_URL}/files/generated?${params}`, {
-		cache: 'no-store', headers: { authorization: `Bearer ${token}` }, signal
+		cache: 'no-cache', headers: { authorization: `Bearer ${token}` }, signal
 	});
 	if (!response.ok) throw (await response.json().catch(() => null))?.detail ?? String(response.status);
 	return response.json();

@@ -1,8 +1,13 @@
 <script lang="ts">
 	import { getContext, onMount, onDestroy } from 'svelte';
 	import { getGeneratedFiles } from '$lib/apis/files';
+	import { formatFileSize } from '$lib/utils';
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import FileItemModal from '$lib/components/common/FileItemModal.svelte';
+	import MeshResult from '$lib/components/common/MeshResult.svelte';
+	import Modal from '$lib/components/common/Modal.svelte';
+	import Cube from '$lib/components/icons/Cube.svelte';
+	import XMark from '$lib/components/icons/XMark.svelte';
 	import Document from '$lib/components/icons/Document.svelte';
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 	import DocumentThumbnail from '$lib/components/common/DocumentThumbnail.svelte';
@@ -302,6 +307,7 @@
 									class="size-full object-cover"><track kind="captions" /></video
 								>
 							{:else if mediaKind(file) === 'audio'}<MusicNote className="size-12 text-gray-500" />
+							{:else if file.meta?.data?.source === 'neve-model3d'}<Cube className="size-12 text-gray-500" />
 							{:else}<div class="h-full w-full flex flex-col min-w-0">
 									<div
 										class="flex items-center gap-2 px-3 py-2.5 border-b border-gray-200/70 dark:border-gray-700/50 shrink-0"
@@ -327,7 +333,26 @@
 			</div>{/if}
 	</main>
 </div>
-{#if showViewer}<FileItemModal item={selectedFile} bind:show={showViewer} />{/if}
+{#if showViewer}
+	{#if selectedFile?.meta?.data?.source === 'neve-model3d'}
+		<Modal bind:show={showViewer} size="md">
+			<div class="file-preview-window">
+				<div class="file-preview-header">
+					<div class="file-preview-title">
+						<div data-file-preview-name class="truncate">{selectedFile.name}</div>
+						{#if selectedFile.size}
+							<div class="file-viewer-size mt-0.5 text-xs font-normal leading-tight text-gray-500">{formatFileSize(selectedFile.size)}</div>
+						{/if}
+					</div>
+					<button data-window-close type="button" aria-label={$i18n.t('Close')} on:click={() => showViewer = false}><XMark className="size-4" /></button>
+				</div>
+				<MeshResult id={selectedFile.id} name={selectedFile.name} deferred={false} showName={false} />
+			</div>
+		</Modal>
+	{:else}
+		<FileItemModal item={selectedFile} bind:show={showViewer} />
+	{/if}
+{/if}
 
 <style>
 	@media (max-width: 767px) {

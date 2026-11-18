@@ -74,7 +74,7 @@ dependencies = [
     "nltk==3.10.3",
     "Markdown==3.11",
     "pypandoc==1.17",
-    "trafilatura==2.3.0",
+    "trafilatura==2.3.1",
     "pandas==3.0.6",
     "openpyxl==3.1.5",
     "pyxlsb==1.0.10",
@@ -95,7 +95,7 @@ dependencies = [
     "youtube-transcript-api==1.2.4",
 
     "pydub",
-    "ddgs==9.16.0",
+    "ddgs==9.16.1",
 
 ]
 readme = "README.md"

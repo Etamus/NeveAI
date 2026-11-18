@@ -25,7 +25,6 @@ from neveai.config import CACHE_DIR
 from neveai.utils.image_memory import cpu_image_requested, cpu_image_size, is_image_memory_error, monotonic_progress, worker_error
 from neveai.routers import image_fast_generation as fast
 from neveai.routers.stable_diffusion import (
-    QWEN_IMAGE_21_REPO,
     QWEN_IMAGE_21_OFFICIAL_STEPS,
     _detected_gpu_vram_mib,
     _normalize_qwen_reference_tokens,
@@ -40,11 +39,14 @@ DimensionsCallback = Callable[[int, int], Awaitable[None]]
 
 ROOT = CACHE_DIR / "image_quality_generation"
 PE_DIR = ROOT / "pe"
-MODEL_REPO = QWEN_IMAGE_21_REPO
+from neveai.utils.pinned_media_asset import ensure_pinned_asset
+
+QUALITY_SOURCES = (
+    ("thomasdaniel87/Qwen-Image-2.1-Uncensored-Quantized", "5250839e6c58438fb2df8a4a76a9caf16c6360d5"),
+    ("Nivee2B/Qwen-Image-2.1-Uncensored-Quantized", "c333a2b04f0db542a1923e3d086332489b00bef3"),
+)
 MODEL_FILE = "qwen-image-2.1-UC-Q6_K.gguf"
 EDIT_MODEL_FILE = "qwen-image-2.1-UC-int8_convrot.safetensors"
-EDIT_MODEL_REPO = "abenzerps/Qwen-Image-2.1-Uncensored-Quantized"
-EDIT_MODEL_REVISION = "7959e658915f52274897fb573ffeda49de8dc16b"
 EDIT_MODEL_BYTES = 7256796840
 ENCODER_REPO = "Comfy-Org/Qwen-Image-2.1"
 ENCODER_FILE = "qwen3vl_8b_int8_convrot.safetensors"
@@ -280,7 +282,7 @@ def _sampling_progress(item: dict, *, optimized_edit: bool = False) -> Optional[
 
 
 class NeveImage21Runtime:
-    NAME = "Neve Image 2.6"
+    NAME = "Neve Image 2.8"
     PE_CONTEXT = 16384
     PE_REASONING_BUDGET = PE_THINKING_TOKENS
     PE_RESPONSE_TOKENS = 1800
@@ -304,7 +306,7 @@ class NeveImage21Runtime:
     @staticmethod
     def build_workflow(prompt: str, width: int, height: int, refs: list[str], seed: int, model_file: str = MODEL_FILE, *, optimized_edit: bool = False) -> dict:
         if len(refs) > 10:
-            raise ValueError("Neve Image 2.6 aceita ate dez imagens de referencia.")
+            raise ValueError("Neve Image 2.8 aceita ate dez imagens de referencia.")
         if refs:
             prompt = _normalize_qwen_reference_tokens(prompt, len(refs), preserve_formatting=True)
         workflow = {
@@ -353,30 +355,15 @@ class NeveImage21Runtime:
         models = fast.MODELS_DIR
         model_file = MODEL_FILE
         if edit and not self._force_gguf and await asyncio.to_thread(_prefer_int8_edit, reference_count):
-            target = models / "diffusion_models" / EDIT_MODEL_FILE
             try:
-                if not target.is_file() or target.stat().st_size != EDIT_MODEL_BYTES:
-                    await asyncio.to_thread(
-                        hf_hub_download, repo_id=EDIT_MODEL_REPO, filename=EDIT_MODEL_FILE,
-                        revision=EDIT_MODEL_REVISION, local_dir=str(target.parent),
-                    )
-                if target.is_file() and target.stat().st_size == EDIT_MODEL_BYTES:
-                    model_file = EDIT_MODEL_FILE
-                else:
-                    raise RuntimeError("Arquivo INT8 de edicao incompleto.")
+                await asyncio.to_thread(ensure_pinned_asset, models / "diffusion_models", EDIT_MODEL_FILE,
+                                        EDIT_MODEL_BYTES, "5bc5a6c007eff1e0d4004344a24c4af966b9d2c83d142e613b0d456ccceb19ae", QUALITY_SOURCES)
+                model_file = EDIT_MODEL_FILE
             except (OSError, RuntimeError, httpx.HTTPError) as exc:
-                log.warning("Neve Image 2.6: usando GGUF de edicao apos falha no INT8: %s", exc)
-        diffusion = models / "diffusion_models" / model_file
-        if not diffusion.is_file() or diffusion.stat().st_size < 1024:
-            cached = await asyncio.to_thread(
-                hf_hub_download, repo_id=MODEL_REPO, filename=MODEL_FILE,
-                cache_dir=str(CACHE_DIR / "stable_diffusion" / "gguf"),
-            )
-            diffusion.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                os.link(Path(cached).resolve(), diffusion)
-            except OSError:
-                shutil.copy2(cached, diffusion)
+                log.warning("Neve Image 2.8: usando GGUF de edicao apos falha no INT8: %s", exc)
+        if model_file == MODEL_FILE:
+            await asyncio.to_thread(ensure_pinned_asset, models / "diffusion_models", MODEL_FILE, 5876556576,
+                                    "e14bb312109333b3d73b92ad9b9ac8b29b51f2edca1e7b86d1af1981bf1c4ee3", QUALITY_SOURCES)
         for filename, subdir in ((ENCODER_FILE, "text_encoders"), (VAE_FILE, "vae")):
             target = models / subdir / filename
             if not target.is_file() or target.stat().st_size < 1024:
@@ -390,7 +377,7 @@ class NeveImage21Runtime:
                 await asyncio.to_thread(_install_cfg1_node)
                 self._cfg1_node_ready = True
             except OSError as exc:
-                log.warning("Neve Image 2.6: usando condicionador original apos falha no adaptador CFG1: %s", exc)
+                log.warning("Neve Image 2.8: usando condicionador original apos falha no adaptador CFG1: %s", exc)
         if edit:
             PE_DIR.mkdir(parents=True, exist_ok=True)
             pe_file = await asyncio.to_thread(self._pe_file)

@@ -73,6 +73,7 @@ from neveai.routers import (
     stable_diffusion,
     music_generation,
     video_generation,
+    model3d_generation,
 )
 
 from neveai.routers.retrieval import (
@@ -814,6 +815,7 @@ app.include_router(tasks.router, prefix="/api/v1/tasks", tags=["tasks"])
 app.include_router(stable_diffusion.router, prefix="/api/v1/stable-diffusion", tags=["stable-diffusion"])
 app.include_router(music_generation.router, prefix="/api/v1/music-generation", tags=["music-generation"])
 app.include_router(video_generation.router, prefix="/api/v1/video-generation", tags=["video-generation"])
+app.include_router(model3d_generation.router, prefix="/api/v1/model3d", tags=["model3d"])
 
 app.include_router(audio.router, prefix="/api/v1/audio", tags=["audio"])
 app.include_router(retrieval.router, prefix="/api/v1/retrieval", tags=["retrieval"])
@@ -1294,6 +1296,7 @@ async def get_app_config(request: Request):
                     "enable_code_execution": app.state.config.ENABLE_CODE_EXECUTION,
                     "enable_code_interpreter": app.state.config.ENABLE_CODE_INTERPRETER,
                     "enable_stable_diffusion": app.state.config.ENABLE_STABLE_DIFFUSION,
+                    "enable_model3d_generation": os.name == "nt" and app.state.config.ENABLE_STABLE_DIFFUSION,
                     "enable_music_generation": app.state.config.ENABLE_MUSIC_GENERATION,
                     "enable_video_generation": app.state.config.ENABLE_VIDEO_GENERATION,
                     "enable_autocomplete_generation": app.state.config.ENABLE_AUTOCOMPLETE_GENERATION,

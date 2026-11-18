@@ -48,7 +48,7 @@ try{
   await page.route('**/api/chat/completions',()=>{throw Error('No inference allowed from UI fixture');});
   await page.goto('http://localhost:5193',{waitUntil:'networkidle',timeout:120000});
   await page.waitForFunction(()=>window.__imageSubmit).catch(async error=>{console.error('BOOT',page.url(),await page.locator('body').innerText());await page.screenshot({path:output+'/submit-bootstrap.png'});throw error;});
-  for(const quality of ['qwen_image_2s','qwen_image_2_1_official','minimax_h3_image']){
+  for(const quality of ['qwen_image_2s','qwen_image_2_1_official']){
    await page.reload({waitUntil:'networkidle',timeout:120000});
    await page.waitForFunction(()=>window.__imageSubmit);
    await page.evaluate(async ({quality,history,reference})=>window.__imageSubmit.seed(quality,history,reference),{quality,history:data.history,reference});
@@ -62,7 +62,7 @@ try{
    });
    await page.waitForTimeout(1000);
    await page.waitForFunction(original=>window.__imageSubmit.state().currentId!==original && window.__imageSubmit.state().role==='assistant',data.history.currentId,{timeout:15000}).catch(async error=>{console.error('SUBMIT',quality,await page.evaluate(()=>({state:window.__imageSubmit.state(),error:window.__submitError,text:document.body.innerText})));throw error;});
-   const dimensions=quality==='qwen_image_2s'?[1536,864]:quality==='minimax_h3_image'?[2720,1536]:[2368,1344];
+   const dimensions=quality==='qwen_image_2s'?[1536,864]:[2368,1344];
    await page.evaluate(({quality,dimensions})=>window.__imageSubmit.progress(quality,...dimensions),{quality,dimensions});
    await page.waitForTimeout(2500);
    const metrics=await page.evaluate(()=>{window.__taskObserver.disconnect();cancelAnimationFrame(window.__frame);return {longTasks:window.__longtasks,rafGaps:window.__rafgaps,state:window.__imageSubmit.state(),error:window.__submitError};});

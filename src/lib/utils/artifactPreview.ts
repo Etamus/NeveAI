@@ -11,7 +11,7 @@ import {
 	extractArtifactResults,
 	type ArtifactResult
 } from './artifactResults';
-import { toast } from 'svelte-sonner';
+import { downloadChatFile } from '$lib/utils/chatFileSave';
 
 export function openArtifactPreview(artifact: ArtifactResult, history: any) {
 	const entries = getConversationArtifacts(history);
@@ -39,20 +39,9 @@ export function previewArtifactCode(code: string, messageId: string, history: an
 	}
 }
 
-export async function downloadArtifact(artifact: ArtifactResult) {
-	try {
+export function downloadArtifact(artifact: ArtifactResult) {
+	return downloadChatFile(artifact.filename, async () => {
 		const content = artifact.type === 'svg' ? artifact.content : await (await import('./artifacts/export')).exportArtifact(artifact);
-		const url = URL.createObjectURL(
-			new Blob([content], {
-				type: artifact.type === 'svg' ? 'image/svg+xml;charset=utf-8' : 'text/html;charset=utf-8'
-			})
-		);
-		const link = document.createElement('a');
-		link.href = url;
-		link.download = artifact.filename;
-		document.body.appendChild(link);
-		link.click();
-		link.remove();
-		setTimeout(() => URL.revokeObjectURL(url), 1000);
-	} catch (error) { toast.error(String(error.message ?? error)); }
+		return new Blob([content], {type: artifact.type === 'svg' ? 'image/svg+xml;charset=utf-8' : 'text/html;charset=utf-8'});
+	});
 }

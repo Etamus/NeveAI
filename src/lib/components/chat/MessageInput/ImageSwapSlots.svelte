@@ -9,7 +9,7 @@
 	import {imageModeFiles,imageModeSource,imageSwapSlots,imageModeHasEditor,imageModeHasPreview,imageModeAttachmentLimit,type ImageModeOptions} from '$lib/utils/imageModes';
 	import {attachmentScroller} from '$lib/utils/attachmentScroll';
 	const i18n=getContext('i18n');
-	export let mode:'outfit'|'body'|'restore'|'inpaint'|'outpaint'='outfit';
+	export let mode:'outfit'|'body'|'restore'|'inpaint'|'outpaint'|'model3d'='outfit';
 	export let options:ImageModeOptions={mode:'normal'};
 	export let onEdit:()=>void=()=>{};
 	export let files:any[]=[];
@@ -20,8 +20,8 @@
 	let target:{role:'base'|'reference';file?:any}={role:'base'};
 	$: assigned=imageSwapSlots(files);
 	$: attachedImages=imageModeFiles(files);
-	$: single=mode==='restore'||imageModeHasEditor(mode);
-	$: limit=imageModeAttachmentLimit(mode);
+	$: single=mode==='model3d'||mode==='restore'||imageModeHasEditor(mode);
+	$: limit=mode==='model3d'?1:imageModeAttachmentLimit(mode);
 	let pendingThumbnails=new Set<string>();
 	$: uploading=busy||files.some(file=>file.status==='uploading')||files.some(file=>pendingThumbnails.has(key(file)));
 	$: slots=single?[{role:'base' as const,file:attachedImages[0],label:'Referência'}]:[{role:'base' as const,file:assigned.base,label:'Referência'},...assigned.references.map((file,index)=>({role:'reference' as const,file,label:mode==='outfit'?`${$i18n.t('Roupa')} ${index+1}`:`${$i18n.t('Pessoa')} ${index+1}`})),...(!uploading&&attachedImages.length>0&&assigned.references.length<limit-1?[{role:'reference' as const,file:undefined,label:mode==='outfit'?'Roupa':'Pessoa'}]:[])];
@@ -32,7 +32,7 @@
 		if(!localKeys.has(file))localKeys.set(file,`local-${++nextKey}`);
 		return localKeys.get(file)!;
 	};
-	function withRole(file:any,role:string){if(file.image_mode_role===role)return file;const copy={...file,image_mode_role:role};localKeys.set(copy,key(file));return copy;}
+	function withRole(file:any,role:string){if(mode==='model3d'||file.image_mode_role===role)return file;const copy={...file,image_mode_role:role};localKeys.set(copy,key(file));return copy;}
 	function normalize(value:any[]){const current=imageSwapSlots(value);return value.map(file=>{
 		if(!imageModeFiles(value).includes(file))return file;
 		return withRole(file,file===current.base?'base':'reference');

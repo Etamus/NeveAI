@@ -7,17 +7,23 @@ export function modelGridWheel(node: HTMLElement) {
 		if (!['auto', 'scroll'].includes(getComputedStyle(node).overflowY)) return;
 		const max = node.scrollHeight - node.clientHeight;
 		if (max <= 0) return;
-		const cards = node.querySelector('[data-model-grid]')?.children;
+		const cards = (node.matches?.('[data-model-grid]') ? node : node.querySelector('[data-model-grid]'))?.children;
 		if (!cards?.length) return;
 		const first = cards[0].getBoundingClientRect().top;
 		let step = 0;
-		for (const card of Array.from(cards).slice(1)) {
-			step = card.getBoundingClientRect().top - first;
+		for (let i = 1; i < cards.length; i++) {
+			step = cards[i].getBoundingClientRect().top - first;
 			if (step > 1) break;
 		}
 		if (step <= 1) return;
-		const row = node.scrollTop / step;
-		const target = event.deltaY > 0
+		const position = node.scrollTop / step;
+		const nearest = Math.round(position);
+		// scrollTop may round to a CSS pixel while rem-based download rows are fractional.
+		const row = node.matches?.('[data-download-queue]') && Math.abs(node.scrollTop - nearest * step) <= 1
+			? nearest : position;
+		const target = node.classList?.contains('files-list-scroll')
+			? node.scrollTop + Math.sign(event.deltaY) * step
+			: event.deltaY > 0
 			? (Math.floor(row + 0.01) + 1) * step
 			: (Math.ceil(row - 0.01) - 1) * step;
 		event.preventDefault();

@@ -3,7 +3,7 @@
 	import CodeBlock from './CodeBlock.svelte';
 	import Modal from '$lib/components/common/Modal.svelte';
 	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import OrbitingSpheres from '$lib/components/common/OrbitingSpheres.svelte';
 	import Badge from '$lib/components/common/Badge.svelte';
 	import XMark from '$lib/components/icons/XMark.svelte';
 	const i18n = getContext('i18n');
@@ -12,10 +12,10 @@
 	export let codeExecution = null;
 </script>
 
-<Modal size="lg" bind:show>
+<Modal size="lg" bind:show className="file-preview-window">
 	<div>
-		<div class="flex justify-between dark:text-gray-300 px-5 pt-4 pb-2">
-			<div class="text-lg font-medium self-center flex flex-col gap-0.5 capitalize">
+		<div class="file-preview-header">
+			<div class="file-preview-title flex flex-col gap-0.5 capitalize">
 				{#if codeExecution?.result}
 					<div>
 						{#if codeExecution.result?.error}
@@ -32,7 +32,7 @@
 					<MobileModalTitle contentClass="flex items-center gap-2">
 					{#if !codeExecution?.result}
 						<div>
-							<Spinner className="size-4" />
+							<OrbitingSpheres className="size-4" />
 						</div>
 					{/if}
 
@@ -48,6 +48,7 @@
 			</div>
 			<button data-mobile-modal-close
 				class="self-center"
+				aria-label={$i18n.t('Close')}
 				on:click={() => {
 					show = false;
 					codeExecution = null;
@@ -57,9 +58,9 @@
 			</button>
 		</div>
 
-		<div class="flex flex-col md:flex-row w-full px-4 pb-5">
+		<div class="flex flex-col md:flex-row w-full px-3 pb-3">
 			<div
-				class="flex flex-col w-full dark:text-gray-200 overflow-y-scroll max-h-[22rem] scrollbar-hidden"
+				class="file-preview-surface flex flex-col w-full dark:text-gray-200 overflow-y-scroll max-h-[22rem] scrollbar-hidden"
 			>
 				<div class="flex flex-col w-full">
 					<CodeBlock

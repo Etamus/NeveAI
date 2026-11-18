@@ -6,7 +6,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-COMFY_COMMIT = "426f5eea52a7ece1dd599fff4cb6cd1f352ddd24"
+COMFY_COMMIT = "989d93d0d968e704c589ce0146bb18c77f6b50cc"
 SOURCE_MARKER = ".neve-comfy-commit"
 
 

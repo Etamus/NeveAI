@@ -2,18 +2,15 @@
 	import { getContext } from 'svelte';
 	const i18n = getContext('i18n');
 	import WebSearchResults from '../WebSearchResults.svelte';
-	import ImageIcon from '$lib/components/icons/Image.svelte';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
-	import MusicNote from '$lib/components/icons/MusicNote.svelte';
-	import Video from '$lib/components/icons/Video.svelte';
 	import { getWebSearchDisplayQueries } from '$lib/utils/webSearchDisplayQueries';
 
 	export let status = null;
 	export let done = false;
 	export let expanded = null;
+	export let showQueries = false;
 
-	$: statusAction = String(status?.action ?? '').toLowerCase();
 	$: statusLabel =
 		status?.description === 'Imagem gerada'
 			? $i18n.t('Imagem criada')
@@ -22,21 +19,18 @@
 				: status?.description
 					? $i18n.t(status.description)
 					: '';
-	$: isDeepSearchStatus = Boolean(status?.deep_search) || statusAction.includes('deep_search');
+	$: isDeepSearchStatus = Boolean(status?.deep_search) || String(status?.action ?? '').toLowerCase().includes('deep_search');
 	$: searchDisplayQueries = getWebSearchDisplayQueries(status?.queries, isDeepSearchStatus);
 	$: searchedCount =
 		status?.searched_count ??
 		(status?.items?.length ? status.items.length : (status?.urls || []).length);
-	$: isImageStatus = statusAction.includes('stable_diffusion') || statusAction.includes('image_generation');
-	$: isMusicStatus = statusAction.includes('music_generation');
-	$: isVideoStatus = statusAction.includes('video_generation');
 </script>
 
 {#if !status?.hidden}
 	<div class="status-description flex min-w-0 w-full items-center gap-2 text-left text-sm font-normal text-gray-600 dark:text-gray-300">
 		{#if status?.action === 'web_search' && (status?.urls || status?.items)}
 			<WebSearchResults {status} done={done || status?.done}>
-				<span class="text-sm">
+				<span data-title-self title={status?.description ? $i18n.t(status.description, { count: searchedCount }) : undefined} class="text-sm">
 					{#if status?.description?.includes('{{count}}')}
 						{$i18n.t(status?.description, {
 							count: searchedCount
@@ -117,6 +111,7 @@
 					</div>
 				</div>
 
+				{#if showQueries}
 				<div class="ml-[7px] flex flex-wrap gap-1.5 border-l border-[#dedede] dark:border-[#292929] px-4 pb-2.5 pt-1">
 					{#each searchDisplayQueries as query (query)}
 						<div
@@ -124,10 +119,11 @@
 							style="max-width: min(100%, 22rem)"
 						>
 							<Search className="size-3 shrink-0" />
-							<span class="min-w-0 truncate" title={query}>{query}</span>
+							<span class="min-w-0 truncate">{query}</span>
 						</div>
 					{/each}
 				</div>
+				{/if}
 			</div>
 		{:else if status?.action === 'queries_generated' && status?.queries}
 			<div
@@ -148,6 +144,7 @@
 					</div>
 				</div>
 
+				{#if showQueries}
 				<div class="ml-[7px] flex flex-wrap gap-1.5 border-l border-[#dedede] dark:border-[#292929] px-4 pb-2.5 pt-1">
 					{#each searchDisplayQueries as query (query)}
 						<div
@@ -155,10 +152,11 @@
 							style="max-width: min(100%, 22rem)"
 						>
 							<Search className="size-3 shrink-0" />
-							<span class="min-w-0 truncate" title={query}>{query}</span>
+							<span class="min-w-0 truncate">{query}</span>
 						</div>
 					{/each}
 				</div>
+				{/if}
 			</div>
 		{:else if status?.action === 'sources_retrieved' && status?.count !== undefined}
 			<div
@@ -201,19 +199,6 @@
 					<div
 						class="flex min-w-0 items-center gap-2 text-sm font-normal text-gray-600 transition-colors dark:text-gray-300"
 					>
-						{#if isVideoStatus || isMusicStatus || isImageStatus}
-						<span
-							class="flex size-5 shrink-0 items-center justify-center text-gray-500 dark:text-gray-300"
-						>
-							{#if isVideoStatus}
-								<Video className="size-3.5" strokeWidth="1.6" />
-							{:else if isMusicStatus}
-								<MusicNote className="size-3.5" strokeWidth="1.6" />
-							{:else if isImageStatus}
-								<ImageIcon className="size-3.5" strokeWidth="1.6" />
-							{/if}
-						</span>
-						{/if}
 						<span
 							class="relative min-w-0 truncate text-sm leading-5 {(done || status?.done) === false
 								? 'shimmer'

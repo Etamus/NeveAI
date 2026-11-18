@@ -117,14 +117,16 @@ internal sealed class NeveWindow : Form
             environment = await CoreWebView2Environment.CreateAsync(runtime, profile, options);
             await view.EnsureCoreWebView2Async(environment);
             var core = view.CoreWebView2;
-            if (Environment.GetEnvironmentVariable("NEVE_WEBVIEW2_TEST_MODE") == "1") {
-                string downloads = Path.Combine(Path.GetDirectoryName(profile), "downloads");
-                Directory.CreateDirectory(downloads);
-                core.Profile.DefaultDownloadFolderPath = downloads;
-            }
+            // Chromium may stage an in-flight download before DownloadStarting completes.
+            // Keep browser-owned intermediates in the profile, not the user's Downloads folder.
+            string transfers = Path.Combine(profile, "DownloadStaging");
+            Directory.CreateDirectory(transfers);
+            core.Profile.DefaultDownloadFolderPath = transfers;
+
             core.Settings.IsStatusBarEnabled = false;
             core.Settings.AreDevToolsEnabled = debugPort != 0;
             core.Settings.IsSwipeNavigationEnabled = false;
+            core.DownloadStarting += ChooseDownloadDestination;
             core.WebMessageReceived += OnMessage;
             core.NewWindowRequested += OpenPopup;
             core.WindowCloseRequested += delegate { Close(); };
@@ -157,6 +159,7 @@ internal sealed class NeveWindow : Form
             await core.AddScriptToExecuteOnDocumentCreatedAsync(@"(() => {
                 if (window.top !== window || location.origin !== '" + appUri.GetLeftPart(UriPartial.Authority) + @"') return;
                 window.__NEVE_WEBVIEW2__ = true;
+                window.__NEVE_NATIVE_DOWNLOADS__ = true;
                 const theme = () => chrome.webview.postMessage({type:'neve:theme',dark:document.documentElement.classList.contains('dark')});
                 const watch = () => { theme(); new MutationObserver(theme).observe(document.documentElement,{attributes:true,attributeFilter:['class']}); };
                 if(document.documentElement) watch(); else addEventListener('DOMContentLoaded',watch,{once:true});
@@ -179,6 +182,32 @@ internal sealed class NeveWindow : Form
             core.Navigate(appUri.AbsoluteUri);
             Log("runtime " + environment.BrowserVersionString);
         } catch (Exception error) { Fail(error.ToString()); }
+    }
+
+    void ChooseDownloadDestination(object sender, CoreWebView2DownloadStartingEventArgs e)
+    {
+        var deferral = e.GetDeferral();
+        // Leave the event callback before showing a modal Windows dialog.
+        BeginInvoke((Action)delegate {
+            try {
+                using (var dialog = new SaveFileDialog()) {
+                    dialog.FileName = Path.GetFileName(e.ResultFilePath);
+                    // Omitting InitialDirectory lets the Windows shell restore the last save location.
+                    string ext = Path.GetExtension(dialog.FileName).TrimStart('.');
+                    bool typed = ext.Length > 0 && ext.Length <= 32 && ext.All(Char.IsLetterOrDigit);
+                    dialog.Filter = typed ? ext.ToUpperInvariant() + " (*." + ext + ")|*." + ext : "(*.*)|*.*";
+                    if (typed) dialog.DefaultExt = ext;
+                    dialog.RestoreDirectory = true;
+                    dialog.AddExtension = typed;
+                    if (dialog.ShowDialog(this) != DialogResult.OK) { e.Cancel = true; return; }
+                    e.ResultFilePath = dialog.FileName;
+                    e.Handled = false; // WebView2 owns the transfer and displays its normal download UI.
+                }
+            } catch (Exception error) {
+                e.Cancel = true;
+                Log("download_dialog " + error.GetType().Name);
+            } finally { deferral.Complete(); }
+        });
     }
 
     void OnMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -233,6 +262,7 @@ internal sealed class NeveWindow : Form
             popup.FormClosed += delegate { popups.Remove(owned); preview.Dispose(); };
             popup.Show(this);
             await preview.EnsureCoreWebView2Async(environment);
+
             preview.CoreWebView2.Settings.AreDevToolsEnabled = view.CoreWebView2.Settings.AreDevToolsEnabled;
             preview.CoreWebView2.Settings.IsStatusBarEnabled = false;
             preview.CoreWebView2.NavigationCompleted += delegate { owned.Opacity = 1; };

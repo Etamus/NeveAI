@@ -15,8 +15,6 @@ from neveai.models.folders import (
     Folders,
 )
 from neveai.models.chats import Chats
-from neveai.models.files import Files
-from neveai.models.knowledge import Knowledges
 
 
 from neveai.constants import ERROR_MESSAGES
@@ -27,6 +25,7 @@ from sqlalchemy.orm import Session
 from fastapi import (APIRouter, Depends, HTTPException, status, Request)
 
 
+from neveai.utils.db_work import session_route
 from neveai.utils.auth import get_verified_user
 from neveai.utils.access_control import has_permission
 
@@ -42,7 +41,8 @@ router = APIRouter()
 
 
 @router.get("/", response_model=list[FolderNameIdResponse])
-async def get_folders(
+@session_route
+def get_folders(
     request: Request,
     user=Depends(get_verified_user),
     db: Session = Depends(get_session),
@@ -64,44 +64,7 @@ async def get_folders(
             detail=ERROR_MESSAGES.ACCESS_PROHIBITED,
         )
 
-    folders = Folders.get_folders_by_user_id(user.id, db=db)
-
-    # Verify folder data integrity
-    folder_list = []
-    for folder in folders:
-        if folder.parent_id and not Folders.get_folder_by_id_and_user_id(
-            folder.parent_id, user.id, db=db
-        ):
-            folder = Folders.update_folder_parent_id_by_id_and_user_id(
-                folder.id, user.id, None, db=db
-            )
-
-        if folder.data:
-            if "files" in folder.data:
-                valid_files = []
-                for file in folder.data["files"]:
-
-                    if file.get("type") == "file":
-                        if Files.check_access_by_user_id(
-                            file.get("id"), user.id, "read", db=db
-                        ):
-                            valid_files.append(file)
-                    elif file.get("type") == "collection":
-                        if Knowledges.check_access_by_user_id(
-                            file.get("id"), user.id, "read", db=db
-                        ):
-                            valid_files.append(file)
-                    else:
-                        valid_files.append(file)
-
-                folder.data["files"] = valid_files
-                Folders.update_folder_by_id_and_user_id(
-                    folder.id, user.id, FolderUpdateForm(data=folder.data), db=db
-                )
-
-        folder_list.append(FolderNameIdResponse(**folder.model_dump()))
-
-    return folder_list
+    return Folders.list_summaries(user.id, db)
 
 
 ############################
@@ -145,7 +108,8 @@ def create_folder(
 
 
 @router.get("/{id}", response_model=Optional[FolderModel])
-async def get_folder_by_id(
+@session_route
+def get_folder_by_id(
     id: str, user=Depends(get_verified_user), db: Session = Depends(get_session)
 ):
     folder = Folders.get_folder_by_id_and_user_id(id, user.id, db=db)

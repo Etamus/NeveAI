@@ -3,6 +3,7 @@
 	import { fly } from 'svelte/transition';
 
 	export let show = false;
+	export let animated = true;
 	export let className = '';
 	export let onClose = () => {};
 
@@ -56,7 +57,7 @@
 	<div
 		bind:this={modalElement}
 		class="modal fixed right-0 bottom-0 left-0 z-999 flex h-screen max-h-[100dvh] w-full justify-center overflow-hidden overscroll-contain bg-black/60"
-		in:fly={{ y: 100, duration: 200 }}
+		in:fly={{ y: animated ? 100 : 0, duration: animated ? 200 : 0 }}
 		on:mousedown={() => {
 			show = false;
 		}}

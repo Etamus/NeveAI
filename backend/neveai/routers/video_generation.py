@@ -37,7 +37,7 @@ ProgressCallback = Callable[[str, Optional[int]], Awaitable[None]]
 CLIPPROJ_COMMIT = "c01ba8fb8f41b4f2094dbd0b185cdc238fb6134c"
 TURBO_NODE_COMMIT = "4274783a23afcfdbea3b4876cb79effd6c510785"
 # Opaque shared-environment receipt, retained to avoid reinstalling a compatible runtime.
-VIDEO_RUNTIME_REVISION = "neve-minimax-h3-fl2va-w4a8-v2-comfy-0.43"
+VIDEO_RUNTIME_REVISION = "neve-minimax-h3-fl2va-w4a8-v2-comfy-0.45"
 
 VIDEO_ROOT = CACHE_DIR / "video_generation"
 COMFYUI_DIR = VIDEO_ROOT / "ComfyUI"

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { slowTooltipDelay } from '$lib/utils/tooltipTiming';
 	import type { WorkBook } from 'xlsx';
 	import DOMPurify from 'dompurify';
 
@@ -22,12 +23,14 @@
 	import Tooltip from './Tooltip.svelte';
 	import dayjs from 'dayjs';
 	import Spinner from './Spinner.svelte';
+	import OrbitingSpheres from './OrbitingSpheres.svelte';
 	import PDFViewer from './PDFViewer.svelte';
 	import SheetTabs from './SheetTabs.svelte';
 	import GeneratedMusicPlayer from '$lib/components/chat/Messages/GeneratedMusicPlayer.svelte';
 	import GeneratedVideoPlayer from '$lib/components/chat/Messages/GeneratedVideoPlayer.svelte';
 
-	import panzoom, { type PanZoom } from 'panzoom';
+	import ZoomSurface from './ZoomSurface.svelte';
+	import PresentationSlide from '$lib/components/common/PresentationSlide.svelte';
 
 	export let item;
 	export let show = false;
@@ -61,28 +64,11 @@
 	let docxError = '';
 
 	// PPTX state
-	let pptxSlides: string[] = [];
+	$: slideCount = presentation?.count ?? 0;
 	let pptxCurrentSlide = 0;
 	let pptxError = '';
 
-	let pzInstance: PanZoom | null = null;
-
-	const initImagePanzoom = (node: HTMLImageElement) => {
-		const initialize = () => {
-			pzInstance?.dispose();
-			pzInstance = panzoom(node, {
-				bounds: true,
-				boundsPadding: 1,
-				minZoom: 1,
-				maxZoom: 8,
-				zoomSpeed: 0.065
-			});
-		};
-		if (node.complete && node.naturalWidth) initialize();
-		node.addEventListener('load', initialize);
-		return { destroy() { node.removeEventListener('load', initialize); pzInstance?.dispose(); pzInstance = null; } };
-	};
-
+	let presentation: Awaited<ReturnType<typeof import('$lib/utils/pptxToHtml').pptxToImages>> | null = null;
 
 	$: isPDF =
 		item?.meta?.content_type === 'application/pdf' ||
@@ -244,17 +230,22 @@
 		}
 	};
 
+	let slideRevision = 0;
 	const loadPptxContent = async () => {
+		const revision = ++slideRevision;
 		try {
 			pptxError = '';
 			const [arrayBuffer, { pptxToImages }] = await Promise.all([
 				getFileContentById(item.id),
 				import('$lib/utils/pptxToHtml')
 			]);
+			if (!show || revision !== slideRevision) return;
 			const result = await pptxToImages(arrayBuffer);
-			pptxSlides = result.images;
+			if (!show || revision !== slideRevision) return;
+			presentation = result;
 			pptxCurrentSlide = 0;
 		} catch (error) {
+			if (!show || revision !== slideRevision) return;
 			console.error('Error loading PPTX file:', error);
 			pptxError = $i18n.t('Failed to load PPTX file. Please try downloading it instead.');
 		}
@@ -316,7 +307,7 @@
 			if (isDocx) {
 				await loadDocxContent();
 			}
-			if (isPptx) {
+			if (isPptx && show) {
 				await loadPptxContent();
 			}
 
@@ -326,10 +317,16 @@
 		await tick();
 	};
 
+function clearPresentation() {
+	slideRevision++;
+	presentation = null;
+	pptxCurrentSlide = 0;
+}
+
 $: if (show) {
 	videoPreviewReady = false;
 	loadContent();
-}
+} else clearPresentation();
 
 $: if (show) {
 	enableFullContent = item?.context === 'full';
@@ -341,9 +338,6 @@ $: if (show) {
 			enableFullContent = true;
 		}
 
-		return () => {
-			pzInstance?.dispose();
-		};
 	});
 </script>
 
@@ -351,35 +345,42 @@ $: if (show) {
 	bind:show
 	{animated}
 	size="md"
-	className="h-[min(30rem,calc(100dvh-2rem))] overflow-hidden bg-white dark:bg-gray-900 rounded-xl"
+	className="file-preview-window"
 >
-	<div class="file-viewer-content font-primary px-4.5 py-3.5 w-full h-full min-h-0 flex flex-col dark:text-gray-400">
-		<div class="pb-2 shrink-0">
-			<div class="flex items-start justify-between">
-				<div class="min-w-0 flex-1 pr-3">
-					<div class=" font-medium text-lg dark:text-gray-100">
-						<MobileModalTitle>
-						<div class="line-clamp-1 cursor-default" title={item?.name ?? 'File'}>
+	<div class="file-viewer-content font-primary w-full h-[min(30rem,calc(100dvh-2rem))] min-h-0 flex flex-col">
+		<div class="shrink-0">
+			<div class="file-preview-header">
+				<div class="file-preview-title">
+					<MobileModalTitle>
+						<span data-file-preview-name class="line-clamp-1 cursor-default">
 							{truncateFileName(item?.name ?? 'File')}
+						</span>
+						{#if item?.size}
+							<span class="file-viewer-size mt-0.5 block text-xs font-normal leading-tight text-gray-500">{formatFileSize(item.size)}</span>
+						{/if}
+					</MobileModalTitle>
+				</div>
+				{#if edit}
+					<Tooltip tippyOptions={{ delay: [slowTooltipDelay, 0] }} content={enableFullContent
+						? $i18n.t('Extract the entire content.')
+						: $i18n.t('Default to segmented retrieval for focused and relevant content extraction, this is recommended for most cases.')}>
+						<div data-file-retrieval class="flex shrink-0 items-center gap-1.5 text-xs">
+							{$i18n.t(enableFullContent ? 'Using Entire Document' : 'Using Focused Retrieval')}
+							<Switch bind:state={enableFullContent} on:change={(e) => {
+								item._contextManuallySet = true;
+								delete item._fileGenerationDefaultContext;
+								item.context = e.detail ? 'full' : undefined;
+							}} />
 						</div>
-						</MobileModalTitle>
-					</div>
-				</div>
-
-				<div>
-					<button data-mobile-modal-close
-						aria-label={$i18n.t('Close')}
-						class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition"
-						on:click={() => {
-							show = false;
-						}}
-					>
-						<XMark className="w-5 h-5" />
-					</button>
-				</div>
+					</Tooltip>
+				{/if}
+				<button data-mobile-modal-close type="button" aria-label={$i18n.t('Close')} on:click={() => show = false}>
+					<XMark className="size-4" />
+				</button>
 			</div>
 
-			<div>
+			{#if item?.type === 'collection' || item?.knowledge}
+			<div class="px-3">
 				<div class="file-viewer-metadata flex flex-col items-center md:flex-row gap-1 justify-between w-full">
 					<div class="flex flex-wrap gap-x-2 gap-y-1 text-xs text-gray-500">
 						{#if item?.type === 'collection'}
@@ -398,54 +399,21 @@ $: if (show) {
 							{/if}
 						{/if}
 
-						{#if item.size}
-							<div class="file-viewer-size capitalize shrink-0">{formatFileSize(item.size)}</div>
-						{/if}
-
 						{#if item?.knowledge}
 							<div class="capitalize shrink-0">
 								{$i18n.t('Knowledge Base')}
 							</div>
 						{/if}
 					</div>
-
-					{#if edit}
-						<div class=" self-end">
-							<Tooltip
-								content={enableFullContent
-									? $i18n.t(
-											'Inject the entire content as context for comprehensive processing, this is recommended for complex queries.'
-										)
-									: $i18n.t(
-											'Default to segmented retrieval for focused and relevant content extraction, this is recommended for most cases.'
-										)}
-							>
-								<div class="flex items-center gap-1.5 text-xs">
-									{#if enableFullContent}
-										{$i18n.t('Using Entire Document')}
-									{:else}
-										{$i18n.t('Using Focused Retrieval')}
-									{/if}
-									<Switch
-										bind:state={enableFullContent}
-										on:change={(e) => {
-											item._contextManuallySet = true;
-											delete item._fileGenerationDefaultContext;
-											item.context = e.detail ? 'full' : undefined;
-										}}
-									/>
-								</div>
-							</Tooltip>
-						</div>
-					{/if}
 				</div>
 			</div>
+			{/if}
 		</div>
 
-		<div class="flex-1 min-h-0 flex flex-col overflow-hidden pt-2.5">
-			{#if !loading}
+		<div class="flex-1 min-h-0 flex flex-col overflow-hidden px-3 pb-3 pt-2">
+			{#if !loading || isPDF || isPptx || isImage}
 				<div
-					class="flex-1 min-h-0 {isPDF || isVideo || isImage || isExcel || isPptx
+					class="file-preview-surface flex-1 {isPDF || isVideo || isImage || isExcel || isPptx
 						? 'overflow-hidden'
 						: 'overflow-auto'}"
 				>
@@ -462,17 +430,8 @@ $: if (show) {
 					{/if}
 
 					{#if isImage}
-						<div class="file-image-viewport relative h-full w-full overflow-hidden rounded-lg bg-white dark:bg-gray-900">
-							<div class="flex h-full w-full items-center justify-center">
-								<img
-									use:initImagePanzoom
-									src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`}
-									alt={item?.name ?? 'Image'}
-									class="file-image-target block h-auto max-h-full w-auto max-w-full rounded-lg object-contain"
-									loading="lazy"
-									draggable="false"
-								/>
-							</div>
+						<div class="file-image-viewport relative h-full w-full overflow-hidden">
+							<ZoomSurface src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`} alt={item?.name ?? 'Image'} imageClass="file-image-target rounded-lg" />
 						</div>
 					{:else if isAudio}
 						<div
@@ -491,7 +450,7 @@ $: if (show) {
 					{:else if isVideo}
 						<div class="relative flex h-full w-full items-center justify-center overflow-hidden">
 							<GeneratedVideoPlayer src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`} fileId={item.id} name={item.name} fitContainer revealAfterMetadata on:ready={()=>videoPreviewReady=true} />
-							{#if !videoPreviewReady}<div class="pointer-events-none absolute inset-0 grid place-items-center"><Spinner className="size-5" /></div>{/if}
+							{#if !videoPreviewReady}<div class="pointer-events-none absolute inset-0 grid place-items-center"><svelte:component this={chatAttachment || edit || item?.generated ? OrbitingSpheres : Spinner} className="size-5" /></div>{/if}
 						</div>
 					{:else}
 						{#if isPDF}
@@ -533,7 +492,7 @@ $: if (show) {
 								/>
 							</div>
 						{:else if isMarkdown}
-							<div class="text-sm prose dark:prose-invert max-w-full">
+							<div class="text-sm prose dark:prose-invert max-w-full p-3">
 								<Markdown content={item.file.data.content} id="markdown-viewer" />
 							</div>
 						{:else if isDocx}
@@ -549,17 +508,14 @@ $: if (show) {
 						{:else if isPptx}
 							{#if pptxError}
 								<div class="text-red-500 text-sm p-4">{pptxError}</div>
-							{:else if pptxSlides.length > 0}
+							{:else if loading || slideCount > 0}
 								<div class="presentation-preview flex h-full min-h-0 flex-col">
-									<div class="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-2">
-										<img
-											src={pptxSlides[pptxCurrentSlide]}
-											alt="Slide {pptxCurrentSlide + 1}"
-											class="h-full w-full min-h-0 object-contain rounded-md"
-											draggable="false"
-										/>
+									<div class="min-h-0 flex-1 overflow-hidden">
+										{#key pptxCurrentSlide}
+											<PresentationSlide {presentation} index={pptxCurrentSlide} />
+										{/key}
 									</div>
-									{#if pptxSlides.length > 1}
+									{#if slideCount > 1}
 										<div class="slide-navigation flex shrink-0 items-center justify-center gap-3 py-2 text-sm text-gray-500">
 											<button
 												class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
@@ -579,13 +535,13 @@ $: if (show) {
 													/>
 												</svg>
 											</button>
-											<span>{pptxCurrentSlide + 1} / {pptxSlides.length}</span>
+											<span>{pptxCurrentSlide + 1} / {slideCount}</span>
 											<button
 												class="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
-												disabled={pptxCurrentSlide === pptxSlides.length - 1}
+												disabled={pptxCurrentSlide === slideCount - 1}
 												on:click={() =>
 													(pptxCurrentSlide = Math.min(
-														pptxSlides.length - 1,
+														slideCount - 1,
 														pptxCurrentSlide + 1
 													))}
 											>
@@ -609,7 +565,7 @@ $: if (show) {
 								<div class="text-gray-500 text-sm p-4">Sem conteúdo</div>
 							{/if}
 						{:else}
-							<div class="text-xs whitespace-pre-wrap">
+							<div class="text-xs whitespace-pre-wrap p-3">
 								{(item?.file?.data?.content ?? '').trim() || 'Sem conteúdo'}
 							</div>
 						{/if}
@@ -617,7 +573,7 @@ $: if (show) {
 				</div>
 			{:else}
 				<div class="flex flex-1 min-h-0 items-center justify-center">
-					<Spinner className="size-5" />
+					<svelte:component this={chatAttachment || edit || item?.generated ? OrbitingSpheres : Spinner} className="size-5" />
 				</div>
 			{/if}
 		</div>
@@ -629,7 +585,6 @@ $: if (show) {
 		.file-viewer-metadata { align-items: flex-start; padding-left: 44px; }
 	}
 	@media (max-width: 767px) {
-		.file-viewer-content { padding: 0.75rem; }
 		.file-viewer-content button[aria-label] { min-height: 36px; }
 		.file-viewer-content button[aria-label]:has(> :global(svg)) { min-width: 36px; }
 	}

@@ -1,9 +1,10 @@
 <script lang="ts">
-	import { onDestroy, getContext } from 'svelte';
+	import { onDestroy, onMount, getContext } from 'svelte';
 	import type { ListeningPort } from '$lib/apis/terminal';
 	import { getListeningPorts, getPortProxyUrl } from '$lib/apis/terminal';
+	import { createPortPolling } from '$lib/utils/visiblePortPolling';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
-	import { continuousSpinner } from '$lib/utils/continuousSpinner';
+	import OrbitingSpheres from '../../common/OrbitingSpheres.svelte';
 
 	const i18n = getContext('i18n');
 
@@ -13,40 +14,25 @@
 	let ports: ListeningPort[] = [];
 	let expanded = false;
 	let loading = false;
-	let pollTimer: ReturnType<typeof setInterval> | null = null;
-
-	const loadPorts = async () => {
-		loading = true;
-		ports = await getListeningPorts(baseUrl, apiKey);
-		loading = false;
-	};
-
-	const startPolling = () => {
-		stopPolling();
-		loadPorts();
-		pollTimer = setInterval(loadPorts, 5000);
-	};
-
-	const stopPolling = () => {
-		if (pollTimer) {
-			clearInterval(pollTimer);
-			pollTimer = null;
-		}
-	};
+	let mounted = false;
+	let visible = true;
+	const poll = createPortPolling(getListeningPorts, result => { ports = result; }, active => { loading = active; });
+	const loadPorts = () => { if (!loading) poll.update(baseUrl, apiKey, expanded, mounted && visible, true); };
 
 	const openPort = (port: number) => {
 		const url = getPortProxyUrl(baseUrl, port);
 		window.open(url, '_blank', 'noopener,noreferrer');
 	};
 
-	// Start polling when baseUrl is available
-	$: if (baseUrl) {
-		startPolling();
-	}
-
-	onDestroy(() => {
-		stopPolling();
+	onMount(() => {
+		const changed = () => { visible = !document.hidden; };
+		changed();
+		mounted = true;
+		document.addEventListener('visibilitychange', changed);
+		return () => document.removeEventListener('visibilitychange', changed);
 	});
+	$: poll.update(baseUrl, apiKey, expanded, mounted && visible);
+	onDestroy(poll.stop);
 </script>
 
 <div class="px-2 py-1">
@@ -81,19 +67,22 @@
 					on:click|stopPropagation={loadPorts}
 					aria-label={$i18n.t('Refresh')}
 				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						viewBox="0 0 20 20"
-						fill="currentColor"
-						class="size-3 {loading ? 'animate-spin' : ''}"
-						use:continuousSpinner={loading}
-					>
-						<path
-							fill-rule="evenodd"
-							d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.451a.75.75 0 0 0 0-1.5H4.5a.75.75 0 0 0-.75.75v3.75a.75.75 0 0 0 1.5 0v-2.127l.13.13a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm-10.624-2.85a5.5 5.5 0 0 1 9.201-2.465l.312.31H11.75a.75.75 0 0 0 0 1.5h3.75a.75.75 0 0 0 .75-.75V3.42a.75.75 0 0 0-1.5 0v2.126l-.13-.129A7 7 0 0 0 3.239 8.555a.75.75 0 0 0 1.449.39Z"
-							clip-rule="evenodd"
-						/>
-					</svg>
+					{#if loading}
+						<OrbitingSpheres className="block size-3" />
+					{:else}
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							viewBox="0 0 20 20"
+							fill="currentColor"
+							class="size-3"
+						>
+							<path
+								fill-rule="evenodd"
+								d="M15.312 11.424a5.5 5.5 0 0 1-9.201 2.466l-.312-.311h2.451a.75.75 0 0 0 0-1.5H4.5a.75.75 0 0 0-.75.75v3.75a.75.75 0 0 0 1.5 0v-2.127l.13.13a7 7 0 0 0 11.712-3.138.75.75 0 0 0-1.449-.39Zm-10.624-2.85a5.5 5.5 0 0 1 9.201-2.465l.312.31H11.75a.75.75 0 0 0 0 1.5h3.75a.75.75 0 0 0 .75-.75V3.42a.75.75 0 0 0-1.5 0v2.126l-.13-.129A7 7 0 0 0 3.239 8.555a.75.75 0 0 0 1.449.39Z"
+								clip-rule="evenodd"
+							/>
+						</svg>
+					{/if}
 				</button>
 			</Tooltip>
 		</span>

@@ -73,7 +73,7 @@ try{
     assert.equal(await page.locator('.model-editor-params-scroll').evaluate(e=>getComputedStyle(e).paddingLeft),mobile?'24px':await page.evaluate(()=>getComputedStyle(document.documentElement).fontSize));
    }
    if(kind.startsWith('file-')){
-    const size=await page.locator('.file-viewer-size').boundingBox(),name=await page.locator('[title="Example.'+kind.slice(5)+'"]').boundingBox();metrics.metadata={size,name};
+    const size=await page.locator('.file-viewer-size').boundingBox(),name=await page.locator('[data-file-preview-name]').boundingBox();metrics.metadata={size,name};
     if(mobile)assert(size.y>=name.y+name.height-1&&Math.abs(size.x-name.x)<=1,'File size is not below and left-aligned with its name: '+JSON.stringify(metrics));
     assert(await page.locator('.file-viewer-size').textContent());
    }

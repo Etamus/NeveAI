@@ -800,6 +800,19 @@ def apply_document_edits(
                 raise DocumentEditError(
                     "A verificacao de conteudo detectou uma alteracao inesperada."
                 )
+        # Check non-text data (styles, relationships, formula attributes and embedded
+        # object references) of untouched elements even inside a rewritten XML part.
+        affected_ancestors = {ancestor for key in seen for ancestor in snapshot.references[key][2].iterancestors()}
+        for identifier in by_id.keys() - seen:
+            part, _, before_node, *_ = snapshot.references[identifier]
+            if part not in changed_parts:
+                continue
+            after_node = result.references[identifier][2]
+            # An explicitly edited nested paragraph legitimately changes its ancestor.
+            if before_node in affected_ancestors:
+                continue
+            if etree.tostring(before_node, method="c14n") != etree.tostring(after_node, method="c14n"):
+                raise DocumentEditError("A edicao modificou a formatacao ou estrutura de um elemento nao selecionado.")
     preview = [
         {
             "id": edit["id"],

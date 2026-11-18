@@ -61,7 +61,6 @@ GGUF_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 QWEN3_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 VAE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-QWEN_IMAGE_21_REPO = "abenzerps/Qwen-Image-2.1-Uncensored-GGUF"
 QWEN_IMAGE_21_LLM_REPO = "mradermacher/Qwen3-VL-8B-Instruct-Heretic-GGUF"
 QWEN_IMAGE_21_LLM_FILE = "Qwen3-VL-8B-Instruct-heretic.Q4_K_M.gguf"
 QWEN_IMAGE_21_VISION_FILE = "Qwen3-VL-8B-Instruct-heretic.mmproj-Q8_0.gguf"
@@ -103,7 +102,7 @@ def normalize_image_quality(value: Optional[str]) -> str:
         return "qwen_image_2s"
     if value == "qwen_image_2_2_experimental":
         return QWEN_IMAGE_21_OFFICIAL_QUALITY
-    return value if value in {"qwen_image_2s", "minimax_h3_image", QWEN_IMAGE_21_OFFICIAL_QUALITY, QWEN_IMAGE_2_FAST_AMD_QUALITY} else "qwen_image_2s"
+    return value if value in {"qwen_image_2s", QWEN_IMAGE_21_OFFICIAL_QUALITY, QWEN_IMAGE_2_FAST_AMD_QUALITY} else "qwen_image_2s"
 
 
 def normalize_qwen_image_resolution(value: Optional[str]) -> str:
@@ -1056,17 +1055,7 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
 
     try:
         hf_token = str(request.app.state.config.STABLE_DIFFUSION_HF_TOKEN) or None
-        if quality == "minimax_h3_image":
-            from neveai.routers.image_h3_generation import neve_image_3_runtime
-
-            references = list(form_data.init_images or [])
-            if form_data.init_image and form_data.init_image not in references:
-                references.insert(0, form_data.init_image)
-            data_uri = await neve_image_3_runtime.run(
-                prompt=form_data.prompt, resolution=form_data.resolution, references=references,
-                user_id=getattr(user, "id", None), progress=lambda _: asyncio.sleep(0),
-            )
-        elif quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
+        if quality == QWEN_IMAGE_21_OFFICIAL_QUALITY:
             from neveai.routers.image_quality_generation import neve_image_21_runtime
 
             runtime = neve_image_21_runtime

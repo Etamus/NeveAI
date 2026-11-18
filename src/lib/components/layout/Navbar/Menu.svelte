@@ -1,10 +1,9 @@
-﻿<script lang="ts">
+<script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { DropdownMenu } from 'bits-ui';
 	import { getContext, tick } from 'svelte';
 
-	import fileSaver from 'file-saver';
-	const { saveAs } = fileSaver;
+	import { downloadChatFile } from '$lib/utils/chatFileSave';
 	import { copyToClipboard, createMessagesList } from '$lib/utils';
 
 	import { temporaryChatEnabled, user, settings, folders } from '$lib/stores';
@@ -40,17 +39,9 @@
 		return chatText.trim();
 	};
 
-	const downloadTxt = async () => {
-		const chatText = await getChatAsText();
+	const downloadTxt = () => downloadChatFile(`chat-${chat.chat.title}.txt`, async () => new Blob([await getChatAsText()], {type:'text/plain'}));
 
-		let blob = new Blob([chatText], {
-			type: 'text/plain'
-		});
-
-		saveAs(blob, `chat-${chat.chat.title}.txt`);
-	};
-
-	const downloadPdf = async () => {
+	const downloadPdf = () => downloadChatFile(`chat-${chat.chat.title}.pdf`, async () => {
 		const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
 			import('jspdf'),
 			import('html2canvas-pro')
@@ -150,11 +141,11 @@
 						page++;
 					}
 
-					pdf.save(`chat-${chat.chat.title}.pdf`);
-
-					showFullMessages = false;
+					return pdf.output('blob');
 				} catch (error) {
-					console.error('Error generating PDF', error);
+					throw error;
+				} finally {
+					showFullMessages = false;
 				}
 			}
 		} else {
@@ -202,12 +193,13 @@
 				y += lineHeight * 0.1;
 			}
 
-			doc.save(`chat-${chat.chat.title}.pdf`);
+			return doc.output('blob');
 		}
-	};
+		throw new Error('PDF unavailable');
+	});
 
 	const downloadJSONExport = async () => {
-		if (chat.id) {
+		if (chat.id) await downloadChatFile(`chat-export-${Date.now()}.json`, async () => {
 			let chatObj = null;
 
 			if ((chat?.id ?? '').startsWith('local') || $temporaryChatEnabled) {
@@ -219,8 +211,8 @@
 			let blob = new Blob([JSON.stringify([chatObj])], {
 				type: 'application/json'
 			});
-			saveAs(blob, `chat-export-${Date.now()}.json`);
-		}
+			return blob;
+		});
 	};
 </script>
 

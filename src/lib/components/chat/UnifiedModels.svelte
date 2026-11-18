@@ -57,6 +57,7 @@
 	import { createNewModel, getBaseModels, deleteModelById, updateModelById } from '$lib/apis/models';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Trash from '$lib/components/icons/Trash.svelte';
+	import EditPencil from '$lib/components/icons/EditPencil.svelte';
 	import UnloadModel from '$lib/components/icons/UnloadModel.svelte';
 	import Download from '$lib/components/icons/ModelCatalog.svelte';
 	import Upload from '$lib/components/icons/Upload.svelte';
@@ -682,12 +683,6 @@
 		} finally {
 			openingActionRefreshInProgress = false;
 		}
-	};
-	const getCacheChipLabel = (cacheType?: string | null) => {
-		const normalized = (cacheType || 'f16').toLowerCase();
-		if (normalized === 'f16') return 'FP16';
-		if (normalized === 'f32') return 'FP32';
-		return normalized.toUpperCase();
 	};
 	const getSpeculativeChipLabel = (speculativeDecoding?: string | null) => {
 		if (speculativeDecoding === 'low') return 'Baixo';
@@ -1587,12 +1582,7 @@
 		id={am ? `model-item-${am.id}` : undefined}
 	>
 		<div
-			class="unified-model-card flex h-full min-w-0 gap-3 w-full overflow-hidden border bg-gray-50 dark:bg-gray-850/50 px-3 py-2 rounded-lg cursor-pointer {isHighlighted ? 'border-gray-300 dark:border-gray-700' : 'border-transparent'}"
-			on:click={(e) => {
-				if (am && !deletingModel && !(e.target as HTMLElement).closest('button') && !(e.target as HTMLElement).closest('[data-melt-dropdown-menu]')) {
-					selectedModelId = am.id;
-				}
-			}}
+			class="unified-model-card flex h-full min-w-0 gap-3 w-full overflow-hidden border bg-gray-50 dark:bg-gray-850/50 px-3 py-2 rounded-lg {isHighlighted ? 'border-gray-300 dark:border-gray-700' : 'border-transparent'}"
 		>
 			<div class="model-avatar size-9 aspect-square self-center flex-shrink-0 group/avatar relative">
 				{#if am}
@@ -1634,7 +1624,7 @@
 					</div>
 					<div class="unified-model-meta text-xs text-gray-500 dark:text-gray-400 mt-0.5 flex flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible scrollbar-none items-center gap-1.5 [&>span]:shrink-0">
 						{#if gm}
-							<span title={gm.is_loaded ? `CTX: ${gm.n_ctx ?? '--'} | KV: ${getCacheChipLabel(gm.cache_type)}` : undefined}>{gm.file_size_human}</span>
+							<span>{gm.file_size_human}</span>
 						{:else if am}
 							<span class="line-clamp-1">
 								{am?.meta?.description || am.id}
@@ -1646,10 +1636,17 @@
 
 			<div class="flex flex-shrink-0 items-center justify-end gap-0.5 self-center">
 				{#if !gm?.is_loaded && !isHighlighted && !isLoadProcessing}
-				<Tooltip content={$i18n.t('Delete model')}>
-					<button type="button" aria-label={$i18n.t('Delete model')} disabled={localModelActionInProgress || !(gm || workspaceModels.some(model => model.id === am?.id))}
+				<Tooltip content={$i18n.t('Delete')}>
+					<button type="button" aria-label={$i18n.t('Delete')} disabled={localModelActionInProgress || !(gm || workspaceModels.some(model => model.id === am?.id))}
 						class="grid size-8 place-items-center rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
 						on:click|stopPropagation={() => { modelToDelete = { gguf: gm, admin: am }; showDeleteModel = true; }}><Trash className="size-4" /></button>
+				</Tooltip>
+				{/if}
+				{#if am}
+				<Tooltip content={$i18n.t('Edit')}>
+					<button type="button" data-edit-model={am.id} aria-label={$i18n.t('Edit')} disabled={deletingModel || modelsBlocked}
+						class="grid size-8 place-items-center rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
+						on:click={() => { selectedModelId = am.id; }}><EditPencil className="size-[calc(1rem_+_2px)]" /></button>
 				</Tooltip>
 				{/if}
 				{#if gm}

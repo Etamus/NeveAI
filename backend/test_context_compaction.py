@@ -72,6 +72,20 @@ class CompactionTests(unittest.IsolatedAsyncioTestCase):
             scope=kwargs.pop('scope', 'user:chat:model:session'), count=kwargs.pop('count', self.count),
             summarize=kwargs.pop('summarize', self.summarize))
 
+    async def test_guided_session_preserves_attempts_and_uses_existing_summary_call(self):
+        from neveai.utils.guided_learning import GUIDED_LEARNING_PROMPT
+        self.messages[0]["content"] += "\n" + GUIDED_LEARNING_PROMPT
+        self.messages[-3]["content"] = "My attempt: one fifth plus one fifth is two tenths."
+        before = copy.deepcopy(self.messages)
+        compacted = await self.run_compact()
+        self.assertIsNot(compacted, self.messages)
+        self.assertEqual(compacted[-3:], before[-3:])
+        self.assertEqual(self.messages, before)
+        self.summarize.assert_awaited_once()
+        instruction = self.summarize.await_args.args[0][0]["content"]
+        self.assertIn("last pending exercise", instruction)
+        self.assertIn("actual attempt", instruction)
+
     async def test_preserves_all_instructions_latest_answers_and_original(self):
         before = copy.deepcopy(self.messages)
         compacted = await self.run_compact()

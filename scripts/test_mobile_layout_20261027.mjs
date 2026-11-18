@@ -40,7 +40,7 @@ try{
   if(mobile)assert(gaps.check>=11&&gaps.text>=11,'Catalog spacing is compressed '+JSON.stringify(gaps));
   await shot('download');
   if(mobile){await back();await page.locator('.download-models-shell').waitFor({state:'hidden'});assert(await page.locator('.unified-models-shell').isVisible());
-   await page.locator('.unified-model-name').first().click();await page.locator('.unified-model-editor').waitFor({state:'visible'});await back();assert(await page.locator('.unified-models-shell').isVisible());
+   await page.locator('[data-edit-model]').first().click();await page.locator('.unified-model-editor').waitFor({state:'visible'});await back();assert(await page.locator('.unified-models-shell').isVisible());
    await back();await page.locator('.unified-models-shell').waitFor({state:'hidden'});}
   else {await page.locator('.download-models-close').click();await page.keyboard.press('Escape');await page.waitForTimeout(250);assert.equal(await page.evaluate(()=>history.length),initialHistory,'Desktop dialogs created mobile history entries');}
   await page.evaluate(()=>window.__mobileUI.settings());await page.locator('.settings-shell').waitFor({state:'visible'});

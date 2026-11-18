@@ -8,13 +8,12 @@
 	import relativeTime from 'dayjs/plugin/relativeTime';
 	dayjs.extend(relativeTime);
 
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import OrbitingSpheres from '$lib/components/common/OrbitingSpheres.svelte';
 	import { fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 	import { createEventDispatcher, onDestroy, onMount, getContext, tick } from 'svelte';
 	import { onChatDropdownDismiss } from '$lib/utils/chatDropdownDismissal';
 
-	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 
 	import { user, models, mobile, settings, config } from '$lib/stores';
 	import type { Model } from '$lib/stores';
@@ -96,6 +95,22 @@
 
 
 	let show = false;
+	let catalogPending = false;
+	let destroyed = false;
+	async function refreshCatalog() {
+		if (catalogPending) return;
+		catalogPending = true;
+		const token = localStorage.token;
+		const previous = $models;
+		try {
+			const next = await getModels(token, $config?.features?.enable_direct_connections && ($settings?.directConnections ?? null));
+			if (!destroyed && previous === $models && token === localStorage.token) models.set(next);
+		} catch {
+			// Keep the current list available and retry on the next opening.
+		} finally {
+			catalogPending = false;
+		}
+	}
 	let unloading = false;
 	let unloadingSelectionId = '';
 	let runtimeBusy = false;
@@ -137,45 +152,6 @@
 	let selectedModel: (typeof items)[number] | '' = '';
 	$: selectedModel = items.find((item) => item.value === value) ?? '';
 
-	const getModelImageVersion = (model: any) =>
-		model?.updated_at ?? model?.info?.updated_at ?? model?.meta?.updated_at ?? '';
-	const getModelProfileImageUrl = (model: any, lang = '') => {
-		const params = new URLSearchParams({ id: model?.id ?? '' });
-		if (lang) params.set('lang', lang);
-		const version = getModelImageVersion(model);
-		if (version) params.set('v', `${version}`);
-		return `${NEVEAI_API_BASE_URL}/models/model/profile/image?${params.toString()}`;
-	};
-
-	const MAX_MODEL_IMAGE_PRELOAD = 120;
-	const preloadedModelImageUrls = new Set<string>();
-	let modelProfileImageUrls = new Map<string, string>();
-
-	const preloadModelProfileImages = (sourceItems: any[] = [], lang = '') => {
-		if (typeof Image === 'undefined') return;
-
-		const selectedFirstItems = [
-			...sourceItems.filter((item) => item.value === value),
-			...sourceItems.filter((item) => item.value !== value)
-		];
-		const urls = [
-			...new Set(
-				selectedFirstItems
-					.filter((item) => item?.model?.id)
-					.map((item) => getModelProfileImageUrl(item.model, lang))
-			)
-		].slice(0, MAX_MODEL_IMAGE_PRELOAD);
-
-		for (const url of urls) {
-			if (preloadedModelImageUrls.has(url)) continue;
-			preloadedModelImageUrls.add(url);
-
-			const image = new Image();
-			image.decoding = 'async';
-			image.src = url;
-		}
-	};
-
 	let searchValue = '';
 
 	let selectedTag = '';
@@ -190,39 +166,10 @@
 	let selectedModelIdx = 0;
 	let keyboardNavigation = false;
 
-	const fuse = new Fuse(
-		items.map((item) => {
-			const _item = {
-				...item,
-				modelName: item.model?.name,
-				tags: (item.model?.tags ?? []).map((tag) => tag.name).join(' '),
-				desc: item.model?.info?.meta?.description
-			};
-			return _item;
-		}),
-		{
-			keys: ['label', 'value', 'tags', 'modelName'],
-			threshold: 0.28,
-			ignoreLocation: true,
-			includeScore: true
-		}
-	);
-
-	const updateFuse = () => {
-		if (fuse) {
-			fuse.setCollection(
-				items.map((item) => {
-					const _item = {
-						...item,
-						modelName: item.model?.name,
-						tags: (item.model?.tags ?? []).map((tag) => tag.name).join(' '),
-						desc: item.model?.info?.meta?.description
-					};
-					return _item;
-				})
-			);
-		}
-	};
+	const makeFuse = (list: typeof items) => new Fuse(list.map(item => ({
+		...item, modelName: item.model?.name, tags: (item.model?.tags ?? []).map(tag => tag.name).join(' ')
+	})), { keys: ['label', 'value', 'tags', 'modelName'], threshold: 0.28, ignoreLocation: true, includeScore: true });
+	let fuzzyIndex: ReturnType<typeof makeFuse> | undefined;
 
 	const normalizeSearchText = (value: any = '') =>
 		`${value}`
@@ -243,25 +190,15 @@
 				.join(' ')
 		);
 
-	const isDirectSearchMatch = (item: any, query: string) => {
-		const terms = normalizeSearchText(query).split(/\s+/).filter(Boolean);
-		if (terms.length === 0) return true;
+	$: searchIndex = items.map(item => ({ item, text: getItemSearchText(item) }));
+	$: items, fuzzyIndex = undefined;
 
-		const text = getItemSearchText(item);
-		return terms.every((term) => text.includes(term));
-	};
-
-	const getSearchedItems = (query: string) => {
-		const trimmedQuery = query.trim();
-		if (!trimmedQuery) return items;
-
-		const directMatches = items.filter((item) => isDirectSearchMatch(item, trimmedQuery));
-		if (directMatches.length > 0) return directMatches;
-
-		return fuse
-			.search(trimmedQuery)
-			.filter((result) => (result.score ?? 1) <= 0.25)
-			.map((result) => result.item);
+	const getSearchedItems = (query: string, index: typeof searchIndex) => {
+		const terms = normalizeSearchText(query.trim()).split(/\s+/).filter(Boolean);
+		const matches = index.filter(row => terms.every(term => row.text.includes(term)));
+		if (matches.length) return matches.map(row => row.item);
+		fuzzyIndex ??= makeFuse(items);
+		return fuzzyIndex.search(query.trim()).filter(result => (result.score ?? 1) <= 0.25).map(result => result.item);
 	};
 
 	const passesModelFilters = (item: any, filter: typeof modelFilter, favorites: string[]) => {
@@ -278,26 +215,10 @@
 		return true;
 	};
 
-	$: if (items) {
-		updateFuse();
-	}
-
-	$: if (items || $i18n.language) {
-		modelProfileImageUrls = new Map(
-			items
-				.filter((item) => item?.model?.id)
-				.map((item) => [item.value, getModelProfileImageUrl(item.model, $i18n.language)])
-		);
-		preloadModelProfileImages(items, $i18n.language);
-	}
-
-	$: filteredItems = (searchValue ? getSearchedItems(searchValue) : items)
+	$: filteredItems = (searchValue ? getSearchedItems(searchValue, searchIndex) : items)
 		.filter((item) => passesModelFilters(item, modelFilter, $settings?.favoriteModels ?? []))
 		.filter((item) => !(item.model?.info?.meta?.hidden ?? false));
 
-	$: if (show && filteredItems) {
-		preloadModelProfileImages(filteredItems, $i18n.language);
-	}
 
 	$: if (
 		selectedTag !== undefined ||
@@ -500,6 +421,7 @@
 	$: show, canReorderModels, filteredItems, listContainer, syncSortable();
 
 	onDestroy(() => {
+		destroyed = true;
 		sortableSyncVersion += 1;
 		destroySortable();
 	});
@@ -509,9 +431,9 @@
 	bind:open={show}
 	onOpenChange={async (open) => {
 		if (!open) return;
+		void refreshCatalog();
 		void refreshModelAvailability();
 		searchValue = '';
-		preloadModelProfileImages(items, $i18n.language);
 		window.setTimeout(() => document.getElementById('model-search-input')?.focus(), 0);
 
 		resetView();
@@ -523,14 +445,6 @@
 			false)
 				? 'dark:placeholder-gray-100 placeholder-gray-800'
 				: ''}"
-		on:mouseenter={async () => {
-			models.set(
-				await getModels(
-					localStorage.token,
-					$config?.features?.enable_direct_connections && ($settings?.directConnections ?? null)
-				)
-			);
-		}}
 	>
 		<DropdownMenu.Trigger
 			class="relative flex min-w-0 flex-1 items-center gap-1.5 text-left {($settings?.highContrastMode ?? false)
@@ -657,7 +571,6 @@
 								{item}
 								{index}
 								{value}
-								profileImageUrl={modelProfileImageUrls.get(item.value) ?? ''}
 								reorderEnabled={canReorderModels}
 								{favoriteModelHandler}
 								canUnload={Boolean(loadedSelection) && value === item.value}

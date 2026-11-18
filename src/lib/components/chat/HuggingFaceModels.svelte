@@ -12,7 +12,10 @@
 	import ChevronLeft from '$lib/components/icons/ChevronLeft.svelte';
 	import ChevronRight from '$lib/components/icons/ChevronRight.svelte';
 	import Download from '$lib/components/icons/ModelDownload.svelte';
-	import Spinner from '$lib/components/common/Spinner.svelte';
+	import OrbitingSpheres from '$lib/components/common/OrbitingSpheres.svelte';
+	import Tooltip from '$lib/components/common/Tooltip.svelte';
+	import { slowTooltipDelay } from '$lib/utils/tooltipTiming';
+	import { downloadGridScroll } from '$lib/utils/downloadGridScroll';
 	const i18n = getContext<I18nStore>('i18n');
 	export let query = '';
 	export let active = false;
@@ -24,35 +27,34 @@
 	export let stickyActive = false;
 	function observeSectionStart(element: HTMLElement, enabled: boolean) {
 		const root = element.closest<HTMLElement>('[data-download-list]');
-		if (!root || typeof IntersectionObserver === 'undefined') return;
-		let observer: IntersectionObserver | undefined;
+		if (!root) return;
 		let active = enabled, disposed = false, scheduled = false;
+		const sync = () => {
+			if (active && !disposed) onStickyChange(element.getBoundingClientRect().top < root.getBoundingClientRect().top);
+		};
 		const rebuild = () => {
 			if (!active || disposed || scheduled) return;
 			scheduled = true;
 			void tick().then(() => {
 				scheduled = false;
 				if (!active || disposed) return;
-				observer?.disconnect();
-				// Observe the top edge even when a fast scroll skips the entire viewport.
-				observer = new IntersectionObserver(([entry]) => {
-					onStickyChange(Boolean(entry.rootBounds && entry.boundingClientRect.top < entry.rootBounds.top));
-				}, { root, rootMargin: `0px 0px ${root.scrollHeight}px 0px`, threshold: [0, 1] });
-				observer.observe(element);
+				sync();
 			});
 		};
 		const resize = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(rebuild);
 		const update = (value: boolean) => {
 			active = value;
-			resize?.disconnect(); observer?.disconnect();
+			resize?.disconnect();
 			if (!active) { onStickyChange(false); return; }
 			resize?.observe(root);
 			const precedingSection = root.querySelector('section');
 			if (precedingSection) resize?.observe(precedingSection);
 			rebuild();
 		};
+		// Keep the heading swap in the scroll frame, not a later intersection callback.
+		root.addEventListener('scroll', sync, { passive: true });
 		update(enabled);
-		return { update, destroy() { disposed = true; resize?.disconnect(); observer?.disconnect(); onStickyChange(false); } };
+		return { update, destroy() { disposed = true; resize?.disconnect(); root.removeEventListener('scroll', sync); onStickyChange(false); } };
 	}
 	export let activeKey: string | null = null;
 	export let activeRequest: ModelDownloadRequest | undefined = undefined;
@@ -62,6 +64,7 @@
 	export let blocked = false;
 	export let revision = 0;
 	export let onQueue: (request: ModelDownloadRequest) => void;
+	export let onBeforeOpen: () => void = () => {};
 	const cacheKey = 'neveai.hf.catalog.v1';
 	let models: HFModel[] = [];
 	let nextCursor: string | null = null;
@@ -134,6 +137,7 @@
 		finally { if (id === generation) loading = false; }
 	}
 	async function open(repo: HFModel) {
+		if (!selectedRepo) onBeforeOpen();
 		fileRequest?.abort(); const controller = fileRequest = new AbortController(); const id = ++fileGeneration;
 		if (selectedRepo?.id !== repo.id) { files = []; encoders = []; encoder = ''; }
 		selectedRepo = repo; filesLoading = true;
@@ -158,7 +162,7 @@
 <svelte:window on:online={() => { if (active) void load(query.trim()); }} />
 
 {#if selectedRepo || (!unavailable && models.length > 0)}
-<div class={selectedRepo ? 'flex h-full min-h-0 flex-col' : 'min-w-0'} data-hf-catalog>
+<div class={selectedRepo ? 'flex h-full min-h-0 flex-col pl-2 md:pl-4' : 'min-w-0'} data-hf-catalog>
 	{#if !selectedRepo}
 		<div aria-hidden="true" class="pointer-events-none h-px -mb-px" use:observeSectionStart={active}></div>
 		<div data-catalog-section-heading class="sticky top-0 h-10 bg-white dark:bg-gray-900 {stickyActive ? 'z-30' : 'z-10'}">
@@ -168,15 +172,17 @@
 		</div>
 	{/if}
 	{#if selectedRepo}
-		<div data-hf-model-header class="mb-3 flex h-8 min-w-0 shrink-0 items-center justify-between gap-2">
-			<div class="flex min-w-0 flex-1 items-center gap-2"><button type="button" class="grid size-7 shrink-0 place-items-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={$i18n.t('Back to models')} title={$i18n.t('Back to models')} on:click={back}><ChevronLeft className="size-4" /></button>
+		<div data-hf-model-header class="mb-[calc(0.75rem-3px)] flex h-8 min-w-0 shrink-0 items-center justify-between gap-2">
+			<div class="flex min-w-0 flex-1 items-center gap-2"><button type="button" class="grid size-7 shrink-0 place-items-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" aria-label={$i18n.t('Back to models')} on:click={back}><ChevronLeft className="size-4" /></button>
 			<span data-hf-model-name class="truncate text-sm font-medium">{selectedRepo.id}</span></div>
 			{#if encoders.length}
 				<Dropdown bind:show={encoderMenu} align="end" triggerClassName="flex max-w-[55%] shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[0.79rem] font-normal text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
 					<span data-vision-selector class="min-w-0 truncate">{encoder || $i18n.t('Multimodal vision')}</span><ChevronDown className={`size-3 shrink-0 transition-transform ${encoderMenu ? 'rotate-180' : ''}`} />
 					<div slot="content"><DropdownMenu.Content class="z-[10002] max-h-56 w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border border-gray-100 bg-white p-1 text-sm text-gray-700 shadow-md dark:border-gray-800 dark:bg-gray-850 dark:text-gray-200" side="bottom" align="end" sideOffset={5}>
 						{#each [{ path: '', size: 0 }, ...encoders] as option}
-							<DropdownMenu.Item role="menuitemradio" aria-checked={encoder === option.path} class="flex cursor-pointer select-none items-center justify-between gap-3 rounded-sm px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { encoder = option.path; encoderMenu = false; }}><span class="min-w-0 truncate">{option.path ? `${option.path} (${size(option.size)})` : $i18n.t('None')}</span><span class="size-4 shrink-0">{#if encoder === option.path}<CheckCircle className="size-4" />{/if}</span></DropdownMenu.Item>
+							<Tooltip content={option.path} className="block w-full" allowHTML={false} touch={false} tippyOptions={{ trigger: 'mouseenter', delay: [slowTooltipDelay, 0], zIndex: 10003, maxWidth: 'min(32rem, calc(100vw - 1rem))' }}>
+								<DropdownMenu.Item role="menuitemradio" aria-checked={encoder === option.path} class="flex cursor-pointer select-none items-center justify-between gap-3 rounded-sm px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => { encoder = option.path; encoderMenu = false; }}><span class="min-w-0 truncate">{option.path ? `${option.path} (${size(option.size)})` : $i18n.t('None')}</span><span class="size-4 shrink-0">{#if encoder === option.path}<CheckCircle className="size-4" />{/if}</span></DropdownMenu.Item>
+							</Tooltip>
 						{/each}
 					</DropdownMenu.Content></div>
 				</Dropdown>
@@ -184,11 +190,11 @@
 		</div>
 	{/if}
 	{#if selectedRepo || expanded}
-	<div id="hf-catalog-items" data-hf-model-list class={selectedRepo ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable]' : 'min-w-0'}>
+	<div id="hf-catalog-items" data-hf-model-list use:downloadGridScroll={{ detail: true }} class={selectedRepo ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 pb-[calc(0.5rem+3px+var(--download-grid-row-padding,0px))] [scrollbar-gutter:stable]' : 'min-w-0'}>
 		{#if selectedRepo}
-			{#if filesLoading && !files.length}<div class="flex h-24 items-center justify-center"><Spinner className="size-5" /></div>
+			{#if filesLoading && !files.length}<div class="flex h-24 items-center justify-center"><OrbitingSpheres className="size-5" /></div>
 			{:else}
-				<div class="grid grid-cols-1 gap-2 md:grid-cols-2" aria-label={$i18n.t('Quantization')}>
+				<div data-quantization-grid class="grid grid-cols-1 gap-2 md:grid-cols-2" aria-label={$i18n.t('Quantization')}>
 					{#each files as file (file.path)}
 						{@const key = hfDownloadKey(selectedRepo.id, file.path)}
 						{@const current = key === activeKey}
@@ -215,7 +221,14 @@
 					</div>
 				{/each}
 			</div>
-			{#if loading}<div class="flex h-12 items-center justify-center"><Spinner className="size-4" /></div>{:else if nextCursor}<button type="button" class="mx-auto mt-3 block rounded-lg px-3 py-2 text-xs hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => load(query.trim(), nextCursor!)}>{$i18n.t('Load more')}</button>{/if}
+			{#if loading && !models.length}
+				<div class="flex h-12 items-center justify-center"><OrbitingSpheres className="size-4" /></div>
+			{:else if loading || nextCursor}
+				<button type="button" data-hf-load-more disabled={loading} aria-busy={loading} class="relative mx-auto mt-[calc(1rem_+_8px)] block rounded-lg px-3 py-2 text-xs enabled:hover:bg-gray-100 dark:enabled:hover:bg-gray-800" on:click={() => load(query.trim(), nextCursor!)}>
+					<span class:invisible={loading}>{$i18n.t('Load more')}</span>
+					{#if loading}<span aria-hidden="true" class="absolute inset-0 flex items-center justify-center"><OrbitingSpheres className="size-4" /></span>{/if}
+				</button>
+			{/if}
 		{/if}
 	</div>
 	{/if}

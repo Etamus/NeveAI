@@ -18,6 +18,18 @@
 	import ImageIcon from '../icons/Image.svelte';
 	import AcademicCap from '../icons/AcademicCap.svelte';
 	import GlobeAlt from '../icons/GlobeAlt.svelte';
+	import Video from '../icons/Video.svelte';
+	import MusicNote from '../icons/MusicNote.svelte';
+	import Cube from '../icons/Cube.svelte';
+	import { integrationSuggestionUsage, loadIntegrationSuggestionUsage, getIntegrationSuggestions, type SuggestionIntegration } from '$lib/utils/integrationSuggestions';
+	const suggestionOptions = {
+		stable_diffusion: { label: 'Create an image', icon: ImageIcon },
+		guided_learning: { label: 'Learn something new', icon: AcademicCap },
+		web_search: { label: 'Search the web', icon: GlobeAlt },
+		video_generation: { label: 'Create a video', icon: Video },
+		music_generation: { label: 'Create music', icon: MusicNote },
+		model3d_generation: { label: 'Create a 3D model', icon: Cube }
+	};
 
 	import type { I18nStore } from '$lib/i18n';
 	const i18n = getContext<I18nStore>('i18n');
@@ -45,12 +57,13 @@
 	export let webSearchEnabled = false;
 	export let deepSearchEnabled = false;
 	export let stableDiffusionEnabled = false;
-	export let stableDiffusionQuality: 'qwen_image_2s' | 'qwen_image_2_1_official' | 'minimax_h3_image' = 'qwen_image_2s';
+	export let stableDiffusionQuality: 'qwen_image_2s' | 'qwen_image_2_1_official' = 'qwen_image_2s';
 	export let stableDiffusionStyle: 'none' = 'none';
 	export let stableDiffusionResolution: '1:1' | '16:9' | '9:16' | '4:3' | '3:4' = '1:1';
 	export let stableDiffusionModeOptions: import('$lib/utils/imageModes').ImageModeOptions = { mode: 'normal' };
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
+	export let model3dEnabled = false;
 	export let videoGenerationModel: import('$lib/utils/videoGeneration').VideoGenerationModel = 'vdn_h3';
 	export let videoGenerationResolution: '480p' | '672p' = '480p';
 	export let videoGenerationDuration: '5s' | '8s' = '5s';
@@ -77,9 +90,19 @@
 
 	$: models = selectedModels.map((id) => $_models.find((m) => m.id === id));
 	$: userName = getUserFirstName($user?.name);
-	$: showIntegrationSuggestions = ($settings?.enableSuggestions ?? true) && !$selectedFolder && !webSearchEnabled && !deepSearchEnabled &&
+	$: loadIntegrationSuggestionUsage($user?.id);
+	$: allowedSuggestions = [
+		...($config?.features?.enable_stable_diffusion && ($user?.role === 'admin' || $user?.permissions?.features?.stable_diffusion) ? ['stable_diffusion'] : []),
+		'guided_learning',
+		...($user?.role === 'admin' || $user?.permissions?.features?.web_search ? ['web_search'] : []),
+		...($config?.features?.enable_video_generation && ($user?.role === 'admin' || $user?.permissions?.features?.video_generation) ? ['video_generation'] : []),
+		...($config?.features?.enable_music_generation && ($user?.role === 'admin' || $user?.permissions?.features?.music_generation) ? ['music_generation'] : []),
+		...($config?.features?.enable_model3d_generation && $user?.role === 'admin' ? ['model3d_generation'] : [])
+	] as SuggestionIntegration[];
+	$: suggestedIntegrations = getIntegrationSuggestions($integrationSuggestionUsage[$user?.id ?? ''] ?? [], allowedSuggestions);
+	$: showIntegrationSuggestions = ($settings?.enableSuggestions ?? true) && !$temporaryChatEnabled && !$selectedFolder && !webSearchEnabled && !deepSearchEnabled &&
 		!learningEnabled && !stableDiffusionEnabled && !musicGenerationEnabled &&
-		!videoGenerationEnabled && selectedToolIds.length === 0;
+		!videoGenerationEnabled && !model3dEnabled && selectedToolIds.length === 0;
 	$: greeting = userName
 		? $i18n.t('What would you like to explore today, {{name}}?', { name: userName })
 		: $i18n.t('What would you like to explore today?');
@@ -144,6 +167,7 @@
 					bind:stableDiffusionModeOptions
 					bind:musicGenerationEnabled
 					bind:videoGenerationEnabled
+					bind:model3dEnabled
 					bind:videoGenerationModel
 					bind:videoGenerationResolution
 					bind:videoGenerationDuration
@@ -167,19 +191,11 @@
 				/>
 				{#if showIntegrationSuggestions}
 					<div data-new-chat-suggestions class="absolute inset-x-2.5 top-full mt-3 flex flex-col gap-1 text-left text-sm text-gray-500 dark:text-gray-400">
-						{#if $config?.features?.enable_stable_diffusion && ($user?.role === 'admin' || $user?.permissions?.features?.stable_diffusion)}
-							<button type="button" data-suggest-integration="stable_diffusion" class="suggestion-row grid min-h-11 w-full items-center gap-2 rounded-[10px] py-3 text-left hover:bg-gray-100/45 hover:text-gray-900 dark:hover:bg-gray-850/80 dark:hover:text-gray-100" on:click={() => onNativeIntegrationChange('stable_diffusion')}>
-								<ImageIcon className="size-4 shrink-0 justify-self-center" strokeWidth="1.75" /><span>{$i18n.t('Create an image')}</span>
+						{#each suggestedIntegrations as integration (integration)}
+							<button type="button" data-suggest-integration={integration} class="suggestion-row grid min-h-11 w-full items-center gap-2 rounded-[10px] py-3 text-left hover:bg-gray-100/45 hover:text-gray-900 dark:hover:bg-gray-850/80 dark:hover:text-gray-100" on:click={() => onNativeIntegrationChange(integration)}>
+								<svelte:component this={suggestionOptions[integration].icon} className="size-4 shrink-0 justify-self-center" strokeWidth={integration === 'guided_learning' ? '1.5' : '1.75'} /><span>{$i18n.t(suggestionOptions[integration].label)}</span>
 							</button>
-						{/if}
-						<button type="button" data-suggest-integration="guided_learning" class="suggestion-row grid min-h-11 w-full items-center gap-2 rounded-[10px] py-3 text-left hover:bg-gray-100/45 hover:text-gray-900 dark:hover:bg-gray-850/80 dark:hover:text-gray-100" on:click={() => onNativeIntegrationChange('guided_learning')}>
-							<AcademicCap className="size-4 shrink-0 justify-self-center" /><span>{$i18n.t('Learn something new')}</span>
-						</button>
-						{#if $user?.role === 'admin' || $user?.permissions?.features?.web_search}
-							<button type="button" data-suggest-integration="web_search" class="suggestion-row grid min-h-11 w-full items-center gap-2 rounded-[10px] py-3 text-left hover:bg-gray-100/45 hover:text-gray-900 dark:hover:bg-gray-850/80 dark:hover:text-gray-100" on:click={() => onNativeIntegrationChange('web_search')}>
-								<GlobeAlt className="size-4 shrink-0 justify-self-center" strokeWidth="1.75" /><span>{$i18n.t('Search the web')}</span>
-							</button>
-						{/if}
+						{/each}
 					</div>
 				{/if}
 			</div>

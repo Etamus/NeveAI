@@ -15,7 +15,7 @@
 
 	import Message from './Messages/Message.svelte';
 	import VirtualMessage from './Messages/VirtualMessage.svelte';
-	import Spinner from '../common/Spinner.svelte';
+	import OrbitingSpheres from '../common/OrbitingSpheres.svelte';
 
 	import ChatPlaceholder from './ChatPlaceholder.svelte';
 
@@ -578,7 +578,7 @@
 							data-history-loader
 							use:observeHistoryBoundary={loadMoreMessages}
 						>
-							<Spinner className=" size-4" />
+							<OrbitingSpheres className=" size-4" />
 						</div>
 					{/if}
 					<ul role="log" aria-live="polite" aria-relevant="additions" aria-atomic="false">

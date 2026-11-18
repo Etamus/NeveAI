@@ -142,7 +142,7 @@ describe('single supported video model and legacy migration', () => {
 		const sendMessageSocket = vi.fn();
 		const context: any = {history, getVideoGenerationFeatures, normalizeVideoGenerationModel, structuredClone,
 			videoGenerationEnabled: false, videoGenerationModel: 'vdn_h3', videoGenerationResolution: '672p', videoGenerationDuration: '8s', videoGenerationAspectRatio: '9:16',
-			stableDiffusionEnabled: false, musicGenerationEnabled: false, stableDiffusionQuality: 'neve_image_2', stableDiffusionStyle: 'none', stableDiffusionResolution: '1:1', stableDiffusionModeOptions: {mode: 'normal'},
+			stableDiffusionEnabled: false, musicGenerationEnabled: false, model3dEnabled: false, stableDiffusionQuality: 'neve_image_2', stableDiffusionStyle: 'none', stableDiffusionResolution: '1:1', stableDiffusionModeOptions: {mode: 'normal'},
 			$models: [{id: 'local/model'}], $chatId: 'chat', localStorage: {}, $currentChatPage: 1,
 			ensureLocalModelsReady: vi.fn(() => new Promise(resolve => {ready = resolve;})),
 			stopContentFlush() {}, tick: async () => {}, anchorVisualMediaGeneration: async () => {}, saveChatHandler: async () => {},

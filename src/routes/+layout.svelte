@@ -842,6 +842,10 @@
 		color: var(--color-gray-400);
 	}
 
+	:global([data-sonner-toaster] [data-sonner-toast][data-styled='true'] [data-close-button]:not(:hover)) {
+		background: transparent !important;
+		box-shadow: none;
+	}
 	:global([data-sonner-toast][data-styled='true'] [data-close-button]) {
 		left: auto;
 		right: 8px;

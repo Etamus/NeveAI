@@ -11,8 +11,10 @@ export const getMediaAttachmentPolicy = (
 	imageQuality: string,
 	videoEnabled: boolean,
 	musicEnabled: boolean,
-	imageMode = 'normal'
+	imageMode = 'normal',
+	model3dEnabled = false
 ): MediaAttachmentPolicy | null => {
+	if (model3dEnabled) return { kind: 'image', maxCount: 1, accept: 'image/*' };
 	if (videoEnabled) return { kind: 'image', maxCount: 2, accept: 'image/*' };
 	if (imageEnabled) {
 		const maxCount = imageQuality === 'qwen_image_2s' && ['restore', 'inpaint', 'outpaint'].includes(imageMode) ? 1 :

@@ -3,8 +3,7 @@
 	import { getContext } from 'svelte';
 	const i18n = getContext('i18n');
 
-	import fileSaver from 'file-saver';
-	const { saveAs } = fileSaver;
+	import { downloadChatFile } from '$lib/utils/chatFileSave';
 
 	import { marked, type Token } from 'marked';
 	import { copyToClipboard, unescapeHtml } from '$lib/utils';
@@ -120,9 +119,7 @@
 
 		// Create a new Blob prefixed with the BOM to ensure proper Unicode encoding.
 		const blob = new Blob([bom + csvContent], { type: 'text/csv;charset=UTF-8' });
-
-		// Use FileSaver.js's saveAs function to save the generated CSV file.
-		saveAs(blob, `table-${id}-${tokenIdx}.csv`);
+		void downloadChatFile(`table-${id}-${tokenIdx}.csv`, () => blob);
 	};
 </script>
 

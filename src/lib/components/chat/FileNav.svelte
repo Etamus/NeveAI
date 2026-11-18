@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+	import { downloadChatFile } from '$lib/utils/chatFileSave';
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount, onDestroy, tick } from 'svelte';
 	import {
@@ -31,7 +32,7 @@
 	import Document from '../icons/Document.svelte';
 	import PenAlt from '../icons/PenAlt.svelte';
 	import Reset from '../icons/Reset.svelte';
-	import Spinner from '../common/Spinner.svelte';
+	import OrbitingSpheres from '../common/OrbitingSpheres.svelte';
 	import Tooltip from '../common/Tooltip.svelte';
 	import ConfirmDialog from '../common/ConfirmDialog.svelte';
 
@@ -100,7 +101,7 @@
 
 	// ── Office preview state ────────────────────────────────────────────
 	let fileOfficeHtml: string | null = null;
-	let fileOfficeSlides: string[] | null = null;
+	let presentation: Awaited<ReturnType<typeof import('$lib/utils/pptxToHtml').pptxToImages>> | null = null;
 	let currentSlide = 0;
 	let excelSheetNames: string[] = [];
 	let selectedExcelSheet = '';
@@ -218,7 +219,6 @@
 	// ── File preview management ──────────────────────────────────────────
 	const clearFilePreview = () => {
 		fileContent = null;
-		filePreviewRef?.disposePanzoom();
 		if (fileImageUrl) {
 			URL.revokeObjectURL(fileImageUrl);
 			fileImageUrl = null;
@@ -234,7 +234,7 @@
 		filePdfData = null;
 		fileSqliteData = null;
 		fileOfficeHtml = null;
-		fileOfficeSlides = null;
+		presentation = null;
 		currentSlide = 0;
 		excelSheetNames = [];
 		selectedExcelSheet = '';
@@ -325,7 +325,7 @@
 					} else if (ext === 'pptx') {
 						const { pptxToImages } = await import('$lib/utils/pptxToHtml');
 						const result = await pptxToImages(arrayBuffer);
-						fileOfficeSlides = result.images;
+						presentation = result;
 						currentSlide = 0;
 					}
 				} catch (e) {
@@ -343,14 +343,11 @@
 		const terminal = selectedTerminal;
 		if (!terminal) return;
 
-		const result = await downloadFileBlob(terminal.url, terminal.key, path);
-		if (!result) return;
-		const url = URL.createObjectURL(result.blob);
-		const a = document.createElement('a');
-		a.href = url;
-		a.download = result.filename;
-		a.click();
-		URL.revokeObjectURL(url);
+		await downloadChatFile(path.split('/').pop() || 'file', async () => {
+			const result = await downloadFileBlob(terminal.url, terminal.key, path);
+			if (!result) throw new Error('File unavailable');
+			return result.blob;
+		});
 	};
 
 	// ── Drag-and-drop upload ─────────────────────────────────────────────
@@ -647,7 +644,7 @@
 			onUploadFiles={handleUploadFiles}
 			onMove={handleMove}
 		>
-			{#if fileImageUrl !== null || (fileOfficeSlides !== null && fileOfficeSlides.length > 0)}
+			{#if fileImageUrl !== null || presentation?.count}
 				<Tooltip content={$i18n.t('Reset view')}>
 					<button
 						class="shrink-0 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-400"
@@ -728,7 +725,7 @@
 							aria-label={$i18n.t('Save')}
 						>
 							{#if saving}
-								<Spinner className="size-3.5" />
+								<OrbitingSpheres className="size-3.5" />
 							{:else}
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
@@ -756,7 +753,7 @@
 							aria-label={$i18n.t('Save')}
 						>
 							{#if saving}
-								<Spinner className="size-3.5" />
+								<OrbitingSpheres className="size-3.5" />
 							{:else}
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
@@ -800,7 +797,7 @@
 							aria-label={$i18n.t('Save')}
 						>
 							{#if saving}
-								<Spinner className="size-3.5" />
+								<OrbitingSpheres className="size-3.5" />
 							{:else}
 								<svg
 									xmlns="http://www.w3.org/2000/svg"
@@ -899,7 +896,7 @@
 					{fileSqliteData}
 					{fileContent}
 					{fileOfficeHtml}
-					{fileOfficeSlides}
+					{presentation}
 					{excelSheetNames}
 					{selectedExcelSheet}
 					onSheetChange={async (sheet) => {
@@ -928,11 +925,11 @@
 			{:else}
 				{#if uploading}
 					<div class="flex items-center justify-center gap-2 p-4 text-xs text-gray-500">
-						<Spinner className="size-4" />
+						<OrbitingSpheres className="size-4" />
 						{$i18n.t('Uploading...')}
 					</div>
 				{:else if loading}
-					<div class="flex justify-center pt-8"><Spinner className="size-4" /></div>
+					<div class="flex justify-center pt-8"><OrbitingSpheres className="size-4" /></div>
 				{:else if error}
 					<div class="p-4 text-xs">{error}</div>
 				{:else if entries.length === 0 && !creatingFolder && !creatingFile}

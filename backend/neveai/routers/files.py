@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from PIL.Image import DecompressionBombError
 from sqlalchemy.orm import Session
 from neveai.utils.db_work import session_route, db_work
-from neveai.utils.file_queries import file_process_state, files_without_content
+from neveai.utils.file_queries import file_process_state, files_without_content, generated_files_response
 from neveai.internal.db import get_session, SessionLocal
 
 from neveai.constants import ERROR_MESSAGES
@@ -371,6 +371,7 @@ def list_files(
 @router.get("/generated")
 @session_route
 def list_generated_files(
+    request: Request,
     kind: str = Query("all", pattern="^(all|image|video|audio|document)$"),
     query: str = Query("", max_length=200),
     skip: int = Query(0, ge=0),
@@ -378,7 +379,8 @@ def list_generated_files(
     user=Depends(get_verified_user),
     db: Session = Depends(get_session),
 ):
-    return Files.get_generated_files(user.id, kind, query, skip, limit, db=db)
+    rows = Files.get_generated_files(user.id, kind, query, skip, limit, db=db)
+    return generated_files_response(rows, request.headers.get("if-none-match", ""))
 
 
 @router.get("/search", response_model=list[FileModelResponse])

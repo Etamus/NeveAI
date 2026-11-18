@@ -8,7 +8,10 @@ describe('Retired Neve Image 1.5', () => {
 		expect(input).not.toContain('Neve Image 1.5');
 		expect(input).not.toContain('image-style-control');
 		expect(input).not.toContain('preloadImageStyleThumbnails');
-		for (const model of ['qwen_image_2s', 'qwen_image_2_1_official', 'minimax_h3_image']) expect(input).toContain(model);
+		for (const model of ['qwen_image_2s', 'qwen_image_2_1_official']) expect(input).toContain(model);
+		expect(input).not.toContain('minimax_h3_image');
+		expect(input).not.toContain('Neve Image 3');
+		expect(input).toContain('Neve Image 2.8');
 		expect(input).toContain('<ImageModeSelector');
 	});
 	it('discards old saved styles and defaults to the active Qwen model', () => {

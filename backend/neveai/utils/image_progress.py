@@ -11,14 +11,6 @@ def initial_image_dimensions(quality: str, resolution: str, references: list[str
     from neveai.routers import stable_diffusion as sd
     from neveai.utils.image_memory import cpu_image_requested, cpu_image_size
 
-    if quality == "minimax_h3_image":
-        from neveai.routers.image_h3_generation import canvas_size
-        size = None
-        if references:
-            raw = sd._read_image_reference_bytes(references[0], user_id)
-            with Image.open(io.BytesIO(raw)) as image:
-                size = image.size[::-1] if image.getexif().get(274) in (5, 6, 7, 8) else image.size
-        return canvas_size(resolution, size)
     if not references or quality not in {sd.QWEN_IMAGE_21_OFFICIAL_QUALITY, "qwen_image_2s"}:
         return default
     backend = sd._preferred_sd_cpp_windows_backend() if os.name == "nt" else None

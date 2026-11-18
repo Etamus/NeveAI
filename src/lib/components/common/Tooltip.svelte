@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tooltipDelay } from '$lib/utils/tooltipTiming';
 	import DOMPurify from 'dompurify';
 
 	import { onDestroy } from 'svelte';
@@ -57,6 +58,7 @@
 					content: tooltipContent ?? '',
 					placement,
 					allowHTML,
+					delay: [interactive ? 0 : tooltipDelay(tooltipElement, !!elementId), 0],
 					touch,
 					...(theme !== '' ? { theme } : { theme: 'dark' }),
 					arrow: false,

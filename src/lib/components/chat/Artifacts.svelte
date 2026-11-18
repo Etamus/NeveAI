@@ -47,6 +47,9 @@
 
 	let copied = false;
 	let iframeElement: HTMLIFrameElement;
+	let artifactPanel: HTMLDivElement;
+	let fullscreen = false;
+	const panelTooltip = { appendTo: () => artifactPanel, placement: 'bottom' as const };
 
 	// Extract <title> tag from HTML content
 	function extractTitle(content: string): string {
@@ -204,14 +207,9 @@
 		};
 	}
 
-	const showFullScreen = () => {
-		if (iframeElement.requestFullscreen) {
-			iframeElement.requestFullscreen();
-		} else if ((iframeElement as any).webkitRequestFullscreen) {
-			(iframeElement as any).webkitRequestFullscreen();
-		} else if ((iframeElement as any).msRequestFullscreen) {
-			(iframeElement as any).msRequestFullscreen();
-		}
+	const showFullScreen = async () => {
+		if (fullscreen) await document.exitFullscreen?.();
+		else await artifactPanel?.requestFullscreen?.().catch(() => {});
 	};
 
 	const downloadArtifact = () => {
@@ -267,7 +265,9 @@
 	});
 </script>
 
+<svelte:document on:fullscreenchange={() => fullscreen = !!artifactPanel && document.fullscreenElement === artifactPanel} />
 <div
+	bind:this={artifactPanel}
 	class="w-full h-full relative flex flex-col bg-white dark:bg-gray-850 overflow-hidden"
 	id="artifacts-container"
 	use:observeArtifactPanel
@@ -275,10 +275,7 @@
 	{#if contents.length > 0}
 		<!-- ── Toolbar: tabs + actions + close ──────────────────── -->
 		<div
-			class="shrink-0 flex flex-nowrap items-center justify-between gap-2 px-3 py-2
-			       bg-gray-50 dark:bg-gray-900
-			       border-b border-gray-200/80 dark:border-gray-700/60
-			       min-h-[46px] max-h-[46px] overflow-hidden"
+			class="file-preview-header h-12 shrink-0 border-b border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900"
 		>
 			<!-- Preview / Code tab switcher (Arena.ai style) -->
 			<div class="relative flex shrink-0 items-center p-[3px] rounded-lg bg-gray-100 dark:bg-gray-800/80">
@@ -294,12 +291,12 @@
 						? 'text-gray-900 dark:text-white'
 						: 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}"
 					on:click={() => { activeTab = 'preview'; }}
-					title={$i18n.t('Preview')}
+					aria-label={$i18n.t('Preview')}
+					aria-pressed={activeTab === 'preview'}
 				>
-					<!-- arc + circle: single arc above a small ball -->
-					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="size-[17px]">
-						<path d="M4 11 Q10 4.5 16 11"/>
-						<circle cx="10" cy="13" r="2.2" fill="currentColor" stroke="none"/>
+					<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" class="size-4" aria-hidden="true">
+						<path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+						<circle cx="12" cy="12" r="2.5" />
 					</svg>
 				</button>
 				<!-- Code button -->
@@ -309,7 +306,8 @@
 						? 'text-gray-900 dark:text-white'
 						: 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'}"
 					on:click={() => { activeTab = 'code'; }}
-					title={$i18n.t('Code')}
+					aria-label={$i18n.t('Code')}
+					aria-pressed={activeTab === 'code'}
 				>
 					<!-- </> code icon -->
 					<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="size-[17px]">
@@ -319,12 +317,14 @@
 					</svg>
 				</button>
 			</div>
+			<span class="min-w-0 flex-1 truncate text-sm text-gray-700 dark:text-gray-300">{currentContent?.filename ?? ''}</span>
 
 			<!-- Right side: action buttons + close -->
 			<div class="flex shrink-0 items-center gap-1">
 				<!-- Download -->
-				<Tooltip content={$i18n.t('Download')}>
+				<Tooltip tippyOptions={panelTooltip} content={$i18n.t('Download')}>
 					<button
+						aria-label={$i18n.t('Download')}
 						class="p-2 rounded-lg transition
 						       text-gray-500 dark:text-gray-400
 						       hover:bg-gray-200/70 dark:hover:bg-gray-700/70
@@ -337,8 +337,9 @@
 
 				<!-- Copy (icon only, somente na aba código) -->
 				{#if activeTab === 'code'}
-				<Tooltip content={copied ? $i18n.t('Copiado!') : $i18n.t('Copiar código')}>
+				<Tooltip tippyOptions={panelTooltip} content={copied ? $i18n.t('Copiado!') : $i18n.t('Copiar código')}>
 					<button
+						aria-label={copied ? $i18n.t('Copiado!') : $i18n.t('Copiar código')}
 						class="p-2 rounded-lg transition
 						       text-gray-500 dark:text-gray-400
 						       hover:bg-gray-200/70 dark:hover:bg-gray-700/70
@@ -360,25 +361,24 @@
 
 				<!-- Fullscreen (iframe only, somente na aba preview) -->
 				{#if currentContent?.type === 'iframe' && activeTab === 'preview'}
-					<Tooltip content={$i18n.t('Open in full screen')}>
+					<Tooltip tippyOptions={panelTooltip} content={$i18n.t(fullscreen ? 'Restore view' : 'Open in full screen')}>
 						<button
+							aria-label={$i18n.t(fullscreen ? 'Restore view' : 'Open in full screen')}
 							class="p-2 rounded-lg transition
 							       text-gray-500 dark:text-gray-400
 							       hover:bg-gray-200/70 dark:hover:bg-gray-700/70
 							       hover:text-gray-900 dark:hover:text-gray-100"
 							on:click={showFullScreen}
 						>
-							<ArrowsPointingOut className="size-[18px]" />
+							<ArrowsPointingOut inward={fullscreen} className="size-[18px]" />
 						</button>
 					</Tooltip>
 				{/if}
 
-				<!-- Separator before close -->
-				<div class="w-px h-5 bg-gray-200 dark:bg-gray-700 mx-0.5"></div>
-
 				<!-- Close -->
-				<Tooltip content={$i18n.t('Close')}>
-					<button
+				<Tooltip tippyOptions={panelTooltip} content={$i18n.t('Close')}>
+					<button data-window-close
+						aria-label={$i18n.t('Close')}
 						class="p-2 rounded-lg transition
 						       text-gray-500 dark:text-gray-400
 						       hover:bg-gray-200/70 dark:hover:bg-gray-700/70

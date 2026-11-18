@@ -50,12 +50,13 @@
 		}, []);
 	$: status = visibleHistory.at(-1) ?? null;
 	$: isMediaStatus =
-		['stable_diffusion', 'video_generation', 'music_generation'].includes(
+		['stable_diffusion', 'video_generation', 'music_generation', 'model3d_generation'].includes(
 			String(status?.action ?? '').trim().toLowerCase()
 		);
 
 	$: isPreparingFile = status?.action === 'file_generation' && !status?.done;
-	$: hasExpandableHistory = visibleHistory.length > 1 && !isMediaStatus && !isPreparingFile;
+	$: hasOwnResults = status?.action === 'web_search' && Boolean(status.urls || status.items);
+	$: hasExpandableHistory = (visibleHistory.length > 1 || status?.queries?.length > 0) && !isMediaStatus && !isPreparingFile && !hasOwnResults;
 	$: if (!hasExpandableHistory) {
 		showHistory = false;
 	}
@@ -95,11 +96,11 @@
 
 			{#if showHistory && hasExpandableHistory}
 				<div class="flex flex-row select-text" transition:slide={{ duration: 200, easing: quintOut }}>
-					{#if visibleHistory.length > 1}
+					{#if visibleHistory.length}
 						<div class="ml-[7px] min-w-0 w-full border-l border-[#dedede] dark:border-[#292929] px-4">
 							{#each visibleHistory as status}
 								<div class="flex min-w-0 items-stretch mb-1">
-									<StatusItem {status} done={true} />
+									<StatusItem {status} done={true} showQueries />
 								</div>
 							{/each}
 						</div>

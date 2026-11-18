@@ -186,11 +186,18 @@ try {
   result.attachment = true;
   await page.screenshot({ path: path.join(directory, 'attachment.png') });
 
-  const downloadEvent = page.waitForEvent('download');
-  await page.evaluate(() => { const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob(['WebView2 download verified'], { type: 'text/plain' })); link.download = 'neve-desktop-test.txt'; document.body.append(link); link.click(); link.remove(); });
-  const download = await downloadEvent;
-  await download.saveAs(path.join(directory, 'download-verified.txt'));
-  assert.equal(await fs.readFile(path.join(directory, 'download-verified.txt'), 'utf8'), 'WebView2 download verified');
+  const target = path.join(directory, 'save-'+Date.now()+'.txt');
+  const choose = execute('powershell.exe', ['-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/test_save_dialog.ps1','-HostPid',String(child.pid),'-Destination',target], {windowsHide:true, timeout:22000});
+  await page.evaluate(() => {
+    const button=document.createElement('button');button.id='native-save-probe';button.textContent='Save';
+    button.style='position:fixed;top:50px;left:50px;z-index:10000000';
+    button.onclick=async()=>{const handle=await window.showSaveFilePicker({suggestedName:'neve-desktop-test.txt'});const writer=await handle.createWritable();await writer.write('WebView2 download verified');await writer.close();};
+    document.body.append(button);
+  });
+  await page.locator('#native-save-probe').click();
+  await choose;
+  for(let i=0;i<60;i++){if(await fs.readFile(target,'utf8').catch(()=>null)==='WebView2 download verified')break;await new Promise(r=>setTimeout(r,100));}
+  assert.equal(await fs.readFile(target,'utf8'),'WebView2 download verified');
   result.download = true;
   assert.deepEqual(result.errors, []);
   await fs.writeFile(path.join(directory, 'results.json'), JSON.stringify(result, null, 2));

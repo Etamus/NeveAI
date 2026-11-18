@@ -80,7 +80,7 @@
 	import FileItem from '../common/FileItem.svelte';
 	import AttachmentRemoveButton from '../common/AttachmentRemoveButton.svelte';
 	import Image from '../common/Image.svelte';
-	import Spinner from '../common/Spinner.svelte';
+	import OrbitingSpheres from '../common/OrbitingSpheres.svelte';
 
 	import XMark from '../icons/XMark.svelte';
 	import GlobeAlt from '../icons/GlobeAlt.svelte';
@@ -90,6 +90,7 @@
 	import CheckCircle from '../icons/CheckCircle.svelte';
 	import MusicNote from '../icons/MusicNote.svelte';
 	import Video from '../icons/Video.svelte';
+	import Cube from '$lib/components/icons/Cube.svelte';
 	import Wrench from '../icons/Wrench.svelte';
 
 	import InputVariablesModal from './MessageInput/InputVariablesModal.svelte';
@@ -141,15 +142,16 @@
 	export let sendDisabled = false;
 	$: activeImageMode = stableDiffusionEnabled && stableDiffusionQuality === 'qwen_image_2s' ? stableDiffusionModeOptions.mode : 'normal';
 	$: restoreActive = activeImageMode === 'restore';
-	$: imagePromptHidden = restoreActive || activeImageMode === 'outpaint';
+	$: imagePromptHidden = model3dEnabled || restoreActive || activeImageMode === 'outpaint';
 	$: imageSubmissionError = imageModeSubmissionError({...stableDiffusionModeOptions, mode:activeImageMode}, files);
-	$: canSubmitMessage = (prompt.trim().length > 0 || files.some((file) => file?.pastedText === true) ||
+	$: canSubmitMessage = model3dEnabled ? files.length === 1 && hasImageAttachment : (prompt.trim().length > 0 || files.some((file) => file?.pastedText === true) ||
 		((restoreActive || imageModeIsSwap(activeImageMode) || activeImageMode === 'outpaint') && !imageModeFileError(activeImageMode, files) && imageModeFiles(files).length > 0)) &&
 		(activeImageMode !== 'inpaint' || !!stableDiffusionModeOptions.mask) && !imageSubmissionError;
 	$: hasImageAttachment = files.some(
 		(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
 	);
-	$: hasComposerAttachmentArea = files.length > 0 || activeImageMode !== 'normal';
+	$: hasComposerAttachmentArea = files.length > 0 || activeImageMode !== 'normal' || model3dEnabled;
+	let composerSurface: HTMLDivElement;
 
 	export let selectedToolIds: string[] = [];
 
@@ -173,13 +175,13 @@
 		const error = imageSubmissionError;
 		if (error) { toast.error($i18n.t(error)); return; }
 		if (uploadPending || pendingImageAttachments || files.some(file => file.status === 'uploading')) return;
-		const submission = imageModeSubmission(mode, prompt, text => $i18n.t(text));
+		if (model3dEnabled && !canSubmitMessage) return;
+		const submission = imageModeSubmission(mode, model3dEnabled ? '' : prompt, text => $i18n.t(text));
 		dispatch('submit', submission.imageModeDisplay ? submission : submission.prompt);
 	}
 	export let stableDiffusionQuality:
 
 		| 'qwen_image_2s'
-		| 'minimax_h3_image'
 		| 'qwen_image_2_1_official' = 'qwen_image_2s';
 	export let stableDiffusionStyle: 'none' = 'none';
 	const styleOptionsHorizontalScroller = (node: HTMLElement) => {
@@ -300,6 +302,7 @@
 	] as const;
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
+	export let model3dEnabled = false;
 	import { normalizeVideoGenerationModel, type VideoGenerationModel } from '$lib/utils/videoGeneration';
 	export let videoGenerationModel: VideoGenerationModel = 'vdn_h3';
 	$: if (videoGenerationModel !== normalizeVideoGenerationModel(videoGenerationModel)) {
@@ -318,7 +321,8 @@
 		stableDiffusionQuality,
 		videoGenerationEnabled,
 		musicGenerationEnabled,
-		stableDiffusionModeOptions.mode
+		stableDiffusionModeOptions.mode,
+		model3dEnabled
 	);
 	$: if (mediaAttachmentPolicy && files.length) {
 		const allowed = filterMediaAttachments(mediaAttachmentPolicy, files);
@@ -441,6 +445,7 @@
 		stableDiffusionResolution,
 		musicGenerationEnabled,
 		videoGenerationEnabled,
+		model3dEnabled,
 		videoGenerationResolution,
 		videoGenerationDuration,
 		videoGenerationModel,
@@ -459,6 +464,7 @@
 		!stableDiffusionEnabled &&
 		!musicGenerationEnabled &&
 		!videoGenerationEnabled &&
+		!model3dEnabled &&
 		(selectedToolIds ?? []).length === 0 &&
 		!isInputMultiline;
 
@@ -718,7 +724,7 @@
 	
 	let showImageResolutionDropdown = false;
 	let dropdownChatId = $chatId;
-	$: if (['qwen_image_2s', 'qwen_image_2_1_official', 'minimax_h3_image'].includes(stableDiffusionQuality) && hasImageAttachment)
+	$: if (['qwen_image_2s', 'qwen_image_2_1_official'].includes(stableDiffusionQuality) && hasImageAttachment)
 		showImageResolutionDropdown = false;
 	let showVideoResolutionDropdown = false;
 	$: if ($mobile) showVideoResolutionDropdown = false;
@@ -772,7 +778,6 @@
 	const imageResolutionStorageKey = (quality: typeof stableDiffusionQuality) => {
 		if (quality === 'qwen_image_2s') return 'neveai.imageResolution.neve_image_2';
 		if (quality === 'qwen_image_2_1_official') return 'neveai.imageResolution.neve_image_2_1';
-		if (quality === 'minimax_h3_image') return 'neveai.imageResolution.minimax_h3_image';
 		return null;
 	};
 	const saveImageResolution = (quality: typeof stableDiffusionQuality) => {
@@ -1174,7 +1179,7 @@
 			toast.error($i18n.t('Este recurso não suporta anexos.'));
 			return null;
 		}
-		const policy = getMediaAttachmentPolicy(
+		const policy = mediaAttachmentPolicy ?? getMediaAttachmentPolicy(
 			stableDiffusionEnabled,
 			stableDiffusionQuality,
 			videoGenerationEnabled,
@@ -1201,7 +1206,7 @@
 		const isImageFile = file?.type?.startsWith('image/') ?? false;
 		if (
 			!policy &&
-			(!isImageFile || (!stableDiffusionEnabled && !videoGenerationEnabled)) &&
+			(!isImageFile || (!stableDiffusionEnabled && !videoGenerationEnabled && !model3dEnabled)) &&
 			fileUploadCapableModels.length !== selectedModels.length
 		) {
 			toast.error($i18n.t('Model(s) do not support file upload'));
@@ -1320,7 +1325,7 @@
 			);
 			return;
 		}
-		const policy = getMediaAttachmentPolicy(
+		const policy = mediaAttachmentPolicy ?? getMediaAttachmentPolicy(
 			stableDiffusionEnabled,
 			stableDiffusionQuality,
 			videoGenerationEnabled,
@@ -1396,7 +1401,8 @@
 				if (
 					visionCapableModels.length === 0 &&
 					!stableDiffusionEnabled &&
-					!videoGenerationEnabled
+					!videoGenerationEnabled &&
+					!model3dEnabled
 				) {
 					releaseReservation();
 					toast.error($i18n.t('Selected model(s) do not support image inputs'));
@@ -1423,7 +1429,7 @@
 					if (!prepared && (width || height)) imageUrl = String(await compressImage(imageUrl, width, height, readableFile.type));
 					if ($temporaryChatEnabled) {
 						releaseReservation();
-						const activePolicy = getMediaAttachmentPolicy(
+						const activePolicy = mediaAttachmentPolicy ?? getMediaAttachmentPolicy(
 							stableDiffusionEnabled,
 							stableDiffusionQuality,
 							videoGenerationEnabled,
@@ -1475,6 +1481,7 @@
 			!stableDiffusionEnabled &&
 			!musicGenerationEnabled &&
 			!videoGenerationEnabled &&
+			!model3dEnabled &&
 			pastedText.length > PASTED_TEXT_CHARACTER_LIMIT
 		) {
 			event.preventDefault();
@@ -1495,10 +1502,22 @@
 			if (item.type === 'text/plain') continue;
 			const file = item.getAsFile();
 			if (file) {
-				await inputFilesHandler([file]);
 				event.preventDefault();
+				await inputFilesHandler([file]);
 			}
 		}
+	};
+
+	const pasteImageOverComposer = (event: ClipboardEvent) => {
+		if (event.defaultPrevented || (!model3dEnabled && activeImageMode === 'normal') ||
+			!composerSurface?.matches(':hover') || responseInProgress || uploadPending) return;
+		if (event.target instanceof Element &&
+			event.target.closest('input, textarea, [contenteditable]:not([contenteditable="false"]), [role="dialog"]')) return;
+		if (document.querySelector('[role="dialog"][aria-modal="true"]:not([aria-hidden="true"])')) return;
+		const images = Array.from(event.clipboardData?.files ?? []).filter((file) => file.type.startsWith('image/'));
+		if (!images.length) return;
+		event.preventDefault();
+		void inputFilesHandler(images);
 	};
 
 	const onDragOver = (e: DragEvent) => {
@@ -1778,7 +1797,7 @@
 </script>
 
 {#snippet usageIndicator()}
-{#if (lastUsage || chatContextWindow) && !stableDiffusionEnabled && !videoGenerationEnabled}
+{#if (lastUsage || chatContextWindow) && !stableDiffusionEnabled && !videoGenerationEnabled && !model3dEnabled}
 	{@const totalTokens = displayedTotalTokens}
 	{@const contextWindow = chatContextWindow}
 	{@const usageRatio = contextWindow ? Math.min(totalTokens / contextWindow, 1) : 0}
@@ -1888,6 +1907,7 @@
 
 <svelte:window
 	on:resize={closeComposerDropdowns}
+	on:paste={pasteImageOverComposer}
 	on:keydown={(event) => { if ($mobile && event.key === 'Escape') showTokenPopup = false; }}
 	on:click={(e) => {
 		if ($mobile && showTokenPopup && !(e.target as Element).closest('[data-token-usage-trigger], [data-token-usage-popup]')) showTokenPopup = false;
@@ -2079,6 +2099,7 @@
 
 						<div
 							id="message-input-container"
+							bind:this={composerSurface}
 							use:animateComposerHeight={{ key: `${isCompact}:${isInputMultiline}:${composerContentRevision}:${stableDiffusionQuality}:${webSearchEnabled}:${deepSearchEnabled}:${learningEnabled}:${stableDiffusionEnabled}:${musicGenerationEnabled}:${videoGenerationEnabled}:${selectedToolIds.length}`, context: `${$chatId}:${selectedModels.join(',')}`, conversation: $chatId }}
 							class="min-h-0 flex-none flex {isCompact
 								? 'flex-row items-center rounded-full'
@@ -2119,8 +2140,8 @@
 									</div>
 								{/if}
 
-								{#if imageSwapActive || restoreActive || imageModeHasEditor(activeImageMode)}
-									<ImageSwapSlots bind:files mode={stableDiffusionModeOptions.mode as 'outfit'|'body'|'restore'|'inpaint'|'outpaint'} options={stableDiffusionModeOptions} onEdit={openImageModeEditor} uploadFiles={inputFilesHandler} disabled={uploadPending || pendingImageAttachments > 0 || files.some(file => file.status === 'uploading')} />
+								{#if model3dEnabled || imageSwapActive || restoreActive || imageModeHasEditor(activeImageMode)}
+									<ImageSwapSlots bind:files mode={model3dEnabled ? 'model3d' : stableDiffusionModeOptions.mode as 'outfit'|'body'|'restore'|'inpaint'|'outpaint'} options={model3dEnabled ? imageModeDefaults() : stableDiffusionModeOptions} onEdit={openImageModeEditor} uploadFiles={inputFilesHandler} disabled={uploadPending || pendingImageAttachments > 0 || files.some(file => file.status === 'uploading')} />
 								{:else if files.length > 0}
 									<div
 										class="composer-attachment-strip attachment-strip mx-2 mt-2.5 mb-1 px-1 pt-1 pb-1 flex min-w-0 max-w-full items-start flex-nowrap gap-2 overflow-x-auto overflow-y-hidden"
@@ -2141,7 +2162,7 @@
 															alt=""
 															imageClassName="composer-image-thumbnail rounded-lg object-cover"
 														/>
-														{#if !stableDiffusionEnabled && !videoGenerationEnabled && (atSelectedModel ? visionCapableModels.length === 0 : selectedModels.length !== visionCapableModels.length)}
+														{#if !stableDiffusionEnabled && !videoGenerationEnabled && !model3dEnabled && (atSelectedModel ? visionCapableModels.length === 0 : selectedModels.length !== visionCapableModels.length)}
 															<Tooltip
 																className=" absolute top-1 left-1"
 																content={$i18n.t('{{ models }}', {
@@ -2236,6 +2257,8 @@
 									bind:stableDiffusionEnabled
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
+									bind:model3dEnabled
+									showModel3dButton={!!$config?.features?.enable_model3d_generation && $_user?.role === 'admin'}
 									{onNativeIntegrationChange}
 									onShowValves={(e) => {
 										const { type, id } = e;
@@ -2433,7 +2456,7 @@
 
 							{#if isCompact}
 								<div class="composer-compact-controls self-center flex items-center gap-1.5 shrink-0 pr-1">
-									{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
+									{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled && !model3dEnabled}
 										<ReasoningDropdown {effortBased} ongoing={!!history?.currentId} level={reasoningLevel} bind:show={showThinkingDropdown} onLevelChange={changeReasoningLevel} position={viewportDropdown} />
 									{/if}
 
@@ -2513,6 +2536,8 @@
 												bind:stableDiffusionEnabled
 												bind:musicGenerationEnabled
 												bind:videoGenerationEnabled
+												bind:model3dEnabled
+												showModel3dButton={!!$config?.features?.enable_model3d_generation && $_user?.role === 'admin'}
 												{onNativeIntegrationChange}
 												onShowValves={(e) => {
 													const { type, id } = e;
@@ -2659,10 +2684,8 @@
 														}}
 													>
 														<span
-															>{stableDiffusionQuality === 'minimax_h3_image'
-																? 'Neve Image 3'
-															: stableDiffusionQuality === 'qwen_image_2_1_official'
-																? 'Neve Image 2.6'
+															>{stableDiffusionQuality === 'qwen_image_2_1_official'
+																? 'Neve Image 2.8'
 															: stableDiffusionQuality === 'qwen_image_2s'
 																? 'Neve Image 2'
 																	: 'Neve Image 2'}</span
@@ -2687,7 +2710,7 @@
 															class="fixed z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
 															in:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
 														>
-													{#each [{ id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.6' }, { id: 'minimax_h3_image', label: 'Neve Image 3' }] as quality}
+													{#each [{ id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.8' }] as quality}
 																<button
 																	type="button"
 																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -2697,7 +2720,6 @@
 
 																						| 'qwen_image_2s'
 																				| 'qwen_image_2_1_official'
-																				| 'minimax_h3_image'
 																		)}
 																>
 																	<span>{quality.label}</span
@@ -2714,7 +2736,7 @@
 										{/if}
 												
 
-										{#if !(stableDiffusionQuality === 'qwen_image_2s' && (hasImageAttachment || activeImageMode !== 'normal')) && !(['qwen_image_2_1_official', 'minimax_h3_image'].includes(stableDiffusionQuality) && hasImageAttachment)}
+										{#if !(stableDiffusionQuality === 'qwen_image_2s' && (hasImageAttachment || activeImageMode !== 'normal')) && !(stableDiffusionQuality === 'qwen_image_2_1_official' && hasImageAttachment)}
 													<div
 														class="image-resolution-control relative shrink-0"
 														id="image-resolution-dropdown-container"
@@ -2800,6 +2822,13 @@
 												</button>
 											{/if}
 
+											{#if model3dEnabled}
+												<button type="button" data-model3d-integration class="group flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-[7px] text-[0.8125rem] text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" on:click|preventDefault={() => onNativeIntegrationChange(null)}>
+													<Cube className="size-4 group-hover:hidden" />
+													<XMark className="hidden size-4 group-hover:block" />
+													<span>{$i18n.t('Create 3D model')}</span>
+												</button>
+											{/if}
 											{#if videoGenerationEnabled}
 												<button
 													data-video-integration
@@ -2912,7 +2941,7 @@
 										{#if (selectedToolIds ?? []).length > 0 || ($terminalServers ?? []).some((s) => s.url)}
 											<TerminalMenu bind:show={showTools} />
 										{/if}
-										{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled}
+										{#if showThinkingButton && !stableDiffusionEnabled && !videoGenerationEnabled && !model3dEnabled}
 											<ReasoningDropdown {effortBased} ongoing={!!history?.currentId} level={reasoningLevel} bind:show={showThinkingDropdown} onLevelChange={changeReasoningLevel} position={viewportDropdown} />
 										{/if}
 										{@render usageIndicator()}
@@ -2962,7 +2991,7 @@
 														disabled={sendDisabled || !canSubmitMessage || uploadPending}
 													>
 														{#if uploadPending}
-															<Spinner className="size-5" />
+															<OrbitingSpheres className="size-5" />
 														{:else}
 															<svg
 																xmlns="http://www.w3.org/2000/svg"

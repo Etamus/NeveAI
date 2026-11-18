@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { getContext, onDestroy, tick } from 'svelte';
-	import panzoom, { type PanZoom } from 'panzoom';
+	import { getContext, tick } from 'svelte';
+	import ZoomSurface from '../../common/ZoomSurface.svelte';
+	import PresentationSlide from '$lib/components/common/PresentationSlide.svelte';
 	import { marked } from 'marked';
 	import DOMPurify from 'dompurify';
 	import { settings } from '$lib/stores';
 	import { isCodeFile } from '$lib/utils/codeHighlight';
 	import { initMermaid, renderMermaidDiagram } from '$lib/utils';
-	import Spinner from '../../common/Spinner.svelte';
+	import OrbitingSpheres from '../../common/OrbitingSpheres.svelte';
 	import PDFViewer from '../../common/PDFViewer.svelte';
 	import JsonTreeView from './JsonTreeView.svelte';
 	import NotebookView from './NotebookView.svelte';
@@ -34,7 +35,8 @@
 
 	// Office preview props
 	export let fileOfficeHtml: string | null = null;
-	export let fileOfficeSlides: string[] | null = null;
+	export let presentation: Awaited<ReturnType<typeof import('$lib/utils/pptxToHtml').pptxToImages>> | null = null;
+	$: slideCount = presentation?.count ?? 0;
 	export let currentSlide = 0;
 	export let excelSheetNames: string[] = [];
 	export let selectedExcelSheet = '';
@@ -245,57 +247,25 @@
 	export let showRaw = false;
 	$: selectedFile, (showRaw = false); // reset to preview mode when switching files
 
-	let pzInstance: PanZoom | null = null;
-
-	const initImagePanzoom = (node: HTMLElement) => {
-		pzInstance = panzoom(node, {
-			bounds: true,
-			boundsPadding: 0.1,
-			zoomSpeed: 0.065,
-			zoomDoubleClickSpeed: 1
-		});
-	};
-
-	export const resetImageView = () => {
-		if (pzInstance) {
-			pzInstance.moveTo(0, 0);
-			pzInstance.zoomAbs(0, 0, 1);
-		}
-	};
-
-	export const disposePanzoom = () => {
-		if (pzInstance) {
-			pzInstance.dispose();
-			pzInstance = null;
-		}
-	};
+	let zoomSurface: { reset: () => void };
+	export const resetImageView = () => zoomSurface?.reset();
 
 	export const resetPdfView = () => {
 		pdfViewerRef?.resetView();
 	};
 
-	onDestroy(() => {
-		disposePanzoom();
-	});
 </script>
 
 <div
-	class="flex-1 {fileImageUrl !== null || fileOfficeHtml !== null || (fileOfficeSlides !== null && fileOfficeSlides.length > 0)
+	class="file-preview-surface flex-1 {fileImageUrl !== null || fileVideoUrl !== null || fileOfficeHtml !== null || slideCount > 0
 		? 'overflow-hidden'
 		: 'overflow-y-auto'} min-h-0 min-w-0 relative h-full"
 >
 	<!-- File preview -->
-	{#if fileLoading}
-		<div class="flex items-center justify-center h-full"><Spinner className="size-4" /></div>
+	{#if fileLoading && !/\.(pdf|pptx)$/i.test(selectedFile ?? '')}
+		<div class="flex items-center justify-center h-full"><OrbitingSpheres className="size-4" /></div>
 	{:else if fileImageUrl !== null}
-		<div class="w-full h-full flex items-center justify-center" use:initImagePanzoom>
-			<img
-				src={fileImageUrl}
-				alt={selectedFile?.split('/').pop()}
-				class="max-w-full max-h-full object-contain p-3"
-				draggable="false"
-			/>
-		</div>
+		{#key fileImageUrl}<ZoomSurface bind:this={zoomSurface} src={fileImageUrl} alt={selectedFile?.split('/').pop()} />{/key}
 	{:else if fileVideoUrl !== null}
 		<div class="w-full h-full flex items-center justify-center bg-black">
 			<!-- svelte-ignore a11y-media-has-caption -->
@@ -309,8 +279,8 @@
 				{$i18n.t('Your browser does not support the audio tag.')}
 			</audio>
 		</div>
-	{:else if filePdfData !== null}
-		<PDFViewer bind:this={pdfViewerRef} data={filePdfData} className="w-full h-full" />
+	{:else if filePdfData !== null || (fileLoading && /\.pdf$/i.test(selectedFile ?? ''))}
+		{#key selectedFile}<PDFViewer bind:this={pdfViewerRef} data={filePdfData} className="w-full h-full" />{/key}
 	{:else if fileSqliteData !== null}
 		<SqliteView data={fileSqliteData} />
 	{:else if fileOfficeHtml !== null}
@@ -322,20 +292,10 @@
 				<SheetTabs sheets={excelSheetNames} selected={selectedExcelSheet} onSelect={(sheet) => onSheetChange?.(sheet)} />
 			{/if}
 		</div>
-	{:else if fileOfficeSlides !== null && fileOfficeSlides.length > 0}
+	{:else if slideCount || (fileLoading && /\.pptx$/i.test(selectedFile ?? ''))}
 		<div class="presentation-preview flex min-h-0 flex-col h-full">
-			<div
-				class="w-full flex-1 min-h-0 flex items-center justify-center overflow-hidden"
-				use:initImagePanzoom
-			>
-				<img
-					src={fileOfficeSlides[currentSlide]}
-					alt="Slide {currentSlide + 1}"
-					class="h-full w-full min-h-0 object-contain p-3"
-					draggable="false"
-				/>
-			</div>
-			{#if fileOfficeSlides.length > 1}
+			<div class="min-h-0 flex-1">{#key currentSlide}<PresentationSlide bind:this={zoomSurface} {presentation} index={currentSlide} />{/key}</div>
+			{#if slideCount > 1}
 				<div
 					class="slide-navigation flex shrink-0 items-center justify-center gap-3 py-2 px-3 border-t border-gray-100 dark:border-gray-800 text-xs text-gray-500"
 				>
@@ -360,13 +320,13 @@
 							/>
 						</svg>
 					</button>
-					<span>{currentSlide + 1} / {fileOfficeSlides.length}</span>
+					<span>{currentSlide + 1} / {slideCount}</span>
 					<button
 						class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-30"
-						disabled={currentSlide === fileOfficeSlides.length - 1}
+						disabled={currentSlide === slideCount - 1}
 						on:click={() => {
 							resetImageView();
-							currentSlide = Math.min(fileOfficeSlides.length - 1, currentSlide + 1);
+							currentSlide = Math.min(slideCount - 1, currentSlide + 1);
 						}}
 					>
 						<svg
