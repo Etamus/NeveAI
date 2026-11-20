@@ -186,6 +186,11 @@ internal sealed class NeveWindow : Form
 
     void ChooseDownloadDestination(object sender, CoreWebView2DownloadStartingEventArgs e)
     {
+        // Native Save As commands already chose a destination. Only the default
+        // staging folder means this transfer still needs our destination picker.
+        string staging = Path.GetFullPath(Path.Combine(profile, "DownloadStaging"));
+        if (!String.Equals(Path.GetDirectoryName(Path.GetFullPath(e.ResultFilePath)), staging,
+                           StringComparison.OrdinalIgnoreCase)) return;
         var deferral = e.GetDeferral();
         // Leave the event callback before showing a modal Windows dialog.
         BeginInvoke((Action)delegate {

@@ -85,6 +85,14 @@ try {
     Write-Fixture (Join-Path $releaseSource 'backend\requirements-runtime.txt') 'fixture'
     Write-Fixture (Join-Path $releaseSource 'version.txt') 'v2.0.0'
     Assert-Test (Test-NeveAppIntegrity $releaseSource).Ok 'complete release package passes integrity'
+    $voiceRouter = Join-Path $releaseSource 'backend\neveai\routers\haru_voice.py'
+    $voiceProfile = Join-Path $releaseSource 'backend\neveai\voice_assets\neve.voice.gguf'
+    Write-Fixture $voiceRouter 'voice route fixture'
+    Assert-Test (-not (Test-NeveAppIntegrity $releaseSource).Ok) 'release with voice mode requires the bundled voice'
+    Write-Fixture $voiceProfile ''
+    Assert-Test (-not (Test-NeveAppIntegrity $releaseSource).Ok) 'empty bundled voice invalidates release'
+    Copy-Item -LiteralPath (Join-Path $repo 'backend\neveai\voice_assets\neve.voice.gguf') -Destination $voiceProfile
+    Assert-Test (Test-NeveAppIntegrity $releaseSource).Ok 'voice release validates without a private recording or model cache'
     $releaseZip=Join-Path $testRoot 'release.zip'
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::CreateFromDirectory((Split-Path $releaseSource),$releaseZip)

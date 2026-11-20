@@ -35,6 +35,7 @@ from neveai.utils.payload import apply_model_params_to_body_openai, apply_system
 from neveai.utils.gpu_selection import preferred_vulkan_device
 from neveai.utils.local_model_files import project_storage, model_removal_paths, import_model_stream
 from neveai.utils.auth import get_admin_user
+from neveai.utils.voice_priority import primary_gpu_work, prioritise_gpu_work
 from neveai.utils.local_model_context import (
     AUTO_CONTEXT_CAP, bounded_context, context_memory_margin, is_memory_failure,
     plan_auto_context, runtime_context, require_gpu_device,
@@ -713,6 +714,7 @@ class LocalModelManager:
 
     # -- loading / unloading --------------------------------------------
 
+    @prioritise_gpu_work
     async def load_model(
         self,
         filename: str,
@@ -1190,6 +1192,7 @@ class LocalModelManager:
 
     # -- chat completion (proxy to llama-server) -------------------------
 
+    @prioritise_gpu_work
     async def chat_completion(
         self,
         model_id: str,
@@ -1364,7 +1367,7 @@ class LocalModelManager:
         async def _generate():
             last_usage_at = None
             try:
-                async with client.stream(
+                async with primary_gpu_work(), client.stream(
                     "POST",
                     "/v1/chat/completions",
                     json=payload,

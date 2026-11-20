@@ -108,8 +108,14 @@ try {
 		});
 		await page.route('**/api/tasks/stop/late-task-id', r => r.fulfill({ json: { status: true } }));
 		const submitted = page.waitForRequest(r => r.url().endsWith('/api/chat/completions'), { timeout: 15000 });
-		await page.locator('#send-message-button').click();
+		await composer.focus();
+		assert.equal(await composer.evaluate(el => getComputedStyle(el).outlineStyle), 'none');
+		await page.keyboard.press('Enter');
 		assert.equal((await submitted).postDataJSON().features.model3d_generation, true);
+		await composer.hover();
+		assert.equal(await paste(), false, '3D reference paste is accepted during generation');
+		await slot.locator('img:not(.invisible)').waitFor();
+		assert.equal(uploads, 3);
 		await page.locator('#send-message-button[type="button"]').click();
 		const lateStop = page.waitForRequest(r => r.url().endsWith('/stop/late-task-id'));
 		release();
@@ -128,6 +134,18 @@ try {
 				assert.equal(await paste(), false, mode);
 				await slot.locator('img').waitFor();
 				assert.equal(uploads, before + 1, mode);
+				if (mode === 'outpaint') {
+					await composer.locator('[data-image-mode-edit]').click();
+					await page.locator('[data-outpaint-aspect] > button').click();
+					await page.locator('[data-outpaint-aspect] [role=menuitemradio]').filter({hasText:'16:9'}).click();
+					await page.getByRole('button',{name:/^Aplicar$|^Apply$/}).click();
+				}
+				if (mode === 'restore' || mode === 'outpaint') {
+					await page.waitForFunction(() => !document.querySelector('#send-message-button')?.disabled);
+					const sent = page.waitForRequest(r => r.url().endsWith('/api/chat/completions'));
+					await page.keyboard.press('Enter');
+					assert((await sent).postDataJSON().features);
+				}
 			}
 		}
 		await page.goto(base, { waitUntil: 'networkidle' });

@@ -53,6 +53,7 @@ from neveai.socket.main import (
 )
 from neveai.routers import (
     audio,
+    haru_voice,
     llamacpp,
     hf_models,
     retrieval,
@@ -818,6 +819,7 @@ app.include_router(video_generation.router, prefix="/api/v1/video-generation", t
 app.include_router(model3d_generation.router, prefix="/api/v1/model3d", tags=["model3d"])
 
 app.include_router(audio.router, prefix="/api/v1/audio", tags=["audio"])
+app.include_router(haru_voice.router, prefix="/api/v1/audio", tags=["audio"])
 app.include_router(retrieval.router, prefix="/api/v1/retrieval", tags=["retrieval"])
 
 app.include_router(configs.router, prefix="/api/v1/configs", tags=["configs"])

@@ -12,6 +12,10 @@ _pending = 0
 _notifications = set()
 
 
+def media_is_busy():
+    return _pending > 0
+
+
 def get_model_availability():
     from neveai.routers.llamacpp import model_manager
 

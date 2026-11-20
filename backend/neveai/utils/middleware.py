@@ -86,6 +86,7 @@ from neveai.utils.response import normalize_usage
 from neveai.utils.streaming import run_sync_chat_operation, stream_with_flush_ticks
 from neveai.utils.media_standby import media_model_standby
 from neveai.utils.model_availability import media_job_queued, media_job_released
+from neveai.utils.voice_priority import yield_voice
 from neveai.utils.mcp.client import MCPClient
 
 
@@ -109,6 +110,11 @@ async def _acquire_media_generation_slot(waiting_callback) -> None:
         if _MEDIA_GENERATION_LOCK.locked():
             await waiting_callback()
         await _MEDIA_GENERATION_LOCK.acquire()
+        try:
+            await yield_voice()
+        except BaseException:
+            _MEDIA_GENERATION_LOCK.release()
+            raise
     except BaseException:
         media_job_released()
         raise

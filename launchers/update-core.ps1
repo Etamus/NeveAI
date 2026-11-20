@@ -427,6 +427,12 @@ function Test-NeveAppIntegrity([string]$root) {
                 $path = Join-Path $root $item.Path
                 if (-not (Test-Path -LiteralPath $path)) { $missing += $item.Label }
             }
+            if (Test-Path -LiteralPath (Join-Path $root 'backend\neveai\routers\haru_voice.py') -PathType Leaf) {
+                $profile = Join-Path $root 'backend\neveai\voice_assets\neve.voice.gguf'
+                if (-not (Test-Path -LiteralPath $profile -PathType Leaf) -or (Get-Item -LiteralPath $profile).Length -eq 0) {
+                    $missing += 'backend\neveai\voice_assets\neve.voice.gguf'
+                }
+            }
             [pscustomobject]@{ Ok = $missing.Count -eq 0; Missing = $missing }
         }
 

@@ -2375,6 +2375,8 @@ $ctl.BtnPrimary.Add_Click({
                 'backend\neveai\main.py',
                 'backend\neveai\routers\music_generation.py',
                 'backend\neveai\routers\video_generation.py',
+                'backend\neveai\routers\haru_voice.py',
+                'backend\neveai\voice_assets\neve.voice.gguf',
                 'backend\neveai\models\users.py',
                 'backend\neveai\models\models.py',
                 'backend\neveai\utils\auth.py'
@@ -2392,7 +2394,10 @@ $ctl.BtnPrimary.Add_Click({
             )
             $missingAppFiles = @()
             foreach ($relativeAppFile in $requiredAppFiles) {
-                if (-not (Test-Path -LiteralPath (Join-Path $ROOT $relativeAppFile))) { $missingAppFiles += $relativeAppFile }
+                $appFile = Join-Path $ROOT $relativeAppFile
+                if (-not (Test-Path -LiteralPath $appFile -PathType Leaf) -or (Get-Item -LiteralPath $appFile).Length -eq 0) {
+                    $missingAppFiles += $relativeAppFile
+                }
             }
             if ($missingAppFiles.Count -gt 0) {
                 throw "Pacote local incompleto; faltam arquivos essenciais: $($missingAppFiles -join ', '). Baixe o release atualizado e execute Reparar."

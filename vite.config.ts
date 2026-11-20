@@ -54,6 +54,7 @@ export default defineConfig({
 	},
 	optimizeDeps: { include: ['esbuild-wasm'] },
 	build: {
+		assetsInlineLimit: (file) => file.endsWith('/haruCapture.js') ? false : undefined,
 		sourcemap: false,
 		// esbuild é muito mais rápido e leve que o Terser (minificador padrão do rollup)
 		minify: 'esbuild',
@@ -85,6 +86,10 @@ export default defineConfig({
 			]
 		},
 		proxy: {
+			'/api/v1/audio/voice': {
+				target: 'http://localhost:8080',
+				ws: true
+			},
 			'/dbg': {
 				target: 'http://localhost:8080',
 				changeOrigin: true

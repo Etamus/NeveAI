@@ -499,6 +499,16 @@
 		focus();
 	};
 
+	export const appendPlainText = (text: string) => {
+		if (!editor || editor.isDestroyed || !text) return;
+		const { state, view } = editor;
+		const end = TextSelection.atEnd(state.doc);
+		const trailing = end.$from.parent.isTextblock ? end.$from.parent.textContent : '';
+		const separator = trailing && !/\s$/.test(trailing) ? ' ' : '';
+		view.dispatch(state.tr.setSelection(end).insertText(separator + text));
+		focus();
+	};
+
 	// Convert text to ProseMirror nodes, using hardBreak for newlines
 	const textToNodes = (state, text) => {
 		if (!text.includes('\n')) return state.schema.text(text);

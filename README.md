@@ -55,6 +55,9 @@ O instalador realiza automaticamente as seguintes ações:
 6. **Cria as pastas necessárias** (`models/`, `mmproj/`, `backend/data/`, `logs/`)
 7. **Cria o arquivo `.env`** com configurações padrão (se ainda não existir)
 
+O Modo de voz inclui o perfil padrão em `backend/neveai/voice_assets/neve.voice.gguf`.
+O instalador valida que o perfil está no pacote. O NeveDuplex e seu runtime são baixados no primeiro uso do modo de voz; não é necessário distribuir nem importar o WAV de referência.
+
 ---
 
 ## Atualizando a NeveAI
@@ -182,6 +185,15 @@ NeveAI/
 
 ### Entrada
 - Upload de arquivos: PDF, DOCX, PPTX, imagens, áudios, vídeos, códigos, planilhas
+- Modo de voz local com NeveDuplex: o botão de voz aparece quando a barra está vazia.
+  O NeveDuplex inicia a conversa com uma abertura espontânea.
+
+Importar ou remover uma voz no modal reinicia a conversa em andamento com o
+perfil selecionado. O upload é convertido em um perfil local privado; o áudio
+enviado não é mantido. Remover o perfil importado volta à voz padrão.
+
+A voz padrão vem de `backend/neveai/voice_assets/neve.voice.gguf`, distribuído
+com o projeto.
 
 ### RAG (Retrieval-Augmented Generation)
 - Base de conhecimento vetorial com ChromaDB

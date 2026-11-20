@@ -171,6 +171,7 @@
 	$: if(!imageModeHasEditor(activeImageMode)||!imageModeFiles(files).length)showImageModeEditor=false;
 	$: imageSwapActive = imageModeIsSwap(activeImageMode);
 	function submitComposer() {
+		if (dictation) return;
 		const mode = activeImageMode;
 		const error = imageSubmissionError;
 		if (error) { toast.error($i18n.t(error)); return; }
@@ -1508,9 +1509,33 @@
 		}
 	};
 
+	// An image-only prompt has no editable focus target after picking its reference.
+	const focusImageComposer = async (surface: HTMLElement) => {
+		await tick();
+		const active = document.activeElement;
+		if (surface.isConnected && imagePromptHidden && active?.closest('[data-image-slot]') && surface.contains(active)) {
+			surface.focus({preventScroll: true});
+		}
+	};
+	$: if (composerSurface && imagePromptHidden && canSubmitMessage && !uploadPending && !pendingImageAttachments)
+		void focusImageComposer(composerSurface);
+
+	const imageComposerEnter = (event: KeyboardEvent) => {
+		if (dictation || event.key !== 'Enter' || !imagePromptHidden || !composerSurface?.getClientRects().length ||
+			event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 ||
+			event.shiftKey || event.altKey || (($settings?.ctrlEnterToSend ?? false) && !(event.ctrlKey || event.metaKey)) ||
+			responseInProgress || sendDisabled || !canSubmitMessage || uploadPending || pendingImageAttachments) return;
+		const target = event.target;
+		if (!(target instanceof HTMLElement) || (target !== document.body && target !== document.documentElement &&
+			(!composerSurface.contains(target) || target.closest('button,a,input,select,textarea,[contenteditable=true],[role=button]')))) return;
+		if (showImageModeEditor || Array.from(document.querySelectorAll('[role=dialog]:not([aria-hidden=true]),[role=menu][data-state=open]')).some(el => el.getClientRects().length)) return;
+		event.preventDefault();
+		submitComposer();
+	};
+
 	const pasteImageOverComposer = (event: ClipboardEvent) => {
-		if (event.defaultPrevented || (!model3dEnabled && activeImageMode === 'normal') ||
-			!composerSurface?.matches(':hover') || responseInProgress || uploadPending) return;
+		if (dictation || event.defaultPrevented || (!model3dEnabled && activeImageMode === 'normal') ||
+			!composerSurface?.matches(':hover') || (responseInProgress && !model3dEnabled) || uploadPending) return;
 		if (event.target instanceof Element &&
 			event.target.closest('input, textarea, [contenteditable]:not([contenteditable="false"]), [role="dialog"]')) return;
 		if (document.querySelector('[role="dialog"][aria-modal="true"]:not([aria-hidden="true"])')) return;
@@ -1794,7 +1819,76 @@
 			}
 		};
 	});
+	import HaruVoice from './MessageInput/HaruVoice.svelte';
+	import ComposerDictation, { openDictationRecorder } from './MessageInput/ComposerDictation.svelte';
+	import VoiceMode from '$lib/components/icons/VoiceMode.svelte';
+
+	let showHaruVoice = false;
+	let dictation: { chat: typeof $chatId; compact: boolean; recorder: MediaRecorder } | null = null;
+	let pendingDictation: { chat: typeof $chatId } | null = null;
+	$: if (dictation && (dictation.chat !== $chatId || !loaded || imagePromptHidden)) dictation = null;
+	$: if (pendingDictation && (pendingDictation.chat !== $chatId || !loaded || imagePromptHidden || showHaruVoice)) pendingDictation = null;
+	onDestroy(() => { pendingDictation = null; });
+	$: offerVoice = !prompt.trim() && !files.length && !canSubmitMessage && !uploadPending &&
+		!pendingImageAttachments && !responseInProgress && !imagePromptHidden;
+
+	async function beginDictation() {
+		if (dictation || pendingDictation || showHaruVoice) return;
+		const attempt = pendingDictation = { chat: $chatId };
+		try {
+			const recorder = await openDictationRecorder();
+			if (pendingDictation !== attempt || attempt.chat !== $chatId || !loaded || imagePromptHidden || showHaruVoice) {
+				recorder.stream.getTracks().forEach((track) => track.stop());
+				return;
+			}
+			showThinkingDropdown = false;
+			showTokenPopup = false;
+			dictation = { chat: attempt.chat, compact: isCompact, recorder };
+		} catch {
+			if (pendingDictation === attempt) toast.error($i18n.t('Microphone access was not available.'));
+		} finally {
+			if (pendingDictation === attempt) pendingDictation = null;
+		}
+	}
+
+	async function finishDictation(text?: string) {
+		const session = dictation;
+		dictation = null;
+		await tick();
+		if (!session || session.chat !== $chatId || dictation || imagePromptHidden || !loaded) return;
+		if (text) chatInputElement?.appendPlainText(text);
+		else chatInputElement?.focus();
+	}
 </script>
+
+{#if showHaruVoice}
+	{#key $chatId}
+		<HaruVoice bind:show={showHaruVoice} />
+	{/key}
+{/if}
+
+{#snippet voiceButton()}
+	<Tooltip content={$i18n.t('Voice mode')}>
+		<button id="send-message-button" type="button" aria-label={$i18n.t('Voice mode')}
+			class="grid size-8 shrink-0 place-items-center self-center rounded-full bg-black p-0 text-white transition hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-100"
+			on:click={() => showHaruVoice = true}><VoiceMode /></button>
+	</Tooltip>
+{/snippet}
+
+{#snippet dictateButton()}
+	{#if !imagePromptHidden}
+		<Tooltip content={$i18n.t('Dictate')}>
+			<button type="button" class="composer-dictate-button grid size-8 shrink-0 place-items-center rounded-full text-gray-600 hover:bg-black/5 dark:text-gray-300 dark:hover:bg-white/10"
+				aria-label={$i18n.t('Dictate')} on:click={beginDictation}>
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65"
+					stroke-linecap="round" stroke-linejoin="round" class="size-[20px]" aria-hidden="true">
+					<rect x="9" y="3" width="6" height="11" rx="3" />
+					<path d="M5 10v2a7 7 0 0 0 14 0v-2m-7 9v3" />
+				</svg>
+			</button>
+		</Tooltip>
+	{/if}
+{/snippet}
 
 {#snippet usageIndicator()}
 {#if (lastUsage || chatContextWindow) && !stableDiffusionEnabled && !videoGenerationEnabled && !model3dEnabled}
@@ -1908,7 +2002,7 @@
 <svelte:window
 	on:resize={closeComposerDropdowns}
 	on:paste={pasteImageOverComposer}
-	on:keydown={(event) => { if ($mobile && event.key === 'Escape') showTokenPopup = false; }}
+	on:keydown={(event) => { imageComposerEnter(event); if ($mobile && event.key === 'Escape') showTokenPopup = false; }}
 	on:click={(e) => {
 		if ($mobile && showTokenPopup && !(e.target as Element).closest('[data-token-usage-trigger], [data-token-usage-popup]')) showTokenPopup = false;
 		if (
@@ -2100,6 +2194,9 @@
 						<div
 							id="message-input-container"
 							bind:this={composerSurface}
+							inert={!!dictation}
+							class:composer-dictating={!!dictation}
+							tabindex={imagePromptHidden ? -1 : undefined}
 							use:animateComposerHeight={{ key: `${isCompact}:${isInputMultiline}:${composerContentRevision}:${stableDiffusionQuality}:${webSearchEnabled}:${deepSearchEnabled}:${learningEnabled}:${stableDiffusionEnabled}:${musicGenerationEnabled}:${videoGenerationEnabled}:${selectedToolIds.length}`, context: `${$chatId}:${selectedModels.join(',')}`, conversation: $chatId }}
 							class="min-h-0 flex-none flex {isCompact
 								? 'flex-row items-center rounded-full'
@@ -2461,6 +2558,10 @@
 									{/if}
 
 									{@render usageIndicator()}
+									{@render dictateButton()}
+									{#if offerVoice}
+										{@render voiceButton()}
+									{:else}
 									<Tooltip content={$i18n.t(responseInProgress ? 'Stop' : 'Send message')}>
 										<button
 											id="send-message-button"
@@ -2490,6 +2591,7 @@
 										{/if}
 										</button>
 									</Tooltip>
+									{/if}
 								</div>
 							{/if}
 
@@ -2945,7 +3047,10 @@
 											<ReasoningDropdown {effortBased} ongoing={!!history?.currentId} level={reasoningLevel} bind:show={showThinkingDropdown} onLevelChange={changeReasoningLevel} position={viewportDropdown} />
 										{/if}
 										{@render usageIndicator()}
-										{#if responseInProgress}
+										{@render dictateButton()}
+										{#if offerVoice}
+											{@render voiceButton()}
+										{:else if responseInProgress}
 											<Tooltip content={$i18n.t('Stop')}>
 												<button
 													id="send-message-button"
@@ -3016,6 +3121,9 @@
 
 							
 						</div>
+						{#if dictation}
+							<ComposerDictation compact={dictation.compact} composer={composerSurface} recorder={dictation.recorder} onClose={finishDictation} />
+						{/if}
 					</form>
 				</div>
 			</div>
@@ -3024,6 +3132,14 @@
 {/if}
 
 <style>
+	#message-input-container:focus { outline: none; }
+	#message-input-container.composer-dictating { border-color: rgb(0 0 0 / 18%); }
+	:global(.dark) #message-input-container.composer-dictating { border-color: rgb(255 255 255 / 18%); }
+	#message-input-container.composer-dictating > * { visibility: hidden; }
+	@media (max-width: 767px) {
+		.composer-dictate-button { width: 38px; height: 38px; }
+	}
+
 	.chat-input-scroll { overscroll-behavior-y: contain; overflow-anchor: none; }
 	:global(#message-input-container.flex-col) > .composer-editor { padding-inline-end: 0.375rem; }
 	.composer-editor:global(.composer-text-scrolled) .chat-input-scroll {

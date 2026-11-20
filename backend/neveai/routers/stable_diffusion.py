@@ -28,6 +28,7 @@ from neveai.config import CACHE_DIR, STABLE_DIFFUSION_HF_TOKEN
 from neveai.constants import ERROR_MESSAGES
 from neveai.utils.access_control import has_permission
 from neveai.utils.auth import get_admin_user, get_verified_user
+from neveai.utils.voice_priority import primary_gpu_work, prioritise_gpu_work
 from neveai.utils.gpu_selection import preferred_amd_adapter, preferred_vulkan_device
 from neveai.utils.image_memory import ImageGenerationError, cpu_image_requested, is_image_memory_error, monotonic_progress
 
@@ -931,6 +932,10 @@ async def segment_mode_image(request: Request, user=Depends(get_verified_user)):
         form = SegmentRequest.model_validate(await request.json())
     except (ValidationError, ValueError) as exc:
         raise HTTPException(status_code=422, detail="Selecao invalida.") from exc
+    async def run_segment():
+        async with primary_gpu_work():
+            return await segment_image(form, user.id)
+
     task = None
     watcher = None
     async def cancel_on_disconnect():
@@ -941,7 +946,7 @@ async def segment_mode_image(request: Request, user=Depends(get_verified_user)):
                     task.cancel()
                 return
     try:
-        task = asyncio.create_task(segment_image(form, user.id))
+        task = asyncio.create_task(run_segment())
         watcher = asyncio.create_task(cancel_on_disconnect())
         return {"mask": await task}
     except (ValueError, RuntimeError) as exc:
@@ -1022,6 +1027,11 @@ async def generate_image(request: Request, form_data: GenerateForm, user=Depends
     if not has_permission(user.id, "features.stable_diffusion", request.app.state.config.USER_PERMISSIONS):
         raise HTTPException(status_code=403, detail=ERROR_MESSAGES.ACCESS_PROHIBITED)
 
+    return await _generate_image(request, form_data, user)
+
+
+@prioritise_gpu_work
+async def _generate_image(request, form_data, user):
     model_id = normalize_sd_model_id(request.app.state.config.STABLE_DIFFUSION_MODEL)
     quality = normalize_image_quality(form_data.quality)
     qwen_image_mode = quality in {QWEN_IMAGE_2_FAST_AMD_QUALITY, QWEN_IMAGE_21_OFFICIAL_QUALITY}

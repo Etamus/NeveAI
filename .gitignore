@@ -33,6 +33,7 @@ backend/neveai/static/
 /llamacpp-server/
 /backend/bin/stable-diffusion-cpp/
 *.gguf
+!/backend/neveai/voice_assets/neve.voice.gguf
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Dados de runtime (banco, uploads, cache, vector DB)
@@ -97,3 +98,4 @@ Desktop.ini
 *.njsproj
 *.sln
 *.sw?
+/voz de referencia/

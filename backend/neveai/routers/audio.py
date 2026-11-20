@@ -4,6 +4,8 @@ import os
 import uuid
 import warnings
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
+from threading import Lock
 from typing import Optional
 
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pydub")
@@ -36,6 +38,85 @@ log = logging.getLogger(__name__)
 
 MAX_FILE_SIZE_MB = 20
 MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
+DICTATION_MAX_BYTES = 4 * 1024 * 1024
+_dictation_slot = Lock()
+
+
+@lru_cache(maxsize=1)
+def _dictation_model(name):
+    from faster_whisper import WhisperModel
+
+    options = dict(device="cpu", compute_type="int8", cpu_threads=2, download_root=WHISPER_MODEL_DIR)
+    try:
+        return WhisperModel(name, local_files_only=True, **options)
+    except Exception:
+        return WhisperModel(name, **options)
+
+
+def _dictation_samples(source):
+    import av
+    import numpy as np
+
+    rate = 16000
+    samples = np.empty(95 * rate, dtype=np.float32)
+    length = 0
+    resampler = av.AudioResampler(format="flt", layout="mono", rate=rate)
+
+    def append(frames):
+        nonlocal length
+        for frame in frames:
+            end = length + frame.samples
+            if end > samples.size:
+                raise HTTPException(413, "Dictation recording is too long.")
+            samples[length:end] = frame.to_ndarray().ravel()
+            length = end
+
+    with av.open(source, mode="r") as audio:
+        for frame in audio.decode(audio=0):
+            append(resampler.resample(frame))
+        append(resampler.resample(None))
+    return samples[:length]
+
+
+@router.post("/dictation")
+def dictation(
+    request: Request,
+    file: UploadFile = File(...),
+    language: Optional[str] = Form(None),
+    user=Depends(get_verified_user),
+):
+    if user.role != "admin" and not has_permission(
+        user.id, "chat.stt", request.app.state.config.USER_PERMISSIONS
+    ):
+        raise HTTPException(403, ERROR_MESSAGES.ACCESS_PROHIBITED)
+    if not file.size or file.size > DICTATION_MAX_BYTES:
+        raise HTTPException(413, "Invalid dictation recording size.")
+    supported = request.app.state.config.STT_SUPPORTED_CONTENT_TYPES
+    format_type = (file.content_type or "").split(";", 1)[0].lower().strip()
+    if format_type not in {"audio/webm", "audio/mp4", "audio/ogg"} or not strict_match_mime_type(
+        supported, format_type
+    ):
+        raise HTTPException(400, ERROR_MESSAGES.FILE_NOT_SUPPORTED)
+    if not _dictation_slot.acquire(blocking=False):
+        raise HTTPException(429, "Dictation is already being transcribed.")
+    try:
+        # Decode the upload directly; do not add raw speech or transcripts to the audio cache.
+        samples = _dictation_samples(file.file)
+        if not samples.size:
+            return {"text": ""}
+        model = _dictation_model(request.app.state.config.WHISPER_MODEL or "base")
+        segments, _ = model.transcribe(
+            samples, language=language or WHISPER_LANGUAGE, beam_size=3,
+            vad_filter=True, condition_on_previous_text=False,
+        )
+        return {"text": " ".join(segment.text.strip() for segment in segments).strip()}
+    except HTTPException:
+        raise
+    except Exception as error:
+        log.exception("Dictation failed")
+        raise HTTPException(400, "Transcription failed.") from error
+    finally:
+        _dictation_slot.release()
 
 
 def is_audio_conversion_required(file_path: str) -> bool:
