@@ -172,7 +172,7 @@
 			const bounds = button.getBoundingClientRect();
 			const onLeft = bounds.left + bounds.width / 2 < outer.left + outer.width / 2;
 			panel.style.setProperty('--dictation-action-size', `${bounds.width}px`);
-			panel.style.setProperty('--dictation-action-bottom', `${outer.bottom - bounds.bottom}px`);
+			panel.style.setProperty('--dictation-action-bottom', compact ? `${outer.bottom - bounds.bottom}px` : '10px');
 			panel.style.setProperty('--dictation-action-edge', `${onLeft ? bounds.left - outer.left : outer.right - bounds.right}px`);
 			panel.classList.toggle('actions-reversed', onLeft);
 		};

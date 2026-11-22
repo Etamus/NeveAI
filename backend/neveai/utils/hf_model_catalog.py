@@ -27,9 +27,19 @@ def validate_file(path):
     return path
 
 
+def mainline_filename(repo, path):
+    # Unsloth deliberately hides this alternate tensor layout from generic GGUF clients.
+    if repo.lower() == 'unsloth/inkling-2-mini-gguf':
+        if re.fullmatch(r'Mainline_Support/Inkling-2-Mini-[\w.-]+\.gguf_file', path):
+            return validate_file(path[:-5])
+        if 'mmproj' not in PurePosixPath(path).name.lower():
+            raise ValueError('Este arquivo requer o runtime da Unsloth.')
+    return validate_file(path)
+
+
 def local_filename(repo, path):
     validate_repo(repo)
-    validate_file(path)
+    path = mainline_filename(repo, path)
     directory = str(PurePosixPath(path).parent)
     folder = hashlib.sha256(directory.encode()).hexdigest()[:8] + '--' if directory != '.' else ''
     name = f"{repo.replace('/', '--')}--{folder}{PurePosixPath(path).name}"
@@ -45,10 +55,9 @@ def group_files(files, repo, models_dir, mmproj_dir):
     groups, encoders = {}, []
     for item in files:
         path = item.get('path', '')
-        if item.get('type') != 'file' or not path.lower().endswith('.gguf'):
+        if item.get('type') != 'file':
             continue
         try:
-            validate_file(path)
             name = local_filename(repo, path)
         except ValueError:
             continue
@@ -160,10 +169,10 @@ class HuggingFaceCatalog:
                     params['cursor'] = cursor
                 data, next_url = await self.request(f'/api/models/{repo}/tree/main', params)
                 for row in data:
-                    if not isinstance(row, dict) or row.get('type') != 'file' or not str(row.get('path', '')).lower().endswith('.gguf'):
+                    if not isinstance(row, dict) or row.get('type') != 'file' or not isinstance(row.get('path'), str):
                         continue
                     try:
-                        validate_file(row['path'])
+                        mainline_filename(repo, row['path'])
                     except ValueError:
                         continue
                     items.append({'type': 'file', 'path': row['path'], 'size': row.get('size', 0),

@@ -346,7 +346,7 @@
 					</div>
 					<button data-window-close type="button" aria-label={$i18n.t('Close')} on:click={() => showViewer = false}><XMark className="size-4" /></button>
 				</div>
-				<MeshResult id={selectedFile.id} name={selectedFile.name} deferred={false} showName={false} />
+				<MeshResult id={selectedFile.id} name={selectedFile.name} deferred={false} previewOnly />
 			</div>
 		</Modal>
 	{:else}

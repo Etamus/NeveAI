@@ -769,12 +769,6 @@
 								{$i18n.t('Capacidades padrão')}
 							</div>
 							<div class="model-editor-feature-controls"><DefaultFeatures
-							availableFeatures={[
-								'web_search',
-								'deep_search',
-								'guided_learning',
-								'music_generation'
-							]}
 								bind:featureIds={defaultFeatureIds}
 								tooltipsEnabled={false}
 								insetToggles={true}

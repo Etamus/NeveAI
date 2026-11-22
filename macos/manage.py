@@ -226,6 +226,9 @@ def snapshot():
         target,
         ignore=shutil.ignore_patterns("venv", ".venv", "__pycache__", "*.pyc"),
     )
+    maker_setup = SOURCE / "backend/prepare_video_edit.py"
+    if maker_setup.is_file():
+        shutil.copy2(maker_setup, APP / "backend/prepare_video_edit.py")
     for name in (
         "package.json",
         "package-lock.json",
@@ -570,6 +573,13 @@ def _install(images=True, music=True, emit=print):
     env = environment()
     env["ENABLE_STABLE_DIFFUSION"] = str(images).lower()
     env["ENABLE_MUSIC_GENERATION"] = str(music).lower()
+    maker_setup = APP / "backend/prepare_video_edit.py"
+    if maker_setup.is_file():
+        emit("Preparando os modelos locais do Neve Studio...")
+        try:
+            run([PYTHON, maker_setup], emit=emit, env=env)
+        except RuntimeError:
+            emit("Modelos locais do Neve Studio nao preparados. Execute Reparar para concluir.")
     # Import validation discovers missing/transitive dependencies before declaring installation complete.
     run(
         [

@@ -116,12 +116,14 @@ describe('single supported video model and legacy migration', () => {
 		runInNewContext(sourceFunction(input, 'restoreVideoPreferences'), context)();
 		expect(context.videoGenerationModel).toBe(normalizeVideoGenerationModel(saved));
 	});
-	it('keeps the video chip and settings without a model label or dropdown', () => {
+	it('keeps the video chip and exposes the editor without changing the generation settings', () => {
 		expect(input).not.toContain('data-video-model-label');
-		expect(input).not.toContain('Neve Video 1.5');
+		expect(input).toContain("'Neve Video 1.5'");
+		expect(input).toContain("'Neve Studio'");
+		expect(input).toContain('onEdit={openVideoEditor}');
 		expect(input.indexOf('id="video-resolution-dropdown-container"')).toBeGreaterThan(input.indexOf('data-video-integration'));
-		expect(input).not.toContain('showVideoModelDropdown');
-		expect(input).not.toContain('video-model-dropdown-container');
+		expect(input).toContain('aria-expanded={showVideoModeDropdown}');
+		expect(input).toContain('data-composer-dropdown-anchor="video-mode-dropdown-container"');
 	});
 	it('preserves the historical video model when editing a prompt', async () => {
 		const source = readFileSync('src/lib/components/chat/Messages.svelte', 'utf8');

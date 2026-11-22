@@ -15,13 +15,15 @@
 	export let keepMounted = false;
 	export let animated = true;
 	export let initialFocus: string | undefined = undefined;
+	export let onRequestClose: (() => void) | null = null;
+	function dismiss() { if (onRequestClose) onRequestClose(); else show = false; }
 	export let onOutsideClick: (() => boolean | void) | null = null;
 	export let mobileFullscreen = false;
 	export let mobileStep = '';
 	export let onMobileStepBack: () => void = () => {};
 	setContext('mobile-modal-back', () => {
 		if (mobileStep) onMobileStepBack();
-		else show = false;
+		else dismiss();
 	});
 	let releaseMobileDialog: (() => void) | null = null;
 	let releaseMobileStep: (() => void) | null = null;
@@ -36,7 +38,7 @@
 	$: if (mounted && show && mobileFullscreen && $mobile) {
 		if (!releaseMobileDialog) releaseMobileDialog = mobileDialogHistory.open(() => {
 			releaseMobileDialog = null;
-			show = false;
+			dismiss();
 		});
 		if (mobileStep && !releaseMobileStep) releaseMobileStep = mobileDialogHistory.open(() => {
 			releaseMobileStep = null;
@@ -97,7 +99,7 @@
 	const handleKeyDown = (event: KeyboardEvent) => {
 		if (event.key === 'Escape' && isTopModal()) {
 			console.log('Escape');
-			show = false;
+			dismiss();
 		}
 	};
 
@@ -185,7 +187,7 @@
 		in:fade={{ duration: animated ? 150 : 0 }}
 		on:mousedown={() => {
 			if (onOutsideClick?.() === true) return;
-			show = false;
+			dismiss();
 		}}
 	>
 		<div

@@ -29,6 +29,7 @@
 </script>
 
 <div
+	data-runtime-error={phase === 'error' ? '' : undefined}
 	class="pointer-events-auto flex w-[20.75rem] max-w-[calc(100vw-2rem)] -translate-x-1 translate-y-5 items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-gray-900 shadow-lg dark:border-gray-800 dark:bg-gray-900 dark:text-gray-100"
 >
 	<div class="grid size-5 shrink-0 place-items-center text-gray-500 dark:text-gray-400" aria-hidden="true">

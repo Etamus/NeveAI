@@ -5,7 +5,7 @@
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
 	import GlobeAlt from '$lib/components/icons/GlobeAlt.svelte';
 	import Atom02 from '$lib/components/icons/Atom02.svelte';
-	import Photo from '$lib/components/icons/Photo.svelte';
+	import { Box } from '@lucide/svelte';
 	import ImageIcon from '$lib/components/icons/Image.svelte';
 	import MusicNote from '$lib/components/icons/MusicNote.svelte';
 	import Video from '$lib/components/icons/Video.svelte';
@@ -33,6 +33,10 @@
 			label: $i18n.t('Criar imagem'),
 			description: $i18n.t('Modelo pode gerar imagens usando Stable Diffusion local')
 		},
+		model3d_generation: {
+			label: $i18n.t('Create 3D model'),
+			description: $i18n.t('Create a 3D model from an image')
+		},
 		music_generation: {
 			label: $i18n.t('Criar música'),
 			description: $i18n.t('Modelo inicia com geração de música por padrão')
@@ -47,6 +51,7 @@
 		'web_search',
 		'deep_search',
 		'guided_learning',
+		'model3d_generation',
 		'stable_diffusion',
 		'video_generation',
 		'music_generation'
@@ -140,6 +145,8 @@
 							<AcademicCap className="size-4" />
 						{:else if feature === 'stable_diffusion'}
 							<ImageIcon className="size-4" strokeWidth="1.5" />
+						{:else if feature === 'model3d_generation'}
+							<Box class="size-4" strokeWidth={1.5} />
 						{:else if feature === 'music_generation'}
 							<MusicNote className="size-4" strokeWidth="1.5" />
 						{:else if feature === 'video_generation'}

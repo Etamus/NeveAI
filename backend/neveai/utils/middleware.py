@@ -7329,6 +7329,12 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         "__music_current_turn_files__": current_turn_files,
     }
     # Initialize events to store additional event to be sent to the client
+    if integration := metadata.get("standalone_media"):
+        handler = {"stable_diffusion": chat_stable_diffusion_handler, "video_generation": chat_video_generation_handler,
+                   "model3d_generation": chat_model3d_handler}[integration]
+        extra_params["__features__"] = form_data.pop("features", {})
+        metadata["skip_llm"] = True
+        return await handler(request, form_data, extra_params, user), metadata, []
     # Initialize contexts and citation
     if getattr(request.state, "direct", False) and hasattr(request.state, "model"):
         models = {

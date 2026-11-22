@@ -8,7 +8,7 @@
 	import { fade } from 'svelte/transition';
 	const i18n: Writable<i18nType> = getContext('i18n');
 
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/stores';
 
 	import { get, type Unsubscriber, type Writable } from 'svelte/store';
@@ -754,6 +754,8 @@
 				}
 
 				learningEnabled = model.info.meta.defaultFeatureIds?.includes('guided_learning') ?? false;
+				model3dEnabled = !!$config?.features?.enable_model3d_generation && $user?.role === 'admin' &&
+					model.info.meta.defaultFeatureIds.includes('model3d_generation');
 
 				if (
 					$config?.features?.enable_stable_diffusion &&
@@ -1886,22 +1888,6 @@
 			});
 		}
 
-		const pageSubscribe = page.subscribe(async (p) => {
-			if (p.url.pathname === '/') {
-				await tick();
-				initNewChat();
-
-				// Re-fetch banners on navigation to homepage so newly configured banners appear
-				try {
-					banners.set(await getBanners(localStorage.token).catch(() => []));
-				} catch (e) {
-					console.error('Failed to refresh banners:', e);
-				}
-			}
-
-			stopAudio();
-		});
-
 		const showControlsSubscribe = showControls.subscribe(async (value) => {
 			await tick();
 			if (controlPane && !$mobile) {
@@ -1992,7 +1978,6 @@
 
 		return () => {
 			try {
-				pageSubscribe();
 				showControlsSubscribe();
 				selectedFolderSubscribe();
 				window.removeEventListener('message', onMessageHandler);
@@ -2126,6 +2111,15 @@
 	//////////////////////////
 	// Web functions
 	//////////////////////////
+
+	afterNavigate(async ({ to }) => {
+		if (to?.url.pathname === '/') {
+			await tick();
+			initNewChat();
+			banners.set(await getBanners(localStorage.token).catch(() => []));
+		}
+		stopAudio();
+	});
 
 	const initNewChat = async () => {
 		cancelBottomNavigation?.();
@@ -3621,6 +3615,7 @@
 		}, 1000);
 	};
 
+	import { standaloneMedia } from '$lib/utils/standaloneMedia';
 	const createMessagePair = async (userPrompt) => {
 		messageInput?.setText('');
 		if (selectedModels.length === 0) {
@@ -4227,7 +4222,7 @@
 			);
 			return;
 		}
-		if (selectedModels.includes('')) {
+		if ((!selectedModels.length || selectedModels.includes('')) && !standaloneMedia(requestFeatures)) {
 			toast.error($i18n.t('Model not selected'));
 			return;
 		}
@@ -4402,6 +4397,7 @@
 			role: 'user',
 			content: userPrompt,
 			...(imageModeDisplay ? { image_mode_display: imageModeDisplay } : {}),
+			...(standaloneMedia(requestFeatures) && !selectedModels.some(Boolean) ? {standalone_media_features:structuredClone(requestFeatures)} : {}),
 			...(requestFeatures.video_generation ? { video_generation_features: structuredClone(requestFeatures) } : {}),
 			files: _files.length > 0 ? _files : undefined,
 			timestamp: Math.floor(Date.now() / 1000), // Unix epoch
@@ -4446,7 +4442,7 @@
 		// Creating the first persisted chat can trigger a navigation/state restore
 		// before the request is sent. Freeze the selected integration beforehand.
 		normalizeExclusiveFeatureToggles();
-		const requestFeatures = normalizeLearningRequestFeatures(snapshotVideoRequestFeatures(features ?? _history.messages[parentId]?.video_generation_features ?? getFeatures(), $mobile));
+		const requestFeatures = normalizeLearningRequestFeatures(snapshotVideoRequestFeatures(features ?? _history.messages[parentId]?.standalone_media_features ?? _history.messages[parentId]?.video_generation_features ?? getFeatures(), $mobile));
 		let _chatId = JSON.parse(JSON.stringify($chatId));
 		_history = structuredClone(_history);
 
@@ -4458,6 +4454,12 @@
 			: atSelectedModel !== undefined
 				? [atSelectedModel.id]
 				: selectedModels;
+		const media = standaloneMedia(requestFeatures);
+		if (media) {
+			selectedModelIds = selectedModelIds.filter(Boolean);
+			if (!selectedModelIds.length) selectedModelIds = [media.id];
+		}
+		const resolveTarget = (id:string) => media?.id===id ? media : $models.find(m=>m.id===id);
 		if (requestFeatures.model3d_generation) selectedModelIds = selectedModelIds.slice(0, 1);
 
 		// Composer submissions already checked their load profile before clearing the draft.
@@ -4470,7 +4472,7 @@
 
 		// Create response messages for each selected model
 		for (const [_modelIdx, modelId] of selectedModelIds.entries()) {
-			const model = $models.filter((m) => m.id === modelId).at(0);
+			const model = resolveTarget(modelId);
 
 			if (model) {
 				let responseMessageId = uuidv4();
@@ -4537,7 +4539,7 @@
 		await Promise.all(
 			selectedModelIds.map(async (modelId, _modelIdx) => {
 				console.log('modelId', modelId);
-				const model = $models.filter((m) => m.id === modelId).at(0);
+				const model = resolveTarget(modelId);
 
 				if (model) {
 					// If there are image files, check if model is vision capable unless an image tool owns the request.
@@ -5319,7 +5321,8 @@
 
 			if (!suggestionPrompt) {
 				const modelId = message?.selectedModelId ?? message.model;
-				const model = $models.find((model) => model.id === modelId);
+				const media = standaloneMedia(userMessage.standalone_media_features);
+				const model = media?.id===modelId ? media : $models.find((model) => model.id === modelId);
 
 				if (!model) {
 					toast.error($i18n.t(`Model {{modelId}} not found`, { modelId }));
@@ -5383,10 +5386,11 @@
 					}
 				}
 
-				const mediaRequestFeatures = generatedAction === 'model3d_generation' || generatedAction === 'video_generation' || (generatedAction === 'stable_diffusion' && stableDiffusionQuality === 'qwen_image_2s')
-					? structuredClone(getFeatures()) : null;
+				const mediaRequestFeatures = media?.id===modelId ? structuredClone(userMessage.standalone_media_features) :
+					generatedAction === 'model3d_generation' || generatedAction === 'video_generation' || (generatedAction === 'stable_diffusion' && stableDiffusionQuality === 'qwen_image_2s')
+						? structuredClone(getFeatures()) : null;
 				try {
-					if (!(await ensureLocalModelsReady([model.id]))) {
+					if (!standaloneMedia(mediaRequestFeatures) && !(await ensureLocalModelsReady([model.id]))) {
 						return;
 					}
 

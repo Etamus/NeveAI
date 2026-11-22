@@ -1054,6 +1054,13 @@ function Update-NeveAI {
                         if ($rc -ne 0) { throw "Atualização das dependências do backend falhou (código $rc)" }
                         L '[OK] Dependências do backend sincronizadas'
                     }
+                    $videoEditSetup = Join-Path $ROOT 'backend\prepare_video_edit.py'
+                    if (Test-Path -LiteralPath $videoEditSetup -PathType Leaf) {
+                        PN 50 'Preparando os modelos locais do Neve Studio'
+                        $venvPython = Join-Path $ROOT 'backend\neveai\venv\Scripts\python.exe'
+                        $videoEditRc = Run $venvPython @($videoEditSetup) 'Preparar os modelos locais do Neve Studio' 2400
+                        if ($videoEditRc -ne 0) { L '[!] Modelos locais do Neve Studio não preparados. Use Reparar para concluir.' 'warn' }
+                    }
                 }
 
                 if ($canBuildAndDeploy) {

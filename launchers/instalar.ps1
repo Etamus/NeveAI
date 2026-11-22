@@ -2976,6 +2976,12 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             }
 
             # ---- 10. npm install
+            $videoEditSetup = Join-Path $BACKEND 'prepare_video_edit.py'
+            if (Test-Path -LiteralPath $videoEditSetup -PathType Leaf) {
+                P 82 'Preparando os modelos locais do Neve Studio'
+                $videoEditRc = Run $VENV_PY @($videoEditSetup) 'Preparar os modelos locais do Neve Studio' 2400
+                if ($videoEditRc -ne 0) { Log '[!] Modelos locais do Neve Studio não preparados. Use Reparar para concluir.' 'warn' }
+            }
             Set-InstallState 'installing_frontend'
             P 84 'Instalando pacotes npm'
             Set-Location -LiteralPath $ROOT

@@ -63,7 +63,7 @@ export function installTitleTooltips(root: Document) {
 		const tooltip = borrowed || expanded ? null : tippy(anchor, {
 			content: text, allowHTML: false, theme: 'dark', arrow: false, offset: [0, 4],
 			placement: 'top', trigger: 'manual',
-			...(anchor.closest('[data-model-download-toast]') ? { zIndex: 1000000001 }
+			...(anchor.closest('[data-model-download-toast], [data-runtime-error], [data-sonner-toast][data-type="error"]') ? { zIndex: 1000000001 }
 				: anchor.closest('[data-download-progress-menu]') ? { zIndex: 10003 } : {})
 		});
 		active = { owner, anchor, text, addedLabel, tooltip, borrowed };

@@ -20,6 +20,8 @@
 		showImageModeDropdown = false;
 	}
 	import ImageModeEditor from './MessageInput/ImageModeEditor.svelte';
+	import VideoEditSlots from './MessageInput/VideoEditSlots.svelte';
+	import type { EditAsset } from '$lib/utils/videoEdit';
 	import ImageSwapSlots from './MessageInput/ImageSwapSlots.svelte';
 	import { imageModeDefaults, imageModeFiles, imageModeSourceKey, imageModeIsSwap, imageModeHasEditor, imageModeFileError, imageModeSubmissionError, imageModeSubmission, type ImageModeOptions } from '$lib/utils/imageModes';
 	import { preloadImageModeThumbnails } from '$lib/utils/imageModeThumbnails';
@@ -144,9 +146,9 @@
 	$: restoreActive = activeImageMode === 'restore';
 	$: imagePromptHidden = model3dEnabled || restoreActive || activeImageMode === 'outpaint';
 	$: imageSubmissionError = imageModeSubmissionError({...stableDiffusionModeOptions, mode:activeImageMode}, files);
-	$: canSubmitMessage = model3dEnabled ? files.length === 1 && hasImageAttachment : (prompt.trim().length > 0 || files.some((file) => file?.pastedText === true) ||
+	$: canSubmitMessage = !(videoGenerationEnabled && videoEditorMode === 'edit') && (model3dEnabled ? files.length === 1 && hasImageAttachment : (prompt.trim().length > 0 || files.some((file) => file?.pastedText === true) ||
 		((restoreActive || imageModeIsSwap(activeImageMode) || activeImageMode === 'outpaint') && !imageModeFileError(activeImageMode, files) && imageModeFiles(files).length > 0)) &&
-		(activeImageMode !== 'inpaint' || !!stableDiffusionModeOptions.mask) && !imageSubmissionError;
+		(activeImageMode !== 'inpaint' || !!stableDiffusionModeOptions.mask) && !imageSubmissionError);
 	$: hasImageAttachment = files.some(
 		(file) => file?.type === 'image' || (file?.content_type ?? '').startsWith('image/')
 	);
@@ -172,6 +174,7 @@
 	$: imageSwapActive = imageModeIsSwap(activeImageMode);
 	function submitComposer() {
 		if (dictation) return;
+		if (videoGenerationEnabled && videoEditorMode === 'edit') return;
 		const mode = activeImageMode;
 		const error = imageSubmissionError;
 		if (error) { toast.error($i18n.t(error)); return; }
@@ -728,6 +731,9 @@
 	$: if (['qwen_image_2s', 'qwen_image_2_1_official'].includes(stableDiffusionQuality) && hasImageAttachment)
 		showImageResolutionDropdown = false;
 	let showVideoResolutionDropdown = false;
+	let showVideoModeDropdown = false;
+	let videoModeButton: HTMLButtonElement;
+	let videoModeMenu: HTMLElement;
 	$: if ($mobile) showVideoResolutionDropdown = false;
 	let showVideoAspectRatioDropdown = false;
 	
@@ -738,6 +744,7 @@
 		showImageResolutionDropdown = false;
 		showVideoResolutionDropdown = false;
 		showVideoAspectRatioDropdown = false;
+		showVideoModeDropdown = false;
 	};
 	onMount(() => onChatDropdownDismiss(() => {
 		closeComposerDropdowns();
@@ -746,6 +753,7 @@
 	$: if (!videoGenerationEnabled) {
 		showVideoResolutionDropdown = false;
 		showVideoAspectRatioDropdown = false;
+		showVideoModeDropdown = false;
 	}
 	$: if (videoGenerationEnabled && hasImageAttachment) showVideoAspectRatioDropdown = false;
 	$: if (stableDiffusionEnabled || videoGenerationEnabled) {
@@ -766,12 +774,14 @@
 	
 	$: if (dropdownChatId !== $chatId) {
 		dropdownChatId = $chatId;
+		videoEditAttachment = undefined;
 		showThinkingDropdown = false;
 		showImageModeDropdown = false;
 		showImageQualityDropdown = false;
 		showImageResolutionDropdown = false;
 		showVideoResolutionDropdown = false;
 		showVideoAspectRatioDropdown = false;
+		showVideoModeDropdown = false;
 	}
 
 	const isImageResolution = (value: string | null): value is typeof stableDiffusionResolution =>
@@ -1313,6 +1323,10 @@
 	};
 
 	const inputFilesHandler = async (inputFiles) => {
+		if (videoEditActive) {
+			await importVideoEditAttachment(Array.from(inputFiles));
+			return;
+		}
 		console.log('Input files handler called with:', inputFiles);
 
 		if (
@@ -1547,6 +1561,10 @@
 
 	const onDragOver = (e: DragEvent) => {
 		e.preventDefault();
+		if (showVideoEditor) {
+			dragged = false;
+			return;
+		}
 
 		// Check if a file is being dragged.
 		if (e.dataTransfer?.types?.includes('Files')) {
@@ -1595,6 +1613,15 @@
 	};
 
 	const onInputDrop = async (e: DragEvent) => {
+		if (videoEditActive && e.dataTransfer?.files.length) {
+			e.preventDefault();
+			e.stopPropagation();
+			dragged = false;
+			chatDragged = false;
+			void importVideoEditAttachment(Array.from(e.dataTransfer.files));
+			return;
+		}
+		if (videoEditActive) return;
 		const textData = e.dataTransfer?.getData('text/plain');
 		if (!textData) return;
 
@@ -1824,24 +1851,83 @@
 	import VoiceMode from '$lib/components/icons/VoiceMode.svelte';
 
 	let showHaruVoice = false;
+	let videoEditorMode = 'generate';
+	$: videoEditActive = videoGenerationEnabled && videoEditorMode === 'edit';
+	$: composerPromptHidden = imagePromptHidden || videoEditActive;
+	const videoModes = [{ id: 'generate', label: 'Neve Video 1.5' }, { id: 'edit', label: 'Neve Studio' }];
+	async function openVideoModeMenu() {
+		closeComposerDropdowns();
+		showVideoModeDropdown = true;
+		await tick();
+		videoModeMenu?.querySelector<HTMLElement>('[aria-checked="true"]')?.focus({ preventScroll: true });
+	}
+	function moveVideoModeFocus(event: KeyboardEvent) {
+		if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+		const options = Array.from(videoModeMenu.querySelectorAll<HTMLButtonElement>('button'));
+		const active = options.indexOf(document.activeElement as HTMLButtonElement);
+		const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+			: (active + (event.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length;
+		event.preventDefault();
+		options[next]?.focus({ preventScroll: true });
+	}
+	let showVideoEditor = false;
+	let studioSession = 0;
+	let VideoEditor: typeof import('./MessageInput/NeveEdit.svelte').default | undefined;
+	let videoEditor: { importFiles: (files: File[], appendToTimeline?: boolean) => Promise<EditAsset[]>; removeStagedAsset: (id: string) => void };
+	let videoEditAttachment: EditAsset | undefined;
+	let importingVideoEditAttachment = false;
+	async function loadVideoEditor() {
+		VideoEditor ??= (await import('./MessageInput/NeveEdit.svelte')).default;
+		await tick();
+	}
+	async function openVideoEditor() {
+		try {
+			closeComposerDropdowns();
+			clearVideoEditorDrag();
+			await loadVideoEditor();
+			showVideoEditor = true;
+		} catch { toast.error($i18n.t('Could not open Neve Studio.')); }
+	}
+	function clearVideoEditorDrag() {
+		dragged = false;
+		chatDragged = false;
+	}
+	async function importVideoEditAttachment(selected: File[]) {
+		if (!selected.length || importingVideoEditAttachment || dictation) return;
+		const file = selected[0];
+		if (!(file.type.startsWith('video/') || (!file.type || file.type === 'application/octet-stream') &&
+			/\.(mp4|mov|mkv|webm|avi|m4v|mts|m2ts|mpg|mpeg|ogv|flv|3gp)$/i.test(file.name))) {
+			toast.error($i18n.t('Choose a video file.'));
+			return;
+		}
+		const destination = $chatId;
+		importingVideoEditAttachment = true;
+		try {
+			await loadVideoEditor();
+			const [asset] = await videoEditor.importFiles([file], true);
+			if (asset && destination === $chatId) videoEditAttachment = asset;
+		} catch (error) {
+			toast.error($i18n.t(error instanceof Error ? error.message : 'Could not open this video.'));
+		} finally { importingVideoEditAttachment = false; }
+	}
 	let dictation: { chat: typeof $chatId; compact: boolean; recorder: MediaRecorder } | null = null;
 	let pendingDictation: { chat: typeof $chatId } | null = null;
-	$: if (dictation && (dictation.chat !== $chatId || !loaded || imagePromptHidden)) dictation = null;
-	$: if (pendingDictation && (pendingDictation.chat !== $chatId || !loaded || imagePromptHidden || showHaruVoice)) pendingDictation = null;
+	$: if (dictation && (dictation.chat !== $chatId || !loaded || composerPromptHidden)) dictation = null;
+	$: if (pendingDictation && (pendingDictation.chat !== $chatId || !loaded || composerPromptHidden || showHaruVoice)) pendingDictation = null;
 	onDestroy(() => { pendingDictation = null; });
-	$: offerVoice = !prompt.trim() && !files.length && !canSubmitMessage && !uploadPending &&
-		!pendingImageAttachments && !responseInProgress && !imagePromptHidden;
+	$: offerVoice = !responseInProgress && !prompt.trim() && !files.length && !canSubmitMessage &&
+		!uploadPending && !pendingImageAttachments && !composerPromptHidden;
 
 	async function beginDictation() {
-		if (dictation || pendingDictation || showHaruVoice) return;
+		if (dictation || pendingDictation || showHaruVoice || composerPromptHidden) return;
 		const attempt = pendingDictation = { chat: $chatId };
 		try {
 			const recorder = await openDictationRecorder();
-			if (pendingDictation !== attempt || attempt.chat !== $chatId || !loaded || imagePromptHidden || showHaruVoice) {
+			if (pendingDictation !== attempt || attempt.chat !== $chatId || !loaded || composerPromptHidden || showHaruVoice) {
 				recorder.stream.getTracks().forEach((track) => track.stop());
 				return;
 			}
-			showThinkingDropdown = false;
+			closeComposerDropdowns();
 			showTokenPopup = false;
 			dictation = { chat: attempt.chat, compact: isCompact, recorder };
 		} catch {
@@ -1855,7 +1941,7 @@
 		const session = dictation;
 		dictation = null;
 		await tick();
-		if (!session || session.chat !== $chatId || dictation || imagePromptHidden || !loaded) return;
+		if (!session || session.chat !== $chatId || dictation || composerPromptHidden || !loaded) return;
 		if (text) chatInputElement?.appendPlainText(text);
 		else chatInputElement?.focus();
 	}
@@ -1864,6 +1950,14 @@
 {#if showHaruVoice}
 	{#key $chatId}
 		<HaruVoice bind:show={showHaruVoice} />
+	{/key}
+{/if}
+
+{#if VideoEditor}
+	{#key studioSession}
+	<svelte:component this={VideoEditor} bind:this={videoEditor} bind:show={showVideoEditor} hasComposerAttachment={!!videoEditAttachment} onFileDragHandled={clearVideoEditorDrag}
+		onDiscard={() => { videoEditAttachment = undefined; showVideoEditor = false; studioSession++; }}
+		onRemoveAsset={(id) => { if (videoEditAttachment?.id === id) videoEditAttachment = undefined; }} />
 	{/key}
 {/if}
 
@@ -1876,7 +1970,7 @@
 {/snippet}
 
 {#snippet dictateButton()}
-	{#if !imagePromptHidden}
+	{#if !composerPromptHidden}
 		<Tooltip content={$i18n.t('Dictate')}>
 			<button type="button" class="composer-dictate-button grid size-8 shrink-0 place-items-center rounded-full text-gray-600 hover:bg-black/5 dark:text-gray-300 dark:hover:bg-white/10"
 				aria-label={$i18n.t('Dictate')} on:click={beginDictation}>
@@ -2002,7 +2096,16 @@
 <svelte:window
 	on:resize={closeComposerDropdowns}
 	on:paste={pasteImageOverComposer}
-	on:keydown={(event) => { imageComposerEnter(event); if ($mobile && event.key === 'Escape') showTokenPopup = false; }}
+	on:keydown={(event) => {
+		imageComposerEnter(event);
+		if (event.key === 'Escape') {
+			if ($mobile) showTokenPopup = false;
+			if (showVideoModeDropdown) {
+				showVideoModeDropdown = false;
+				videoModeButton?.focus({ preventScroll: true });
+			}
+		}
+	}}
 	on:click={(e) => {
 		if ($mobile && showTokenPopup && !(e.target as Element).closest('[data-token-usage-trigger], [data-token-usage-popup]')) showTokenPopup = false;
 		if (
@@ -2020,6 +2123,12 @@
 			)
 		) {
 			showImageResolutionDropdown = false;
+		}
+		if (
+			showVideoModeDropdown &&
+			!(e.target as Element).closest('#video-mode-dropdown-container, [data-composer-dropdown-anchor="video-mode-dropdown-container"]')
+		) {
+			showVideoModeDropdown = false;
 		}
 		if (
 			showVideoResolutionDropdown &&
@@ -2143,9 +2252,9 @@
 						bind:this={filesInputElement}
 						bind:files={inputFiles}
 						type="file"
-						accept={mediaAttachmentPolicy?.accept ?? undefined}
+						accept={videoEditActive ? 'video/*,.mkv,.avi,.mov,.webm,.mts,.m2ts' : mediaAttachmentPolicy?.accept ?? undefined}
 						hidden
-						multiple={mediaAttachmentPolicy?.maxCount !== 1}
+						multiple={!videoEditActive && mediaAttachmentPolicy?.maxCount !== 1}
 						on:change={async () => {
 							if (inputFiles && inputFiles.length > 0) {
 								const _inputFiles = Array.from(inputFiles);
@@ -2196,6 +2305,7 @@
 							bind:this={composerSurface}
 							inert={!!dictation}
 							class:composer-dictating={!!dictation}
+							class:composer-dictating-expanded={!!dictation && !dictation.compact}
 							tabindex={imagePromptHidden ? -1 : undefined}
 							use:animateComposerHeight={{ key: `${isCompact}:${isInputMultiline}:${composerContentRevision}:${stableDiffusionQuality}:${webSearchEnabled}:${deepSearchEnabled}:${learningEnabled}:${stableDiffusionEnabled}:${musicGenerationEnabled}:${videoGenerationEnabled}:${selectedToolIds.length}`, context: `${$chatId}:${selectedModels.join(',')}`, conversation: $chatId }}
 							class="min-h-0 flex-none flex {isCompact
@@ -2237,7 +2347,13 @@
 									</div>
 								{/if}
 
-								{#if model3dEnabled || imageSwapActive || restoreActive || imageModeHasEditor(activeImageMode)}
+								{#if videoEditActive}
+									<VideoEditSlots asset={videoEditAttachment} busy={importingVideoEditAttachment}
+										onImport={importVideoEditAttachment} onEdit={openVideoEditor} onRemove={() => {
+											if (videoEditAttachment) videoEditor.removeStagedAsset(videoEditAttachment.id);
+											videoEditAttachment = undefined;
+										}} />
+								{:else if model3dEnabled || imageSwapActive || restoreActive || imageModeHasEditor(activeImageMode)}
 									<ImageSwapSlots bind:files mode={model3dEnabled ? 'model3d' : stableDiffusionModeOptions.mode as 'outfit'|'body'|'restore'|'inpaint'|'outpaint'} options={model3dEnabled ? imageModeDefaults() : stableDiffusionModeOptions} onEdit={openImageModeEditor} uploadFiles={inputFilesHandler} disabled={uploadPending || pendingImageAttachments > 0 || files.some(file => file.status === 'uploading')} />
 								{:else if files.length > 0}
 									<div
@@ -2373,7 +2489,7 @@
 								</div>
 							{/if}
 
-						<div class="composer-editor {isCompact ? 'flex-1 min-w-0 px-1 flex items-center' : 'px-2.5'}" class:hidden={imagePromptHidden} inert={imagePromptHidden}>
+						<div class="composer-editor {isCompact ? 'flex-1 min-w-0 px-1 flex items-center' : 'px-2.5'}" class:hidden={composerPromptHidden} inert={composerPromptHidden}>
 								<div
 									bind:this={chatInputContainerEl}
 									use:composerTextViewport={composerContentRevision}
@@ -2956,19 +3072,52 @@
 												</button>
 
 
-												{#if !$mobile}
+										<div id="video-mode-dropdown-container" class="relative shrink-0">
+											<button
+												type="button"
+												bind:this={videoModeButton}
+												class="flex items-center gap-1 rounded-full px-2 py-[7px] text-[0.8125rem] text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+												aria-label={$i18n.t('Video mode')}
+												aria-haspopup="menu"
+												aria-expanded={showVideoModeDropdown}
+												on:click|preventDefault={() => showVideoModeDropdown ? (showVideoModeDropdown = false) : openVideoModeMenu()}
+												on:keydown={(event) => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); void openVideoModeMenu(); } }}
+											>
+												<span>{videoEditorMode === 'edit' ? 'Neve Studio' : 'Neve Video 1.5'}</span>
+												<svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"
+													class="size-3.5 shrink-0 transition-transform duration-150 {showVideoModeDropdown ? '' : 'rotate-180'}">
+													<path fill-rule="evenodd" clip-rule="evenodd" d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z" />
+												</svg>
+											</button>
+											{#if showVideoModeDropdown}
+												<div bind:this={videoModeMenu} use:viewportDropdown role="menu" tabindex="-1" aria-label={$i18n.t('Video mode')}
+													class="fixed z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
+													on:keydown={moveVideoModeFocus} in:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}>
+													{#each videoModes as option}
+														<button type="button" role="menuitemradio" aria-checked={videoEditorMode === option.id}
+															class="flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-gray-700 hover:bg-gray-100 focus-visible:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800 dark:focus-visible:bg-gray-800"
+															on:click={() => { videoEditorMode = option.id; showVideoModeDropdown = false; videoModeButton?.focus({ preventScroll: true }); }}>
+															<span>{option.label}</span>
+															{#if videoEditorMode === option.id}<CheckCircle className="size-4" strokeWidth="1.7" />{/if}
+														</button>
+													{/each}
+												</div>
+											{/if}
+										</div>
+										{#if videoEditorMode === 'generate' && !$mobile}
 												<div class="relative shrink-0" id="video-resolution-dropdown-container">
 												<VideoSettingsDropdown
 													bind:resolution={videoGenerationResolution}
 													bind:duration={videoGenerationDuration}
 													bind:open={showVideoResolutionDropdown}
+													ongoing={!!history?.currentId}
 													positionDropdown={viewportDropdown}
 													on:open={() => closeComposerDropdowns()}
 												/>
 												</div>
 												{/if}
 
-												{#if !hasImageAttachment}
+										{#if videoEditorMode === 'generate' && !hasImageAttachment}
 													<div class="relative shrink-0" id="video-aspect-ratio-dropdown-container">
 														<button
 															type="button"
@@ -2976,8 +3125,9 @@
 															aria-label={$i18n.t('Video aspect ratio')}
 															aria-expanded={showVideoAspectRatioDropdown}
 															on:click|preventDefault={() => {
-																showVideoResolutionDropdown = false;
-																showVideoAspectRatioDropdown = !showVideoAspectRatioDropdown;
+																const open = !showVideoAspectRatioDropdown;
+																closeComposerDropdowns();
+																showVideoAspectRatioDropdown = open;
 															}}
 														>
 															<span>{videoGenerationAspectRatio}</span>
@@ -3135,7 +3285,13 @@
 	#message-input-container:focus { outline: none; }
 	#message-input-container.composer-dictating { border-color: rgb(0 0 0 / 18%); }
 	:global(.dark) #message-input-container.composer-dictating { border-color: rgb(255 255 255 / 18%); }
-	#message-input-container.composer-dictating > * { visibility: hidden; }
+	#message-input-container.composer-dictating :global(*) { visibility: hidden !important; }
+	#message-input-container.composer-dictating-expanded {
+		height: 98px !important;
+		min-height: 0 !important;
+		overflow: clip;
+		transition: none;
+	}
 	@media (max-width: 767px) {
 		.composer-dictate-button { width: 38px; height: 38px; }
 	}
@@ -3348,6 +3504,17 @@
 			justify-content: center;
 		}
 		.message-input-active-controls button { min-height: 38px; white-space: nowrap; }
+		.message-input-actions:has(#video-mode-dropdown-container) .message-input-active-controls {
+			flex-wrap: wrap;
+			overflow: visible;
+			row-gap: 0;
+		}
+		.message-input-actions:has(#video-mode-dropdown-container) .message-input-add-control {
+			align-self: start;
+		}
+		.message-input-actions:has(#video-mode-dropdown-container) .message-input-actions-secondary {
+			align-self: end;
+		}
 		:global([data-composer-root] button.invisible) { visibility: visible; }
 		.stable-image-actions .image-quality-control { flex: 0 0 auto; }
 		.stable-image-actions .image-resolution-control { flex: 0 0 auto; }

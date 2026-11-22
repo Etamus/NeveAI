@@ -54,6 +54,7 @@ from neveai.socket.main import (
 from neveai.routers import (
     audio,
     haru_voice,
+    video_edit,
     llamacpp,
     hf_models,
     retrieval,
@@ -415,6 +416,7 @@ app.state.config.FOLDER_MAX_FILE_COUNT = FOLDER_MAX_FILE_COUNT
 
 # Migrate legacy access_control â†’ access_grants on boot
 from neveai.utils.access_control import migrate_access_control
+from neveai.utils.standalone_media import media_request
 
 connections = app.state.config.TOOL_SERVER_CONNECTIONS
 if any("access_control" in c.get("config", {}) for c in connections):
@@ -820,6 +822,7 @@ app.include_router(model3d_generation.router, prefix="/api/v1/model3d", tags=["m
 
 app.include_router(audio.router, prefix="/api/v1/audio", tags=["audio"])
 app.include_router(haru_voice.router, prefix="/api/v1/audio", tags=["audio"])
+app.include_router(video_edit.router, prefix="/api/v1/video-edit", tags=["video-edit"])
 app.include_router(retrieval.router, prefix="/api/v1/retrieval", tags=["retrieval"])
 
 app.include_router(configs.router, prefix="/api/v1/configs", tags=["configs"])
@@ -923,7 +926,7 @@ async def chat_completion(
     form_data: dict,
     user=Depends(get_verified_user),
 ):
-    if not request.app.state.MODELS:
+    if not request.app.state.MODELS and not str(form_data.get("model", "")).startswith("neve-media/"):
         await get_all_models(request, user=user)
 
     model_id = form_data.get("model", None)
@@ -933,7 +936,11 @@ async def chat_completion(
     metadata = {}
     try:
         model_info = None
-        if not model_item.get("direct", False):
+        integration = media_request(model_id, form_data.get("features") or {}, request.app.state.config, user)
+        if integration:
+            model_item = {}
+            model = {"id": model_id, "owned_by": "neve"}
+        elif not model_item.get("direct", False):
             if model_id not in request.app.state.MODELS:
                 raise Exception("Model not found")
 
@@ -1005,6 +1012,7 @@ async def chat_completion(
             reasoning_tags = model_info_params.get("reasoning_tags")
 
         metadata = {
+            "standalone_media": integration,
             "user_id": user.id,
             "chat_id": form_data.pop("chat_id", None),
             "message_id": form_data.pop("id", None),

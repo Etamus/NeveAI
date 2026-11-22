@@ -15,6 +15,7 @@
 	export let name: string;
 	export let deferred = true;
 	export let showName = true;
+	export let previewOnly = false;
 	let nearViewport = false;
 	let mode: ViewMode = 'textured';
 	$: id, mode = 'textured';
@@ -78,7 +79,7 @@
 </script>
 
 <div data-mesh-result={id} class="overflow-hidden rounded-lg bg-gray-50 dark:bg-gray-850/50">
-	<div class="flex flex-wrap items-center gap-2 p-3 text-sm">
+	{#if !previewOnly}<div class="flex flex-wrap items-center gap-2 p-3 text-sm">
 		{#if showName}
 			<Cube className="size-4 shrink-0" />
 			<span data-mesh-name class="min-w-0 flex-1 truncate">{name}</span>
@@ -136,6 +137,7 @@
 		<button type="button" aria-label={$i18n.t('Download')} title={$i18n.t('Download')} aria-busy={downloading} disabled={downloading || invalidHeight} class="grid size-8 place-items-center rounded-md hover:bg-gray-200 disabled:opacity-50 dark:hover:bg-gray-800" on:click={download}>{#if downloading}<OrbitingSpheres className="size-4" />{:else}<Download className="size-4" />{/if}</button>
 		</div>
 	</div>
+	{/if}
 	{#if error}<p class="px-3 pb-2 text-sm text-red-500" role="alert">{error}</p>{/if}
 	<div use:observePreview class="h-[min(52vh,30rem)] bg-gray-100 dark:bg-gray-850">
 		{#if nearViewport}

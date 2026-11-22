@@ -233,7 +233,7 @@
 							</div>{/if}
 						</div>
 					{/each}
-					<Tooltip content={$i18n.t(tool==='select'&&exclude?'Remover seleção':'Selecionar objeto')} placement="right"><button type="button" class="tool" class:active={tool==='select'} class:subtract={tool==='select'&&exclude} disabled={loading} aria-disabled={busy||loading} aria-label={$i18n.t(tool==='select'&&exclude?'Remover seleção':'Selecionar objeto')} aria-pressed={tool==='select'} on:click={()=>chooseTool('select')}><SelectionBrush className="size-4" /></button></Tooltip>
+					<Tooltip content={$i18n.t(tool==='select'&&exclude?'Remover seleção':'Selecionar objeto')} placement="right"><button type="button" class="tool selection" class:active={tool==='select'} class:subtract={tool==='select'&&exclude} disabled={loading} aria-disabled={busy||loading} aria-label={$i18n.t(tool==='select'&&exclude?'Remover seleção':'Selecionar objeto')} aria-pressed={tool==='select'} on:click={()=>chooseTool('select')}><SelectionBrush className="size-4" /></button></Tooltip>
 					<Tooltip content={$i18n.t('Limpar')} placement="right"><button type="button" class="tool" disabled={loading||restoring} aria-disabled={busy||loading||restoring} aria-label={$i18n.t('Limpar')} on:click={clear}><Trash className="size-4" /></button></Tooltip>
 				</div>
 				<div class="region-image min-w-0">
@@ -285,7 +285,8 @@
 	.tool-primary-icon :global(svg){display:block;margin:auto;}
 	.tool-primary-icon :global(.size-preview-circle){transform:translate(-1.5px,-1.5px);}
 	.tool-corner-indicator{position:absolute;right:3px;bottom:3px;width:5px;height:5px;background:currentColor;clip-path:polygon(100% 0,100% 100%,0 100%);opacity:.65;}
-	.tool.subtract::after{content:'';position:absolute;right:4px;bottom:5px;width:6px;height:2px;background:currentColor;}
+	.tool.selection::after,.tool.selection:not(.subtract)::before{content:'';position:absolute;right:4px;bottom:5px;width:6px;height:2px;background:currentColor;pointer-events:none;}
+	.tool.selection:not(.subtract)::before{right:6px;bottom:3px;width:2px;height:6px;}
 	.mask-viewport::-webkit-scrollbar-corner{background:transparent;}
 	:global(.dark) .mask-viewport{color-scheme:dark;}
 </style>

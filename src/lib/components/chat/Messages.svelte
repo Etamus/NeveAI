@@ -412,8 +412,10 @@
 	};
 
 	import { getVideoGenerationFeatures } from '$lib/utils/videoGeneration';
+	import { standaloneMedia } from '$lib/utils/standaloneMedia';
 	const editMessage = async (messageId, { content, files }, submit = true) => {
-		if ((selectedModels ?? []).filter((id) => id).length === 0) {
+		const mediaFeatures=history.messages[messageId]?.standalone_media_features;
+		if ((selectedModels ?? []).filter((id) => id).length === 0 && !standaloneMedia(mediaFeatures)) {
 			toast.error($i18n.t('Model not selected'));
 			return;
 		}
@@ -432,6 +434,7 @@
 					role: 'user',
 					content: userPrompt,
 					...(videoFeatures ? { video_generation_features: videoFeatures } : {}),
+					...(mediaFeatures ? {standalone_media_features:mediaFeatures} : {}),
 					...(files && { files: files }),
 					models: selectedModels,
 					timestamp: Math.floor(Date.now() / 1000) // Unix epoch

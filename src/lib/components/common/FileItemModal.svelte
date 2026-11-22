@@ -70,6 +70,7 @@
 
 	let presentation: Awaited<ReturnType<typeof import('$lib/utils/pptxToHtml').pptxToImages>> | null = null;
 
+	$: isMesh = item?.meta?.data?.source === 'neve-model3d';
 	$: isPDF =
 		item?.meta?.content_type === 'application/pdf' ||
 		(item?.name && item?.name.toLowerCase().endsWith('.pdf'));
@@ -274,6 +275,7 @@
 	};
 
 	const loadContent = async () => {
+		if (isMesh) { loading = false; return; }
 		if (item?.type === 'collection') {
 			loading = true;
 
@@ -411,7 +413,7 @@ $: if (show) {
 		</div>
 
 		<div class="flex-1 min-h-0 flex flex-col overflow-hidden px-3 pb-3 pt-2">
-			{#if !loading || isPDF || isPptx || isImage}
+			{#if !loading || isMesh || isPDF || isPptx || isImage}
 				<div
 					class="file-preview-surface flex-1 {isPDF || isVideo || isImage || isExcel || isPptx
 						? 'overflow-hidden'
@@ -429,7 +431,9 @@ $: if (show) {
 						</div>
 					{/if}
 
-					{#if isImage}
+					{#if isMesh}
+						{#await import('./MeshResult.svelte') then mesh}<svelte:component this={mesh.default} id={item.id} name={item.name} deferred={false} previewOnly />{/await}
+					{:else if isImage}
 						<div class="file-image-viewport relative h-full w-full overflow-hidden">
 							<ZoomSurface src={`${NEVEAI_API_BASE_URL}/files/${item.id}/content`} alt={item?.name ?? 'Image'} imageClass="file-image-target rounded-lg" />
 						</div>

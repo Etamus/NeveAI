@@ -72,7 +72,7 @@ async function checkFullscreenToolbar(page, overlay) {
 	await close.click();
 	await overlay.waitFor({ state: 'hidden' });
 }
-const browser = await chromium.launch({ args: ['--enable-webgl', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await chromium.launch({ executablePath: process.env.NEVE_TEST_BROWSER, args: ['--enable-webgl', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 try {
 	for (const width of [1440, 390]) {
 		const page = await browser.newPage({ viewport: { width, height: width === 390 ? 820 : 900 } });
@@ -253,10 +253,9 @@ try {
 			}
 			if (file.id === 'mesh-test') {
 				await dialog.locator('canvas').waitFor();
-				const chooser = dialog.getByRole('button', { name: /Formato|File format/ });
-				await chooser.click();
-				await dialog.getByRole('menuitemradio', { name: 'FBX', exact: true }).click();
-				assert.match(await chooser.innerText(), /FBX/);
+				assert.equal(await dialog.getByRole('button', { name: /Formato|File format|Baixar|Download/ }).count(), 0);
+				assert.equal(await dialog.getByRole('spinbutton').count(), 0);
+				await dialog.locator('[data-mesh-view]').waitFor();
 			}
 			if (file.id === 'image-test') {
 				const image = dialog.locator('.file-image-viewport img');
@@ -336,6 +335,20 @@ try {
 			} else await page.keyboard.press('Escape');
 			await dialog.waitFor({ state: 'hidden' });
 		}
+		await page.goto(base, { waitUntil: 'networkidle' });
+		await page.route('**/api/v1/files/search?*', r => r.fulfill({json:library}));
+		const userMenu = page.getByRole('button',{name:/Usuário|User menu/i});
+		if (!await userMenu.isVisible()) await page.locator('.chat-navbar-sidebar button').click();
+		await userMenu.click();
+		await page.getByRole('menuitem', {name:/^(Configurações|Settings)$/}).click();
+		await page.locator('[aria-controls="tab-data-controls"]').click();
+		await page.locator('.settings-content').getByRole('button',{name:/^(Manage|Gerenciar)$/}).click();
+		await page.locator('.files-list-scroll').getByText('Model.glb',{exact:true}).click();
+		const filesMesh = page.locator('[data-mesh-result="mesh-test"]');
+		await filesMesh.locator('[data-mesh-view]').waitFor();
+		assert.equal(await filesMesh.getByRole('spinbutton').count(),0);
+		assert.equal(await filesMesh.getByRole('button',{name:/Download|Baixar|File format|Formato/}).count(),0);
+		await filesMesh.screenshot({path:'logs/mesh-files-'+width+'.png'});
 		await page.goto(base, { waitUntil: 'networkidle' });
 		await page.locator('#input-menu-button').click();
 		const menu = await page.getByRole('button', { pressed: false }).allTextContents();

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { createEventDispatcher, getContext } from 'svelte';
+	import { fly } from 'svelte/transition';
 	import type { I18nStore } from '$lib/i18n';
 
 	const i18n = getContext<I18nStore>('i18n');
@@ -7,6 +8,7 @@
 	export let resolution: '480p' | '672p' = '480p';
 	export let duration: '5s' | '8s' = '5s';
 	export let open = false;
+	export let ongoing = false;
 	export let positionDropdown: (node: HTMLElement) => { destroy(): void } | void;
 	let trigger: HTMLButtonElement;
 
@@ -49,6 +51,7 @@
 		<div
 			id="video-settings-panel"
 			use:positionDropdown
+			transition:fly={{ y: ongoing ? 5 : -5, duration: 150 }}
 			class="fixed z-50 w-[15.5rem] overflow-hidden rounded-md border border-gray-100 bg-white p-1 text-sm text-gray-700 shadow-md dark:border-gray-800 dark:bg-gray-850 dark:text-gray-200"
 			style="font-family: 'Segoe UI', sans-serif;"
 		>

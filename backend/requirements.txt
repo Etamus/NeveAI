@@ -2,6 +2,7 @@ fastapi==0.142.2
 uvicorn[standard]==0.54.0
 uv>=0.8,<1
 pydantic==2.13.5
+regex==2026.9.3
 python-multipart==0.0.32
 itsdangerous==2.2.0
 
@@ -88,6 +89,7 @@ rank-bm25==0.2.2
 
 onnxruntime==1.30.0
 faster-whisper==1.2.1
+sherpa-onnx==1.13.3
 
 black==26.5.1
 youtube-transcript-api==1.2.4
@@ -96,6 +98,7 @@ pydub
 ddgs==9.16.1
 
 av==14.0.1
+imageio-ffmpeg==0.6.0
 
 
 

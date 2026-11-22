@@ -90,6 +90,11 @@ def _detect_reasoning_control(
     so Quick mode actually disables thinking.
     """
     filename_hint = str(model_filename or "").lower()
+    template = (props or {}).get("chat_template")
+    if isinstance(template, str) and all(marker in template for marker in (
+        "<|content_thinking|>", "<|message_system|>", "emit_thinking_effort", "reasoning_effort"
+    )):
+        return "inkling_effort"
     props_text = json.dumps(props or {}, ensure_ascii=False, default=str).lower()
     combined = f"{filename_hint}\n{props_text}\n{str(runtime_hint or '').lower()}"
 
@@ -121,6 +126,8 @@ def _resolve_reasoning_settings(
 ) -> tuple[bool, Optional[int], Optional[str]]:
     """Return no_think, token budget and effort for a semantic UI state."""
     quick = mode == "quick"
+    if control == "inkling_effort":
+        return quick, None, ("none" if quick else "max" if unlimited else "high" if extended else "medium")
 
     if control == "effort":
         effort = "low" if quick else "high" if extended else "medium"
@@ -1327,7 +1334,13 @@ class LocalModelManager:
             payload["reasoning_effort"] = reasoning_effort
             payload["chat_template_kwargs"] = {"reasoning_effort": reasoning_effort}
 
-        if no_think:
+        inkling = getattr(info, "reasoning_control", None) == "inkling_effort"
+        if inkling and (reasoning_effort or no_think):
+            # The native template uses effort, not enable_thinking. Keep its channel parser active.
+            payload.pop("reasoning_effort", None)
+            payload["chat_template_kwargs"] = {"reasoning_effort": "none" if no_think else reasoning_effort}
+            payload["reasoning_format"] = "deepseek"
+        elif no_think:
             payload["chat_template_kwargs"] = {"enable_thinking": False}
             # A constrained JSON grammar is applied to the answer channel only.
             # Keeping the reasoning parser enabled avoids treating the template's
@@ -1346,6 +1359,8 @@ class LocalModelManager:
         context_window = getattr(self._loaded.get(model_id), "n_ctx", None)
         if stream:
             payload["timings_per_token"] = True
+            if inkling and no_think:
+                return self._stream_proxy(client, payload, model_id, hide_native_thinking=True)
             return self._stream_proxy(client, payload, model_id)
         else:
             resp = await client.post("/v1/chat/completions", json=payload, timeout=300.0)
@@ -1353,13 +1368,16 @@ class LocalModelManager:
                 log.error(f"llama-server non-stream error {resp.status_code}: {resp.text[:1000]}")
                 raise RuntimeError(_normalize_llamacpp_error_message(resp.text))
             result = resp.json()
+            if inkling and no_think:
+                for choice in result.get("choices", []):
+                    choice.get("message", {}).pop("reasoning_content", None)
             # Override model name to our model_id
             result["model"] = model_id
             if isinstance(context_window, int) and context_window > 0 and result.get("usage"):
                 result["usage"]["context_window"] = context_window
             return result
 
-    def _stream_proxy(self, client: httpx.AsyncClient, payload: dict, model_id: str):
+    def _stream_proxy(self, client: httpx.AsyncClient, payload: dict, model_id: str, *, hide_native_thinking=False):
         """Stream SSE from llama-server back to the client."""
         # Retain this load session even if the same model is immediately reloaded.
         model_info = self._loaded.get(model_id)
@@ -1401,6 +1419,9 @@ class LocalModelManager:
                                 break
                             try:
                                 data = json.loads(data_str)
+                                if hide_native_thinking:
+                                    for choice in data.get("choices", []):
+                                        choice.get("delta", {}).pop("reasoning_content", None)
                                 data["model"] = model_id
                                 # Sample native metrics without flushing the batched text on every token.
                                 if data.get("timings") or data.get("usage"):
@@ -2017,7 +2038,9 @@ async def generate_chat_completion(
         loaded = model_manager._loaded.get(model_id)
         client = _get_http_client(model_manager._ports[model_id])
         template_options = {}
-        if no_think:
+        if getattr(loaded, "reasoning_control", None) == "inkling_effort" and reasoning_effort:
+            template_options["reasoning_effort"] = reasoning_effort
+        elif no_think:
             template_options["enable_thinking"] = False
         elif reasoning_effort:
             template_options["reasoning_effort"] = reasoning_effort

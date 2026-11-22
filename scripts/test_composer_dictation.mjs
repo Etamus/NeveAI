@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { chromium } from '../logs/ui-image-26/node_modules/playwright/index.mjs';
 
 const origin = process.env.NEVE_TEST_ORIGIN || 'http://localhost:8080';
-const browser = await chromium.launch({ args: [
+const browser = await chromium.launch({ executablePath: process.env.NEVE_TEST_BROWSER, args: [
 	'--use-fake-ui-for-media-stream',
 	'--use-fake-device-for-media-stream',
 	'--use-file-for-fake-audio-capture=' + resolve('logs/haru-question-0.wav')
@@ -54,6 +55,7 @@ try {
 			window.dictationTracks.length && window.dictationTracks.every(track => track.readyState === 'ended')
 		);
 		async function record() {
+			const compact = await composer.evaluate(el => el.classList.contains('flex-row'));
 			const before = await composer.boundingBox();
 			const primary = await composer.locator('#send-message-button').boundingBox();
 			await dictate.click();
@@ -71,12 +73,12 @@ try {
 			await page.waitForFunction(() => window.dictationTracks.some(track => track.readyState === 'live'));
 			await panel.locator('canvas').waitFor();
 			const rect = await composer.boundingBox();
-			assert(Math.abs(before.height - rect.height) <= 1);
+			assert(Math.abs(rect.height - (compact ? before.height : 98)) <= 1);
 			assert(await composer.evaluate(el => el.inert));
 			const actions = await Promise.all([cancel.boundingBox(), confirm.boundingBox()]);
 			assert(actions.every(button => button.x >= rect.x && button.x + button.width <= rect.x + rect.width));
 			assert(Math.abs(actions[0].y - actions[1].y) < 1);
-			for (const key of ['x', 'y', 'width', 'height']) {
+			for (const key of (compact ? ['x', 'y', 'width', 'height'] : ['x', 'width', 'height'])) {
 				assert(Math.abs(actions[1][key] - primary[key]) < 0.5, `Confirm differs on ${key}: ${JSON.stringify({ primary, confirm: actions[1] })}`);
 			}
 		}
@@ -108,6 +110,38 @@ try {
 		await checkTracks();
 		assert.match(await input.innerText(), /First line\s+Second line Transcribed <tag> \*literally\*\./);
 		assert.equal(requests, 2);
+		if (width === 1440) {
+			const preview = await readFile(resolve('static/favicon.png'));
+			await page.route('**/api/v1/files/**', async route => {
+				if (route.request().method() === 'POST') {
+					await route.fulfill({ json: { id: 'dictation-layout-fixture', filename: 'fixture.png', meta: { name: 'fixture.png', content_type: 'image/png' }, data: { status: 'completed' } } });
+				} else await route.fulfill({ contentType: 'image/png', body: preview });
+			});
+			await page.locator('.composer-more-trigger').click();
+			await page.getByText('Criar imagem', { exact: true }).last().click();
+			await page.locator('#image-mode-dropdown-container button').click();
+			await page.locator('[data-image-mode="inpaint"]').click();
+			const slot = composer.locator('[data-image-slot="base"]');
+			await slot.waitFor();
+			await composer.locator('.image-swap-slots').locator('..').locator('input[accept="image/*"]').first().setInputFiles(resolve('static/favicon.png'));
+			await composer.locator('[data-image-mode-edit]').waitFor();
+			assert((await composer.boundingBox()).height > 125);
+			await record();
+			assert.equal(await slot.isVisible(), false);
+			assert.equal(await input.isVisible(), false);
+			await page.screenshot({ path: 'logs/composer-dictation-attachment-1440.png' });
+			await cancel.click();
+			await panel.waitFor({ state: 'detached' });
+			await checkTracks();
+			await slot.waitFor();
+			await composer.locator('#image-mode-dropdown-container button').click();
+			await page.locator('[data-image-mode="outpaint"]').click();
+			await page.waitForFunction(() => document.querySelector('#chat-input')?.getClientRects().length === 0);
+			assert.equal(await dictate.count(), 0);
+			await composer.locator('#image-mode-dropdown-container button').click();
+			await page.locator('#image-mode-dropdown [role="menuitemradio"]').first().click();
+			await input.waitFor();
+		}
 		const draft = await input.innerText();
 		await page.evaluate(() => {
 			window.dictationWasMounted = false;

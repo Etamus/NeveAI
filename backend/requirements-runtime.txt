@@ -7,6 +7,7 @@ uvicorn[standard]==0.54.0
 typer
 typing_extensions
 pydantic==2.13.5
+regex==2026.9.3
 python-multipart==0.0.32
 itsdangerous==2.2.0
 python-dotenv
@@ -93,9 +94,11 @@ rapidocr-onnxruntime==1.4.4
 soundfile==0.13.1
 onnxruntime==1.30.0
 faster-whisper==1.2.1
+sherpa-onnx==1.13.3
 youtube-transcript-api==1.2.4
 pydub
 av==14.0.1
+imageio-ffmpeg==0.6.0
 
 # Web search
 ddgs==9.16.1

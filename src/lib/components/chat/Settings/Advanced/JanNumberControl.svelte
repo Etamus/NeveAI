@@ -4,6 +4,8 @@
 	export let max: number = 1;
 	export let step: number = 0.05;
 	export let disabled = false;
+	export let label: string | undefined = undefined;
+	export let onCommit: ((value: number) => void) | undefined = undefined;
 	export let adjustMode: 'step' | 'double' = 'step';
 
 	$: if (value !== null && value !== undefined) {
@@ -30,7 +32,16 @@
 		newVal = Number(newVal.toFixed(decimals(step)));
 		newVal = Math.max(min, Math.min(max, newVal));
 		value = newVal;
+		onCommit?.(value);
 	};
+	function commitInput(event: Event) {
+		if (!onCommit) return;
+		const input = event.currentTarget as HTMLInputElement;
+		const raw = Number.isFinite(input.valueAsNumber) ? input.valueAsNumber : min;
+		value = Number(Math.min(max, Math.max(min, min + Math.round((raw - min) / step) * step)).toFixed(decimals(step)));
+		input.value = String(value);
+		onCommit(value);
+	}
 </script>
 
 <div
@@ -57,6 +68,8 @@
 	</button>
 	<input
 		type="number"
+		aria-label={label}
+		on:change={commitInput}
 		class="h-7 w-12 text-center text-xs bg-transparent outline-none tabular-nums" style="font-family: 'Segoe UI', system-ui, sans-serif;"
 		bind:value
 		{min}

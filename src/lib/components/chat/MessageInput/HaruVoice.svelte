@@ -509,16 +509,16 @@
 		{#if profileNotice}
 			<p role="alert" class="max-w-full text-center text-xs text-red-500">{$i18n.t(profileNotice)}</p>
 		{/if}
-		<div class="grid w-full max-w-[18.5rem] grid-cols-[minmax(3.5rem,1fr)_minmax(0,auto)_minmax(3.5rem,1fr)] grid-rows-[1.75rem_minmax(2.75rem,auto)] items-center gap-x-1">
+		<div class="grid w-full max-w-[18.5rem] grid-cols-[3.5rem_minmax(0,1fr)_3.5rem] grid-rows-[minmax(1.75rem,auto)_2.75rem] items-center gap-x-1">
 			<div class="row-start-2 {phase === 'connecting' ? 'col-start-2 justify-self-center' : 'col-start-1 justify-self-start'}">
 				{@render endControl()}
 			</div>
-			<div class="relative col-start-2 flex min-w-0 items-center justify-center text-center {phase === 'connecting' ? 'row-start-1 max-[375px]:col-span-3 max-[375px]:col-start-1' : 'row-start-2'}"
+			<div class="relative flex min-w-0 items-center justify-center text-center {phase !== 'active' ? 'col-span-3 col-start-1 row-start-1' : 'col-start-2 row-start-2'}"
 				class:translate-y-2={phase === 'active'}>
 				{#if phase === 'active'}
 					<span class="absolute bottom-full mb-2 w-max text-xs text-gray-500 dark:text-gray-400 max-[375px]:mb-0.5">{$i18n.t(customVoice ? 'Imported voice' : 'Default voice')}</span>
 				{/if}
-				<p role="status" class="max-w-52 text-sm text-gray-600 dark:text-gray-300"
+				<p role="status" class="max-w-60 break-words text-sm text-gray-600 dark:text-gray-300"
 					class:-translate-y-2={phase === 'connecting'}>{$i18n.t(profileOperation === 'POST' ? 'Cloning voice...' : phase === 'active' && muted ? 'Muted.' : status)}</p>
 			</div>
 			{#if phase === 'active'}
