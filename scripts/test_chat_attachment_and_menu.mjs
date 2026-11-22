@@ -65,7 +65,7 @@ try {
 		await page.screenshot({ path: `logs/image28-selector-${viewport.width}.png` });
 		console.log('Image selector state', viewport, await page.evaluate(() => window.__attachmentStudy.state()), await page.locator('#message-input-container').innerText());
 		await page.locator('#image-quality-dropdown-container > button').click();
-		await page.getByRole('button', { name: /Neve Image 2.8/ }).click();
+		await page.getByRole('menuitemradio', { name: /Neve Image 2.8/ }).click();
 		assert.equal((await page.evaluate(() => window.__attachmentStudy.state())).quality, 'qwen_image_2_1_official');
 		assert.deepEqual(errors, []);
 		result.push({ viewport, metrics, attached: state.files[0] }); await page.close();

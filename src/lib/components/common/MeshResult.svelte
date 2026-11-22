@@ -17,6 +17,16 @@
 	export let showName = true;
 	export let previewOnly = false;
 	let nearViewport = false;
+	let lastScroll = 0;
+	let previewVisible = true;
+	const settleMs = 180;
+	async function waitForStillViewport(signal: AbortSignal) {
+		while (deferred && !signal.aborted) {
+			const remaining = previewVisible ? lastScroll + settleMs - performance.now() : settleMs;
+			if (remaining <= 0) return;
+			await new Promise(resolve => setTimeout(resolve, remaining));
+		}
+	}
 	let mode: ViewMode = 'textured';
 	$: id, mode = 'textured';
 	let formatOpen = false;
@@ -41,11 +51,39 @@
 			nearViewport = true;
 			return;
 		}
+		const root = node.closest('#messages-container');
+		const scroller = root ?? window;
+		let visible = false;
+		let timer: ReturnType<typeof setTimeout>;
+		const mountWhenStill = () => {
+			clearTimeout(timer);
+			timer = setTimeout(() => { if (visible) nearViewport = true; }, settleMs);
+		};
+		const scrolling = () => {
+			lastScroll = performance.now();
+			if (!nearViewport) mountWhenStill();
+		};
+		let intersects = false;
+		const updateVisibility = () => {
+			visible = intersects && !document.hidden;
+			previewVisible = visible;
+			clearTimeout(timer);
+			if (visible) {
+				scroller.addEventListener('scroll', scrolling, { passive: true });
+				if (!nearViewport) mountWhenStill();
+			} else {
+				scroller.removeEventListener('scroll', scrolling);
+				// Keep the WebGL context on short excursions over the viewport edge.
+				if (nearViewport) timer = setTimeout(() => { nearViewport = false; }, 1000);
+			}
+		};
 		const observer = new IntersectionObserver(([entry]) => {
-			nearViewport = entry.isIntersecting;
-		}, { rootMargin: '240px 0px' });
+			intersects = entry.isIntersecting;
+			updateVisibility();
+		}, { root });
+		document.addEventListener('visibilitychange', updateVisibility);
 		observer.observe(node);
-		return { destroy: () => observer.disconnect() };
+		return { destroy() { observer.disconnect(); clearTimeout(timer); scroller.removeEventListener('scroll', scrolling); document.removeEventListener('visibilitychange', updateVisibility); } };
 	}
 
 	async function download() {
@@ -141,7 +179,7 @@
 	{#if error}<p class="px-3 pb-2 text-sm text-red-500" role="alert">{error}</p>{/if}
 	<div use:observePreview class="h-[min(52vh,30rem)] bg-gray-100 dark:bg-gray-850">
 		{#if nearViewport}
-			{#key id}<MeshPreview {id} bind:mode />{/key}
+			{#key id}<MeshPreview {id} bind:mode {waitForStillViewport} />{/key}
 		{/if}
 	</div>
 </div>

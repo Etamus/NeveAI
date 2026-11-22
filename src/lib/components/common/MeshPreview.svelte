@@ -32,6 +32,7 @@
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 
 	export let id: string;
+	export let waitForStillViewport = async (_signal: AbortSignal) => {};
 	export let mode: ViewMode = 'textured';
 	const labels = { textured: 'Textured', solid: 'Solid surface', wire: 'Wireframe', normals: 'Surface normals', skeleton: 'Skeleton' };
 	let hasSkeleton = false;
@@ -60,7 +61,10 @@
 						signal: controller.signal, headers: {Authorization: `Bearer ${token}`}
 					});
 					if (!response.ok) throw new Error('GLB unavailable');
-					const {scene: model} = await new GLTFLoader().parseAsync(await response.arrayBuffer(), '');
+					const buffer = await response.arrayBuffer();
+					await waitForStillViewport(controller.signal);
+					if (disposed()) throw new DOMException('Aborted', 'AbortError');
+					const {scene: model} = await new GLTFLoader().parseAsync(buffer, '');
 					function release() {
 						const textures = new Set<InstanceType<typeof THREE.Texture>>();
 						model.traverse(object => {
@@ -92,6 +96,7 @@
 					return {model, bytes:size, release};
 				};
 				const asset = take(keyId) ?? await load();
+				await waitForStillViewport(controller.signal);
 				if (disposed()) { asset.release(); return; }
 				const {model} = asset;
 				cleanup.push(() => { model.removeFromParent(); retain(keyId, asset); });
@@ -150,14 +155,12 @@
 					});
 					render();
 				};
-				updateView = applyView;
 				cleanup.push(() => {
 					updateView = undefined;
 					meshes.forEach((mesh, i) => { mesh.material = originals[i]; });
 					bones?.dispose();
 					solid.dispose(); wire.dispose(); normals.dispose(); flatSolid.dispose(); flatNormals.dispose();
 				});
-				controls.addEventListener('change', render);
 				const resize = () => {
 					const { clientWidth: width, clientHeight: height } = canvas;
 					if (!width || !height) return;
@@ -166,11 +169,12 @@
 					camera.updateProjectionMatrix();
 					render();
 				};
+				controls.update();
+				controls.addEventListener('change', render);
 				const observer = new ResizeObserver(resize);
 				observer.observe(canvas);
 				cleanup.push(() => observer.disconnect());
-				controls.update();
-				resize();
+				updateView = applyView;
 			} catch {
 				if (!disposed()) error = true;
 			} finally {

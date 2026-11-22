@@ -175,6 +175,8 @@
 	let musicGenerationEnabled = false;
 	let videoGenerationEnabled = false;
 	let model3dEnabled = false;
+	import { normalizeModel3dQuality, type Model3dQuality } from '$lib/utils/model3dQuality';
+	let model3dQuality: Model3dQuality = 'standard';
 	import { normalizeVideoGenerationModel, snapshotVideoRequestFeatures, getVideoGenerationFeatures, type VideoGenerationModel } from '$lib/utils/videoGeneration';
 	let videoGenerationModel: VideoGenerationModel = 'vdn_h3';
 	let videoGenerationResolution: '480p' | '672p' = '480p';
@@ -537,6 +539,7 @@
 					musicGenerationEnabled = input.musicGenerationEnabled ?? false;
 					videoGenerationEnabled = input.videoGenerationEnabled ?? false;
 					model3dEnabled = input.model3dEnabled ?? false;
+					model3dQuality = normalizeModel3dQuality(input.model3dQuality);
 					videoGenerationModel = normalizeVideoGenerationModel(localStorage.getItem('neveai.videoModel') ?? input.videoGenerationModel);
 					normalizeExclusiveFeatureToggles();
 					thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
@@ -1964,6 +1967,7 @@
 						musicGenerationEnabled = input.musicGenerationEnabled ?? false;
 						videoGenerationEnabled = input.videoGenerationEnabled ?? false;
 						model3dEnabled = input.model3dEnabled ?? false;
+						model3dQuality = normalizeModel3dQuality(input.model3dQuality);
 						videoGenerationModel = normalizeVideoGenerationModel(localStorage.getItem('neveai.videoModel') ?? input.videoGenerationModel);
 						normalizeExclusiveFeatureToggles();
 						thinkingExtendedEnabled = input.thinkingExtendedEnabled ?? thinkingExtendedEnabled;
@@ -3474,7 +3478,7 @@
 		);
 	};
 	const chatCompletedHandler = async (_chatId, modelId, responseMessageId, messages) => {
-		const res = await chatCompleted(localStorage.token, {
+		const res = isStandaloneMediaId(modelId) ? null : await chatCompleted(localStorage.token, {
 			model: modelId,
 			messages: messages.map((m) => ({
 				id: m.id,
@@ -3490,7 +3494,7 @@
 			session_id: $socket?.id,
 			id: responseMessageId
 		}).catch((error) => {
-			toast.error(`${error}`);
+			toast.error(error === 'Model not found' ? $i18n.t('Model not found') : `${error}`);
 			messages.at(-1).error = { content: error };
 
 			return null;
@@ -3615,7 +3619,7 @@
 		}, 1000);
 	};
 
-	import { standaloneMedia } from '$lib/utils/standaloneMedia';
+	import { standaloneMedia, isStandaloneMediaId } from '$lib/utils/standaloneMedia';
 	const createMessagePair = async (userPrompt) => {
 		messageInput?.setText('');
 		if (selectedModels.length === 0) {
@@ -4643,6 +4647,7 @@
 						? musicGenerationEnabled
 						: false,
 				model3d_generation: model3dEnabled && $user?.role === 'admin' && !!$config?.features?.enable_model3d_generation,
+				...(model3dEnabled ? {model3d_quality: model3dQuality} : {}),
 				video_generation:
 					$config?.features?.enable_video_generation &&
 					($user?.role === 'admin' || $user?.permissions?.features?.video_generation)
@@ -5389,6 +5394,10 @@
 				const mediaRequestFeatures = media?.id===modelId ? structuredClone(userMessage.standalone_media_features) :
 					generatedAction === 'model3d_generation' || generatedAction === 'video_generation' || (generatedAction === 'stable_diffusion' && stableDiffusionQuality === 'qwen_image_2s')
 						? structuredClone(getFeatures()) : null;
+				if (mediaRequestFeatures && generatedAction === 'model3d_generation') {
+					const original = message.statusHistory?.find((s) => s.action === generatedAction);
+					mediaRequestFeatures.model3d_quality = normalizeModel3dQuality(original?.quality ?? userMessage.standalone_media_features?.model3d_quality);
+				}
 				try {
 					if (!standaloneMedia(mediaRequestFeatures) && !(await ensureLocalModelsReady([model.id]))) {
 						return;
@@ -5925,6 +5934,7 @@
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
 									bind:model3dEnabled
+									bind:model3dQuality
 									bind:videoGenerationModel
 									bind:videoGenerationResolution
 									bind:videoGenerationDuration
@@ -6013,6 +6023,7 @@
 									bind:musicGenerationEnabled
 									bind:videoGenerationEnabled
 									bind:model3dEnabled
+									bind:model3dQuality
 									bind:videoGenerationModel
 									bind:videoGenerationResolution
 									bind:videoGenerationDuration

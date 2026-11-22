@@ -1,5 +1,8 @@
 <script lang="ts">
 	import Info from '$lib/components/icons/Info.svelte';
+	import { getContext } from 'svelte';
+	import type { I18nStore } from '$lib/i18n';
+	const i18n = getContext<I18nStore>('i18n');
 
 	export let content: any = '';
 </script>
@@ -11,7 +14,7 @@
 
 	<div class=" self-center text-sm">
 		{#if typeof content === 'string'}
-			{content}
+			{content === 'Model not found' ? $i18n.t('Model not found') : content}
 		{:else if typeof content === 'object' && content !== null}
 			{#if content?.error && content?.error?.message}
 				{content.error.message}

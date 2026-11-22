@@ -3105,6 +3105,7 @@ async def chat_music_generation_handler(
 
 
 async def chat_model3d_handler(request, form_data, extra_params, user):
+    import secrets
     import tempfile
     from neveai.routers.llamacpp import model_manager
     from neveai.routers.model3d_generation import ROOT, mesh_runtime, prepare_image
@@ -3113,10 +3114,16 @@ async def chat_model3d_handler(request, form_data, extra_params, user):
     metadata = extra_params["__metadata__"]
     metadata["skip_llm"] = True
     emit = extra_params["__event_emitter__"]
+    features = extra_params.get("__features__") or metadata.get("features") or {}
+    quality = features.get("model3d_quality")
+    if quality not in ("draft", "high"):
+        quality = "standard"
+    compact = False
 
     async def status(description, progress=0, done=False, error=False):
         await emit({"type": "status", "data": {
             "action": "model3d_generation", "description": description,
+            "quality": quality, "compact": compact,
             "progress": progress, "done": done, "error": error,
         }})
 
@@ -3139,18 +3146,20 @@ async def chat_model3d_handler(request, form_data, extra_params, user):
             job = Path(directory)
             alpha = await asyncio.to_thread(prepare_image, references[0], user.id, job / "reference.png")
             async with media_model_standby(model_manager, mesh_runtime._stop):
+                seed = secrets.randbits(63) if quality == "high" else None
                 try:
-                    output = await mesh_runtime.generate(job, alpha, progress)
+                    output = await mesh_runtime.generate(job, alpha, progress, quality=quality, seed=seed)
                 except RuntimeError as exc:
                     if not is_image_memory_error(exc):
                         raise
-                    output = await mesh_runtime.generate(job, alpha, progress, compact=True)
+                    compact = True
+                    output = await mesh_runtime.generate(job, alpha, progress, compact=True, quality=quality, seed=seed)
             filename = f"modelo-neve-{uuid4().hex[:8]}.glb"
             def persist():
                 with output.open("rb") as content:
                     return upload_file_handler(
                         request, file=UploadFile(content, filename=filename, headers={"content-type": "model/gltf-binary"}),
-                        metadata={"source": "neve-model3d", "generated": True},
+                        metadata={"source": "neve-model3d", "generated": True, "quality": quality, "compact": compact},
                         process=False, user=user)
             file_item = await asyncio.to_thread(persist)
         url = str(request.app.url_path_for("get_file_content_by_id", id=file_item.id))

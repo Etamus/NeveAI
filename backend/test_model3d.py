@@ -9,6 +9,30 @@ from neveai.utils.mesh_export_worker import write_3mf
 
 
 class MeshContractTests(unittest.TestCase):
+    def test_quality_refines_shape_and_preserves_texture_mapping(self):
+        for compact in (False, True):
+            standard = workflow("reference.png", 41, alpha=True, compact=compact)
+            high = workflow("reference.png", 41, alpha=True, compact=compact, quality="high")
+            diff = {k for k in standard if standard[k] != high[k]}
+            self.assertEqual(diff, {"solid", "reduced", "uv", "bake", "refine"} | (set() if compact else {"crop", "refined"}))
+            self.assertEqual(high["refine"]["inputs"]["target_resolution"], 1536 if compact else 1792)
+            for graph, expected in [
+                (standard, (384, 85000, 1024) if compact else (512, 160000, 2048)),
+                (high, (640, 240000, 2048) if compact else (1024, 550000, 4096)),
+            ]:
+                self.assertEqual((graph["solid"]["inputs"]["resolution"],
+                                  graph["reduced"]["inputs"]["target_face_count"],
+                                  graph["bake"]["inputs"]["texture_size"]), expected)
+                self.assertEqual(graph["uv"]["inputs"]["resolution"], expected[2])
+            self.assertEqual(workflow("reference.png", 41, alpha=True, compact=compact, quality="unknown"), standard)
+
+    def test_draft_reduces_diffusion_and_keeps_textured_output(self):
+        for compact in (True, False):
+            graph = workflow("reference.png", 41, quality="draft", compact=compact)
+            self.assertEqual([graph[k]["inputs"]["steps"] for k in ("structure", "coarse", "refined", "tex_latent")], [8, 10, 6, 6])
+            self.assertEqual(graph["refine"]["inputs"]["target_resolution"], 1024)
+            self.assertEqual(graph["export"]["inputs"]["mesh"], ["material", 0])
+
     def test_workflow_profiles_do_not_require_the_other_model(self):
         for alpha in (True, False):
             for compact in (True, False):

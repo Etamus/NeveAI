@@ -8,11 +8,16 @@ const page = await context.newPage();
 let resultId;
 try {
 	const errors = [];
+	const profile = process.env.NEVE_3D_TEST_PROFILE ?? 'standard';
 	page.on('pageerror', error => errors.push(error.message));
 	await page.goto(base + '/?temporary-chat=true', {waitUntil:'networkidle'});
 	await page.locator('#input-menu-button').click();
 	await page.getByRole('button', {name:/Criar modelo|Create model/}).click();
 	await page.locator('[data-model3d-integration]').waitFor();
+	if (profile !== 'standard') {
+		await page.locator('#mesh-quality-dropdown-container > button').click();
+		await page.getByRole('menuitemradio', {name: profile === 'draft' ? /Rascunho|Draft/ : /Alta qualidade|High quality/}).click();
+	}
 	assert.equal(await page.locator('#send-message-button').isEnabled(), false);
 	await page.locator('#input-menu-button').click();
 	const attach = page.getByText(/^(Adicionar anexos|Add attachments)$/).last();
@@ -25,7 +30,11 @@ try {
 	await page.locator('#send-message-button').click();
 	const payload = (await request).postDataJSON();
 	assert.equal(payload.features.model3d_generation, true);
+	assert.equal(payload.features.model3d_quality, profile);
 	assert.equal(payload.features.stable_diffusion, false);
+	const progress = page.getByRole('progressbar', {name:/Criar modelo|Create model/i});
+	await progress.waitFor({timeout:120000});
+	assert.equal(await page.locator('[data-mesh-result]').count(), 0);
 	if (process.env.NEVE_3D_CANCEL_TEST === '1') {
 		await page.waitForFunction(async () => (await (await fetch('/llamacpp/media-state')).json()).busy, null, {timeout:120000});
 		await page.getByText('Criando modelo', {exact:true}).first().waitFor({timeout:120000});
@@ -35,11 +44,13 @@ try {
 			return media.busy === false && Array.isArray(jobs.tasks) && !jobs.tasks.length;
 		},null,{timeout:45000});
 		assert.equal(await page.locator('[data-mesh-result]').count(), 0);
+		assert.equal(await progress.count(), 0);
 		assert.deepEqual(errors, []);
 		console.log('PASS: cancellation releases the GPU slot and publishes no output');
 	} else {
 	const result = page.locator('[data-mesh-result]').first();
 	await result.waitFor({timeout:600000});
+	assert.equal(await progress.count(), 0);
 	resultId = await result.getAttribute('data-mesh-result');
 	console.log('Generated in', (Date.now() - start) / 1000, 'seconds');
 	await result.scrollIntoViewIfNeeded();

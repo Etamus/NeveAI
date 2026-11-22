@@ -30,6 +30,7 @@
 	import DeleteConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 
 	import ErrorDisplay from './Error.svelte';
+	import { staleMeshCompletionError } from '$lib/utils/standaloneMedia';
 	import Citations from './Citations.svelte';
 	import CodeExecutions from './CodeExecutions.svelte';
 	import ContentRenderer from './ContentRenderer.svelte';
@@ -220,6 +221,10 @@
 	);
 	$: isGenerated3d = (message?.files ?? []).some((file) => file.type === 'model3d') ||
 		(message?.statusHistory ?? []).some((status) => status.action === 'model3d_generation');
+	$: meshFiles = (message?.files ?? []).filter(file => file.type === 'model3d');
+	$: meshStatus = message?.statusHistory?.at(-1);
+	$: showMeshProgress = !message.done && !message.error && !meshFiles.length &&
+		meshStatus?.action === 'model3d_generation' && !meshStatus.done && !meshStatus.error;
 	$: isGeneratedMediaResponse = isGenerated3d ||
 		isGeneratedImageResponse || isGeneratedMusicResponse || isGeneratedVideoResponse;
 	$: reserveTextActionSpace = !readOnly && Boolean(message?.content?.trim()) &&
@@ -587,7 +592,12 @@
 							</div>
 						{/if}
 
-						{#each (message?.files ?? []).filter((file) => file.type === 'model3d') as file (file.id)}
+						{#if showMeshProgress}
+							<div class="my-1 w-full">
+								<GeneratedMediaProgress kind="model3d" progress={meshStatus?.progress ?? 0} />
+							</div>
+						{/if}
+						{#each meshFiles as file (file.id)}
 							<MeshResult id={file.id} name={file.name} />
 						{/each}
 						{#if message?.files && message.files.some((file) => file.type === 'image' || file.type === 'audio' || file.type === 'video' || (file?.content_type ?? '').startsWith('image/') || (file?.content_type ?? '').startsWith('audio/') || (file?.content_type ?? '').startsWith('video/'))}
@@ -785,7 +795,7 @@
 								/>
 							{/if}
 
-							{#if message?.error}
+							{#if message?.error && !staleMeshCompletionError(message)}
 								<ErrorDisplay
 									content={typeof message.error === 'object' ? message.error.content : message.content}
 								/>

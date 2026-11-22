@@ -27,7 +27,7 @@ try{
  const preferences=await page.evaluate(()=>({quality:localStorage.getItem('neveai.imageQuality'),style:localStorage.getItem('neveai.imageStyle')}));
  assert.deepEqual(preferences,{quality:'qwen_image_2s',style:null});assert.deepEqual(errors,[]);assert.deepEqual(mutations,[]);
  if(!(await menu.isVisible()))await selector.click();
- await page.getByRole('button',{name:'Neve Image 2.8',exact:true}).click();
+ await page.getByRole('menuitemradio',{name:'Neve Image 2.8',exact:true}).click();
  assert.equal(await page.evaluate(()=>localStorage.getItem('neveai.imageQuality')),'qwen_image_2_1_official');
  await page.reload({waitUntil:'networkidle'});
  await page.locator('#input-menu-button').click();

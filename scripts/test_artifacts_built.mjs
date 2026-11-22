@@ -70,7 +70,7 @@ try {
 		await page.locator('.composer-more-trigger').click();
 		await page.getByRole('button', { name: /Criar imagem|Create image/ }).click();
 		await page.locator('#image-quality-dropdown-container > button').click();
-		const image28 = page.getByRole('button', { name: 'Neve Image 2.8', exact: true });
+		const image28 = page.getByRole('menuitemradio', { name: 'Neve Image 2.8', exact: true });
 		assert.equal((await image28.innerText()).trim(), 'Neve Image 2.8', 'The model option must have no extra subtitle');
 		await page.close();
 	}

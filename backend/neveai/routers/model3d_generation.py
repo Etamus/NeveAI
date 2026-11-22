@@ -44,9 +44,17 @@ MESH_DIGESTS = {
 }
 
 
-def workflow(filename, seed, *, alpha=False, compact=False):
+def workflow(filename, seed, *, alpha=False, compact=False, quality="standard"):
     # Native Comfy-Org Pixal3D template, with unused switches and previews removed.
     graph = {}
+    high = quality == "high"
+    draft = quality == "draft"
+    if draft:
+        solid_resolution, face_budget, size = (256, 32000, 512) if compact else (320, 48000, 1024)
+    elif high:
+        solid_resolution, face_budget, size = (640, 240000, 2048) if compact else (1024, 550000, 4096)
+    else:
+        solid_resolution, face_budget, size = (384, 85000, 1024) if compact else (512, 160000, 2048)
 
     def node(name, kind, **inputs):
         graph[name] = {"class_type": kind, "inputs": inputs}
@@ -63,7 +71,8 @@ def workflow(filename, seed, *, alpha=False, compact=False):
     else:
         bg = node("bg", "LoadBackgroundRemovalModel", bg_removal_name="birefnet.safetensors")
         mask = node("mask", "RemoveBackground", bg_removal_model=bg, image=image)
-    crop = node("crop", "ImageCropToMask", images=image, masks=mask, width=1024, height=1024,
+    input_size = 1536 if high and not compact else 1024
+    crop = node("crop", "ImageCropToMask", images=image, masks=mask, width=input_size, height=input_size,
                 pad_factor=1.1, grow_mask=0, background="#000000")
     moge = node("moge", "LoadMoGeModel", model_name="moge_2_vitl_normal_fp16.safetensors")
     depth = node("depth", "MoGeInference", moge_model=moge, image=crop, resolution_level=9,
@@ -78,26 +87,26 @@ def workflow(filename, seed, *, alpha=False, compact=False):
     structure_rescale = node("structure_rescale", "RescaleCFG", model=structure_cfg, multiplier=.7)
     structure_model = node("structure_model", "ModelSamplingSD3", model=structure_rescale, shift=5.0)
     empty = node("empty", "EmptyTrellis2LatentStructure", batch_size=1)
-    structure = sample("structure", structure_model, cond, empty, 12, 7.5)
+    structure = sample("structure", structure_model, cond, empty, 8 if draft else 12, 7.5)
     voxel = node("voxel", "VaeDecodeStructureTrellis2", samples=structure, vae=vae, resolution="32")
     shape = node("shape", "Trellis2ShapeStage", positive=cond, negative=["cond", 1], voxel=voxel)
     shape_cfg = node("shape_cfg", "CFGOverride", model=unet, cfg=1.0, start_percent=.769, end_percent=1.0)
     shape_model = node("shape_model", "RescaleCFG", model=shape_cfg, multiplier=.5)
-    coarse = sample("coarse", shape_model, shape, ["shape", 2], 20, 7.5)
+    coarse = sample("coarse", shape_model, shape, ["shape", 2], 10 if draft else 20, 7.5)
     refine = node("refine", "Trellis2UpsampleStage", positive=shape, negative=["shape", 1],
-                  shape_latent=coarse, vae=vae, target_resolution=1024 if compact else 1536)
-    refined = sample("refined", shape_model, refine, ["refine", 2], 12, 7.5, "simple")
+                  shape_latent=coarse, vae=vae, target_resolution=1792 if high and not compact else
+                  1024 if draft or (compact and not high) else 1536)
+    refined = sample("refined", shape_model, refine, ["refine", 2], 6 if draft else 16 if high and not compact else 12, 7.5, "simple")
     mesh = node("mesh", "VaeDecodeShapeTrellis", samples=refined, vae=vae)
     tex = node("tex", "Trellis2TextureStage", positive=refine, negative=["refine", 1], shape_latent=refined)
-    tex_latent = sample("tex_latent", unet, tex, ["tex", 2], 12, 1.0)
+    tex_latent = sample("tex_latent", unet, tex, ["tex", 2], 6 if draft else 12, 1.0)
     colors = node("colors", "VaeDecodeTextureTrellis", samples=tex_latent, vae=texture_vae,
                   shape_subdivides=["mesh", 1])
-    size = 1024 if compact else 2048
-    solid = node("solid", "RemeshMesh", mesh=mesh, resolution=384 if compact else 512, sign_mode="solid",
+    solid = node("solid", "RemeshMesh", mesh=mesh, resolution=solid_resolution, sign_mode="solid",
                  band=1.0, project_back=0.0, fix_poles=False, smooth_iters=0,
                  drop_small_components=.01, precluster_max_verts=20_000_000,
                  **{"sign_mode.fill": 20.0, "sign_mode.qef": False})
-    reduced = node("reduced", "DecimateMesh", mesh=solid, target_face_count=85000 if compact else 160000,
+    reduced = node("reduced", "DecimateMesh", mesh=solid, target_face_count=face_budget,
                    placement_mode="midpoint")
     smooth = node("smooth", "MeshSmoothNormals", mesh=reduced, crease_angle=180.0)
     uv = node("uv", "UnwrapMesh", mesh=smooth, segmenter="pec", resolution=size, padding=2, weld_distance=.0002)
@@ -139,11 +148,12 @@ class MeshRuntime(fast.NeveImage2SRuntime):
                 "--disable-all-custom-nodes", "--disable-auto-launch", "--disable-metadata",
                 "--preview-method", "none", "--reserve-vram", "1.0"]
 
-    async def generate(self, job: Path, alpha: bool, progress, *, compact=False):
+    async def generate(self, job: Path, alpha: bool, progress, *, compact=False, quality="standard", seed=None):
         self.job = job
         (job / "user").mkdir(exist_ok=True)
         (job / "temp").mkdir(exist_ok=True)
-        seed = random.getrandbits(63)
+        if seed is None:
+            seed = random.getrandbits(63)
         stages = {"structure": 28, "coarse": 40, "refined": 56, "tex_latent": 69,
                   "solid": 80, "uv": 87, "bake": 92, "export": 98}
         try:
@@ -151,7 +161,7 @@ class MeshRuntime(fast.NeveImage2SRuntime):
             async with aiohttp.ClientSession() as events, httpx.AsyncClient(base_url=base, timeout=30) as client:
                 async with events.ws_connect(base.replace("http://", "ws://") + "/ws?clientId=neve-3d") as stream:
                     response = await client.post("/prompt", json={
-                        "prompt": workflow("reference.png", seed, alpha=alpha, compact=compact),
+                        "prompt": workflow("reference.png", seed, alpha=alpha, compact=compact, quality=quality),
                         "client_id": "neve-3d"})
                     if response.is_error or response.json().get("node_errors"):
                         raise RuntimeError(f"Workflow Pixal3D: {response.text[:1800]}")
@@ -166,7 +176,7 @@ class MeshRuntime(fast.NeveImage2SRuntime):
                                 continue
                             kind = message.get("type")
                             if kind == "execution_error":
-                                raise RuntimeError(data.get("exception_message") or "Pixal3D falhou")
+                                raise RuntimeError(f"{data.get('exception_type') or 'Pixal3D'}: {data.get('exception_message') or 'falha na geração'}")
                             if kind == "execution_success" or (kind == "executing" and data.get("node", "") is None):
                                 break
                             if kind == "executing" and data.get("node") in stages:

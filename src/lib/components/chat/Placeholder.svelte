@@ -64,6 +64,8 @@
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
 	export let model3dEnabled = false;
+	import type { Model3dQuality } from '$lib/utils/model3dQuality';
+	export let model3dQuality: Model3dQuality = 'standard';
 	export let videoGenerationModel: import('$lib/utils/videoGeneration').VideoGenerationModel = 'vdn_h3';
 	export let videoGenerationResolution: '480p' | '672p' = '480p';
 	export let videoGenerationDuration: '5s' | '8s' = '5s';
@@ -168,6 +170,7 @@
 					bind:musicGenerationEnabled
 					bind:videoGenerationEnabled
 					bind:model3dEnabled
+					bind:model3dQuality
 					bind:videoGenerationModel
 					bind:videoGenerationResolution
 					bind:videoGenerationDuration

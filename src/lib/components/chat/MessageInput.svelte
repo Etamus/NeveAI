@@ -78,6 +78,8 @@
 	import Tooltip from '../common/Tooltip.svelte';
 	import ReasoningDropdown from './MessageInput/ReasoningDropdown.svelte';
 	import VideoSettingsDropdown from './MessageInput/VideoSettingsDropdown.svelte';
+	import GenerationQualitySelector from './MessageInput/GenerationQualitySelector.svelte';
+	import { model3dProfiles, normalizeModel3dQuality, type Model3dQuality } from '$lib/utils/model3dQuality';
 	import { getReasoningLevel, getReasoningState, setReasoningLevel, usesReasoningEffort, type ReasoningLevel } from '$lib/utils/reasoningModes';
 	import FileItem from '../common/FileItem.svelte';
 	import AttachmentRemoveButton from '../common/AttachmentRemoveButton.svelte';
@@ -307,6 +309,7 @@
 	export let musicGenerationEnabled = false;
 	export let videoGenerationEnabled = false;
 	export let model3dEnabled = false;
+	export let model3dQuality: Model3dQuality = 'standard';
 	import { normalizeVideoGenerationModel, type VideoGenerationModel } from '$lib/utils/videoGeneration';
 	export let videoGenerationModel: VideoGenerationModel = 'vdn_h3';
 	$: if (videoGenerationModel !== normalizeVideoGenerationModel(videoGenerationModel)) {
@@ -450,6 +453,7 @@
 		musicGenerationEnabled,
 		videoGenerationEnabled,
 		model3dEnabled,
+		model3dQuality,
 		videoGenerationResolution,
 		videoGenerationDuration,
 		videoGenerationModel,
@@ -723,6 +727,8 @@
 	let loaded = false;
 	let showThinkingDropdown = false;
 	let showImageQualityDropdown = false;
+	let showMeshQualityDropdown = false;
+	$: if (!model3dEnabled) showMeshQualityDropdown = false;
 	let showImageModeDropdown = false;
 	
 	
@@ -738,6 +744,7 @@
 	let showVideoAspectRatioDropdown = false;
 	
 	const closeComposerDropdowns = () => {
+		showMeshQualityDropdown = false;
 		showImageModeDropdown = false;
 		showThinkingDropdown = false;
 		showImageQualityDropdown = false;
@@ -2887,67 +2894,8 @@
 														>{$i18n.t('Image')}</span
 													>
 												</button>
-												<div
-													class="image-quality-control relative shrink-0"
-													id="image-quality-dropdown-container"
-												>
-													<button
-														type="button"
-														class="flex items-center gap-1 px-2 py-[7px] text-[0.8125rem] text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full"
-														aria-label={$i18n.t('Image model')}
-														aria-expanded={showImageQualityDropdown}
-														on:click|preventDefault={() => {
-															showImageResolutionDropdown = false;
-															showImageQualityDropdown = !showImageQualityDropdown;
-														}}
-													>
-														<span
-															>{stableDiffusionQuality === 'qwen_image_2_1_official'
-																? 'Neve Image 2.8'
-															: stableDiffusionQuality === 'qwen_image_2s'
-																? 'Neve Image 2'
-																	: 'Neve Image 2'}</span
-														>
-														<svg
-															viewBox="0 0 20 20"
-															fill="currentColor"
-															class="size-3.5 transition-transform duration-150 {showImageQualityDropdown
-																? ''
-																: 'rotate-180'}"
-															aria-hidden="true"
-															><path
-																fill-rule="evenodd"
-																d="M14.78 12.78a.75.75 0 0 1-1.06 0L10 9.06l-3.72 3.72a.75.75 0 0 1-1.06-1.06l4.25-4.25a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06Z"
-																clip-rule="evenodd"
-															/></svg
-														>
-													</button>
-													{#if showImageQualityDropdown}
-														<div
-															use:viewportDropdown
-															class="fixed z-50 w-44 rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-850 shadow-md p-1 text-sm"
-															in:fly={{ y: history?.currentId ? 5 : -5, duration: 150 }}
-														>
-													{#each [{ id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.8' }] as quality}
-																<button
-																	type="button"
-																	class="flex w-full items-center justify-between px-2 py-2 rounded-md text-left text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800"
-																	on:click={() =>
-																		selectImageModel(
-																			quality.id as
-
-																						| 'qwen_image_2s'
-																				| 'qwen_image_2_1_official'
-																		)}
-																>
-																	<span>{quality.label}</span
-															>{#if stableDiffusionQuality === quality.id}<CheckCircle
-																			strokeWidth="1.7"
-																		/>{/if}
-																</button>
-															{/each}
-														</div>
-													{/if}
+												<div class="image-quality-control shrink-0">
+													<GenerationQualitySelector id="image-quality-dropdown-container" label="Image model" options={[{ id: 'qwen_image_2s', label: 'Neve Image 2' }, { id: 'qwen_image_2_1_official', label: 'Neve Image 2.8' }]} value={stableDiffusionQuality} bind:open={showImageQualityDropdown} ongoing={!!history?.currentId} position={viewportDropdown} closeOthers={closeComposerDropdowns} choose={(id) => selectImageModel(id as typeof stableDiffusionQuality)} />
 												</div>
 										{#if stableDiffusionQuality === 'qwen_image_2s' && !$mobile}
 											<ImageModeSelector bind:options={stableDiffusionModeOptions} bind:show={showImageModeDropdown} {files} locked={responseInProgress} disabled={sendDisabled || uploadPending || pendingImageAttachments > 0} ongoing={!!history?.currentId} position={viewportDropdown} scroller={styleOptionsHorizontalScroller} onOpen={closeComposerDropdowns} />
@@ -3044,8 +2992,9 @@
 												<button type="button" data-model3d-integration class="group flex items-center gap-1.5 rounded-full bg-gray-100 px-2.5 py-[7px] text-[0.8125rem] text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700" on:click|preventDefault={() => onNativeIntegrationChange(null)}>
 													<Cube className="size-4 group-hover:hidden" />
 													<XMark className="hidden size-4 group-hover:block" />
-													<span>{$i18n.t('Create 3D model')}</span>
+													<span class="chip-label whitespace-nowrap">{$i18n.t('Create 3D model')}</span>
 												</button>
+												<GenerationQualitySelector id="mesh-quality-dropdown-container" label="Generation quality" options={model3dProfiles} value={model3dQuality} bind:open={showMeshQualityDropdown} ongoing={!!history?.currentId} position={viewportDropdown} closeOthers={closeComposerDropdowns} choose={(id) => model3dQuality = normalizeModel3dQuality(id)} />
 											{/if}
 											{#if videoGenerationEnabled}
 												<button
