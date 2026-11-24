@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest';
-import { timelineSrt, applySpeakerCues } from './videoEdit';
+import { timelineSrt, applySpeakerCues, translatedCue, coverageAfterCueDeletion } from './videoEdit';
+
+it('reopens only deleted transcript gaps, retaining other clips and the undo snapshot',()=>{
+	const span=(start:number,end:number,asset='a')=>({asset,start,end});
+	const coverage=[span(0,20),span(45,55),span(0,20,'b')];
+	const cues=[span(1,3),span(6,8),span(12,14),span(49,50),span(2,3,'b')].map(c=>({...c,text:'cue'}));
+	expect(coverageAfterCueDeletion(coverage,cues,new Set([1]))).toEqual([span(0,3),span(12,20),...coverage.slice(1)]);
+	expect(coverageAfterCueDeletion(coverage,cues,new Set([0,1,2]))).toEqual(coverage.slice(1));
+	expect(coverageAfterCueDeletion(coverage,cues,new Set([0,1,2,3,4]))).toEqual([]);
+	expect(coverage[0]).toEqual(span(0,20));
+});
+
+it('fits translated text to the export limit without losing text, speaker, style or time',()=>{
+	const cue={asset:'a',start:4,end:9,text:'Original',speakerName:'Ana',style:{size:20}};
+	const text='Uma legenda traduzida. '.repeat(11).trim();
+	const result=translatedCue(cue,text);
+	expect(result.map(c=>c.text).join(' ')).toBe(text);
+	expect(result[0].start).toBe(4);expect(result.at(-1)?.end).toBe(9);
+	expect(result[0].end).toBe(result[1].start);
+	expect(result.every(c=>c.text.length<=180 && c.speakerName==='Ana' && c.style===cue.style)).toBe(true);
+	expect(cue.text).toBe('Original');
+});
 
 it('replaces obsolete speaker groups without modifying edited text, timestamps or unrelated captions',()=>{
 	const previous=Array.from({length:295},(_,i)=>({asset:'a',start:i,end:i+1,text:'Edited '+i,speakerKey:'old:'+i,speakerName:i===0?'Ana':'Falante '+(i+1)}));

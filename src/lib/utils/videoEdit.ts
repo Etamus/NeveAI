@@ -33,6 +33,62 @@ export function coverTranscript(previous: TranscriptSpan[], {asset,start,end}: T
 }
 
 export const emptyTimeline = (): EditTimeline => ({ clips: [], captions: [], height: 1080, normalize: false });
+
+// Reopen the gap between surviving cues, not just the old timestamps: ASR
+// needs the surrounding audio if a deleted cue began or ended too early.
+export function coverageAfterCueDeletion(coverage: TranscriptSpan[], cues: EditCaption[], removed: Set<number>) {
+	if (!removed.size || !coverage.length) return coverage;
+	const affected=new Set([...removed].map(i=>cues[i]?.asset));
+	const byAsset=new Map<string,{cue:EditCaption; deleted:boolean}[]>();
+	cues.forEach((cue,i)=>{
+		if (!affected.has(cue.asset)) return;
+		const list=byAsset.get(cue.asset) ?? [];
+		list.push({cue,deleted:removed.has(i)}); byAsset.set(cue.asset,list);
+	});
+	for(const rows of byAsset.values()) rows.sort((a,b)=>a.cue.start-b.cue.start);
+	const offsets=new Map<string,number>();
+	return coverage.flatMap(span=>{
+		const rows=byAsset.get(span.asset);
+		if(!rows) return [span];
+		let i=offsets.get(span.asset)??0;
+		while(i<rows.length && rows[i].cue.end<=span.start) i++;
+		offsets.set(span.asset,i);
+		let start=span.start, keptEnd=start, deletedEnd=start;
+		const result:TranscriptSpan[]=[];
+		for(;i<rows.length && rows[i].cue.start<span.end;i++){
+			const {cue,deleted}=rows[i];
+			if(deleted){deletedEnd=Math.max(deletedEnd,cue.end);continue;}
+			if(deletedEnd>keptEnd && cue.start>keptEnd){
+				if(keptEnd>start) result.push({...span,start,end:keptEnd});
+				start=cue.start;
+			}
+			keptEnd=Math.max(keptEnd,cue.end);
+		}
+		const end=deletedEnd>keptEnd?Math.min(keptEnd,span.end):span.end;
+		if(start<end) result.push({...span,start,end});
+		return result;
+	});
+}
+const translatedGraphemes = new Intl.Segmenter(undefined,{granularity:'grapheme'});
+export function translatedCue(cue:EditCaption, text:string):EditCaption[] {
+	if(text.length<=180) return [{...cue,text}];
+	const chars=Array.from(translatedGraphemes.segment(text),v=>v.segment);
+	if(chars.length<=180) return [{...cue,text}];
+	const result:EditCaption[]=[];
+	for(let at=0;at<chars.length;){
+		let end=Math.min(chars.length,at+180);
+		if(end<chars.length){
+			let word=end;
+			while(word>at && !/\s/u.test(chars[word-1])) word--;
+			if(word>at) end=word;
+		}
+		const part=chars.slice(at,end).join('').trim();
+		const time=(i:number)=>cue.start+(cue.end-cue.start)*i/chars.length;
+		if(part) result.push({...cue,text:part,start:time(at),end:end===chars.length?cue.end:time(end)});
+		at=end;
+	}
+	return result;
+}
 export const defaultCaptionStyle: CaptionStyle = { font: 'Arial', size: 18, theme: 'outline' };
 export const clipLength = (clip: EditClip) => clip.end - clip.start;
 export const isLayered = (clips: EditClip[]) => clips.some(clip => clip.at != null || clip.audioOnly || clip.lane);

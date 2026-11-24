@@ -1713,6 +1713,7 @@ async def unload_model(req: UnloadModelRequest, request: Request):
 
 class DeleteLocalModelRequest(BaseModel):
     filename: str
+    preserve_encoders: bool = False
 
 
 @router.post('/models/delete')
@@ -1734,7 +1735,7 @@ async def delete_local_model(req: DeleteLocalModelRequest, request: Request):
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail='Modelo nao encontrado')
         # Reuse the compatibility/shared-encoder checks without deleting other quantizations.
-        mmproj_paths = await asyncio.to_thread(_catalog_mmproj_paths, {'repo': ''}, paths)
+        mmproj_paths = [] if req.preserve_encoders else await asyncio.to_thread(_catalog_mmproj_paths, {'repo': ''}, paths)
         mmproj_paths = [path for path in mmproj_paths if not path.is_symlink() and _path_is_inside(path, MMPROJ_DIR)]
         removed = []
         try:
@@ -2163,6 +2164,7 @@ def _human_size(nbytes: int) -> str:
 
 import uuid
 import threading
+import weakref
 
 NEVE_CATALOG_DEFAULTS_VERSION = 2
 NEVE_DOWNLOAD_USER_ID = "neve-download"
@@ -2181,30 +2183,6 @@ NEVE_DEFAULT_CAPABILITIES = {
 
 
 NEVE_CATALOG = [
-    {
-        "id": "neve-echo-s",
-        "name": "Neve Echo S",
-        "repo": "NeveAI/Neve-Echo-S3-4B-QAT-GGUF",
-        "hardware_label": "4 GB",
-        "hardware_kind": "gpu",
-        "size_label": "3.9 GB",
-        "profile_image_url": "/static/logo.png",
-        "description": "Modelo de uso geral e raciocínio para tarefas imediatas.",
-        "params": {"temperature": 1, "min_p": 0.05, "dry_multiplier": 0.25},
-        "default_feature_ids": ["web_search"],
-    },
-    {
-        "id": "neve-echo",
-        "name": "Neve Echo",
-        "repo": "NeveAI/Neve-Echo-6-12B-QAT-GGUF",
-        "hardware_label": "6 GB",
-        "hardware_kind": "gpu",
-        "size_label": "6.3 GB",
-        "profile_image_url": "/static/logo.png",
-        "description": "Modelo de uso geral e raciocínio para tarefas variadas.",
-        "params": {"temperature": 1, "min_p": 0.05, "dry_multiplier": 0.15},
-        "default_feature_ids": [],
-    },
     {
         "id": "neve-sense",
         "name": "Neve Sense",
@@ -2279,7 +2257,7 @@ NEVE_CATALOG = [
 
 # In-memory task registry: { task_id: { status, progress, total, downloaded, message, files: [...] } }
 _DOWNLOAD_TASKS_LOCK = threading.Lock()
-_DOWNLOAD_MODEL_LOCKS: dict[str, asyncio.Lock] = {}
+_DOWNLOAD_MODEL_LOCKS = weakref.WeakValueDictionary()
 _DOWNLOAD_MODEL_LOCKS_LOCK = threading.Lock()
 _DOWNLOAD_ACTIVE_STATUSES = {"queued", "resolving", "downloading", "cancelling", "pausing"}
 _DOWNLOAD_RUNNERS: dict[str, asyncio.Task] = {}
@@ -2320,10 +2298,31 @@ NEVE_DOWNLOAD_HEADERS = {
     "Accept-Encoding": "identity",
 }
 _DOWNLOAD_LAST_PERSIST = 0.0
+_DOWNLOAD_PERSIST_LOCK = threading.Lock()
+_DOWNLOAD_HISTORY_LIMIT = 64
 
 
 class _DownloadCancelled(Exception):
     pass
+
+
+def _prune_download_history(tasks):
+    if len(tasks) <= _DOWNLOAD_HISTORY_LIMIT:
+        return
+    terminal = [key for key, task in tasks.items()
+                if task.get("status") in {"completed", "cancelled", "resumed"}
+                or (task.get("status") == "error" and not task.get("resume_available"))]
+    if len(terminal) > _DOWNLOAD_HISTORY_LIMIT:
+        terminal.sort(key=lambda key: tasks[key].get("finished_at", 0))
+        for key in terminal[:-_DOWNLOAD_HISTORY_LIMIT]:
+            del tasks[key]
+
+
+def _write_download_snapshot(snapshot):
+    NEVE_DOWNLOAD_STATE_DIR.mkdir(parents=True, exist_ok=True)
+    with open(NEVE_DOWNLOAD_STATE_TMP_PATH, "w", encoding="utf-8") as f:
+        json.dump({"tasks": snapshot, "updated_at": time.time()}, f, ensure_ascii=False)
+    NEVE_DOWNLOAD_STATE_TMP_PATH.replace(NEVE_DOWNLOAD_STATE_PATH)
 
 
 def _load_persisted_download_tasks() -> dict:
@@ -2347,35 +2346,37 @@ def _load_persisted_download_tasks() -> dict:
                         "status": "error",
                         "error": "Download interrompido. Clique em Baixar novamente para continuar.",
                         "message": "Download interrompido",
+                        "resume_available": True,
                         "cancel_requested": False,
                     }
                 )
             recovered[task_id] = task
+        _prune_download_history(recovered)
+        if len(recovered) < len(tasks):
+            try:
+                _write_download_snapshot(recovered)
+            except OSError:
+                log.exception("Could not compact existing download history")
         return recovered
     except Exception:
         log.exception("Failed to load persisted Neve download state")
         return {}
 
 
-def _persist_download_tasks(snapshot: Optional[dict] = None, force: bool = False):
+def _persist_download_tasks(force=False):
     global _DOWNLOAD_LAST_PERSIST
-    now = time.monotonic()
-    if not force and now - _DOWNLOAD_LAST_PERSIST < NEVE_DOWNLOAD_PERSIST_INTERVAL:
-        return
-
-    if snapshot is None:
+    with _DOWNLOAD_PERSIST_LOCK:
+        now = time.monotonic()
+        if not force and now - _DOWNLOAD_LAST_PERSIST < NEVE_DOWNLOAD_PERSIST_INTERVAL:
+            return
         with _DOWNLOAD_TASKS_LOCK:
-            snapshot = {task_id: dict(task) for task_id, task in _DOWNLOAD_TASKS.items()}
-
-    try:
-        NEVE_DOWNLOAD_STATE_DIR.mkdir(parents=True, exist_ok=True)
-        payload = {"tasks": snapshot, "updated_at": time.time()}
-        with open(NEVE_DOWNLOAD_STATE_TMP_PATH, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False)
-        NEVE_DOWNLOAD_STATE_TMP_PATH.replace(NEVE_DOWNLOAD_STATE_PATH)
-        _DOWNLOAD_LAST_PERSIST = now
-    except Exception:
-        log.exception("Failed to persist Neve download state")
+            _prune_download_history(_DOWNLOAD_TASKS)
+            snapshot = {key: dict(task) for key, task in _DOWNLOAD_TASKS.items()}
+        try:
+            _write_download_snapshot(snapshot)
+            _DOWNLOAD_LAST_PERSIST = now
+        except Exception:
+            log.exception("Failed to persist Neve download state")
 
 
 _DOWNLOAD_TASKS: dict = _load_persisted_download_tasks()
@@ -2391,14 +2392,14 @@ def _get_model_download_lock(model_id: str) -> asyncio.Lock:
 
 
 def _set_task(task_id: str, **fields):
-    force_persist = bool(
-        {"status", "target_paths", "tmp_paths", "current_tmp_path", "current_dest_path"} & set(fields)
-    )
     with _DOWNLOAD_TASKS_LOCK:
         task = _DOWNLOAD_TASKS.setdefault(task_id, {"task_id": task_id})
+        force_persist = any(key in fields and fields[key] != task.get(key)
+                            for key in ("status", "target_paths", "tmp_paths", "current_tmp_path", "current_dest_path"))
+        if fields.get("status") in {"completed", "cancelled", "resumed", "error"}:
+            fields["finished_at"] = time.time()
         task.update(fields)
-        snapshot = {tid: dict(t) for tid, t in _DOWNLOAD_TASKS.items()}
-    _persist_download_tasks(snapshot, force=force_persist)
+    _persist_download_tasks(force=force_persist)
 
 
 def _get_task(task_id: str) -> dict:
@@ -2545,18 +2546,6 @@ def _catalog_repo_short(entry: dict) -> str:
     return entry["repo"].split("/")[-1].lower().replace("-gguf", "")
 
 
-def _catalog_main_paths(entry: dict) -> list[Path]:
-    repo_short = _catalog_repo_short(entry)
-    paths: list[Path] = []
-    try:
-        for path in MODELS_DIR.glob("*.gguf"):
-            if path.is_file() and repo_short in path.name.lower():
-                paths.append(path)
-    except Exception:
-        log.exception("Failed to scan installed Neve catalog files for %s", entry.get("id"))
-    return paths
-
-
 def _catalog_mmproj_paths(entry: dict, main_paths: list[Path]) -> list[Path]:
     if not main_paths:
         return []
@@ -2610,21 +2599,6 @@ def _unlink_file_inside(path: Path, root: Path) -> bool:
         return False
     path.unlink()
     return True
-
-
-def _delete_catalog_model_record(entry: dict, local_model_id: str) -> bool:
-    model = Models.get_model_by_id(local_model_id)
-    if not model:
-        return False
-
-    meta = {}
-    if model.meta:
-        meta = model.meta.model_dump() if hasattr(model.meta, "model_dump") else dict(model.meta)
-
-    if meta.get("managed_by") != "neve_download" or meta.get("neve_catalog_id") != entry["id"]:
-        return False
-
-    return Models.delete_model_by_id(local_model_id)
 
 
 async def _hf_list_files(repo_id: str) -> list[dict]:
@@ -3220,70 +3194,23 @@ async def _run_download_task(task_id: str, model_id: str, app=None):
 
 
 @router.get("/catalog")
-async def get_neve_catalog():
-    """Return the curated Neve model catalog with installed status and hardware requirements."""
-    items = []
-    for entry in NEVE_CATALOG:
-        main_paths = _catalog_main_paths(entry)
-        installed = len(main_paths) > 0
-        for model_path in main_paths:
-            existing_model = Models.get_model_by_id(_catalog_model_id(model_path.name))
-            existing_meta = existing_model.meta.model_dump() if existing_model and existing_model.meta else {}
-            if (
-                existing_meta.get("managed_by") == "neve_download"
-                and existing_meta.get("neve_catalog_defaults_version", 0)
-                < NEVE_CATALOG_DEFAULTS_VERSION
-            ):
-                _apply_catalog_model_defaults(entry, model_path.name)
-        items.append({**entry, "installed": installed})
-    return {"models": items}
-
-
-class CatalogDeleteModelRequest(BaseModel):
-    model_id: str
-
-
-@router.post("/catalog/delete")
-async def delete_neve_catalog_model(req: CatalogDeleteModelRequest, request: Request):
-    """Uninstall a Neve catalog model and its private mmproj file, when present."""
-    entry = _catalog_entry(req.model_id)
-    if not entry:
-        raise HTTPException(status_code=404, detail="Modelo não encontrado no catálogo")
-
-    main_paths = _catalog_main_paths(entry)
-    if not main_paths:
-        raise HTTPException(status_code=404, detail="Modelo não está instalado")
-
-    mmproj_paths = _catalog_mmproj_paths(entry, main_paths)
-    removed_models: list[str] = []
-    removed_mmproj: list[str] = []
-    removed_model_records: list[str] = []
-
-    try:
-        for path in main_paths:
-            local_model_id = f"local/{path.stem}"
-            if model_manager.is_model_loaded(local_model_id):
-                await model_manager.unload_model(local_model_id)
-
-            if _unlink_file_inside(path, MODELS_DIR):
-                removed_models.append(path.name)
-                if _delete_catalog_model_record(entry, local_model_id):
-                    removed_model_records.append(local_model_id)
-
-        for path in mmproj_paths:
-            if _unlink_file_inside(path, MMPROJ_DIR):
-                removed_mmproj.append(path.name)
-    except Exception as e:
-        log.exception("Failed to uninstall Neve catalog model %s", req.model_id)
-        raise HTTPException(status_code=500, detail=str(e))
-
-    request.app.state.BASE_MODELS = None
-    return {
-        "model_id": req.model_id,
-        "removed_models": removed_models,
-        "removed_mmproj": removed_mmproj,
-        "removed_model_records": removed_model_records,
-    }
+def get_neve_catalog():
+    """Only attribute local files to their recorded catalog install, not similar names."""
+    installed = set()
+    entries = {entry["id"]: entry for entry in NEVE_CATALOG}
+    local = {_catalog_model_id(path.name): path.name for path in MODELS_DIR.glob("*.gguf")
+             if path.is_file() and not path.is_symlink()}
+    for record in Models.get_models_by_ids(list(local)) if local else ():
+        if not record.meta:
+            continue
+        meta = record.meta.model_dump()
+        entry = entries.get(meta.get("neve_catalog_id"))
+        if not entry or meta.get("managed_by") != "neve_download":
+            continue
+        installed.add(entry["id"])
+        if meta.get("neve_catalog_defaults_version", 0) < NEVE_CATALOG_DEFAULTS_VERSION:
+            _apply_catalog_model_defaults(entry, local[record.id])
+    return {"models": [{**entry, "installed": entry["id"] in installed} for entry in NEVE_CATALOG]}
 
 
 @router.get("/download/active")
@@ -3368,12 +3295,14 @@ async def stream_download_status(task_id: str):
         last_serialized = None
         while True:
             task = _get_task(task_id)
+            if not task:
+                break
             payload = json.dumps(task)
             if payload != last_serialized:
                 yield f"data: {payload}\n\n"
                 last_serialized = payload
             status = task.get("status")
-            if status in ("completed", "error", "cancelled", "paused"):
+            if status in ("completed", "error", "cancelled", "paused", "resumed"):
                 break
             await asyncio.sleep(0.5)
 

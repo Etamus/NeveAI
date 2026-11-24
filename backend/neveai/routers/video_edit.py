@@ -253,7 +253,7 @@ async def upload(request: Request, file: UploadFile | None = None, user=Depends(
 
 class ClipTool(BaseModel):
     requestId: UUID | None = None
-    operation: Literal["fps60", "vocals", "instrumental", "erase"]
+    operation: Literal["fps60", "vocals", "instrumental", "erase", "remaster"]
     anchor: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     selection: str | None = Field(default=None, max_length=800000)
     point: tuple[float, float] | None = None
@@ -341,6 +341,48 @@ async def tracked_edit(operation_id, request, user, work, derived=False):
 
 async def edit_cancelled(request):
     return getattr(request.state,"studio_operation",{}).get("cancel") or await request.is_disconnected()
+
+
+class CaptionTranslation(BaseModel):
+    requestId: UUID
+    source: str = Field(max_length=2)
+    target: str = Field(max_length=2)
+    texts: list[str] = Field(min_length=1, max_length=MAX_CAPTIONS)
+
+
+@router.post("/translate")
+async def translate_captions(params: CaptionTranslation, request: Request, user=Depends(get_verified_user)):
+    from neveai.utils.studio_translate import LANGUAGES
+    if (params.source == params.target or not {params.source, params.target} <= LANGUAGES.keys()
+            or any(not t.strip() or len(t) > 4096 for t in params.texts)
+            or sum(map(len, params.texts)) > 4_000_000):
+        raise HTTPException(422, "Invalid caption translation request.")
+
+    async def work():
+        if analysis_slots.locked():
+            raise HTTPException(409, "Another clip is being processed.")
+        async with analysis_slots:
+            with TemporaryDirectory(dir=workspace(user)) as temp:
+                path = Path(temp).resolve() / "captions.json"
+                path.write_text(params.model_dump_json(exclude={"requestId"}), encoding="utf8")
+                task = asyncio.create_task(run_process(
+                    [sys.executable, "-m", "neveai.utils.studio_translate", str(path),
+                     str((CACHE_DIR / "studio_translation").resolve())],
+                    Path(__file__).resolve().parents[2], kill_tree=True))
+                try:
+                    while not task.done():
+                        if await edit_cancelled(request):
+                            raise HTTPException(499, "Cancelled.")
+                        await asyncio.wait({task}, timeout=.4)
+                    try:
+                        await task
+                    except ValueError as exc:
+                        raise HTTPException(422, "Could not translate captions.") from exc
+                    return {"texts": json.loads(path.read_text(encoding="utf8"))}
+                finally:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+    return await tracked_edit(params.requestId, request, user, work)
 
 
 @router.delete("/operations/{operation_id}")

@@ -78,6 +78,7 @@ tests/
 !/backend/tests/persistence/test_chat_search_projection.py
 !/backend/tests/persistence/test_verified_media.py
 !/backend/tests/persistence/test_download_controls.py
+!/backend/tests/persistence/test_catalog_resource_bounds.py
 !/backend/tests/persistence/test_web_tools_reliability.py
 *.log
 *.tmp

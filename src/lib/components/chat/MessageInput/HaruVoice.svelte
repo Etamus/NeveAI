@@ -490,7 +490,7 @@
 							on:click={() => changeVoice('DELETE')}><Trash className="size-4" /></button>
 					</Tooltip>
 				{/if}
-				{#if profileOperation === 'POST'}
+				{#if phase === 'connecting' || profileOperation === 'POST'}
 					<span class="size-8 shrink-0" aria-hidden="true"></span>
 				{:else}
 				<Tooltip content={$i18n.t(customVoice ? 'Replace voice' : 'Import voice')}>
@@ -509,8 +509,9 @@
 		{#if profileNotice}
 			<p role="alert" class="max-w-full text-center text-xs text-red-500">{$i18n.t(profileNotice)}</p>
 		{/if}
-		<div class="grid w-full max-w-[18.5rem] grid-cols-[3.5rem_minmax(0,1fr)_3.5rem] grid-rows-[minmax(1.75rem,auto)_2.75rem] items-center gap-x-1">
-			<div class="row-start-2 {phase === 'connecting' ? 'col-start-2 justify-self-center' : 'col-start-1 justify-self-start'}">
+		<div class="grid w-full max-w-[18.5rem] grid-cols-[3.5rem_minmax(0,1fr)_3.5rem] grid-rows-[minmax(1.75rem,auto)_2.75rem] items-center gap-x-1"
+			class:gap-y-4={phase === 'error' && status === 'Voice mode gives priority to chat and media generation.'}>
+			<div class="row-start-2 {phase !== 'active' ? 'col-start-2 justify-self-center' : 'col-start-1 justify-self-start'}">
 				{@render endControl()}
 			</div>
 			<div class="relative flex min-w-0 items-center justify-center text-center {phase !== 'active' ? 'col-span-3 col-start-1 row-start-1' : 'col-start-2 row-start-2'}"
@@ -518,7 +519,7 @@
 				{#if phase === 'active'}
 					<span class="absolute bottom-full mb-2 w-max text-xs text-gray-500 dark:text-gray-400 max-[375px]:mb-0.5">{$i18n.t(customVoice ? 'Imported voice' : 'Default voice')}</span>
 				{/if}
-				<p role="status" class="max-w-60 break-words text-sm text-gray-600 dark:text-gray-300"
+					<p role="status" class="max-w-60 break-words {phase === 'active' && profileOperation !== 'POST' ? 'text-[0.9375rem]' : 'text-sm'} text-gray-600 dark:text-gray-300"
 					class:-translate-y-2={phase === 'connecting'}>{$i18n.t(profileOperation === 'POST' ? 'Cloning voice...' : phase === 'active' && muted ? 'Muted.' : status)}</p>
 			</div>
 			{#if phase === 'active'}

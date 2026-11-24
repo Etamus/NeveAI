@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getContext, onDestroy } from 'svelte';
 	import { DropdownMenu } from 'bits-ui';
+	import { fly } from 'svelte/transition';
 	import { NEVEAI_API_BASE_URL } from '$lib/constants';
 	import type { I18nStore } from '$lib/i18n';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
@@ -139,7 +140,7 @@
 				{$i18n.t(baseLabel(baseMode))}
 				<ChevronDown className="size-3 shrink-0 transition-transform {baseOpen ? 'rotate-180' : ''}" />
 			</DropdownMenu.Trigger>
-			<DropdownMenu.Content align="end" sideOffset={5} strategy="fixed"
+			<DropdownMenu.Content align="end" sideOffset={5} strategy="fixed" inTransition={fly} inTransitionConfig={{ y: -5, duration: 150 }}
 				class="z-[10002] min-w-28 rounded-md border border-gray-100 bg-white p-1 text-sm text-gray-700 shadow-md dark:border-gray-800 dark:bg-gray-850 dark:text-gray-200">
 				<DropdownMenu.RadioGroup bind:value={baseMode}>
 					{#each ['original', 'stable'] as option}
@@ -159,7 +160,7 @@
 				{label(format)}
 				<ChevronDown className="size-3 shrink-0 transition-transform {formatOpen ? 'rotate-180' : ''}" />
 			</DropdownMenu.Trigger>
-			<DropdownMenu.Content align="end" sideOffset={5} strategy="fixed"
+			<DropdownMenu.Content align="end" sideOffset={5} strategy="fixed" inTransition={fly} inTransitionConfig={{ y: -5, duration: 150 }}
 				class="z-[10002] min-w-28 rounded-md border border-gray-100 bg-white p-1 text-sm text-gray-700 shadow-md dark:border-gray-800 dark:bg-gray-850 dark:text-gray-200">
 				<DropdownMenu.RadioGroup bind:value={format}>
 					{#each formats as extension (extension)}

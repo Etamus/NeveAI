@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from neveai.utils.auth import get_admin_user, get_verified_user
-from neveai.utils.hf_model_catalog import hf_catalog, group_files, local_filename
+from neveai.utils.hf_model_catalog import hf_catalog, group_files, download_filename
 
 router = APIRouter()
 
@@ -52,10 +52,16 @@ async def search_models(query: str = Query('', max_length=200), cursor: str | No
         raise failure(exc)
 
 
+def curated_entry(rt, repo):
+    return next((entry for entry in getattr(rt, 'NEVE_CATALOG', ()) if entry['repo'] == repo), None)
+
+
 async def inventory(repo):
     data = await hf_catalog.files(repo)
     rt = runtime()
-    models, encoders = await asyncio.to_thread(group_files, data['files'], repo, rt.MODELS_DIR, rt.MMPROJ_DIR)
+    entry = curated_entry(rt, repo)
+    models, encoders = await asyncio.to_thread(group_files, data['files'], repo, rt.MODELS_DIR, rt.MMPROJ_DIR,
+                                              rt._catalog_repo_short(entry) if entry else None)
     return models, encoders, data['truncated']
 
 
@@ -156,7 +162,7 @@ async def transfer(rt, task_id, repo, item, stage, index, count):
     rt._set_task(task_id, downloaded=size, total=size, progress=1.0, verified=True)
 
 
-async def run_download(task_id, repo, selected, app, identity=None):
+async def run_download(task_id, repo, selected, app, identity=None, catalog_model=None):
     rt = runtime()
     published = []
     stage_root = rt.MODELS_DIR / '.hf-downloads' / hashlib.sha256((repo + (identity or '|'.join(item['path'] for item, _ in selected))).encode()).hexdigest()[:24]
@@ -193,6 +199,10 @@ async def run_download(task_id, repo, selected, app, identity=None):
                 await publication
                 raise
         rt._raise_if_download_cancelled(task_id)
+        if catalog_model:
+            entry, filename = catalog_model
+            if rt._apply_catalog_model_defaults(entry, filename) == 'failed':
+                raise ValueError('Nao foi possivel aplicar as predefinicoes do modelo Neve.')
         app.state.BASE_MODELS = None
         rt._set_task(task_id, status='completed', progress=1.0, message='Download concluido', current_tmp_path=None, current_dest_path=None)
     except (rt._DownloadCancelled, asyncio.CancelledError) as exc:
@@ -254,9 +264,11 @@ async def start_download(body: HFDownloadRequest, request: Request, user=Depends
         if model is None or body.encoder and encoder is None:
             raise ValueError('Selecione uma quantizacao e encoder presentes no repositorio.')
         selected = []
+        entry = curated_entry(rt, body.repo)
+        catalog_short = rt._catalog_repo_short(entry) if entry else None
         for group, root in [(model, rt.MODELS_DIR), *(([(encoder, rt.MMPROJ_DIR)]) if encoder else [])]:
             for item in group['files']:
-                destination = root / local_filename(body.repo, item['path'])
+                destination = root / download_filename(body.repo, item['path'], root, catalog_short)
                 check_inside(root, destination)
                 size = rt._hf_file_size(item)
                 if size <= 0:
@@ -282,5 +294,6 @@ async def start_download(body: HFDownloadRequest, request: Request, user=Depends
                      progress=0.0 if selected else 1.0)
         if selected:
             launch = getattr(rt, '_launch_download', lambda task_id, coroutine: asyncio.create_task(coroutine))
-            launch(task_id, run_download(task_id, body.repo, selected, request.app, body.filename + '|' + (body.encoder or '')))
+            catalog_model = (entry, model['local_filename']) if entry and any(dest.name == model['local_filename'] for _, dest in selected) else None
+            launch(task_id, run_download(task_id, body.repo, selected, request.app, body.filename + '|' + (body.encoder or ''), catalog_model))
         return {'task_id': task_id, 'model_id': model_id, 'name': body.repo, 'status': 'queued' if selected else 'completed'}

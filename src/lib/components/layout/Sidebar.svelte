@@ -746,6 +746,7 @@
 				<Tooltip content={$i18n.t('Library')} placement="right">
 					<a
 						href="/library"
+						draggable="false"
 						aria-label={$i18n.t('Library')}
 						class="flex size-9 items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800"
 						on:click={(event) => {
@@ -903,7 +904,7 @@
 					</div>
 				{/if}
 				<div class="px-[0.4375rem] pb-0.5 flex text-gray-800 dark:text-gray-200">
-					<a href="/library" class="grow flex items-center gap-3 rounded-lg px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none" aria-label={$i18n.t('Library')} on:click={libraryClickHandler}>
+					<a href="/library" draggable="false" class="grow flex items-center gap-3 rounded-lg px-2.5 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 transition outline-none" aria-label={$i18n.t('Library')} on:click={libraryClickHandler}>
 						<Library /><span class="text-sm">{$i18n.t('Library')}</span>
 					</a>
 				</div>

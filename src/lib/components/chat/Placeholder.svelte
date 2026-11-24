@@ -21,7 +21,8 @@
 	import Video from '../icons/Video.svelte';
 	import MusicNote from '../icons/MusicNote.svelte';
 	import Cube from '../icons/Cube.svelte';
-	import { integrationSuggestionUsage, loadIntegrationSuggestionUsage, getIntegrationSuggestions, type SuggestionIntegration } from '$lib/utils/integrationSuggestions';
+	import XMark from '../icons/XMark.svelte';
+	import { dismissedSuggestions, dismissSuggestion, integrationSuggestionUsage, loadIntegrationSuggestionUsage, getIntegrationSuggestions, type SuggestionIntegration } from '$lib/utils/integrationSuggestions';
 	const suggestionOptions = {
 		stable_diffusion: { label: 'Create an image', icon: ImageIcon },
 		guided_learning: { label: 'Learn something new', icon: AcademicCap },
@@ -101,7 +102,7 @@
 		...($config?.features?.enable_music_generation && ($user?.role === 'admin' || $user?.permissions?.features?.music_generation) ? ['music_generation'] : []),
 		...($config?.features?.enable_model3d_generation && $user?.role === 'admin' ? ['model3d_generation'] : [])
 	] as SuggestionIntegration[];
-	$: suggestedIntegrations = getIntegrationSuggestions($integrationSuggestionUsage[$user?.id ?? ''] ?? [], allowedSuggestions);
+	$: suggestedIntegrations = getIntegrationSuggestions($integrationSuggestionUsage[$user?.id ?? ''], allowedSuggestions, $dismissedSuggestions[$user?.id ?? '']);
 	$: showIntegrationSuggestions = ($settings?.enableSuggestions ?? true) && !$temporaryChatEnabled && !$selectedFolder && !webSearchEnabled && !deepSearchEnabled &&
 		!learningEnabled && !stableDiffusionEnabled && !musicGenerationEnabled &&
 		!videoGenerationEnabled && !model3dEnabled && selectedToolIds.length === 0;
@@ -192,12 +193,18 @@
 						dispatch('submit', e.detail);
 					}}
 				/>
-				{#if showIntegrationSuggestions}
+				{#if showIntegrationSuggestions && suggestedIntegrations.length}
 					<div data-new-chat-suggestions class="absolute inset-x-2.5 top-full mt-3 flex flex-col gap-1 text-left text-sm text-gray-500 dark:text-gray-400">
-						{#each suggestedIntegrations as integration (integration)}
-							<button type="button" data-suggest-integration={integration} class="suggestion-row grid min-h-11 w-full items-center gap-2 rounded-[10px] py-3 text-left hover:bg-gray-100/45 hover:text-gray-900 dark:hover:bg-gray-850/80 dark:hover:text-gray-100" on:click={() => onNativeIntegrationChange(integration)}>
+						<!-- Keep the hovered remove button in place as the next suggestion moves up. -->
+						{#each suggestedIntegrations as integration}
+							<div class="group/suggestion flex items-center rounded-[12px] pr-2 hover:bg-gray-100/29 hover:text-gray-900 has-[:focus-visible]:bg-gray-100/45 dark:hover:bg-gray-850/59 dark:hover:text-gray-100 dark:has-[:focus-visible]:bg-gray-850/80">
+							<button type="button" data-suggest-integration={integration} class="suggestion-row grid min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[inherit] py-3 text-left" on:click={() => onNativeIntegrationChange(integration)}>
 								<svelte:component this={suggestionOptions[integration].icon} className="size-4 shrink-0 justify-self-center" strokeWidth={integration === 'guided_learning' ? '1.5' : '1.75'} /><span>{$i18n.t(suggestionOptions[integration].label)}</span>
 							</button>
+							<button type="button" aria-label={`${$i18n.t('Remove')}: ${$i18n.t(suggestionOptions[integration].label)}`} class="pointer-events-none grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-gray-500 opacity-0 hover:text-[color-mix(in_srgb,var(--color-gray-400)_80%,var(--color-gray-500))] group-hover/suggestion:pointer-events-auto group-hover/suggestion:opacity-100 group-has-[:focus-visible]/suggestion:pointer-events-auto group-has-[:focus-visible]/suggestion:opacity-100 dark:text-gray-400 dark:hover:text-gray-200" on:click={() => dismissSuggestion($user?.id, integration)}>
+								<XMark className="size-4" />
+							</button>
+							</div>
 						{/each}
 					</div>
 				{/if}

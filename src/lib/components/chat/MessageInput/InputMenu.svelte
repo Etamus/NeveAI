@@ -536,10 +536,10 @@
 	}
 	:global(.composer-integrations-menu) {
 		container-type: inline-size;
-		border: 1px solid rgba(0, 0, 0, 0.12) !important;
+		border: 1px solid rgba(0, 0, 0, 0.09) !important;
 	}
 	:global(.dark .composer-integrations-menu) {
-		border-color: rgb(56, 56, 56) !important;
+		border-color: rgb(50, 50, 50) !important;
 	}
 	@media (max-width: 767px) {
 		:global(.composer-integrations-menu) { border: 0 !important; }

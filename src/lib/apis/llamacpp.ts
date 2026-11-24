@@ -355,11 +355,11 @@ export const loadLocalModel = async (
 	}
 };
 
-export const deleteLocalModel = async (token: string, filename: string): Promise<any> => {
+export const deleteLocalModel = async (token: string, filename: string, preserveEncoders = false): Promise<any> => {
 	const response = await fetch(`${NEVEAI_BASE_URL}/llamacpp/models/delete`, {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json', ...(token && { authorization: `Bearer ${token}` }) },
-		body: JSON.stringify({ filename })
+		body: JSON.stringify({ filename, preserve_encoders: preserveEncoders })
 	});
 	if (!response.ok) {
 		const error = await response.json().catch(() => ({}));
@@ -501,23 +501,6 @@ export const startNeveDownload = async (token: string = '', model_id: string): P
 	}
 	const data = await res.json();
 	return data.task_id as string;
-};
-
-export const deleteNeveCatalogModel = async (token: string = '', model_id: string): Promise<any> => {
-	const res = await fetch(`${NEVEAI_BASE_URL}/llamacpp/catalog/delete`, {
-		method: 'POST',
-		headers: {
-			Accept: 'application/json',
-			'Content-Type': 'application/json',
-			...(token && { authorization: `Bearer ${token}` })
-		},
-		body: JSON.stringify({ model_id })
-	});
-	if (!res.ok) {
-		const err = await res.json().catch(() => ({ detail: 'Falha ao desinstalar modelo' }));
-		throw new Error(err.detail || 'Falha ao desinstalar modelo');
-	}
-	return res.json();
 };
 
 export const getActiveNeveDownload = async (token: string = ''): Promise<NeveDownloadState | null> => {

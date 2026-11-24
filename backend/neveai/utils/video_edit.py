@@ -251,19 +251,48 @@ def preview_waveform(path, duration, stopped=None):
     return peaks
 
 
-def analyze_audio(path, duration, root, with_text, single_words=False):
+def _studio_words(model, audio, voiced, vad, duration):
+    # Whisper's VAD concatenates speech. Decode across short pauses, but don't
+    # let words from after a long silence attach to the preceding utterance.
+    cuts = [0]
+    for a, b in zip(voiced, voiced[1:]):
+        middle = (a["end"] + b["start"]) // 2
+        if b["start"] - a["end"] >= 4*16000 and middle-cuts[-1] >= 12*16000:
+            cuts.append(middle)
+    cuts.append(len(audio))
+    for left, right in zip(cuts, cuts[1:]):
+        segments, _ = model.transcribe(audio[left:right], beam_size=5, vad_filter=True, vad_parameters=vad,
+                                       word_timestamps=True, condition_on_previous_text=False)
+        for segment in segments:
+            for word in segment.words or ():
+                text = word.word.strip()
+                start = max(0, left / 16000 + word.start)
+                end = min(duration, right / 16000, max(start+.001, left / 16000 + word.end))
+                if text and start < end:
+                    yield {"start":start,"end":end,"text":text,"_space":word.word[:1].isspace()}
+
+
+def analyze_audio(path, duration, root, with_text, single_words=False, *, studio_captions=False):
     import numpy as np
     from faster_whisper.audio import decode_audio
     from faster_whisper.vad import VadOptions, get_speech_timestamps
 
     audio = decode_audio(str(path), sampling_rate=16000)
-    voiced = get_speech_timestamps(audio, VadOptions(min_speech_duration_ms=170, min_silence_duration_ms=650, speech_pad_ms=180))
+    vad = (VadOptions(min_speech_duration_ms=150, min_silence_duration_ms=400, speech_pad_ms=100)
+           if studio_captions else VadOptions(min_speech_duration_ms=170, min_silence_duration_ms=650, speech_pad_ms=180))
+    voiced = get_speech_timestamps(audio, vad)
     windows = [(span["start"] / 16000, min(duration, span["end"] / 16000)) for span in voiced]
     wave = [float(min(1, np.max(np.abs(block)) * 2.5)) if len(block) else 0 for block in np.array_split(audio, 240)]
     cues = []
-    if with_text and windows:
+    if studio_captions and with_text and windows:
+        from neveai.utils.studio_subtitles import compose_subtitles
+        cues = list(_studio_words(whisper(str(root)), audio, voiced, vad, duration))
+        if not single_words:
+            cues = compose_subtitles(cues, duration)
+    elif with_text and windows:
         model = whisper(str(root))
-        segments, _ = model.transcribe(audio, beam_size=5, vad_filter=True, word_timestamps=True, condition_on_previous_text=False)
+        segments, _ = model.transcribe(audio, beam_size=5, vad_filter=True, word_timestamps=True,
+                                       condition_on_previous_text=False)
         for segment in segments:
             group = []
             for word in segment.words or ():
@@ -284,7 +313,7 @@ def _caption(cues, words, duration):
     if len(text) > CAPTION_LIMIT:
         text = "".join(GRAPHEME.findall(text)[:CAPTION_LIMIT])
     start = max(0, words[0].start)
-    end = min(duration, max(start + .12, words[-1].end))
+    end = min(duration, words[-1].end if words[-1].end > start else start + .01)
     if text and end > start:
         cues.append({"start": start, "end": end, "text": text})
 

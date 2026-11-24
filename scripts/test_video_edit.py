@@ -876,6 +876,32 @@ def test_full_clip_tracks_moving_target_from_middle(app, tmp_path, monkeypatch):
         assert r-g<145 and image[20,20,2]>190, (i,r,g,b)
 
 
+@pytest.mark.parametrize("audio", [True, False])
+def test_remaster_keeps_trim_timestamps_dimensions_and_audio(app, tmp_path, monkeypatch, audio):
+    from hashlib import sha256
+    client,_ = app
+    monkeypatch.setattr(video_edit,"TOOL_ROOT",ROOT/"backend/data/cache/video_edit_tools")
+    if "remaster" not in client.get("/clip-tools").json():
+        pytest.skip("Requires installer-provisioned Remaster weights")
+    if not audio:
+        monkeypatch.setenv("CUDA_VISIBLE_DEVICES","")
+    path = tmp_path/"clip.mp4"
+    subprocess.run([ffmpeg_binary(),"-v","error","-f","lavfi","-i","testsrc2=s=258x146:r=24",
+                    *(["-f","lavfi","-i","sine=frequency=440"] if audio else []),
+                    "-t","1.5","-vf","select='not(eq(mod(n,4),1))'","-fps_mode","vfr",
+                    "-c:v","libx264","-pix_fmt","yuv420p",str(path)],check=True)
+    original = sha256(path.read_bytes()).digest()
+    url="/media/"+import_media(client,path)["id"]
+    response=client.post(url+"/process",json={"operation":"remaster","start":.5,"end":1.25})
+    asset=response.raise_for_status().json()
+    assert (asset["width"],asset["height"],asset["audio"]) == (258,146,audio)
+    with av.open(str(path)) as src, av.open(BytesIO(client.get("/media/"+asset["id"]).content)) as out:
+        expected=[f.time-.5 for f in src.decode(video=0) if .5<=f.time<1.25]
+        actual=[f.time for f in out.decode(video=0)]
+        assert actual == pytest.approx(expected,abs=.001)
+    assert sha256(client.get(url).content).digest()==original
+
+
 def test_mdx_stems_recombine_across_window_boundary(tmp_path):
     from neveai.utils.video_edit_tool_assets import MDX
     weights = ROOT / "backend/data/cache/video_edit_tools" / MDX

@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { getIntegrationSuggestions, integrationSuggestionUsage, loadIntegrationSuggestionUsage, recordIntegrationUse } from './integrationSuggestions';
+import { dismissSuggestion, dismissedSuggestions, getIntegrationSuggestions, integrationSuggestionUsage, loadIntegrationSuggestionUsage, recordIntegrationUse } from './integrationSuggestions';
 
 let storage: Map<string, string>;
 beforeEach(() => {
 	storage = new Map();
 	integrationSuggestionUsage.set({});
+	dismissedSuggestions.set({});
 	vi.stubGlobal('localStorage', {
 		getItem: vi.fn((key: string) => storage.get(key) ?? null),
 		setItem: vi.fn((key: string, value: string) => { storage.set(key, value); })
@@ -14,6 +15,22 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe('recently used integration suggestions', () => {
+	it('remembers dismissed rows per user without filling gaps until an eligible request', () => {
+		const visible = (user: string) => getIntegrationSuggestions(get(integrationSuggestionUsage)[user], undefined, get(dismissedSuggestions)[user]);
+		recordIntegrationUse('one', { stable_diffusion: true });
+		for (const id of visible('one')) dismissSuggestion('one', id);
+		expect(visible('one')).toEqual([]);
+		integrationSuggestionUsage.set({}); dismissedSuggestions.set({});
+		loadIntegrationSuggestionUsage('one');
+		recordIntegrationUse('one', { deep_search: true, web_search: true });
+		expect(visible('one')).toEqual([]);
+		expect(visible('two')).toHaveLength(3);
+		recordIntegrationUse('one', { stable_diffusion: true });
+		expect(visible('one')).toEqual(['stable_diffusion', 'guided_learning', 'web_search']);
+		dismissSuggestion('one', 'guided_learning');
+		recordIntegrationUse('one', { video_generation: true });
+		expect(visible('one')).toEqual(['video_generation', 'stable_diffusion', 'guided_learning']);
+	});
 	it('keeps the three original defaults for a new user', () => {
 		expect(getIntegrationSuggestions(undefined)).toEqual(['stable_diffusion', 'guided_learning', 'web_search']);
 	});

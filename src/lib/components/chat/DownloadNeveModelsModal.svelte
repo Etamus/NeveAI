@@ -1,6 +1,6 @@
 <script lang="ts" context="module">
 	const neveCatalogCacheKey = 'neveai.downloadModels.catalog';
-	const retiredModelIds = new Set(['neve-prism', 'neve-prism-x', 'neve-strata', 'neve-cascade-s']);
+	const retiredModelIds = new Set(['neve-prism', 'neve-prism-x', 'neve-strata', 'neve-cascade-s', 'neve-echo-s', 'neve-echo']);
 	const catalogModelOverrides: Record<string, Partial<any>> = {
 		'neve-strata-x': {
 			name: 'Neve Strata'
@@ -17,7 +17,7 @@
 		}
 	};
 	const catalogModelOrder = new Map(
-		['neve-echo-s', 'neve-echo', 'neve-sense', 'neve-strata-s', 'neve-strata-x', 'neve-muse', 'neve-cascade-x'].map(
+		['neve-sense', 'neve-strata-s', 'neve-strata-x', 'neve-muse', 'neve-cascade-x'].map(
 			(id, index) => [id, index]
 		)
 	);
@@ -85,10 +85,9 @@
 	import XCircle from '$lib/components/icons/XCircle.svelte';
 	import Pause from '$lib/components/icons/Pause.svelte';
 	import Search from '$lib/components/icons/Search.svelte';
-	import ModelInformation from './ModelInformation.svelte';
+	import ChevronRight from '$lib/components/icons/ChevronRight.svelte';
 	import ChevronUpCompact from '$lib/components/icons/ChevronUpCompact.svelte';
 	import HuggingFaceModels from '$lib/components/chat/HuggingFaceModels.svelte';
-	import Trash from '$lib/components/icons/Trash.svelte';
 	import Download from '$lib/components/icons/ModelDownload.svelte';
 	import { modelDownloadKey, downloadFilename, type ModelDownloadRequest } from '$lib/utils/modelDownloadRequest';
 	import Spinner from '$lib/components/common/Spinner.svelte';
@@ -102,7 +101,8 @@
 		cancelNeveDownload,
 		pauseNeveDownload,
 		getPausedNeveDownloads,
-		deleteNeveCatalogModel,
+		deleteLocalModel,
+		type HFModelFile,
 		getActiveNeveDownload,
 		getNeveCatalog,
 		getHFModelFiles,
@@ -144,6 +144,10 @@
 	let catalogError = '';
 	let queuedModelIds: string[] = [];
 	const downloadRequests = new Map<string, ModelDownloadRequest>();
+	const repoForKey = (key: string | null) => {
+		const request = key ? downloadRequests.get(key) : undefined;
+		return request?.source === 'hf' ? request.repo : undefined;
+	};
 	let activeDownloadKey: string | null = null;
 	let pausedKeys: string[] = [];
 	let removingKeys: string[] = [];
@@ -180,7 +184,7 @@
 	let currentEs: EventSource | null = null;
 	let uninstallingModelId: string | null = null;
 	let showUninstallConfirm = false;
-	let uninstallTarget: NeveCatalogModel | null = null;
+	let uninstallTarget: { repo: string; file: HFModelFile } | null = null;
 	let progressToastVisible = false;
 	let interfaceBlockersOpen = false;
 	let modalObserver: MutationObserver | null = null;
@@ -196,7 +200,6 @@
 		if (downloadHubElement) requestModalFocus?.(downloadHubElement);
 		showDownloadDetails = false;
 	}
-	let openModelInfoId: string | null = null;
 
 	const activeStatuses = ['queued', 'resolving', 'downloading', 'cancelling', 'pausing'];
 
@@ -515,7 +518,6 @@
 	} else if (!show && wasShown) {
 		wasShown = false;
 		catalogScrollTop = 0;
-		openModelInfoId = null;
 		showDownloadDetails = false;
 	}
 
@@ -616,29 +618,23 @@
 		removingKeys = removingKeys.filter(id => id !== key);
 	}
 
-	const requestUninstall = (item: NeveCatalogModel) => {
-		if (!item.installed || downloading || uninstallingModelId) return;
-		uninstallTarget = item;
+	const requestUninstall = (repo: string, file: HFModelFile) => {
+		if (!file.installed || downloading || uninstallingModelId) return;
+		uninstallTarget = { repo, file };
 		showUninstallConfirm = true;
 	};
 
 	const confirmUninstall = async () => {
-		if (!uninstallTarget) return;
-		const target = uninstallTarget;
+		if (!uninstallTarget || uninstallingModelId) return;
+		const { repo, file } = uninstallTarget;
 		uninstallTarget = null;
-		await handleUninstall(target);
-	};
-
-	const handleUninstall = async (item: NeveCatalogModel) => {
-		if (!item.installed || downloading || uninstallingModelId) return;
-
-		uninstallingModelId = item.id;
+		uninstallingModelId = file.local_filename;
 		try {
-			await deleteNeveCatalogModel(localStorage.token, item.id);
+			await deleteLocalModel(localStorage.token, file.local_filename, true);
+			huggingFaceModels?.markRemoved(repo, file.local_filename);
+			dispatch('modelsChanged');
 			await loadCatalog();
 			models.set(await getModels(localStorage.token, null, false, true));
-			dispatch('modelsChanged');
-			toast.success(`${item.name} desinstalado`);
 		} catch (e: any) {
 			toast.error(normalizeLlamaCppErrorMessage(e, 'Falha ao desinstalar modelo'));
 		} finally {
@@ -670,14 +666,6 @@
 		}
 	});
 </script>
-
-<svelte:window on:keydown|capture={(event) => {
-	if (event.key === 'Escape' && openModelInfoId !== null) {
-		event.stopPropagation();
-		event.preventDefault();
-		openModelInfoId = null;
-	}
-}} />
 
 {#snippet downloadHub()}
 	<div bind:this={downloadHubElement} data-model-download-hub tabindex="-1" class="download-models-shell flex h-full min-h-0 flex-col overflow-hidden outline-none">
@@ -816,12 +804,10 @@
 				{:else}
 					<div data-download-grid class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
 					{#each visibleCatalog as item (item.id)}
-						{@const isCurrentDownload = downloading && (activeDownloadKey ?? downloadingModelId) === item.id}
-						{@const isQueuedDownload = queuedModelIds.includes(item.id)}
+						{@const isCurrentDownload = downloading && ((activeDownloadKey ?? downloadingModelId) === item.id || repoForKey(activeDownloadKey) === item.repo)}
+						{@const isQueuedDownload = queuedModelIds.some(key => key === item.id || repoForKey(key) === item.repo)}
 						<div
-							data-catalog-model={item.id} tabindex="-1" role="group" aria-label={item.name} class="catalog-model-card relative box-border h-[72px] min-h-[72px] min-w-0 rounded-lg border bg-gray-50 dark:bg-gray-850/50 outline-none {item.installed
-								? 'border-transparent'
-								: isCurrentDownload || isQueuedDownload
+							data-catalog-model={item.id} tabindex="-1" role="group" aria-label={item.name} class="catalog-model-card relative box-border h-[72px] min-h-[72px] min-w-0 rounded-lg border bg-gray-50 dark:bg-gray-850/50 outline-none {isCurrentDownload || isQueuedDownload
 								? `${downloading ? 'cursor-default' : ''} border-gray-300 dark:border-gray-700`
 									: 'border-transparent'}"
 						>
@@ -829,10 +815,10 @@
 								<img
 									src={`${NEVEAI_BASE_URL}/static/logoselector.svg`}
 									alt=""
-									class="size-9 shrink-0 object-contain brightness-0 dark:invert {item.installed ? 'opacity-40' : 'opacity-55 dark:opacity-65'}"
+									class="size-9 shrink-0 object-contain brightness-0 dark:invert opacity-55 dark:opacity-65"
 								/>
 
-								<div class="catalog-model-label grid min-w-0 gap-1 self-center {item.installed ? 'opacity-70' : ''}">
+								<div class="catalog-model-label grid min-w-0 gap-1 self-center">
 									<div class="catalog-model-heading min-w-0 overflow-hidden">
 										<span class="catalog-model-name block min-w-0 truncate text-sm font-medium leading-5">
 										{item.repo?.split('/').slice(1).join('/') || item.name}
@@ -840,20 +826,14 @@
 									</div>
 									<span class="catalog-model-owner block truncate text-xs text-gray-500">{item.repo?.split('/')[0] || 'NeveAI'}</span>
 								</div>
-								<div class="catalog-model-actions flex w-[calc(4.5rem_-_1ch)] min-w-0 items-center justify-end gap-1 self-center text-sm">
+								<div class="catalog-model-actions flex min-w-0 items-center justify-end gap-1 self-center text-sm">
 								{#if isCurrentDownload || isQueuedDownload}
 									<span data-download-status class="mr-1 text-xs font-medium whitespace-nowrap text-gray-500 dark:text-gray-400">{$i18n.t(isCurrentDownload ? 'Downloading' : 'Queued')}</span>
-								{:else}
-								<ModelInformation modelId={item.id} bind:openId={openModelInfoId} active={show} description={$i18n.t(item.description ?? '')} size={infoSizes[item.repo]?.length ? fmtBytes(infoSizes[item.repo][0].size) : item.size_label ?? ''} onOpen={() => { void loadInfoSize(item); }} />
-								{#if item.installed}
-									<button type="button" class="grid size-7 shrink-0 place-items-center rounded-md p-0 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 disabled:opacity-50" disabled={uninstallingModelId === item.id} title={$i18n.t('Delete model')} aria-label={$i18n.t('Uninstall {{name}}', { name: item.name })} on:click|preventDefault|stopPropagation={() => requestUninstall(item)}>
-										{#if uninstallingModelId === item.id}<Spinner className="size-4" />{:else}<Trash className="block size-4" />{/if}
-									</button>
 								{/if}
-								{#if !item.installed}
-									<button type="button" data-download-model={item.id} aria-label={$i18n.t('Download')} title={$i18n.t('Download')} disabled={loading || cancelling} class="grid size-7 shrink-0 place-items-center rounded-md p-0 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" on:click={(event) => { event.currentTarget.closest<HTMLElement>('[data-catalog-model]')?.focus({ preventScroll: true }); queueDownload({ source: 'neve', modelId: item.id, name: item.name }); }}><Download className="block size-4" /></button>
+								{#if item.installed && !isCurrentDownload && !isQueuedDownload}
+									<span data-download-status class="mr-1 text-xs font-medium whitespace-nowrap text-gray-500 dark:text-gray-400">{$i18n.t('Installed')}</span>
 								{/if}
-								{/if}
+									<button type="button" aria-label={item.repo} class="grid size-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" on:click={() => huggingFaceModels?.openRepository(item.repo)}><ChevronRight className="size-4" /></button>
 								</div>
 							</div>
 
@@ -863,7 +843,7 @@
 				{/if}
 				</div>
 			</section>
-			<div class={hfDetailOpen ? 'h-full min-h-0' : ''}><HuggingFaceModels bind:this={huggingFaceModels} {query} stickyActive={hfHeaderActive} onStickyChange={(stuck) => hfHeaderActive = stuck} onBeforeOpen={() => { catalogScrollTop = catalogScroller?.scrollTop ?? 0; }} collapsible={neveExpanded} active={show} bind:detailOpen={hfDetailOpen} bind:hasResults={hfHasResults} bind:settledQuery={hfSettledQuery} activeKey={activeDownloadKey} activeRequest={activeDownloadKey ? downloadRequests.get(activeDownloadKey) : undefined} queuedRequests={queuedModelIds.map(key => downloadRequests.get(key)).filter((request): request is ModelDownloadRequest => !!request)} queuedKeys={queuedModelIds} blocked={cancelling} revision={hfRevision} onQueue={queueDownload} /></div>
+			<div class={hfDetailOpen ? 'h-full min-h-0' : ''}><HuggingFaceModels bind:this={huggingFaceModels} {query} stickyActive={hfHeaderActive} onStickyChange={(stuck) => hfHeaderActive = stuck} onBeforeOpen={() => { catalogScrollTop = catalogScroller?.scrollTop ?? 0; }} collapsible={neveExpanded} active={show} bind:detailOpen={hfDetailOpen} bind:hasResults={hfHasResults} bind:settledQuery={hfSettledQuery} activeKey={activeDownloadKey} activeRequest={activeDownloadKey ? downloadRequests.get(activeDownloadKey) : undefined} queuedRequests={queuedModelIds.map(key => downloadRequests.get(key)).filter((request): request is ModelDownloadRequest => !!request)} queuedKeys={queuedModelIds} blocked={cancelling} deleteBlocked={downloading || !!uninstallingModelId} onDelete={requestUninstall} revision={hfRevision} onQueue={queueDownload} /></div>
 			{#if !hfDetailOpen && query.trim() && visibleCatalog.length === 0 && !hfHasResults && hfSettledQuery === query.trim()}
 				<div data-catalog-empty class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">{$i18n.t('No models found')}</div>
 			{/if}
@@ -884,8 +864,8 @@
 	bind:show={showUninstallConfirm}
 	animated={false}
 	title={$i18n.t('Uninstall model?')}
-	message={`Tem certeza que deseja desinstalar ${uninstallTarget?.name ?? 'este modelo'}?`}
-	confirmLabel="Confirmar"
+	message={uninstallTarget?.file.local_filename ?? ''}
+	confirmLabel={$i18n.t('Delete')}
 	cancelLabel={$i18n.t('Cancel')}
 	onConfirm={confirmUninstall}
 	on:cancel={() => {

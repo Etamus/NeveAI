@@ -116,6 +116,7 @@ try {
 		await voice.click();
 		const preparing = page.getByText(/^(Preparing Neve|Preparando Neve)\.\.\.$/);
 		await preparing.waitFor();
+		assert.equal(await page.getByRole('button',{name:/^(Import voice|Importar voz|Replace voice|Substituir voz)$/i}).count(), 0);
 		const mute = page.getByRole('button',{name:/^(Mute microphone|Silenciar)$/i});
 		const end = page.getByRole('button',{name:/^(End voice mode|Encerrar)$/i});
 		const language = page.getByRole('button',{name:/^(Voice language|Idioma da voz)$/i});

@@ -28,12 +28,14 @@
 	import type { I18nStore } from '$lib/i18n';
 	import OrbitingSpheres from './OrbitingSpheres.svelte';
 	import { DropdownMenu } from 'bits-ui';
+	import { fly } from 'svelte/transition';
 	import ChevronDown from '$lib/components/icons/ChevronDown.svelte';
 	import CheckCircle from '$lib/components/icons/CheckCircle.svelte';
 
 	export let id: string;
 	export let waitForStillViewport = async (_signal: AbortSignal) => {};
 	export let mode: ViewMode = 'textured';
+	let viewOpen = false;
 	const labels = { textured: 'Textured', solid: 'Solid surface', wire: 'Wireframe', normals: 'Surface normals', skeleton: 'Skeleton' };
 	let hasSkeleton = false;
 	let updateView: ((mode: ViewMode) => void) | undefined;
@@ -189,12 +191,12 @@
 	<canvas bind:this={canvas} class="block size-full touch-none" aria-label={$i18n.t('3D preview')}></canvas>
 	{#if !loading && !error}
 		<div class="absolute top-2 left-2">
-			<DropdownMenu.Root portal={null} preventScroll={false}>
+			<DropdownMenu.Root bind:open={viewOpen} portal={null} preventScroll={false}>
 				<DropdownMenu.Trigger data-mesh-view aria-label={`${$i18n.t('Display mode')}: ${$i18n.t(labels[mode])}`}
 					class="flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[0.79rem] font-normal text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
-					{$i18n.t(labels[mode])}<ChevronDown className="size-3" />
+					{$i18n.t(labels[mode])}<ChevronDown className="size-3 shrink-0 transition-transform duration-150 {viewOpen ? 'rotate-180' : ''}" />
 				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="start" sideOffset={4} strategy="fixed" class="z-[10002] min-w-32 rounded-md border border-gray-100 bg-white p-1 text-sm shadow-md dark:border-gray-800 dark:bg-gray-850">
+				<DropdownMenu.Content align="start" sideOffset={4} strategy="fixed" inTransition={fly} inTransitionConfig={{ y: -5, duration: 150 }} class="z-[10002] min-w-32 rounded-md border border-gray-100 bg-white p-1 text-sm shadow-md dark:border-gray-800 dark:bg-gray-850">
 					<DropdownMenu.RadioGroup bind:value={mode}>
 						{#each Object.entries(labels) as [value, name]}
 							{#if value !== 'skeleton' || hasSkeleton}

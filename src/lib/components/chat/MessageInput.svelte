@@ -1606,9 +1606,14 @@
 	// --- Chat drag-and-drop onto the input bar ---
 	const pendingChatAttachments = new Set<string>();
 	const onInputDragOver = (e: DragEvent) => {
-		e.preventDefault();
-		if (e.dataTransfer?.types?.includes('text/plain')) {
-			chatDragged = true;
+		const transfer = e.dataTransfer;
+		chatDragged = !videoEditActive && !!transfer?.types.includes('application/x-neve-chat');
+		if (transfer?.types.includes('application/x-neve-folder') || (videoEditActive && transfer?.types.includes('application/x-neve-chat'))) {
+			e.preventDefault();
+			e.stopPropagation();
+			transfer.dropEffect = 'none';
+		} else if (chatDragged) {
+			e.preventDefault();
 		}
 	};
 
@@ -1620,6 +1625,12 @@
 	};
 
 	const onInputDrop = async (e: DragEvent) => {
+		chatDragged = false;
+		if (e.dataTransfer?.types.includes('application/x-neve-folder') || (videoEditActive && e.dataTransfer?.types.includes('application/x-neve-chat'))) {
+			e.preventDefault();
+			e.stopPropagation();
+			return;
+		}
 		if (videoEditActive && e.dataTransfer?.files.length) {
 			e.preventDefault();
 			e.stopPropagation();
@@ -1822,7 +1833,7 @@
 
 			inputDropzoneElement = document.getElementById('message-input-container');
 			if (inputDropzoneElement) {
-				inputDropzoneElement.addEventListener('dragover', onInputDragOver);
+				inputDropzoneElement.addEventListener('dragover', onInputDragOver, true);
 				inputDropzoneElement.addEventListener('drop', onInputDrop, true);
 				inputDropzoneElement.addEventListener('dragleave', onInputDragLeave);
 			}
@@ -1847,7 +1858,7 @@
 			}
 
 			if (inputDropzoneElement) {
-				inputDropzoneElement.removeEventListener('dragover', onInputDragOver);
+				inputDropzoneElement.removeEventListener('dragover', onInputDragOver, true);
 				inputDropzoneElement.removeEventListener('drop', onInputDrop, true);
 				inputDropzoneElement.removeEventListener('dragleave', onInputDragLeave);
 			}
@@ -2101,6 +2112,7 @@
 {/snippet}
 
 <svelte:window
+	on:dragend|capture={() => { chatDragged = false; }}
 	on:resize={closeComposerDropdowns}
 	on:paste={pasteImageOverComposer}
 	on:keydown={(event) => {
@@ -2320,8 +2332,8 @@
 								: 'flex-col rounded-3xl'} relative z-40 w-full shadow-lg border {chatDragged
 								? 'border-blue-400 dark:border-blue-500 ring-2 ring-blue-300/50 dark:ring-blue-500/30'
 								: $temporaryChatEnabled
-									? 'border-dashed border-gray-100 dark:border-gray-800 hover:border-gray-200 focus-within:border-gray-200 hover:dark:border-gray-700 focus-within:dark:border-gray-700'
-									: ' border-gray-100/30 dark:border-gray-850/30 hover:border-gray-200 focus-within:border-gray-100 hover:dark:border-gray-800 focus-within:dark:border-gray-800'}  transition {isCompact
+									? 'border-dashed border-gray-100 dark:border-gray-800 focus-within:border-gray-200 focus-within:dark:border-gray-700'
+									: 'border-gray-100/30 dark:border-gray-850/30 focus-within:border-gray-100 focus-within:dark:border-gray-800'}  transition {isCompact
 								? 'px-1 py-2'
 								: 'px-1'} bg-gray-50 dark:bg-gray-850 dark:text-gray-100"
 							dir={$settings?.chatDirection ?? 'auto'}

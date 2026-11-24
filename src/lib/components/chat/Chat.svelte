@@ -616,20 +616,20 @@
 		}
 	};
 
-	$: if (selectedModels && chatIdProp !== '') {
+	let newChatSelectionReady = false;
+	let waitingForModelList = false;
+	$: if (waitingForModelList && !chatIdProp && $models.length) restoreNewChatModels();
+	$: if (selectedModels && (chatIdProp !== '' || (newChatSelectionReady && !$selectedFolder && !$page.url.searchParams.has('model') && !$page.url.searchParams.has('models')))) {
 		saveSessionSelectedModels();
 	}
 
 	const saveSessionSelectedModels = () => {
 		const selectedModelsString = JSON.stringify(selectedModels);
-		if (
-			selectedModels.length === 0 ||
-			(selectedModels.length === 1 && selectedModels[0] === '') ||
-			sessionStorage.selectedModels === selectedModelsString
-		) {
+		if (!selectedModels.length || selectedModels.some((id) => !id)) {
 			return;
 		}
 		sessionStorage.selectedModels = selectedModelsString;
+		if (JSON.stringify($settings?.models) === selectedModelsString) return;
 		// Auto-save last used model(s) to settings (replaces manual 'Set as default')
 		const newSettings = { ...$settings, models: selectedModels };
 		settings.set(newSettings);
@@ -1933,6 +1933,7 @@
 				loading = false;
 				loadedChatViewportReady = true;
 				await tick();
+				if (!newChatSelectionReady && $page.url.pathname === '/') await restoreNewChatModels();
 			}
 
 			if (storageChatInput) {
@@ -2125,24 +2126,12 @@
 		stopAudio();
 	});
 
-	const initNewChat = async () => {
-		cancelBottomNavigation?.();
-		console.log('initNewChat');
-		if ($user?.role !== 'admin' && $user?.permissions?.chat?.temporary_enforced) {
-			await temporaryChatEnabled.set(true);
-		}
-
-		if ($settings?.temporaryChatByDefault ?? false) {
-			if ($temporaryChatEnabled === false) {
-				await temporaryChatEnabled.set(true);
-			} else if ($temporaryChatEnabled === null) {
-				// if set to null set to false; refer to temp chat toggle click handler
-				await temporaryChatEnabled.set(false);
-			}
-		}
-
-		if ($user?.role !== 'admin' && !$user?.permissions?.chat?.temporary) {
-			await temporaryChatEnabled.set(false);
+	const restoreNewChatModels = async () => {
+		waitingForModelList = !$models.length;
+		if (waitingForModelList) {
+			newChatSelectionReady = false;
+			selectedModels = [''];
+			return;
 		}
 
 		const availableModels = $models
@@ -2193,19 +2182,14 @@
 				// Set from folder model IDs
 				selectedModels = $selectedFolder?.data?.model_ids;
 			} else {
-				if (sessionStorage.selectedModels) {
-					// Set from session storage (temporary selection)
-					selectedModels = JSON.parse(sessionStorage.selectedModels);
-					sessionStorage.removeItem('selectedModels');
-				} else {
-					if ($settings?.models) {
-						// Set from user settings
-						selectedModels = $settings?.models;
-					} else if (defaultModels && defaultModels.length > 0) {
-						// Set from default models
-						selectedModels = defaultModels;
-					}
-				}
+				let sessionModels: unknown;
+				try {
+					sessionModels = JSON.parse(sessionStorage.getItem('selectedModels') ?? 'null');
+				} catch { /* Fall back to the account preference. */ }
+				sessionStorage.removeItem('selectedModels');
+				const fromSession = Array.isArray(sessionModels)
+					? sessionModels.filter((id) => availableModels.includes(id)) : [];
+				selectedModels = fromSession.length ? fromSession : ($settings?.models ?? defaultModels);
 			}
 
 			// Unavailable & hidden models filtering
@@ -2230,6 +2214,30 @@
 				selectedModels = [''];
 			}
 		}
+
+		newChatSelectionReady = true;
+	};
+
+	const initNewChat = async () => {
+		cancelBottomNavigation?.();
+		console.log('initNewChat');
+		if ($user?.role !== 'admin' && $user?.permissions?.chat?.temporary_enforced) {
+			await temporaryChatEnabled.set(true);
+		}
+
+		if ($settings?.temporaryChatByDefault ?? false) {
+			if ($temporaryChatEnabled === false) {
+				await temporaryChatEnabled.set(true);
+			} else if ($temporaryChatEnabled === null) {
+				// if set to null set to false; refer to temp chat toggle click handler
+				await temporaryChatEnabled.set(false);
+			}
+		}
+
+		if ($user?.role !== 'admin' && !$user?.permissions?.chat?.temporary) {
+			await temporaryChatEnabled.set(false);
+		}
+		await restoreNewChatModels();
 
 		if ($mobile) {
 			await showControls.set(false);
@@ -2309,10 +2317,6 @@
 				}
 			}
 		}
-
-		selectedModels = selectedModels.map((modelId) =>
-			$models.map((m) => m.id).includes(modelId) ? modelId : ''
-		);
 
 		const chatInput = document.getElementById('chat-input');
 		setTimeout(() => chatInput?.focus(), 0);

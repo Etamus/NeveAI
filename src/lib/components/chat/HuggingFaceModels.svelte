@@ -11,6 +11,7 @@
 	import HuggingFace from '$lib/components/icons/HuggingFace.svelte';
 	import ChevronLeft from '$lib/components/icons/ChevronLeft.svelte';
 	import ChevronRight from '$lib/components/icons/ChevronRight.svelte';
+	import Trash from '$lib/components/icons/Trash.svelte';
 	import Download from '$lib/components/icons/ModelDownload.svelte';
 	import OrbitingSpheres from '$lib/components/common/OrbitingSpheres.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -62,6 +63,16 @@
 	let repoFiles: Record<string, HFModelFile[]> = {};
 	export let queuedKeys: string[] = [];
 	export let blocked = false;
+	export let deleteBlocked = false;
+	export let onDelete: (repo: string, file: HFModelFile) => void;
+	export function markRemoved(repo: string, filename: string) {
+		const next = (repoFiles[repo] ?? []).map(file => file.local_filename === filename ? { ...file, installed: false } : file);
+		repoFiles = { ...repoFiles, [repo]: next };
+		if (selectedRepo?.id === repo) {
+			files = next;
+			void open(selectedRepo);
+		}
+	}
 	export let revision = 0;
 	export let onQueue: (request: ModelDownloadRequest) => void;
 	export let onBeforeOpen: () => void = () => {};
@@ -75,6 +86,7 @@
 	let request: AbortController | null = null;
 	let timer: ReturnType<typeof setTimeout>;
 	let selectedRepo: HFModel | null = null;
+	let curatedRepo = '';
 	let files: HFModelFile[] = [], encoders: HFModelFile[] = [], encoder = '';
 	let filesLoading = false, encoderMenu = false;
 	let fileRequest: AbortController | null = null;
@@ -87,6 +99,7 @@
 			// A pre-completion response must not overwrite the terminal download state.
 			fileRequest?.abort(); fileGeneration++; filesLoading = false;
 			files = mark(files);
+			if (request.encoder) encoders = encoders.map(file => file.path === request.encoder ? { ...file, installed: true } : file);
 		}
 		repoFiles = { ...repoFiles, [request.repo]: mark(repoFiles[request.repo] ?? []) };
 	}
@@ -97,7 +110,7 @@
 	let retryTimer: ReturnType<typeof setTimeout>;
 	$: detailOpen = selectedRepo !== null;
 	$: hasResults = !unavailable && models.length > 0;
-	function stopRequests() { clearTimeout(timer); clearTimeout(retryTimer); request?.abort(); fileRequest?.abort(); generation++; fileGeneration++; loading = false; filesLoading = false; lastQuery = null; }
+	function stopRequests() { clearTimeout(timer); clearTimeout(retryTimer); request?.abort(); back(); generation++; loading = false; lastQuery = null; }
 	function scheduleRetry(search: string) {
 		clearTimeout(retryTimer);
 		if (!active || search !== query.trim()) return;
@@ -136,23 +149,30 @@
 		} catch { if (id === generation && !controller.signal.aborted) { unavailable = true; settledQuery = search; scheduleRetry(search); } }
 		finally { if (id === generation) loading = false; }
 	}
+	export function openRepository(id: string) {
+		curatedRepo = id;
+		return open({ id, downloads: 0, likes: 0 });
+	}
 	async function open(repo: HFModel) {
 		if (!selectedRepo) onBeforeOpen();
 		fileRequest?.abort(); const controller = fileRequest = new AbortController(); const id = ++fileGeneration;
-		if (selectedRepo?.id !== repo.id) { files = []; encoders = []; encoder = ''; }
+		const entering = selectedRepo?.id !== repo.id;
+		if (entering) { files = []; encoders = []; encoder = ''; }
 		selectedRepo = repo; filesLoading = true;
 		try {
 			const data = await getHFModelFiles(localStorage.token, repo.id, controller.signal);
 			if (id !== fileGeneration) return;
 			files = data.models; encoders = data.encoders;
+			if (entering && repo.id === curatedRepo) encoder = encoders[0]?.path ?? '';
 			repoFiles = { ...repoFiles, [repo.id]: data.models };
 			if (encoder && !encoders.some(file => file.path === encoder)) encoder = '';
 		} catch { if (id === fileGeneration && !controller.signal.aborted) back(); }
 		finally { if (id === fileGeneration) filesLoading = false; }
 	}
-	function back() { fileRequest?.abort(); fileGeneration++; filesLoading = false; selectedRepo = null; }
+	function back() { fileRequest?.abort(); fileGeneration++; filesLoading = false; selectedRepo = null; curatedRepo = ''; }
+	$: needsEncoder = encoders.some(file => file.path === encoder && !file.installed);
 	function start(file: HFModelFile) {
-		if (!selectedRepo || file.installed || blocked) return;
+		if (!selectedRepo || (file.installed && !needsEncoder) || blocked) return;
 		onQueue({ source: 'hf', repo: selectedRepo.id, filename: file.path, encoder: encoder || undefined, name: selectedRepo.id });
 	}
 	const size = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(2)} GB`;
@@ -201,7 +221,14 @@
 						{@const queued = queuedKeys.includes(key)}
 						<div data-hf-file={file.path} tabindex="-1" role="group" aria-label={file.path} class="flex min-h-[64px] min-w-0 items-center justify-between gap-3 rounded-lg border bg-gray-50 dark:bg-gray-850/50 px-3 py-2 text-left outline-none {current || queued ? 'border-gray-300 dark:border-gray-700' : 'border-transparent'}">
 							<span class="min-w-0"><span class="block truncate text-sm">{file.path}</span><span class="text-xs text-gray-500">{size(file.size)}{file.parts && file.parts > 1 ? ` / ${file.parts} ${$i18n.t('Files')}` : ''}</span></span>
-							{#if current || queued || file.installed}<span data-download-status class="mr-1 shrink-0 text-xs font-medium whitespace-nowrap text-gray-500 dark:text-gray-400">{$i18n.t(current ? 'Downloading' : queued ? 'Queued' : 'Installed')}</span>{:else}<button type="button" data-download-hf={file.path} aria-label={$i18n.t('Download')} title={$i18n.t('Download')} disabled={blocked} class="grid size-7 shrink-0 place-items-center rounded-md p-0 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" on:click={(event) => { event.currentTarget.closest<HTMLElement>('[data-hf-file]')?.focus({ preventScroll: true }); start(file); }}><Download className="block size-4" /></button>{/if}
+							{#if current || queued}<span data-download-status class="mr-1 shrink-0 text-xs font-medium whitespace-nowrap text-gray-500 dark:text-gray-400">{$i18n.t(current ? 'Downloading' : 'Queued')}</span>{:else}
+								<div class="flex shrink-0 items-center gap-1">
+								{#if file.installed}
+									<Tooltip content={$i18n.t('Delete')}><button type="button" data-delete-hf={file.path} aria-label={$i18n.t('Delete')} disabled={deleteBlocked} class="grid size-7 place-items-center rounded-md text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:text-gray-400 dark:hover:bg-gray-800" on:click={() => selectedRepo && onDelete(selectedRepo.id, file)}><Trash className="size-4" /></button></Tooltip>
+								{/if}
+								{#if !file.installed || needsEncoder}<button type="button" data-download-hf={file.path} aria-label={$i18n.t('Download')} title={$i18n.t('Download')} disabled={blocked} class="grid size-7 shrink-0 place-items-center rounded-md p-0 text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" on:click={(event) => { event.currentTarget.closest<HTMLElement>('[data-hf-file]')?.focus({ preventScroll: true }); start(file); }}><Download className="block size-4" /></button>{/if}
+								</div>
+							{/if}
 						</div>
 					{/each}
 				</div>

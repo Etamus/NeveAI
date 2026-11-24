@@ -51,19 +51,27 @@ def local_filename(repo, path):
     return name
 
 
-def group_files(files, repo, models_dir, mmproj_dir):
+def download_filename(repo, path, root, catalog_short=None):
+    name = local_filename(repo, path)
+    # Keep existing Neve installations and their model IDs; isolate arbitrary Hub filenames.
+    if catalog_short and '/' not in path and catalog_short in path.lower() and not (root / name).exists():
+        return path
+    return name
+
+
+def group_files(files, repo, models_dir, mmproj_dir, catalog_short=None):
     groups, encoders = {}, []
     for item in files:
         path = item.get('path', '')
         if item.get('type') != 'file':
             continue
-        try:
-            name = local_filename(repo, path)
-        except ValueError:
-            continue
         size = int(item.get('size') or (item.get('lfs') or {}).get('size') or 0)
         encoder = 'mmproj' in PurePosixPath(path).name.lower()
         root = mmproj_dir if encoder else models_dir
+        try:
+            name = download_filename(repo, path, root, catalog_short)
+        except ValueError:
+            continue
         destination = root / name
         installed = destination.is_file() and not destination.is_symlink() and size > 0 and destination.stat().st_size == size
         row = {'path': path, 'size': size, 'local_filename': name, 'installed': installed, 'files': [item]}

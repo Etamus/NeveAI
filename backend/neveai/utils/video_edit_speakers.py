@@ -21,8 +21,9 @@ def model_paths(cache, local_only=True):
     )
 
 
-def label_words(words, turns, previews=None, offset=0):
+def label_words(words, turns, previews=None, offset=0, *, group=True):
     """Choose by overlap. Keep unsupported words as text, without inventing a speaker."""
+    from neveai.utils.studio_subtitles import compose_subtitles
     turns = sorted(turns)
     first = 0
     labels = {}
@@ -40,15 +41,10 @@ def label_words(words, turns, previews=None, offset=0):
             if overlap > best:
                 best, speaker = overlap, tag
         label = labels.setdefault(speaker, len(labels) + 1) if speaker is not None else None
-        last = cues[-1] if cues else None
-        if (last and "existingIndex" not in last and "existingIndex" not in word and last.get("speaker") == label and a-last["end"] < .65
-                and len(last["text"]) + len(word["text"]) < 44 and not last["text"].endswith((".", "?", "!"))):
-            last.update(end=b, text=last["text"]+" "+word["text"])
-        else:
-            cue = dict(word)
-            if label is not None:
-                cue["speaker"] = label
-            cues.append(cue)
+        cue = dict(word)
+        if label is not None:
+            cue["speaker"] = label
+        cues.append(cue)
     if previews is not None:
         # Prefer uninterrupted audio, away from turn boundaries and overlapping voices.
         prior_end=-1
@@ -62,7 +58,7 @@ def label_words(words, turns, previews=None, offset=0):
             mid=(left+right)/2+offset
             half=min(3,right-left)/2
             previews[labels[tag]]=[mid-half,mid+half]
-    return cues
+    return compose_subtitles(cues) if group else cues
 
 
 def speaker_models(cache, count=None):
@@ -78,7 +74,7 @@ def speaker_models(cache, count=None):
     return so.OfflineSpeakerDiarization(config), emb
 
 
-def identify(path, words, cache, previews=None, offset=0, count=None):
+def identify(path, words, cache, previews=None, offset=0, count=None, *, group=True):
     if not words:
         return []
     from faster_whisper.audio import decode_audio
@@ -87,7 +83,7 @@ def identify(path, words, cache, previews=None, offset=0, count=None):
     turns = diarizer.process(decode_audio(str(path), sampling_rate=16000)).sort_by_start_time()
     if not turns:
         raise ValueError("No speakers detected.")
-    return label_words(words, [(t.start,t.end,t.speaker) for t in turns], previews, offset)
+    return label_words(words, [(t.start,t.end,t.speaker) for t in turns], previews, offset, group=group)
 
 
 class SessionSpeakers:

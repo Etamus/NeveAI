@@ -40,6 +40,8 @@ internal sealed class NeveWindow : Form
     readonly Uri appUri;
     readonly EventWaitHandle readiness;
     bool ready, initializing, dark = true;
+    bool portuguese = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "pt";
+    bool askingForMicrophone;
     System.Windows.Forms.Timer startup;
     readonly System.Windows.Forms.Timer stateTimer = new System.Windows.Forms.Timer();
     Rectangle lastNormalBounds;
@@ -135,8 +137,18 @@ internal sealed class NeveWindow : Form
                 if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out source) || source.GetLeftPart(UriPartial.Authority) != appUri.GetLeftPart(UriPartial.Authority)) {
                     e.State = CoreWebView2PermissionState.Deny; return;
                 }
-                if (e.PermissionKind == CoreWebView2PermissionKind.Microphone || e.PermissionKind == CoreWebView2PermissionKind.Camera) {
-                    string device = e.PermissionKind == CoreWebView2PermissionKind.Camera ? "camera" : "microfone";
+                if (e.PermissionKind == CoreWebView2PermissionKind.Microphone) {
+                    if (askingForMicrophone) { e.State = CoreWebView2PermissionState.Deny; return; }
+                    askingForMicrophone = true;
+                    var deferral = e.GetDeferral();
+                    BeginInvoke((Action)delegate {
+                        try {
+                            e.State = !IsDisposed && ConfirmMicrophone() ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
+                        } catch { e.State = CoreWebView2PermissionState.Deny; }
+                        finally { askingForMicrophone = false; deferral.Complete(); }
+                    });
+                } else if (e.PermissionKind == CoreWebView2PermissionKind.Camera) {
+                    string device = "camera";
                     e.State = MessageBox.Show(this, "Permitir que o NeveAI use o " + device + "?", "NeveAI", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
                 }
             };
@@ -160,8 +172,8 @@ internal sealed class NeveWindow : Form
                 if (window.top !== window || location.origin !== '" + appUri.GetLeftPart(UriPartial.Authority) + @"') return;
                 window.__NEVE_WEBVIEW2__ = true;
                 window.__NEVE_NATIVE_DOWNLOADS__ = true;
-                const theme = () => chrome.webview.postMessage({type:'neve:theme',dark:document.documentElement.classList.contains('dark')});
-                const watch = () => { theme(); new MutationObserver(theme).observe(document.documentElement,{attributes:true,attributeFilter:['class']}); };
+                const theme = () => chrome.webview.postMessage({type:'neve:theme',dark:document.documentElement.classList.contains('dark'),lang:document.documentElement.lang || localStorage.locale || navigator.language});
+                const watch = () => { theme(); new MutationObserver(theme).observe(document.documentElement,{attributes:true,attributeFilter:['class','lang']}); };
                 if(document.documentElement) watch(); else addEventListener('DOMContentLoaded',watch,{once:true});
             })();");
             var migration = Path.Combine(Path.GetDirectoryName(profile), "local-storage-migration.json");
@@ -182,6 +194,40 @@ internal sealed class NeveWindow : Form
             core.Navigate(appUri.AbsoluteUri);
             Log("runtime " + environment.BrowserVersionString);
         } catch (Exception error) { Fail(error.ToString()); }
+    }
+
+    bool ConfirmMicrophone()
+    {
+        Color surface = dark ? Color.FromArgb(23,23,23) : Color.White;
+        Color ink = dark ? Color.WhiteSmoke : Color.FromArgb(25,25,25);
+        using (var dialog = new Form())
+        using (var heading = new Font("Segoe UI", 12, FontStyle.Bold))
+        using (var body = new Font("Segoe UI", 10)) {
+            dialog.Font = body;
+            dialog.AutoScaleMode = AutoScaleMode.Font;
+            dialog.FormBorderStyle = FormBorderStyle.None;
+            dialog.StartPosition = FormStartPosition.CenterParent;
+            dialog.ShowInTaskbar = false;
+            dialog.BackColor = dark ? Color.FromArgb(60,60,60) : Color.Gainsboro;
+            dialog.Padding = new Padding(1);
+            dialog.ClientSize = new Size(424, 156);
+            string title = portuguese ? "Permitir acesso ao microfone?" : "Allow microphone access?";
+            dialog.Text = title;
+            var panel = new Panel { Dock = DockStyle.Fill, BackColor = surface, Padding = new Padding(18) };
+            var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 34, FlowDirection = FlowDirection.RightToLeft };
+            var allow = new Button { Text = portuguese ? "Permitir" : "Allow", DialogResult = DialogResult.Yes, BackColor = ink, ForeColor = surface };
+            var deny = new Button { Text = portuguese ? "Agora n\u00e3o" : "Not now", DialogResult = DialogResult.No, BackColor = dark ? Color.FromArgb(44,44,44) : Color.WhiteSmoke, ForeColor = ink };
+            foreach (var button in new[] { allow, deny }) {
+                button.FlatStyle = FlatStyle.Flat; button.FlatAppearance.BorderSize = 0;
+                button.Size = new Size(88,30); button.Margin = new Padding(6,1,0,1);
+                actions.Controls.Add(button);
+            }
+            var detail = new Label { Dock = DockStyle.Fill, ForeColor = ink, Text = portuguese ? "O NeveAI usa o microfone para o ditado e o modo de voz." : "NeveAI uses the microphone for dictation and voice mode." };
+            var caption = new Label { Dock = DockStyle.Top, Height = 32, Font = heading, ForeColor = ink, Text = title };
+            panel.Controls.Add(detail); panel.Controls.Add(actions); panel.Controls.Add(caption);
+            dialog.Controls.Add(panel); dialog.CancelButton = deny; dialog.ActiveControl = deny;
+            return dialog.ShowDialog(this) == DialogResult.Yes;
+        }
     }
 
     void ChooseDownloadDestination(object sender, CoreWebView2DownloadStartingEventArgs e)
@@ -221,8 +267,11 @@ internal sealed class NeveWindow : Form
         if (!Uri.TryCreate(e.Source, UriKind.Absolute, out source) || source.GetLeftPart(UriPartial.Authority) != appUri.GetLeftPart(UriPartial.Authority)) return;
         try {
             var message = json.Deserialize<Dictionary<string, object>>(e.WebMessageAsJson);
-            if (message.ContainsKey("type") && (string)message["type"] == "neve:theme" && message.ContainsKey("dark") && message["dark"] is bool)
+            if (message.ContainsKey("type") && (string)message["type"] == "neve:theme" && message.ContainsKey("dark") && message["dark"] is bool) {
                 Theme((bool)message["dark"]);
+                if (message.ContainsKey("lang") && message["lang"] is string)
+                    portuguese = ((string)message["lang"]).StartsWith("pt", StringComparison.OrdinalIgnoreCase);
+            }
             else if (message.ContainsKey("type") && (string)message["type"] == "neve:ready" && !ready) {
                 ready = true;
                 if (startup != null) startup.Stop();

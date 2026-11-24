@@ -2,20 +2,10 @@ import json
 import logging
 import os
 import uuid
-import warnings
-from concurrent.futures import ThreadPoolExecutor
+import shutil
 from functools import lru_cache
 from threading import Lock
 from typing import Optional
-
-warnings.filterwarnings("ignore", category=RuntimeWarning, module="pydub")
-
-try:
-    from pydub import AudioSegment
-    from pydub.utils import mediainfo
-except ImportError:
-    AudioSegment = None
-    mediainfo = None
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 
@@ -36,8 +26,7 @@ from neveai.utils.misc import strict_match_mime_type
 router = APIRouter()
 log = logging.getLogger(__name__)
 
-MAX_FILE_SIZE_MB = 20
-MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
+_transcription_slot = Lock()
 DICTATION_MAX_BYTES = 4 * 1024 * 1024
 _dictation_slot = Lock()
 
@@ -119,35 +108,6 @@ def dictation(
         _dictation_slot.release()
 
 
-def is_audio_conversion_required(file_path: str) -> bool:
-    supported_formats = {"flac", "m4a", "mp3", "mp4", "mpeg", "wav", "webm"}
-    if not os.path.isfile(file_path) or mediainfo is None:
-        return False
-    try:
-        info = mediainfo(file_path)
-        codec_name = info.get("codec_name", "").lower()
-        codec_type = info.get("codec_type", "").lower()
-        codec_tag = info.get("codec_tag_string", "").lower()
-        if codec_name == "aac" and codec_type == "audio" and codec_tag == "mp4a":
-            return True
-        return codec_name not in supported_formats
-    except Exception as error:
-        log.warning("Unable to inspect audio format: %s", error)
-        return False
-
-
-def convert_audio_to_mp3(file_path: str) -> Optional[str]:
-    if AudioSegment is None:
-        return None
-    try:
-        output_path = os.path.splitext(file_path)[0] + ".mp3"
-        AudioSegment.from_file(file_path).export(output_path, format="mp3")
-        return output_path
-    except Exception as error:
-        log.warning("Unable to convert audio to MP3: %s", error)
-        return None
-
-
 def set_faster_whisper_model(model: str, auto_update: bool = False):
     if not model:
         return None
@@ -171,125 +131,74 @@ def set_faster_whisper_model(model: str, auto_update: bool = False):
         return WhisperModel(**options)
 
 
-def transcription_handler(
-    request: Request, file_path: str, metadata: Optional[dict] = None, user=None
-) -> dict:
-    if request.app.state.faster_whisper_model is None:
-        request.app.state.faster_whisper_model = set_faster_whisper_model(
-            request.app.state.config.WHISPER_MODEL
-        )
-    model = request.app.state.faster_whisper_model
-    if model is None:
-        raise RuntimeError("O modelo local de transcricao nao pode ser carregado")
+def _transcription_blocks(file_path, block_seconds=600):
+    """Decode once, yielding bounded mono PCM views for synchronous consumption."""
+    import av
+    import numpy as np
 
-    language = (metadata or {}).get("language") or WHISPER_LANGUAGE
-    segments, info = model.transcribe(
-        file_path,
-        beam_size=5,
-        vad_filter=WHISPER_VAD_FILTER,
-        language=language,
-        multilingual=WHISPER_MULTILINGUAL,
-    )
-    log.info(
-        "Detected language '%s' with probability %f",
-        info.language,
-        info.language_probability,
-    )
-    data = {"text": "".join(segment.text for segment in segments).strip()}
-    transcript_file = os.path.splitext(file_path)[0] + ".json"
-    with open(transcript_file, "w", encoding="utf-8") as file:
-        json.dump(data, file, ensure_ascii=False)
-    return data
+    rate = 16000
+    capacity = rate * block_seconds
+    pcm = np.empty(capacity, dtype=np.float32)
+    used = 0
+    resampler = av.AudioResampler(format="flt", layout="mono", rate=rate)
 
+    def append(frames):
+        nonlocal used
+        for frame in frames:
+            samples = frame.to_ndarray().ravel()
+            while len(samples):
+                count = min(len(samples), capacity - used)
+                pcm[used:used + count] = samples[:count]
+                used += count
+                samples = samples[count:]
+                if used == capacity:
+                    # Prefer a quiet 20 ms window near the boundary rather than splitting a word.
+                    window = 320
+                    tail = pcm[-rate:].reshape(-1, window)
+                    cut = capacity - rate + int(np.argmin(np.mean(tail * tail, axis=1))) * window + window // 2
+                    yield pcm[:cut]
+                    used -= cut
+                    pcm[:used] = pcm[cut:].copy()
 
-def compress_audio(file_path: str) -> str:
-    if os.path.getsize(file_path) <= MAX_FILE_SIZE or AudioSegment is None:
-        return file_path
-    base = os.path.splitext(file_path)[0]
-    compressed_path = f"{base}_compressed.mp3"
-    audio = AudioSegment.from_file(file_path).set_frame_rate(16000).set_channels(1)
-    audio.export(compressed_path, format="mp3", bitrate="32k")
-    return compressed_path
-
-
-def split_audio(
-    file_path: str, max_bytes: int, format: str = "mp3", bitrate: str = "32k"
-) -> list[str]:
-    file_size = os.path.getsize(file_path)
-    if file_size <= max_bytes:
-        return [file_path]
-    if AudioSegment is None:
-        raise RuntimeError("pydub is required to split large audio files")
-
-    audio = AudioSegment.from_file(file_path)
-    duration_ms = len(audio)
-    chunk_ms = max(int(duration_ms * (max_bytes / file_size)) - 1000, 1000)
-    chunks = []
-    start = 0
-    index = 0
-    base = os.path.splitext(file_path)[0]
-
-    while start < duration_ms:
-        end = min(start + chunk_ms, duration_ms)
-        chunk_path = f"{base}_chunk_{index}.{format}"
-        audio[start:end].export(chunk_path, format=format, bitrate=bitrate)
-        while os.path.getsize(chunk_path) > max_bytes and end - start > 5000:
-            end = start + ((end - start) // 2)
-            audio[start:end].export(chunk_path, format=format, bitrate=bitrate)
-        if os.path.getsize(chunk_path) > max_bytes:
-            os.remove(chunk_path)
-            raise RuntimeError("Audio chunk cannot be reduced below max file size")
-        chunks.append(chunk_path)
-        start = end
-        index += 1
-    return chunks
+    with av.open(file_path) as source:
+        for frame in source.decode(audio=0):
+            yield from append(resampler.resample(frame))
+        yield from append(resampler.resample(None))
+    if used:
+        yield pcm[:used]
 
 
 def transcribe(
     request: Request, file_path: str, metadata: Optional[dict] = None, user=None
 ) -> dict:
-    if is_audio_conversion_required(file_path):
-        converted_path = convert_audio_to_mp3(file_path)
-        if converted_path:
-            file_path = converted_path
-
-    try:
-        file_path = compress_audio(file_path)
-        chunk_paths = split_audio(file_path, MAX_FILE_SIZE)
-    except Exception as error:
-        log.exception(error)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=ERROR_MESSAGES.DEFAULT(error),
-        ) from error
-
     results = []
     try:
-        with ThreadPoolExecutor() as executor:
-            futures = [
-                executor.submit(
-                    transcription_handler, request, chunk_path, metadata, user
+        with _transcription_slot:
+            if request.app.state.faster_whisper_model is None:
+                request.app.state.faster_whisper_model = set_faster_whisper_model(
+                    request.app.state.config.WHISPER_MODEL
                 )
-                for chunk_path in chunk_paths
-            ]
-            for future in futures:
-                results.append(future.result())
+            model = request.app.state.faster_whisper_model
+            if model is None:
+                raise RuntimeError("O modelo local de transcricao nao pode ser carregado")
+            language = (metadata or {}).get("language") or WHISPER_LANGUAGE
+            for samples in _transcription_blocks(file_path):
+                segments, _ = model.transcribe(
+                    samples, beam_size=5, vad_filter=WHISPER_VAD_FILTER,
+                    language=language, multilingual=WHISPER_MULTILINGUAL,
+                )
+                text = "".join(segment.text for segment in segments).strip()
+                if text:
+                    results.append(text)
+        result = {"text": " ".join(results)}
+        with open(os.path.splitext(file_path)[0] + ".json", "w", encoding="utf-8") as output:
+            json.dump(result, output, ensure_ascii=False)
+        return result
     except HTTPException:
         raise
     except Exception as error:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error transcribing chunk: {error}",
-        ) from error
-    finally:
-        for chunk_path in chunk_paths:
-            if chunk_path != file_path and os.path.isfile(chunk_path):
-                try:
-                    os.remove(chunk_path)
-                except OSError:
-                    pass
-
-    return {"text": " ".join(result["text"] for result in results)}
+        log.exception("Transcription failed")
+        raise HTTPException(status_code=400, detail="Transcription failed.") from error
 
 
 @router.post("/transcriptions")
@@ -324,7 +233,7 @@ def transcription(
         if not os.path.realpath(file_path).startswith(os.path.realpath(file_dir)):
             raise ValueError("Invalid file path detected")
         with open(file_path, "wb") as output:
-            output.write(file.file.read())
+            shutil.copyfileobj(file.file, output, length=1024 * 1024)
 
         metadata = {"language": language} if language else None
         result = transcribe(request, file_path, metadata, user)

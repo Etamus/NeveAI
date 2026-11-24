@@ -223,6 +223,7 @@
 		event.dataTransfer.setDragImage(dragImage, 0, 0);
 
 		// Set the data to be transferred
+		event.dataTransfer.setData('application/x-neve-folder', folderId);
 		event.dataTransfer.setData(
 			'text/plain',
 			JSON.stringify({

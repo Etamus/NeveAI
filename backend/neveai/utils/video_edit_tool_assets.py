@@ -9,6 +9,8 @@ import zipfile
 from pathlib import Path
 
 MDX = "UVR-MDX-NET-Inst_HQ_3.onnx"
+REMASTER = "drunet_student.pth"
+REMASTER_HASH = "21ee495de84de866d91af7c78e58cf8d1d68dc1d9016dd8e38f65f3a0559861e"
 MDX_HASH = "317554b07fe1ea5279a77f2b1520a41ea4b93432560c4ffd08792c30fddf9adc"
 RIFE = "rife-ncnn-vulkan-20221029-windows"
 RIFE_FILES = {
@@ -37,7 +39,7 @@ def fetch(url, path):
 
 def prepare_tools(root, check=False):
     root = Path(root)
-    expected = {MDX: MDX_HASH, **(RIFE_FILES if windows_rife() else {})}
+    expected = {MDX: MDX_HASH, REMASTER: REMASTER_HASH, **(RIFE_FILES if windows_rife() else {})}
     missing = [name for name, digest in expected.items() if not valid(root / name, digest)]
     if not missing:
         return
@@ -46,6 +48,9 @@ def prepare_tools(root, check=False):
     root.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=root) as scratch:
         tmp = Path(scratch)
+        if REMASTER in missing:
+            fetch("https://huggingface.co/seantempesta/remaster-drunet/resolve/"
+                  "4545e2ec12450f676f5691d990ee591a189741ca/" + REMASTER, tmp / REMASTER)
         if MDX in missing:
             fetch("https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/" + MDX, tmp / MDX)
         if any(name in RIFE_FILES for name in missing):

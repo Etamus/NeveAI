@@ -13,11 +13,13 @@ from functools import lru_cache
 from pathlib import Path
 
 from neveai.utils.video_edit import FORMATS, ffmpeg_binary
-from neveai.utils.video_edit_tool_assets import MDX, RIFE_FILES, windows_rife
+from neveai.utils.video_edit_tool_assets import MDX, REMASTER, RIFE_FILES, windows_rife
 
 
 def available(root):
     tools = []
+    if (root / REMASTER).is_file():
+        tools.append("remaster")
     if (root / MDX).is_file():
         tools.extend(("vocals", "instrumental"))
     if windows_rife() and all((root / name).is_file() for name in RIFE_FILES):
@@ -81,6 +83,20 @@ async def process_tool(action, info, start, end, root, work, dest, run, point=No
         return ["-protocol_whitelist", "file", "-format_whitelist", FORMATS, "-ss", str(at), "-i", str(info["path"])]
     encode = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "17", "-threads", "4", "-pix_fmt", "yuv420p"]
     finish = ["-c:a", "aac", "-b:a", "256k", "-movflags", "+faststart", "-f", "mp4", str(dest)]
+    if action == "remaster":
+        import av
+        from neveai.utils.video_edit import INPUT_OPTIONS
+        with av.open(str(info["path"]), options=INPUT_OPTIONS) as media:
+            if media.streams[info["videoIndex"]].codec_context.color_trc in (16, 18):
+                raise ValueError("Video enhancement supports SDR clips only.")
+        await run([sys.executable, str(Path(__file__).with_name("studio_remaster.py")),
+                   str(root / REMASTER), str(work / "picture.mp4"), str(info["fps"]),
+                   *ff, *source(start), "-t", str(duration), "-map", f"0:{info['videoIndex']}",
+                   "-fps_mode", "passthrough", "-enc_time_base", "demux", "-pix_fmt", "rgb24", "-c:v", "rawvideo",
+                   "-threads", "2", "-f", "nut", "pipe:1"], work)
+        await run(ff + ["-i", str(work / "picture.mp4"), *source(start), "-map", "0:v:0",
+                        "-map", "1:a:0?", "-c:v", "copy", "-t", str(duration), *finish], work)
+        return
     if masked:
         hints = points or ([(*point,1)] if point else [])
         if (not (selection or box or any(p[2] == 1 for p in hints)) or any(not 0 <= v <= 1 for p in hints for v in p)

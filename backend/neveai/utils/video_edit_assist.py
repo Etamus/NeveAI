@@ -9,6 +9,7 @@ import av
 import numpy as np
 
 from neveai.utils.video_edit import FORMATS, INPUT_OPTIONS, analyze_audio, ffmpeg_binary
+from neveai.utils.studio_subtitles import compose_subtitles
 
 BLOCK_SECONDS = 300
 CONTEXT_SECONDS = 2
@@ -171,23 +172,19 @@ def assist(path, start, end, operation, root, work, speaker_cache=None, plan=Non
     cues = []
     full_audio = False
     for gap_start,gap_end in plan["gaps"]:
-        multi=gap_end-gap_start>BLOCK_SECONDS
         for left,right,a,b in audio_blocks(gap_start,gap_end,quiet_boundary):
             if b-a < .04: continue
             full_audio = a==start and b==end
             extract_audio(path,a,b,audio)
             if digitally_silent(audio): continue
-            data=analyze_audio(audio,b-a,root,True,multi or operation in ("words","speakers"))
+            data=analyze_audio(audio,b-a,root,True,True,studio_captions=True)
             for cue in data["cues"]:
                 x,y=a+cue["start"],min(b,a+cue["end"])
                 if not left <= (x+y)/2 < right: continue
                 prev=cues[-1] if cues else None
                 if left>gap_start and prev and x<prev["end"]-.04 and prev["text"].split()[-1:]==[cue["text"].strip()] and abs(x-left)<=CONTEXT_SECONDS:
                     continue
-                if multi and operation=="captions" and prev and gap_start<=prev["start"] and x-prev["end"]<.65 and len(prev["text"])+len(cue["text"])<42 and not prev["text"].endswith((".","!","?")):
-                    prev.update(text=prev["text"]+" "+cue["text"],end=max(y,prev["end"]))
-                else:
-                    cues.append({**cue,"start":x,"end":y})
+                cues.append({**cue,"start":x,"end":y,"_limit":gap_end})
     if operation == "speakers" and (cues or plan["existing"]):
         previews={}
         from neveai.utils.video_edit_speakers import identify, resolve_turns, label_words
@@ -196,7 +193,7 @@ def assist(path, start, end, operation, root, work, speaker_cache=None, plan=Non
         if end-start<=BLOCK_SECONDS:
             if not full_audio: extract_audio(path,start,end,audio)
             local=[{**c,"start":c["start"]-start,"end":c["end"]-start} for c in ordered]
-            cues=[{**c,"start":start+c["start"],"end":start+c["end"]} for c in identify(audio,local,cache,previews,start,plan.get("speakerCount"))]
+            cues=[{**c,"start":start+c["start"],"end":start+c["end"]} for c in identify(audio,local,cache,previews,start,plan.get("speakerCount"),group=False)]
         else:
             blocks=[]
             index=0
@@ -208,8 +205,14 @@ def assist(path, start, end, operation, root, work, speaker_cache=None, plan=Non
             observations, turns = speaker_evidence(path, blocks, cache, work)
             turns=resolve_turns(observations,turns,plan.get("speakerCount"))
             if not turns: raise ValueError("No speakers detected.")
-            cues=label_words(ordered,turns,previews)
-        return {"cues":cues,"speech":[],"samples":previews}
+            cues=label_words(ordered,turns,previews,group=False)
+        return {"cues":compose_subtitles(cues,end),"speech":[],"samples":previews}
+    if operation=="captions":
+        cues=compose_subtitles(cues,end)
+    else:
+        for c in cues:
+            c.pop("_limit",None)
+            c.pop("_space",None)
     return {"cues":cues,"speech":[]}
 
 

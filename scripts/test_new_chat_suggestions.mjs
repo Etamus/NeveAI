@@ -29,21 +29,21 @@ try{
   await page.waitForFunction(()=>window.__suggestions);await page.evaluate(()=>window.__suggestions.select(null));
   await page.evaluate(theme=>{document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.classList.toggle('light',theme==='light');},theme);
   const suggestions=page.locator('[data-new-chat-suggestions]');await suggestions.waitFor();
-  const originalSuggestions=await suggestions.getByRole('button').allTextContents();
+  const originalSuggestions=await suggestions.locator('[data-suggest-integration]').allTextContents();
   await page.evaluate(()=>window.__suggestionsTemporary(true));await suggestions.waitFor({state:'hidden'});
   await page.evaluate(()=>window.__suggestionsTemporary(false));await suggestions.waitFor();
-  assert.deepEqual(await suggestions.getByRole('button').allTextContents(),originalSuggestions,'leaving temporary chat restores the same suggestions');
+  assert.deepEqual(await suggestions.locator('[data-suggest-integration]').allTextContents(),originalSuggestions,'leaving temporary chat restores the same suggestions');
   const composerShadow=await page.locator('#message-input-container').evaluate(el=>getComputedStyle(el).boxShadow);
   if(theme==='light')assert.equal(composerShadow,'none','new chat has no composer shadow in the light theme');
   else assert.notEqual(composerShadow,'none','dark theme composer shadow is preserved');
-  assert.deepEqual(await suggestions.getByRole('button').allTextContents(),['Crie uma imagem','Aprenda algo novo','Busque na web']);
+  assert.deepEqual(await suggestions.locator('[data-suggest-integration]').allTextContents(),['Crie uma imagem','Aprenda algo novo','Busque na web']);
   const alignment=await suggestions.evaluate(el=>{
    const composer=document.querySelector('#message-input-container').getBoundingClientRect(),plus=document.querySelector('#input-menu-button svg').getBoundingClientRect();
    return [...el.children].map(button=>{const r=button.getBoundingClientRect(),icon=button.querySelector('svg').getBoundingClientRect();return {left:r.left-composer.left,right:r.right-composer.right,icon:icon.left+icon.width/2-plus.left-plus.width/2};});
   });
   for(const row of alignment){assert(Math.abs(row.left)<1&&Math.abs(row.right)<1,'hover and click zone span the composer width');assert(Math.abs(row.icon)<1,'suggestion icon is aligned with Plus');}
-  const firstSuggestion=suggestions.getByRole('button').first();
-  await firstSuggestion.hover();assert.notEqual(await firstSuggestion.evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)','full row has a visible hover');
+  const firstSuggestion=suggestions.locator('[data-suggest-integration]').first();
+  await firstSuggestion.hover();assert.notEqual(await firstSuggestion.evaluate(el=>getComputedStyle(el.parentElement).backgroundColor),'rgba(0, 0, 0, 0)','full row has a visible hover');
   const position=await suggestions.evaluate(el=>{
    const wrapper=el.parentElement,read=()=>{const r=wrapper.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
    const shown=read();el.style.display='none';const original=read();el.style.removeProperty('display');
@@ -118,9 +118,17 @@ try{
    await page.evaluate(()=>window.__suggestions.select(null));await suggestions.waitFor();
   }
   const defaults=['Crie uma imagem','Aprenda algo novo','Busque na web'];
-  assert.deepEqual(await suggestions.getByRole('button').allTextContents(),defaults,'selection alone does not change ranking');
+  const dismissFirst=suggestions.getByRole('button',{name:'Remover: Crie uma imagem'});
+  await page.mouse.move(0,0);
+  assert.equal(await dismissFirst.evaluate(el=>getComputedStyle(el).opacity),'0');
+  await firstSuggestion.hover();
+  assert.equal(await dismissFirst.evaluate(el=>getComputedStyle(el).opacity),'1');
+  await dismissFirst.click();
+  assert.deepEqual(await suggestions.locator('[data-suggest-integration]').allTextContents(),defaults.slice(1),'dismissal does not select or immediately replace a suggestion');
+  await page.evaluate(()=>window.__suggestions.use('stable_diffusion'));await page.evaluate(()=>window.__suggestions.fresh());await suggestions.waitFor();
+  assert.deepEqual(await suggestions.locator('[data-suggest-integration]').allTextContents(),defaults,'selection alone does not change ranking');
   await page.evaluate(()=>window.__suggestions.use('video_generation',''));await page.evaluate(()=>window.__suggestions.fresh());await suggestions.waitFor();
-  assert.deepEqual(await suggestions.getByRole('button').allTextContents(),defaults,'rejected empty submissions do not change ranking');
+  assert.deepEqual(await suggestions.locator('[data-suggest-integration]').allTextContents(),defaults,'rejected empty submissions do not change ranking');
   for(const [integration,expected] of [
    ['video_generation',['Crie um vídeo','Crie uma imagem','Aprenda algo novo']],
    ['music_generation',['Crie uma música','Crie um vídeo','Crie uma imagem']],
@@ -131,11 +139,11 @@ try{
    ['music_generation',['Crie uma música','Crie uma imagem','Aprenda algo novo']]
   ]){
    await page.evaluate(i=>window.__suggestions.use(i),integration);await page.evaluate(()=>window.__suggestions.fresh());await suggestions.waitFor();
-   assert.deepEqual(await suggestions.getByRole('button').allTextContents(),expected,`accepted ${integration} updates recency without duplicates`);
+   assert.deepEqual(await suggestions.locator('[data-suggest-integration]').allTextContents(),expected,`accepted ${integration} updates recency without duplicates`);
   }
   await page.reload({waitUntil:'networkidle'});await suggestions.waitFor();
   await page.evaluate(theme=>{document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.classList.toggle('light',theme==='light');},theme);
-  assert.deepEqual(await suggestions.getByRole('button').allTextContents(),['Crie uma música','Crie uma imagem','Aprenda algo novo'],'ranking survives reloading the page');
+  assert.deepEqual(await suggestions.locator('[data-suggest-integration]').allTextContents(),['Crie uma música','Crie uma imagem','Aprenda algo novo'],'ranking survives reloading the page');
   await page.evaluate(()=>document.fonts.ready);await page.waitForTimeout(350);await page.mouse.move(1,1);
   await page.screenshot({path:`${output}/${width}-${theme}-recent.png`});
   await page.evaluate(()=>window.__suggestions.existing());await suggestions.waitFor({state:'hidden'});

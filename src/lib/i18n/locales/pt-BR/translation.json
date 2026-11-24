@@ -1,4 +1,18 @@
 {
+	"Translate captions": "Traduzir legendas",
+	"Original language": "Idioma original",
+	"Translate to": "Traduzir para",
+	"Portuguese (Brazil)": "Português (Brasil)",
+	"Translating captions...": "Traduzindo legendas...",
+	"Could not translate captions.": "Não foi possível traduzir as legendas.",
+	"Source language": "Idioma de origem",
+	"Target language": "Idioma de destino",
+	"Translate": "Traduzir",
+	"Spanish": "Espanhol",
+	"French": "Francês",
+	"Italian": "Italiano",
+	"German": "Alemão",
+	"Japanese": "Japonês",
 	"Listen": "Ouvir",
 	"Could not play speaker sample.": "Não foi possível reproduzir a amostra do falante.",
 	"caption-fade": "Dissolver",
@@ -41,6 +55,8 @@
 
 	"Select the subject in the clip.": "Selecione o alvo no clipe.",
 	"Interpolate to 60 FPS": "Interpolar para 60 FPS",
+	"Enhance video": "Melhorar vídeo",
+	"Video enhancement supports SDR clips only.": "A melhoria de vídeo só está disponível para clipes SDR.",
 
 
 	"Background": "Fundo",

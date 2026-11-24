@@ -2,7 +2,7 @@
 	import { getContext, onMount, onDestroy, tick, type Component } from 'svelte';
 	import { DropdownMenu } from 'bits-ui';
 	import { v4 as uuidv4 } from 'uuid';
-	import { ChevronLeft, AudioLines, Eraser, Gauge, Mic, Users, Palette, Type, Captions, Download, Film, Folder, MonitorPlay, Pause, Play, Plus,
+	import { ChevronLeft, Languages, AudioLines, Eraser, Gauge, Mic, Users, Palette, ScanLine, Type, Captions, Download, Film, Folder, MonitorPlay, Pause, Play, Plus,
 		Redo2, Scissors, Square, Trash2, Undo2, Upload, Volume2, VolumeX, StepBack, StepForward, ZoomIn, ZoomOut } from '@lucide/svelte';
 	import { fly } from 'svelte/transition';
 	import { toast } from 'svelte-sonner';
@@ -14,7 +14,7 @@
 	import JanNumberControl from '$lib/components/chat/Settings/Advanced/JanNumberControl.svelte';
 	import { modelGridWheel } from '$lib/utils/modelGridWheel';
 	import { retryStudioPreview, studioPreview } from '$lib/utils/studioPreview';
-	import { applySpeakerCues, coverTranscript, visibleCaptionEntries } from '$lib/utils/videoEdit';
+	import { applySpeakerCues, coverTranscript, coverageAfterCueDeletion, translatedCue, visibleCaptionEntries } from '$lib/utils/videoEdit';
 	import MobileModalTitle from '$lib/components/common/MobileModalTitle.svelte';
 	import OrbitingSpheres from '$lib/components/common/OrbitingSpheres.svelte';
 	import Tooltip from '$lib/components/common/Tooltip.svelte';
@@ -55,8 +55,9 @@
 	let assets: EditAsset[] = [];
 	let timeline = emptyTimeline();
 	$: showCaptionTab = captionIndices.length > 0 || speakers.length > 0;
-	$: visibleTabs = tabs.filter(tab => tab.id !== 'captions' || showCaptionTab);
-	$: if (editingPanel === 'captions' && !showCaptionTab) editingPanel = 'tools';
+	$: showToolsTab = timeline.clips.length > 0 || hasExportCaptions;
+	$: visibleTabs = tabs.filter(tab => tab.id === 'tools' ? showToolsTab : tab.id !== 'captions' || showCaptionTab);
+	$: if ((editingPanel === 'captions' && !showCaptionTab) || (editingPanel === 'tools' && !showToolsTab)) editingPanel = showToolsTab ? 'tools' : 'media';
 	let past: EditTimeline[] = [];
 	let future: EditTimeline[] = [];
 	let waves: Record<string, number[]> = {};
@@ -65,7 +66,7 @@
 	let fileInput: HTMLInputElement;
 	let monitor: HTMLVideoElement;
 	let editingPanel: (typeof tabs)[number]['id'] = 'tools';
-	const clipTools = { fps60: 'Interpolate to 60 FPS', vocals: 'Isolate voice', instrumental: 'Remove vocals',
+	const clipTools = { remaster: 'Enhance video', fps60: 'Interpolate to 60 FPS', vocals: 'Isolate voice', instrumental: 'Remove vocals',
 		erase: 'Erase object' } as const;
 	type ClipTool = keyof typeof clipTools;
 	let installedTools: ClipTool[] = [];
@@ -218,7 +219,7 @@
 	$: if (show !== lastShow) {
 		lastShow = show;
 		if (!show) { stopSample(); pause(); picking = null;  }
-		else openPanel(hasComposerAttachment ? 'tools' : 'media');
+		else openPanel(hasComposerAttachment && showToolsTab ? 'tools' : 'media');
 	}
 
 
@@ -643,6 +644,7 @@
 	function removeSelected() {
 		const keys=new Set(group.length ? group : part==='caption' ? (cueIndex<0?[]:['caption:'+cueIndex]) : marked.map(i=>part+':'+i));
 		if (!keys.size) return;
+		const removedCues=new Set([...keys].filter(k=>k.startsWith('caption:')).map(k=>Number(k.slice(8))));
 		const clips=timeline.clips.flatMap((c,i):EditClip[]=>{
 			const video=keys.has('video:'+i), audio=keys.has('audio:'+i), at=offsets[i];
 			if (!audio && !video) return [{...c,at}];
@@ -650,6 +652,7 @@
 			return c.audioOnly ? [] : [{...c,at,noAudio:true,gain:0}];
 		});
 		push({...timeline,clips: [...keys].every(k=>k.startsWith('caption:')) ? timeline.clips:clips,
+			transcriptCoverage:coverageAfterCueDeletion(timeline.transcriptCoverage??[],timeline.captions,removedCues),
 			captions:timeline.captions.flatMap((cue,i)=>{
 				if(keys.has('caption:'+i)) return [];
 				if(cue.asset==='timeline' || clips.some(c=>c.asset===cue.asset && (cue.speechOnly || !c.audioOnly) && cue.start<c.end && cue.end>c.start)) return [cue];
@@ -906,7 +909,28 @@
 		} catch (cause) { if (!disposed && !activeRequest?.signal.aborted) setError(cause); }
 		finally { await cancelling; cancelling=undefined; operationId=undefined; loading = ''; activeRequest = undefined; runningTool = null; }
 	}
-	const assistNames = { captions: 'Transcribe speech', speakers:'Identify speakers', speech: 'Keep speech', color: 'Balance color' } as const;
+	const assistNames = { captions: 'Transcribe speech', speakers:'Identify speakers', translate:'Translate captions', speech: 'Keep speech', color: 'Balance color' } as const;
+	let translateOpen = false, sourceLanguage = 'en', targetLanguage = 'pt';
+	const languageNames = { en:'English', pt:'Portuguese', es:'Spanish', fr:'French', it:'Italian', de:'German', ja:'Japanese' };
+	$: translationChoices = Object.entries(languageNames).map(([value,name])=>({value,label:$i18n.t(name)}));
+	async function translateCaptions() {
+		const before=timeline;
+		const indices=[...new Set(visibleCaptions.filter(entry=>entry.cue.text.trim()).map(entry=>entry.index))];
+		if (!indices.length || loading || sourceLanguage===targetLanguage) return;
+		pause(); runningTool='translate'; loading='Translating captions...';
+		activeRequest=new AbortController(); operationId=uuidv4();
+		try {
+			const result=await call<{texts:string[]}>('/translate',{method:'POST',headers:{'Content-Type':'application/json'},signal:activeRequest.signal,
+				body:JSON.stringify({requestId:operationId, source:sourceLanguage,target:targetLanguage,texts:indices.map(i=>before.captions[i].text)})});
+			if (disposed || activeRequest.signal.aborted || timeline!==before) return;
+			if(result.texts.length!==indices.length || result.texts.some(t=>typeof t!=='string' || !t.trim())) throw Error('Could not translate captions.');
+			const byIndex=new Map(indices.map((i,n)=>[i,result.texts[n]]));
+			const captions=before.captions.flatMap((cue,i)=>byIndex.has(i)?translatedCue(cue,byIndex.get(i)!):[cue]);
+			if(captions.length>32768) throw Error('Too many captions. Select a shorter clip.');
+			push({...before,captions});
+		} catch(error) { if(!disposed && !activeRequest?.signal.aborted) setError(error); }
+		finally {await cancelling; cancelling=undefined; operationId=undefined; loading=''; activeRequest=undefined; runningTool=null;}
+	}
 	type Assist = keyof typeof assistNames;
 	function withinToolLimits(operation: Assist | ClipTool, clip: EditClip) {
 		const duration=clip.end-clip.start;
@@ -914,7 +938,7 @@
 		let reason='';
 		const [limit,message]=operation in assistNames ? [18000,'Select a clip of up to 5 hours.'] as const
 			: operation==='erase' ? [1800,'Select a clip of up to 30 minutes.'] as const
-			: operation==='fps60' ? [300,'Select a clip of up to 5 minutes.'] as const : [3600,'Select a clip of up to 1 hour.'] as const;
+			: operation==='fps60' || operation==='remaster' ? [300,'Select a clip of up to 5 minutes.'] as const : [3600,'Select a clip of up to 1 hour.'] as const;
 		if (duration<.08 || duration>limit) reason=message;
 		else if (operation==='fps60' && asset) {
 			if (asset.width*asset.height>1920*1080) reason='Frame interpolation supports clips up to 1080p.';
@@ -923,7 +947,7 @@
 		if (reason) setError(new Error(reason));
 		return !reason;
 	}
-	const toolIcons = { speakers:Users, fps60: Gauge, vocals: Mic, instrumental: AudioLines, erase: Eraser, captions: Captions, words: Type, speech: Scissors, color: Palette };
+	const toolIcons = { translate:Languages, speakers:Users, remaster:ScanLine, fps60: Gauge, vocals: Mic, instrumental: AudioLines, erase: Eraser, captions: Captions, words: Type, speech: Scissors, color: Palette };
 	const assistKeys = Object.keys(assistNames) as Assist[];
 	$: toolClip = marked.length <= 1 && !(part==='caption' && cueIndex>=0) && !group.some(k=>k.startsWith('caption:'))
 		? timeline.clips[selected] : undefined;
@@ -1296,7 +1320,7 @@
 		</header>
 			<nav class="edit-mobile-tabs" aria-label={$i18n.t('Editing panels')}>
 				{@render panelTab(MonitorPlay, 'Preview', mobilePanel === 'monitor', () => mobilePanel = 'monitor')}
-				{#each visibleTabs as tab}
+				{#each visibleTabs as tab (tab.id)}
 					{@render panelTab(tab.icon, tab.label, mobilePanel === 'inspector' && editingPanel === tab.id, () => openPanel(tab.id))}
 				{/each}
 				{#if mobilePanel === 'inspector'}{@render panelAction()}{/if}
@@ -1376,7 +1400,7 @@
 			</div>
 			<aside class="edit-side" class:mobile-visible={mobilePanel === 'inspector'}>
 				<nav class="edit-tabs" aria-label={$i18n.t('Editing panels')}>
-					{#each visibleTabs as tab}
+					{#each visibleTabs as tab (tab.id)}
 						{@render panelTab(tab.icon, tab.label, editingPanel === tab.id, () => openPanel(tab.id))}
 					{/each}
 					{@render panelAction()}
@@ -1401,9 +1425,9 @@
 					{:else if editingPanel==='tools'}
 						<div class="studio-tool-grid" data-model-grid use:modelGridWheel>{#each [...assistKeys,...installedTools] as op}
 						{@const Icon=toolIcons[op]}
-						{@const applicable = op==='fps60' || op==='color' || op==='erase' ? videoToolsAllowed : audioToolsAllowed}
+						{@const applicable = op==='translate' ? hasExportCaptions : op==='remaster' || op==='fps60' || op==='color' || op==='erase' ? videoToolsAllowed : audioToolsAllowed}
 						{@const inactive = !applicable || (!!activeTool && activeTool!==op) || (!!loading && activeTool!==op)}
-						<button type="button" disabled={inactive || !!loading} class:inactive on:click={() => op in assistNames ? assist(op as Assist) : chooseTool(op as ClipTool)}
+						<button type="button" disabled={inactive || !!loading} class:inactive on:click={() => op==='translate' ? translateOpen=true : op in assistNames ? assist(op as Assist) : chooseTool(op as ClipTool)}
 							class="edit-tool-card rounded-md outline-none">
 							{#if timeline.clips[selected]}<img class="edit-tool-poster" src={mediaUrl(timeline.clips[selected].asset)+"/thumbnail"} alt="" draggable="false"/>{/if}
 							<span class="edit-tool-image"><Icon size={17} strokeWidth={1.7}/></span>
@@ -1591,9 +1615,22 @@
 		<div class="sr-only" aria-live="polite">{#if notice}{$i18n.t(notice)}{/if}</div>
 	</section>
 </Modal>
+{#if translateOpen}<Modal bind:show={translateOpen} size="w-[25rem]">
+	<div class="translation-dialog px-7 py-6">
+		<h2 class="mb-3 text-lg font-medium dark:text-gray-200">{$i18n.t('Translate captions')}</h2>
+		{@render captionMenu('Original language',sourceLanguage,translationChoices,v=>sourceLanguage=v)}
+		{@render captionMenu('Translate to',targetLanguage,translationChoices,v=>targetLanguage=v)}
+		<div class="mt-6 flex justify-end gap-1.5"><button type="button" class="rounded-lg bg-gray-100 px-4 py-1.5 text-xs font-medium transition hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700" on:click={()=>translateOpen=false}>{$i18n.t('Cancel')}</button>
+			<button type="button" class="rounded-lg bg-black px-4 py-1.5 text-xs font-medium text-white transition hover:opacity-90 disabled:opacity-40 dark:bg-white dark:text-black" disabled={sourceLanguage===targetLanguage}
+				on:click={()=>{translateOpen=false;void translateCaptions()}}>{$i18n.t('Translate')}</button></div>
+	</div>
+</Modal>{/if}
 <ConfirmDialog animated={false} bind:show={confirmDiscard} title={$i18n.t("Discard edits?")} message={$i18n.t("Media and edits will be removed from this session. Original files are kept.")} confirmLabel={$i18n.t("Discard")} onConfirm={discard} />
 
 <style>
+	.translation-dialog :global(.edit-caption-setting) {grid-template-columns:auto minmax(0,1fr);min-height:36px;color:inherit;}
+	.translation-dialog :global(.edit-caption-setting > span) {font-size:15px;color:color-mix(in srgb,currentColor 82%,transparent);}
+	.translation-dialog :global(.studio-caption-trigger) {justify-self:end;}
 	.audio-canvas {background:#000}
 	.edit-footer:empty {display:none}
 	.edit-video-label {background:color-mix(in srgb,#438bc7 15%,transparent)}
@@ -1607,6 +1644,11 @@
 	@container tools (min-height:516px) {.studio-tool-grid {--rows:4;}}
 	.studio-tool-grid .edit-tool-card {aspect-ratio:auto;min-height:0;display:block;scroll-snap-align:start;}
 	.studio-tool-grid .edit-tool-card.inactive {opacity:.4;cursor:default;}
+	.studio-tool-grid .edit-tool-card:enabled:is(:hover,:focus-visible)::after {
+		content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+		background:color-mix(in srgb,var(--quiet) 9%,transparent);
+		box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--quiet) 50%,transparent);
+	}
 	.edit-monitor-loading.bounded {inset:auto;position:absolute;width:min(100cqw,calc(100cqh * var(--ratio)));aspect-ratio:var(--ratio)}
 	.edit-preview-caption[data-horizontal=left] {left:6%;--dx:0%}
 	.edit-preview-caption[data-horizontal=right] {left:94%;--dx:-100%}
