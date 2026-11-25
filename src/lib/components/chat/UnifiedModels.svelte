@@ -57,7 +57,9 @@
 	import { createNewModel, getBaseModels, deleteModelById, updateModelById } from '$lib/apis/models';
 	import ConfirmDialog from '$lib/components/common/ConfirmDialog.svelte';
 	import Trash from '$lib/components/icons/Trash.svelte';
-	import EditPencil from '$lib/components/icons/EditPencil.svelte';
+	import ArrowUpDown from '$lib/components/icons/ArrowUpDown.svelte';
+	import { Columns2, Rows2 } from '@lucide/svelte';
+	import { DropdownMenu } from 'bits-ui';
 	import UnloadModel from '$lib/components/icons/UnloadModel.svelte';
 	import Download from '$lib/components/icons/ModelCatalog.svelte';
 	import Upload from '$lib/components/icons/Upload.svelte';
@@ -235,6 +237,7 @@
 	let selectedModelId: string | null = null;
 	export let mobileStep = '';
 	let showDownloadModal = false;
+	let downloadHub: DownloadNeveModelsModal;
 	let importingModel = false;
 	let modelImportInput: HTMLInputElement;
 	async function importModelFile(event: Event) {
@@ -848,7 +851,41 @@
 			: searchValue
 				? $i18n.t('Adjust your search to find the model you are looking for.')
 				: $i18n.t('Click "Download models" to install one, or place .gguf files in the models folder.');
-	$: gridModels = localAccessError ? [] : mergedModels.filter(item => matchesModelSearch(item, searchValue));
+	let modelLayout: 'grid' | 'list' = 'grid';
+	let modelSort: 'name' | 'size' = 'name';
+	let sortMenuOpen = false;
+	let modelList: HTMLElement;
+	function spaceForScrollbar(node: HTMLElement, _layout: [number, string, boolean]) {
+		const sync = () => node.classList.toggle('pr-2', node.scrollHeight > node.clientHeight);
+		const resize = new ResizeObserver(sync);
+		resize.observe(node);
+		return { update: () => { void tick().then(sync); }, destroy: () => resize.disconnect() };
+	}
+	const nameOrder = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+	const rowName = (item) => item.admin?.name ?? item.gguf?.filename?.replace(/\.gguf$/i, '') ?? item.admin?.id ?? '';
+	$: gridModels = localAccessError ? [] : mergedModels.filter(item => matchesModelSearch(item, searchValue))
+		.sort((a, b) => (modelSort === 'size' ? (b.gguf?.file_size ?? -1) - (a.gguf?.file_size ?? -1) : 0)
+			|| nameOrder.compare(rowName(a), rowName(b)) || nameOrder.compare(a.key, b.key));
+	async function setLayout(next: typeof modelLayout) {
+		if (next === modelLayout) return;
+		const list = modelList, top = list.getBoundingClientRect().top;
+		const anchor = list.scrollTop > 0 && Array.from(list.querySelectorAll<HTMLElement>('[data-model-key]'))
+			.find(row => row.getBoundingClientRect().bottom > top);
+		const offset = anchor ? anchor.getBoundingClientRect().top - top : 0;
+		modelLayout = next;
+		localStorage.setItem('neveai.models.layout', next);
+		await tick();
+		if (anchor && list.contains(anchor)) list.scrollTop += anchor.getBoundingClientRect().top - list.getBoundingClientRect().top - offset;
+	}
+	async function setOrder(next: typeof modelSort) {
+		sortMenuOpen = false;
+		if (modelSort === next) return;
+		modelSort = next;
+		localStorage.setItem('neveai.models.order', next);
+		await tick();
+		if (modelList) modelList.scrollTop = 0;
+	}
+	const catalogControl = 'grid size-7 place-items-center rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800';
 
 
 	// ─── LOCAL MODEL FUNCTIONS ───────────────────────────────────────────────
@@ -1395,6 +1432,8 @@
 		.catch(() => toast.error($i18n.t('Failed to save favorites')));
 
 	onMount(() => {
+		modelLayout = localStorage.getItem('neveai.models.layout') === 'list' ? 'list' : 'grid';
+		modelSort = localStorage.getItem('neveai.models.order') === 'size' ? 'size' : 'name';
 		destroyed = false;
 		cancelOrphanedLocalActionTimers();
 		const runtimeEventHandler = (event: Event) => {
@@ -1465,7 +1504,10 @@
 	});
 
 	export const handleOutsideClick = () => {
-		if (showDownloadModal) { showDownloadModal = false; return true; }
+		if (showDownloadModal) {
+			if (!downloadHub?.closeRepository()) showDownloadModal = false;
+			return true;
+		}
 		if (!selectedModelId) return false;
 		selectedModelId = null;
 		void initAdmin();
@@ -1474,7 +1516,7 @@
 </script>
 
 <div class="unified-download-view h-[min(640px,90dvh)] min-h-0" class:hidden={!showDownloadModal}>
-	<DownloadNeveModelsModal embedded show={show && showDownloadModal} onBack={() => { showDownloadModal = false; }} on:modelsChanged={refreshAfterCatalogChange} />
+	<DownloadNeveModelsModal bind:this={downloadHub} embedded {localModels} show={show && showDownloadModal} onBack={() => { showDownloadModal = false; }} on:modelsChanged={refreshAfterCatalogChange} />
 </div>
 
 <ConfirmDialog bind:show={showDeleteModel} animated={false} title={$i18n.t('Delete model?')}
@@ -1582,9 +1624,13 @@
 		id={am ? `model-item-${am.id}` : undefined}
 	>
 		<div
-			class="unified-model-card flex h-full min-w-0 gap-3 w-full overflow-hidden border bg-gray-50 dark:bg-gray-850/50 px-3 py-2 rounded-lg {isHighlighted ? 'border-gray-300 dark:border-gray-700' : 'border-transparent'}"
+			class="unified-model-card relative isolate flex h-full min-w-0 gap-3 w-full overflow-hidden border bg-gray-100/80 hover:bg-gray-200/80 dark:bg-gray-850/80 dark:hover:bg-gray-800/80 px-3 py-2 rounded-lg {isHighlighted ? 'border-gray-300 dark:border-gray-700' : 'border-transparent'}"
 		>
-			<div class="model-avatar size-9 aspect-square self-center flex-shrink-0 group/avatar relative">
+			{#if am}
+				<button type="button" data-edit-model={am.id} aria-label={`${$i18n.t('Edit')}: ${modelName}`} disabled={deletingModel || modelsBlocked}
+					class="absolute inset-0 z-[1] rounded-[inherit] focus-visible:outline-offset-[-2px]" on:click={() => { selectedModelId = am.id; }}></button>
+			{/if}
+			<div class="model-avatar size-9 aspect-square self-center flex-shrink-0 group/avatar relative z-[2]">
 				{#if am}
 					<div class="w-9 h-9 rounded-full overflow-hidden">
 						<img
@@ -1634,19 +1680,12 @@
 				</div>
 			</div>
 
-			<div class="flex flex-shrink-0 items-center justify-end gap-0.5 self-center">
+			<div class="relative z-[2] flex flex-shrink-0 items-center justify-end gap-0.5 self-center">
 				{#if !gm?.is_loaded && !isHighlighted && !isLoadProcessing}
 				<Tooltip content={$i18n.t('Delete')}>
 					<button type="button" aria-label={$i18n.t('Delete')} disabled={localModelActionInProgress || !(gm || workspaceModels.some(model => model.id === am?.id))}
-						class="grid size-8 place-items-center rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
+						class="grid size-8 place-items-center rounded-lg text-gray-500 dark:text-gray-400 enabled:hover:bg-black/10 dark:enabled:hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed"
 						on:click|stopPropagation={() => { modelToDelete = { gguf: gm, admin: am }; showDeleteModel = true; }}><Trash className="size-4" /></button>
-				</Tooltip>
-				{/if}
-				{#if am}
-				<Tooltip content={$i18n.t('Edit')}>
-					<button type="button" data-edit-model={am.id} aria-label={$i18n.t('Edit')} disabled={deletingModel || modelsBlocked}
-						class="grid size-8 place-items-center rounded-lg text-gray-500 dark:text-gray-400 hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed"
-						on:click={() => { selectedModelId = am.id; }}><EditPencil className="size-[calc(1rem_+_2px)]" /></button>
 				</Tooltip>
 				{/if}
 				{#if gm}
@@ -1661,7 +1700,7 @@
 						<Tooltip content="Descarregar">
 							<button
 								aria-label="Descarregar"
-								class="flex items-center justify-center p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-500 dark:text-gray-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+								class="flex items-center justify-center p-1.5 rounded-lg enabled:hover:bg-black/10 dark:enabled:hover:bg-white/10 transition text-gray-500 dark:text-gray-400 disabled:cursor-not-allowed disabled:opacity-40"
 								disabled={localModelActionInProgress}
 								on:click={() => {
 									if (localModelActionInProgress) return;
@@ -1675,7 +1714,7 @@
 						<Tooltip content="Carregar">
 							<button
 								aria-label="Carregar"
-								class="flex items-center justify-center p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition text-gray-500 dark:text-gray-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+								class="flex items-center justify-center p-1.5 rounded-lg enabled:hover:bg-black/10 dark:enabled:hover:bg-white/10 transition text-gray-500 dark:text-gray-400 disabled:cursor-not-allowed disabled:opacity-40"
 								disabled={localModelActionInProgress}
 								on:mouseenter={() => showVramPreview(gm)}
 								on:mouseleave={() => clearVramPreview(gm)}
@@ -1728,13 +1767,37 @@
 			</div>
 
 			<div class="unified-models-body flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4">
-				<div class="grid grid-cols-2 gap-3 sm:gap-6 px-2 pt-3 pb-4 mb-4 border-b border-gray-200/50 dark:border-gray-800/50">
+				<div class="grid grid-cols-2 gap-3 sm:gap-6 px-2 pt-1 pb-2 border-b border-gray-200/50 dark:border-gray-800/50">
 					{@render vramMeter()}
 					{@render storageMeter()}
 				</div>
 				<div inert={modelsBlocked} aria-disabled={modelsBlocked} data-models-blocked={modelsBlocked}
 					class="unified-model-catalog flex min-h-0 flex-1 flex-col overflow-hidden {modelsBlocked ? 'opacity-50 grayscale' : ''}">
-					<div use:modelGridWheel class="unified-model-list min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable]">
+					<div class="flex shrink-0 items-center justify-end gap-1 pr-2 pt-1.5 pb-0.5">
+						<DropdownMenu.Root bind:open={sortMenuOpen}>
+							<Tooltip content={$i18n.t('Sort models')}>
+								<DropdownMenu.Trigger aria-label={$i18n.t('Sort models')} class={catalogControl}><ArrowUpDown className="size-3.5" /></DropdownMenu.Trigger>
+							</Tooltip>
+							<DropdownMenu.Content side="bottom" align="end" sideOffset={4} class="z-[10002] w-40 rounded-md border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-850 p-1 shadow-md text-sm text-gray-700 dark:text-gray-200">
+								{#each ['name', 'size'] as order}
+									<DropdownMenu.Item role="menuitemradio" aria-checked={modelSort === order} class="flex items-center justify-between gap-4 rounded-sm px-3 py-1.5 cursor-pointer select-none hover:bg-gray-100 dark:hover:bg-gray-800" on:click={() => setOrder(order === 'size' ? 'size' : 'name')}>
+										<span>{$i18n.t(order === 'name' ? 'Name' : 'Size')}</span>
+										<span class="size-4">{#if modelSort === order}<CheckCircle strokeWidth="1.7" />{/if}</span>
+									</DropdownMenu.Item>
+								{/each}
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+						<div role="group" aria-label={$i18n.t('View')} class="flex items-center gap-0.5">
+							{#each ['grid', 'list'] as layout}
+								{@const label = $i18n.t(layout === 'grid' ? 'Grid view' : 'List view')}
+								<Tooltip content={label}><button type="button" aria-label={label} aria-pressed={modelLayout === layout} class="{catalogControl} aria-pressed:bg-gray-100 aria-pressed:text-gray-800 dark:aria-pressed:bg-gray-800 dark:aria-pressed:text-gray-100" on:click={() => setLayout(layout === 'grid' ? 'grid' : 'list')}>
+									{#if layout === 'grid'}<Columns2 class="size-4" />{:else}<Rows2 class="size-4" />{/if}
+								</button></Tooltip>
+							{/each}
+						</div>
+					</div>
+					<div class="model-rows-space">
+					<div bind:this={modelList} use:modelGridWheel use:spaceForScrollbar={[gridModels.length, modelLayout, localLoading]} class="unified-model-list overflow-y-auto overscroll-contain">
 						{#if localLoading && !hasCachedModelRows}
 							<div class="h-24"></div>
 						{:else if gridModels.length === 0}
@@ -1743,12 +1806,13 @@
 								<div class="mt-1 text-xs text-gray-500">{modelEmptyDescription}</div>
 							</div>
 						{:else}
-							<div data-model-grid class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-[8px]">
+							<div data-model-grid class="grid grid-cols-1 {modelLayout === 'grid' ? 'md:grid-cols-2' : ''} gap-x-4 gap-y-[var(--model-row-gap)]">
 								{#each gridModels as item (item.key)}
 									{@render modelRow(item, Boolean(item.gguf?.is_loaded || (item.gguf && isLocalModelUnloadPinned(item.gguf))))}
 								{/each}
 							</div>
 						{/if}
+					</div>
 					</div>
 				</div>
 			</div>
@@ -1775,22 +1839,36 @@
 {/if}
 
 <style>
-	.unified-model-row {
+	.model-rows-space {
 		--model-row-height: max(72px, 4rem);
+		--model-row-gap: 4px;
+		container-type: size;
+		flex: 1;
+		min-height: var(--model-row-height);
+	}
+	.unified-model-list {
+		height: 100%;
+		scroll-snap-type: y mandatory;
+	}
+	.unified-model-row {
+		scroll-snap-align: start;
 		height: var(--model-row-height);
 		min-height: var(--model-row-height);
 		max-height: var(--model-row-height);
 	}
 	@supports (height: round(up, 4rem, 1px)) {
-		.unified-model-row { --model-row-height: max(72px, round(up, 4rem, 1px)); }
+		.model-rows-space { --model-row-height: max(72px, round(up, 4rem, 4px)); }
+		/* N rows have only N - 1 gaps. The last scroll stop must align just like the first. */
+		.unified-model-list {
+			height: calc(round(down, 100cqh + var(--model-row-gap), var(--model-row-height) + var(--model-row-gap)) - var(--model-row-gap));
+		}
 	}
 	@media (max-width: 767px) {
 		.unified-download-view { height: 100%; }
 		.unified-models-shell { height: 100%; max-height: 100%; }
 		.unified-model-editor { height: 100% !important; }
 		.unified-models-body { flex: 1; overflow-y: auto; scrollbar-gutter: stable; }
-		.unified-model-catalog { max-height: none; overflow: visible; }
-		.unified-model-list { flex: none; max-height: none !important; overflow: visible; }
+		.unified-model-catalog { min-height: min-content; }
 		.unified-model-name { max-width: 22ch; }
 		.unified-model-meta { margin-top: 3px; }
 		.unified-model-card { padding-inline: 12px; column-gap: 14px; }

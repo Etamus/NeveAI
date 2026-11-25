@@ -55,7 +55,7 @@ try{
   await page.evaluate(async theme=>{document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.classList.toggle('light',theme==='light');await window.__gridFixture.open();},theme);
   const shell=page.locator('.unified-models-shell'),grid=shell.locator('[data-model-grid]');await grid.waitFor();
   assert.equal(await grid.locator('[data-model-key]').count(),14);
-  assert.equal(await grid.locator('[data-edit-model]').first().evaluate(el=>el.parentElement._tippy.props.delay[0]),350,'row actions wait while crossing a model grid');
+  assert.equal(await grid.getByRole('button',{name:'Delete',exact:true}).first().evaluate(el=>el.parentElement._tippy.props.delay[0]),350,'row actions wait while crossing a model grid');
   assert.equal(await shell.getByRole('switch').count(),0);
   const cardPaint=locator=>locator.evaluate(el=>{const style=getComputedStyle(el);return {background:style.backgroundColor,border:style.borderTopColor};});
   const assertPermanentBackground=async locator=>{await page.mouse.move(0,0);const normal=await cardPaint(locator);assert.notEqual(normal.background,'rgba(0, 0, 0, 0)','model cards have a permanent background');await locator.hover();assert.deepEqual(await cardPaint(locator),normal,'hover never changes the card surface');};
@@ -748,15 +748,8 @@ try{
   await assertSearchNotSelected('cancelling the last paused item does not select search text');
   await hubSearch.fill('');
   await hub.getByRole('button',{name:width<768?'Back':'Close',exact:true}).click();await grid.waitFor();
-  await grid.locator('.unified-model-name').first().click();assert.equal(await page.locator('.unified-model-editor').count(),0,'card text is no longer an editor trigger');
-  await grid.locator('.unified-model-card').first().click({position:{x:5,y:5}});assert.equal(await page.locator('.unified-model-editor').count(),0,'card background does not open editor');
-  const editButton=grid.locator('[data-edit-model]').first();
-  const editGeometry=await editButton.evaluate(el=>{const button=el.getBoundingClientRect(),icon=el.querySelector('svg').getBoundingClientRect(),root=parseFloat(getComputedStyle(document.documentElement).fontSize);return {size:icon.width,root,x:icon.left+icon.width/2-button.left-button.width/2,y:icon.top+icon.height/2-button.top-button.height/2};});
-  assert(Math.abs(editGeometry.size-editGeometry.root-2)<.1,'edit SVG is one more pixel larger than the previous size');
-  assert(Math.abs(editGeometry.x)<.1&&Math.abs(editGeometry.y)<.1,'larger edit SVG stays centered in the unchanged button');
   const unloaded=grid.locator('[data-model-key="gguf:local/Model1"]');
-  assert((await unloaded.getByRole('button',{name:'Delete',exact:true}).boundingBox()).x<(await unloaded.locator('[data-edit-model]').boundingBox()).x,'edit button is right of Delete');
-  await editButton.click();
+  await grid.locator('.unified-model-card').first().click({position:{x:5,y:5}});
   const editor=page.locator('.unified-model-editor');await editor.waitFor();
   const profile=editor.locator('.model-editor-profile');
   await profile.locator('img').evaluate(image=>image.decode());
@@ -771,7 +764,7 @@ try{
   }
   const identityGeometry=await profile.evaluate(el=>{const p=el.getBoundingClientRect(),f=el.closest('form').getBoundingClientRect(),name=el.querySelector('input[placeholder="Model Name"]'),id=el.querySelector('input[placeholder="Model ID"]');return {center:p.left+p.width/2,expected:f.left+f.width/2,nameSize:getComputedStyle(name).fontSize,idSize:parseFloat(getComputedStyle(id).fontSize),root:parseFloat(getComputedStyle(document.documentElement).fontSize)};});
   assert(Math.abs(identityGeometry.center-identityGeometry.expected)<1,'identity block centered in editor');
-  assert(Math.abs(parseFloat(identityGeometry.nameSize)-identityGeometry.root*1.5625)<.1,'editable title is slightly larger');
+  assert(Math.abs(parseFloat(identityGeometry.nameSize)-identityGeometry.root*1.4375)<.1,'editable title is 23px at normal scale');
   assert(Math.abs(identityGeometry.idSize-identityGeometry.root*.875)<.1,'original model name is slightly larger');
   assert.equal(await editor.evaluate(el=>el.getBoundingClientRect().height),height,'model editor matches model manager height');
   const editorLayout=await editor.evaluate(el=>{const header=el.querySelector('[data-model-editor-header]').getBoundingClientRect(),image=el.querySelector('.model-editor-profile img').getBoundingClientRect(),section=el.querySelector('.model-editor-params-scroll').getBoundingClientRect(),window=el.querySelector('.model-editor-advanced-params-window'),row=window.querySelector('.advanced-params > .flex').getBoundingClientRect();return {imageGap:image.top-header.bottom,sectionGap:section.top-image.bottom,max:parseFloat(getComputedStyle(window).maxHeight),height:window.getBoundingClientRect().height,row:row.height,root:parseFloat(getComputedStyle(document.documentElement).fontSize)};});

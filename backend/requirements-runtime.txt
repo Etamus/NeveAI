@@ -11,6 +11,7 @@ regex==2026.9.3
 python-multipart==0.0.32
 itsdangerous==2.2.0
 python-dotenv
+psutil
 PyYAML
 
 # Auth, sessions and realtime

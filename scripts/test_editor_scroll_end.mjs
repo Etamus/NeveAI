@@ -31,7 +31,7 @@ try{
   const panel=editor.locator('.model-editor-advanced-params-window');
   await editor.locator('[data-model-editable-name]').waitFor();
   const typography=await editor.evaluate(el=>({root:parseFloat(getComputedStyle(document.documentElement).fontSize),name:parseFloat(getComputedStyle(el.querySelector('[data-model-editable-name]')).fontSize),original:parseFloat(getComputedStyle(el.querySelector('[data-model-original-id]')).fontSize),description:parseFloat(getComputedStyle(el.querySelector('.model-editor-identity textarea')).fontSize)}));
-  assert(Math.abs(typography.name-typography.root*1.5625)<.1,'editable name increased to 25px at normal scale');
+  assert(Math.abs(typography.name-typography.root*1.4375)<.1,'editable name is 23px at normal scale');
   assert(Math.abs(typography.original-typography.root*.875)<.1,'original name increased to 14px at normal scale');
   assert.equal(typography.description,16,'description increased to 16px');
   const editableTitle=editor.getByPlaceholder('Model Name',{exact:true});

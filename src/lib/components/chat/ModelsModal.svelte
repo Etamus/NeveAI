@@ -203,11 +203,11 @@
 
 {#if unifiedModelsPreload?.loaded}
 	<Modal
-		size="md"
+		size={unifiedModelMobileStep && unifiedModelMobileStep !== 'downloads' ? 'w-[40rem]' : 'w-[44rem]'}
 		mobileFullscreen
 		mobileStep={unifiedModelMobileStep}
 		onMobileStepBack={() => unifiedModels?.handleOutsideClick()}
-		className="bg-white dark:bg-gray-900 rounded-xl w-[44rem]!"
+		className="bg-white dark:bg-gray-900 rounded-xl"
 		bind:show={$showLocalModelsModal}
 		keepMounted
 		onOutsideClick={() => unifiedModels?.handleOutsideClick() ?? false}

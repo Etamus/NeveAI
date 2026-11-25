@@ -142,6 +142,7 @@ def setup():
         command = [str(csc), "/nologo", "/target:winexe", "/platform:x64", "/optimize+", "/out:" + str(host / "NeveAI.Window.exe"),
                    "/win32manifest:" + str(ROOT / "desktop/app.manifest"), "/win32icon:" + str(ROOT / "static/static/faviconbar.ico"),
                    "/r:System.dll", "/r:System.Core.dll", "/r:System.Drawing.dll", "/r:System.Windows.Forms.dll", "/r:System.Web.Extensions.dll",
+                   "/r:System.Xaml.dll", *["/r:" + str(csc.parent / "WPF" / name) for name in ("WindowsBase.dll", "PresentationCore.dll", "PresentationFramework.dll")],
                    "/r:" + str(host / "Microsoft.Web.WebView2.Core.dll"), "/r:" + str(host / "Microsoft.Web.WebView2.WinForms.dll"), str(ROOT / "desktop/NeveWindow.cs")]
         result = subprocess.run(command, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
         if result.returncode:

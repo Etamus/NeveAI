@@ -108,6 +108,7 @@
 					tabindex="0"
 					aria-label={$i18n.t(($settings?.favoriteModels ?? []).includes(item.model.id) ? 'Remove from favorites' : 'Add to favorites')}
 					title={$i18n.t(($settings?.favoriteModels ?? []).includes(item.model.id) ? 'Remove from favorites' : 'Add to favorites')}
+					data-tooltip-slow={($settings?.favoriteModels ?? []).includes(item.model.id) ? undefined : ''}
 					aria-pressed={($settings?.favoriteModels ?? []).includes(item.model.id)}
 					class="absolute inset-0 size-7 rounded-full flex items-center justify-center opacity-0 group-hover/favorite:opacity-100 focus-visible:opacity-100 focus-visible:bg-gray-100 dark:focus-visible:bg-gray-800 transition-opacity text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 cursor-pointer"
 					on:pointerdown|stopPropagation

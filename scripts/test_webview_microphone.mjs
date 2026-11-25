@@ -20,14 +20,15 @@ const source = await readFile('desktop/NeveWindow.cs','utf8');
 assert(source.includes('"--disable-backgrounding-occluded-windows"'));
 await writeFile(path.join(profile,'MicFixture.cs'),source.replace('"--disable-backgrounding-occluded-windows"','"--disable-backgrounding-occluded-windows --use-fake-device-for-media-stream"'));
 await promisify(execFile)(path.join(process.env.SystemRoot,'Microsoft.NET/Framework64/v4.0.30319/csc.exe'),
-	['/nologo','/target:winexe','/platform:x64','/out:'+host,...['System.dll','System.Core.dll','System.Drawing.dll','System.Windows.Forms.dll','System.Web.Extensions.dll',...libs.map(n=>path.join(profile,n))].map(n=>'/r:'+n),path.join(profile,'MicFixture.cs')],{windowsHide:true});
+	['/nologo','/target:winexe','/platform:x64','/out:'+host,...['System.dll','System.Core.dll','System.Drawing.dll','System.Windows.Forms.dll','System.Web.Extensions.dll','System.Xaml.dll',...['WindowsBase.dll','PresentationCore.dll','PresentationFramework.dll'].map(n=>path.join(process.env.SystemRoot,'Microsoft.NET/Framework64/v4.0.30319/WPF',n)),...libs.map(n=>path.join(profile,n))].map(n=>'/r:'+n),path.join(profile,'MicFixture.cs')],{windowsHide:true});
 let report;
 const server = createServer((req, res) => {
 	if (req.url.startsWith('/result/')) {
 		console.log('Device result:',decodeURIComponent(req.url.slice(8))); report?.(req.url.slice(8)); res.end(); return;
 	}
 	res.setHeader('Content-Type', 'text/html; charset=utf-8');
-	res.end(`<!doctype html><html lang="pt-BR" class="dark"><body><script>
+	res.end(`<!doctype html><html lang="pt-BR" class="dark" style="font-size:115%;background:#171717"><body><script>
+		chrome.webview.postMessage({type:'neve:theme', dark:true, lang:'pt-BR'});
 		chrome.webview.postMessage({type:'neve:ready'});
 		navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
 			const label=stream.getAudioTracks()[0]?.label;
@@ -38,11 +39,12 @@ const server = createServer((req, res) => {
 });
 server.listen(0, '127.0.0.1'); await once(server, 'listening');
 try {
-	for (const allow of [false,true]) {
+	for (const action of ['deny','escape','outside','allow']) {
+		const allow = action === 'allow';
 		const result = new Promise(resolve => { report = resolve; });
 		const child = spawn(host, [
 			'--root',root,'--runtime',path.join(root,'.desktop',state.runtime),
-			'--profile',path.join(profile,String(allow),'profile'),'--url','http://127.0.0.1:'+server.address().port
+			'--profile',path.join(profile,action,'profile'),'--url','http://127.0.0.1:'+server.address().port
 		], {windowsHide:true,env:{...process.env,NEVE_WEBVIEW2_TEST_MODE:'1'}});
 		let timer;
 		try {
@@ -50,7 +52,6 @@ try {
 			const script = `$ErrorActionPreference='Stop'
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
-Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class NativeButton { [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, int message, IntPtr w, IntPtr l); }'
 $ae=[Windows.Automation.AutomationElement]
 $owner=[Windows.Automation.PropertyCondition]::new($ae::ProcessIdProperty,[int]${child.pid})
 $name=[Windows.Automation.PropertyCondition]::new($ae::NameProperty,'${allow?'Permitir':'Agora não'}')
@@ -60,8 +61,41 @@ $condition=[Windows.Automation.AndCondition]::new($owner,$names)
 $deadline=[DateTime]::UtcNow.AddSeconds(20)
 do {
  $button=$ae::RootElement.FindFirst([Windows.Automation.TreeScope]::Descendants,$condition)
- if ($button -and $button.Current.NativeWindowHandle -and $button.Current.IsEnabled) {
-  [void][NativeButton]::PostMessage([IntPtr]$button.Current.NativeWindowHandle,245,[IntPtr]::Zero,[IntPtr]::Zero); exit 0
+ if ($button -and $button.Current.IsEnabled) {
+  if ($env:NEVE_MIC_SCREENSHOT -and ${action==='deny'?'$true':'$false'}) {
+   Add-Type -AssemblyName System.Drawing
+   Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CaptureDpi { [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context); }'
+   [void][CaptureDpi]::SetThreadDpiAwarenessContext([IntPtr](-4))
+   $headingName=[Windows.Automation.PropertyCondition]::new($ae::NameProperty,'Permitir acesso ao microfone?')
+   $type=[Windows.Automation.PropertyCondition]::new($ae::ControlTypeProperty,[Windows.Automation.ControlType]::Text)
+   $heading=$ae::RootElement.FindFirst([Windows.Automation.TreeScope]::Descendants,[Windows.Automation.AndCondition]::new($owner,$headingName,$type))
+   $top=$heading.Current.BoundingRectangle
+   $bottom=$button.Current.BoundingRectangle
+   $unit=$bottom.Height/28
+   $margin=[Math]::Ceiling(41*$unit)
+   $y=[int]($top.Y-37*$unit)
+   $bitmap=New-Object Drawing.Bitmap ([int]($top.Width+2*$margin)),([int]($bottom.Bottom+37*$unit-$y))
+   $graphics=[Drawing.Graphics]::FromImage($bitmap)
+   try {
+    $graphics.CopyFromScreen([int]($top.X-$margin),$y,0,0,$bitmap.Size)
+    $bitmap.Save($env:NEVE_MIC_SCREENSHOT,[Drawing.Imaging.ImageFormat]::Png)
+   } finally {$graphics.Dispose(); $bitmap.Dispose()}
+  }
+  if ('${action}' -in 'escape','outside') {
+   Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class DialogInput { [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr w, IntPtr l); [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y); }'
+   $hwnd=[DialogInput]::GetForegroundWindow()
+   $window=$ae::FromHandle($hwnd)
+   if ($window.Current.ProcessId -ne ${child.pid} -or $window.Current.Name -notin 'Permitir acesso ao microfone?','Allow microphone access?') {throw 'Unexpected active window'}
+   if ('${action}' -eq 'escape') {
+    [void][DialogInput]::PostMessage($hwnd,256,[IntPtr]27,[IntPtr]0)
+   } else {
+    $bounds=$window.Current.BoundingRectangle
+    [void][DialogInput]::SetCursorPos([int]$bounds.Left+8,[int]$bounds.Top+8)
+    [void][DialogInput]::PostMessage($hwnd,513,[IntPtr]1,[IntPtr]524296)
+    [void][DialogInput]::PostMessage($hwnd,514,[IntPtr]0,[IntPtr]524296)
+   }
+  } else { $button.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke() }
+  exit 0
  }
  Start-Sleep -Milliseconds 100
 } while ([DateTime]::UtcNow -lt $deadline)
@@ -69,7 +103,7 @@ throw 'Microphone permission button missing'`;
 			await promisify(execFile)('powershell.exe',['-NoProfile','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,timeout:25000});
 			const answer = decodeURIComponent(await Promise.race([result,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('No permission result')),10000);})]));
 			if (allow) assert.match(answer,/fake/i); else assert.equal(answer,'NotAllowedError');
-			console.log('PASS: native permission',allow?'allow':'deny');
+			console.log('PASS: native permission',action);
 		} finally { clearTimeout(timer); const closed=once(child,'exit'); child.kill(); if(child.exitCode===null) await closed; }
 	}
 } finally { server.closeAllConnections(); server.close(); }

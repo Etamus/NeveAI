@@ -42,6 +42,7 @@ internal sealed class NeveWindow : Form
     bool ready, initializing, dark = true;
     bool portuguese = System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName == "pt";
     bool askingForMicrophone;
+    double textScale = 1;
     System.Windows.Forms.Timer startup;
     readonly System.Windows.Forms.Timer stateTimer = new System.Windows.Forms.Timer();
     Rectangle lastNormalBounds;
@@ -172,8 +173,8 @@ internal sealed class NeveWindow : Form
                 if (window.top !== window || location.origin !== '" + appUri.GetLeftPart(UriPartial.Authority) + @"') return;
                 window.__NEVE_WEBVIEW2__ = true;
                 window.__NEVE_NATIVE_DOWNLOADS__ = true;
-                const theme = () => chrome.webview.postMessage({type:'neve:theme',dark:document.documentElement.classList.contains('dark'),lang:document.documentElement.lang || localStorage.locale || navigator.language});
-                const watch = () => { theme(); new MutationObserver(theme).observe(document.documentElement,{attributes:true,attributeFilter:['class','lang']}); };
+                const theme = () => chrome.webview.postMessage({type:'neve:theme',dark:document.documentElement.classList.contains('dark'),lang:document.documentElement.lang || localStorage.locale || navigator.language,scale:parseFloat(getComputedStyle(document.documentElement).fontSize)/16});
+                const watch = () => { theme(); new MutationObserver(theme).observe(document.documentElement,{attributes:true,attributeFilter:['class','lang','style']}); };
                 if(document.documentElement) watch(); else addEventListener('DOMContentLoaded',watch,{once:true});
             })();");
             var migration = Path.Combine(Path.GetDirectoryName(profile), "local-storage-migration.json");
@@ -196,38 +197,79 @@ internal sealed class NeveWindow : Form
         } catch (Exception error) { Fail(error.ToString()); }
     }
 
+    // The host owns this dialog: web content can request the microphone, never grant it.
     bool ConfirmMicrophone()
     {
-        Color surface = dark ? Color.FromArgb(23,23,23) : Color.White;
-        Color ink = dark ? Color.WhiteSmoke : Color.FromArgb(25,25,25);
-        using (var dialog = new Form())
-        using (var heading = new Font("Segoe UI", 12, FontStyle.Bold))
-        using (var body = new Font("Segoe UI", 10)) {
-            dialog.Font = body;
-            dialog.AutoScaleMode = AutoScaleMode.Font;
-            dialog.FormBorderStyle = FormBorderStyle.None;
-            dialog.StartPosition = FormStartPosition.CenterParent;
-            dialog.ShowInTaskbar = false;
-            dialog.BackColor = dark ? Color.FromArgb(60,60,60) : Color.Gainsboro;
-            dialog.Padding = new Padding(1);
-            dialog.ClientSize = new Size(424, 156);
-            string title = portuguese ? "Permitir acesso ao microfone?" : "Allow microphone access?";
-            dialog.Text = title;
-            var panel = new Panel { Dock = DockStyle.Fill, BackColor = surface, Padding = new Padding(18) };
-            var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 34, FlowDirection = FlowDirection.RightToLeft };
-            var allow = new Button { Text = portuguese ? "Permitir" : "Allow", DialogResult = DialogResult.Yes, BackColor = ink, ForeColor = surface };
-            var deny = new Button { Text = portuguese ? "Agora n\u00e3o" : "Not now", DialogResult = DialogResult.No, BackColor = dark ? Color.FromArgb(44,44,44) : Color.WhiteSmoke, ForeColor = ink };
-            foreach (var button in new[] { allow, deny }) {
-                button.FlatStyle = FlatStyle.Flat; button.FlatAppearance.BorderSize = 0;
-                button.Size = new Size(88,30); button.Margin = new Padding(6,1,0,1);
-                actions.Controls.Add(button);
-            }
-            var detail = new Label { Dock = DockStyle.Fill, ForeColor = ink, Text = portuguese ? "O NeveAI usa o microfone para o ditado e o modo de voz." : "NeveAI uses the microphone for dictation and voice mode." };
-            var caption = new Label { Dock = DockStyle.Top, Height = 32, Font = heading, ForeColor = ink, Text = title };
-            panel.Controls.Add(detail); panel.Controls.Add(actions); panel.Controls.Add(caption);
-            dialog.Controls.Add(panel); dialog.CancelButton = deny; dialog.ActiveControl = deny;
-            return dialog.ShowDialog(this) == DialogResult.Yes;
-        }
+        const string layout = @"<Window xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'
+            xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml' WindowStyle='None' ResizeMode='NoResize'
+            WindowStartupLocation='Manual' AllowsTransparency='True' Background='#99000000' ShowInTaskbar='False'
+            FontFamily='Segoe UI' UseLayoutRounding='True' TextOptions.TextFormattingMode='Display'>
+          <Window.Resources>
+            <Style TargetType='Button'>
+              <Setter Property='FontSize' Value='12'/><Setter Property='FontWeight' Value='Medium'/>
+              <Setter Property='Padding' Value='16,0'/><Setter Property='Height' Value='28'/>
+              <Setter Property='Cursor' Value='Hand'/>
+              <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'>
+                <Border x:Name='buttonFace' CornerRadius='8' Background='{TemplateBinding Background}' Padding='{TemplateBinding Padding}'>
+                  <ContentPresenter HorizontalAlignment='Center' VerticalAlignment='Center'/>
+                </Border>
+                <ControlTemplate.Triggers><Trigger Property='IsMouseOver' Value='True'>
+                  <Setter TargetName='buttonFace' Property='Background' Value='{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}'/>
+                </Trigger></ControlTemplate.Triggers>
+              </ControlTemplate></Setter.Value></Setter>
+            </Style>
+          </Window.Resources>
+          <Grid>
+            <Border x:Name='Card' HorizontalAlignment='Center' VerticalAlignment='Center' CornerRadius='12'
+                BorderThickness='1' Padding='28,24' Focusable='True'>
+              <StackPanel>
+                <TextBlock x:Name='Heading' FontSize='18' FontWeight='Medium' LineHeight='28' LineStackingStrategy='BlockLineHeight' TextWrapping='Wrap'/>
+                <TextBlock x:Name='Detail' FontSize='14' Margin='0,10,0,0' LineHeight='20' LineStackingStrategy='BlockLineHeight' TextWrapping='Wrap'/>
+                <StackPanel Orientation='Horizontal' HorizontalAlignment='Right' Margin='0,24,0,0'>
+                  <Button x:Name='Deny' Margin='0,0,6,0'/><Button x:Name='Allow'/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </Grid>
+        </Window>";
+        var dialog = (System.Windows.Window)System.Windows.Markup.XamlReader.Parse(layout);
+        new System.Windows.Interop.WindowInteropHelper(dialog).Owner = Handle;
+        var card = (System.Windows.Controls.Border)dialog.FindName("Card");
+        var title = (System.Windows.Controls.TextBlock)dialog.FindName("Heading");
+        var detail = (System.Windows.Controls.TextBlock)dialog.FindName("Detail");
+        var allow = (System.Windows.Controls.Button)dialog.FindName("Allow");
+        var deny = (System.Windows.Controls.Button)dialog.FindName("Deny");
+        Func<byte, System.Windows.Media.Brush> gray = value => new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(value, value, value));
+        card.Background = gray(dark ? (byte)13 : (byte)255);
+        card.BorderBrush = gray(dark ? (byte)51 : (byte)227);
+        title.Foreground = gray(dark ? (byte)227 : (byte)17);
+        detail.Foreground = gray(155);
+        allow.Background = gray(dark ? (byte)255 : (byte)0); allow.Foreground = gray(dark ? (byte)0 : (byte)255);
+        allow.Tag = gray(dark ? (byte)230 : (byte)25);
+        deny.Background = gray(dark ? (byte)51 : (byte)235); deny.Foreground = title.Foreground;
+        deny.Tag = gray(dark ? (byte)77 : (byte)227);
+        dialog.Title = title.Text = portuguese ? "Permitir acesso ao microfone?" : "Allow microphone access?";
+        detail.Text = portuguese ? "O NeveAI usa o microfone para o ditado e o modo de voz." : "NeveAI uses the microphone for dictation and voice mode.";
+        allow.Content = portuguese ? "Permitir" : "Allow";
+        deny.Content = portuguese ? "Agora n\u00e3o" : "Not now";
+        var scale = textScale * view.ZoomFactor;
+        card.LayoutTransform = new System.Windows.Media.ScaleTransform(scale, scale);
+        dialog.SizeChanged += delegate { card.Width = Math.Max(1, Math.Min(512, dialog.ActualWidth / scale - 16)); };
+        dialog.SourceInitialized += delegate {
+            var bounds = view.RectangleToScreen(view.ClientRectangle);
+            SetWindowPos(new System.Windows.Interop.WindowInteropHelper(dialog).Handle, IntPtr.Zero,
+                bounds.X, bounds.Y, bounds.Width, bounds.Height, 0x0004);
+        };
+        dialog.ContentRendered += delegate { card.Focus(); };
+        allow.Click += delegate { dialog.DialogResult = true; };
+        deny.Click += delegate { dialog.DialogResult = false; };
+        dialog.PreviewMouseDown += delegate(object sender, System.Windows.Input.MouseButtonEventArgs e) {
+            if (!new System.Windows.Rect(card.RenderSize).Contains(e.GetPosition(card))) dialog.DialogResult = false;
+        };
+        dialog.PreviewKeyDown += delegate(object sender, System.Windows.Input.KeyEventArgs e) {
+            if (e.Key == System.Windows.Input.Key.Escape) { e.Handled = true; dialog.DialogResult = false; }
+        };
+        return dialog.ShowDialog() == true;
     }
 
     void ChooseDownloadDestination(object sender, CoreWebView2DownloadStartingEventArgs e)
@@ -269,6 +311,8 @@ internal sealed class NeveWindow : Form
             var message = json.Deserialize<Dictionary<string, object>>(e.WebMessageAsJson);
             if (message.ContainsKey("type") && (string)message["type"] == "neve:theme" && message.ContainsKey("dark") && message["dark"] is bool) {
                 Theme((bool)message["dark"]);
+                if (message.ContainsKey("scale") && (message["scale"] is decimal || message["scale"] is int || message["scale"] is double))
+                    textScale = Math.Max(.65, Math.Min(2, Convert.ToDouble(message["scale"])));
                 if (message.ContainsKey("lang") && message["lang"] is string)
                     portuguese = ((string)message["lang"]).StartsWith("pt", StringComparison.OrdinalIgnoreCase);
             }

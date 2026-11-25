@@ -22,7 +22,7 @@ await fs.writeFile(fixtureSource,(await fs.readFile('desktop/NeveWindow.cs','utf
   if(item!=null){e.Handled=true;e.SelectedCommandId=item.CommandId;}
 }; core.DownloadStarting +=`));
 await promisify(execFile)(path.join(process.env.SystemRoot,'Microsoft.NET/Framework64/v4.0.30319/csc.exe'),
-  ['/nologo','/target:winexe','/platform:x64','/out:'+fixtureHost,...['System.dll','System.Core.dll','System.Drawing.dll','System.Windows.Forms.dll','System.Web.Extensions.dll',...['Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll'].map(n=>path.join(fixtureDir,n))].map(n=>'/r:'+n),fixtureSource],{windowsHide:true});
+  ['/nologo','/target:winexe','/platform:x64','/out:'+fixtureHost,...['System.dll','System.Core.dll','System.Drawing.dll','System.Windows.Forms.dll','System.Web.Extensions.dll','System.Xaml.dll',...['WindowsBase.dll','PresentationCore.dll','PresentationFramework.dll'].map(n=>path.join(process.env.SystemRoot,'Microsoft.NET/Framework64/v4.0.30319/WPF',n)),...['Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinForms.dll'].map(n=>path.join(fixtureDir,n))].map(n=>'/r:'+n),fixtureSource],{windowsHide:true});
 const png=await fs.readFile('backend/data/cache/mesh_generation/smoke/reference.png');
 const video=await fs.readFile('logs/media-integration-check/video.mp4');
 let reads=0;

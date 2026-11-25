@@ -103,6 +103,7 @@
 		getPausedNeveDownloads,
 		deleteLocalModel,
 		type HFModelFile,
+		type LocalModel,
 		getActiveNeveDownload,
 		getNeveCatalog,
 		getHFModelFiles,
@@ -119,10 +120,17 @@
 	const dispatch = createEventDispatcher<{ modelsChanged: void }>();
 	export let show = false;
 	export let embedded = false;
+	export let localModels: LocalModel[] = [];
+	let verifiedRepos: Record<string, boolean> = {};
 	export let onBack: () => void = () => { show = false; };
 	let query = '';
 	let neveExpanded = true;
 	let hfDetailOpen = false;
+	export function closeRepository() {
+		if (!hfDetailOpen) return false;
+		huggingFaceModels.back();
+		return true;
+	}
 	let hfHasResults = false;
 	let hfHeaderActive = false;
 	$: if (!hfHasResults) neveExpanded = true;
@@ -216,12 +224,17 @@
 		return `${v.toFixed(1)} ${units[i]}`;
 	};
 
+	let catalogGeneration = 0;
 	const loadCatalog = async () => {
+		const generation = ++catalogGeneration;
 		try {
 			catalogError = '';
-			catalog = filterRetiredCatalogModels(await getNeveCatalog(localStorage.token));
+			const result = await getNeveCatalog(localStorage.token);
+			if (generation !== catalogGeneration) return;
+			catalog = filterRetiredCatalogModels(result);
 			writeCachedNeveCatalog(catalog);
 		} catch (e: any) {
+			if (generation !== catalogGeneration) return;
 			catalogError = normalizeLlamaCppErrorMessage(e, $i18n.t('Failed to load catalog'));
 			toast.error(catalogError);
 			if (catalog.length === 0) {
@@ -463,25 +476,10 @@
 	const hydrateModal = async () => {
 		void restorePausedDownloads();
 		loading = catalog.length === 0;
-		const [catalogResult, activeResult] = await Promise.allSettled([
-			getNeveCatalog(localStorage.token),
+		const [, activeResult] = await Promise.allSettled([
+			loadCatalog(),
 			getActiveNeveDownload(localStorage.token)
 		]);
-
-		if (catalogResult.status === 'fulfilled') {
-			catalogError = '';
-			catalog = filterRetiredCatalogModels(catalogResult.value);
-			writeCachedNeveCatalog(catalog);
-		} else {
-			catalogError = normalizeLlamaCppErrorMessage(
-				catalogResult.reason,
-				$i18n.t('Failed to load catalog')
-			);
-			toast.error(catalogError);
-			if (catalog.length === 0) {
-				catalog = readCachedNeveCatalog();
-			}
-		}
 
 		if (activeResult.status === 'fulfilled' && activeResult.value?.task_id) {
 			attachToDownload(activeResult.value.task_id, activeResult.value);
@@ -780,7 +778,7 @@
 						<img src={`${NEVEAI_BASE_URL}/static/logoselector.svg`} alt="" class="size-6 brightness-0 opacity-55 dark:invert dark:opacity-65" /><span>Neve</span>{#if hfHasResults}<span class="relative top-px inline-flex shrink-0"><ChevronUpCompact className={`size-3.5 shrink-0 transition-transform ${neveExpanded ? '' : 'rotate-180'}`} /></span>{/if}
 					</button>
 				</div>
-			<section class={neveExpanded ? 'pb-5' : 'pb-1'} class:hidden={hfDetailOpen || (query.trim().length > 0 && visibleCatalog.length === 0)}>
+			<section class={neveExpanded ? 'pb-[24px]' : 'pb-[4px]'} class:hidden={hfDetailOpen || (query.trim().length > 0 && visibleCatalog.length === 0)}>
 				<div id="neve-catalog-items" hidden={!neveExpanded}>
 				{#if loading && catalog.length === 0}
 					<div class="flex h-full items-center justify-center">
@@ -802,7 +800,7 @@
 						</div>
 					</div>
 				{:else}
-					<div data-download-grid class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+					<div data-download-grid class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-[8px]">
 					{#each visibleCatalog as item (item.id)}
 						{@const isCurrentDownload = downloading && ((activeDownloadKey ?? downloadingModelId) === item.id || repoForKey(activeDownloadKey) === item.repo)}
 						{@const isQueuedDownload = queuedModelIds.some(key => key === item.id || repoForKey(key) === item.repo)}
@@ -830,7 +828,7 @@
 								{#if isCurrentDownload || isQueuedDownload}
 									<span data-download-status class="mr-1 text-xs font-medium whitespace-nowrap text-gray-500 dark:text-gray-400">{$i18n.t(isCurrentDownload ? 'Downloading' : 'Queued')}</span>
 								{/if}
-								{#if item.installed && !isCurrentDownload && !isQueuedDownload}
+								{#if (item.installed || verifiedRepos[item.repo]) && !isCurrentDownload && !isQueuedDownload}
 									<span data-download-status class="mr-1 text-xs font-medium whitespace-nowrap text-gray-500 dark:text-gray-400">{$i18n.t('Installed')}</span>
 								{/if}
 									<button type="button" aria-label={item.repo} class="grid size-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" on:click={() => huggingFaceModels?.openRepository(item.repo)}><ChevronRight className="size-4" /></button>
@@ -843,7 +841,7 @@
 				{/if}
 				</div>
 			</section>
-			<div class={hfDetailOpen ? 'h-full min-h-0' : ''}><HuggingFaceModels bind:this={huggingFaceModels} {query} stickyActive={hfHeaderActive} onStickyChange={(stuck) => hfHeaderActive = stuck} onBeforeOpen={() => { catalogScrollTop = catalogScroller?.scrollTop ?? 0; }} collapsible={neveExpanded} active={show} bind:detailOpen={hfDetailOpen} bind:hasResults={hfHasResults} bind:settledQuery={hfSettledQuery} activeKey={activeDownloadKey} activeRequest={activeDownloadKey ? downloadRequests.get(activeDownloadKey) : undefined} queuedRequests={queuedModelIds.map(key => downloadRequests.get(key)).filter((request): request is ModelDownloadRequest => !!request)} queuedKeys={queuedModelIds} blocked={cancelling} deleteBlocked={downloading || !!uninstallingModelId} onDelete={requestUninstall} revision={hfRevision} onQueue={queueDownload} /></div>
+			<div class={hfDetailOpen ? 'h-full min-h-0' : ''}><HuggingFaceModels bind:this={huggingFaceModels} {localModels} {catalog} bind:verifiedRepos {query} stickyActive={hfHeaderActive} onStickyChange={(stuck) => hfHeaderActive = stuck} onBeforeOpen={() => { catalogScrollTop = catalogScroller?.scrollTop ?? 0; }} collapsible={neveExpanded} active={show} bind:detailOpen={hfDetailOpen} bind:hasResults={hfHasResults} bind:settledQuery={hfSettledQuery} activeKey={activeDownloadKey} activeRequest={activeDownloadKey ? downloadRequests.get(activeDownloadKey) : undefined} queuedRequests={queuedModelIds.map(key => downloadRequests.get(key)).filter((request): request is ModelDownloadRequest => !!request)} queuedKeys={queuedModelIds} blocked={cancelling} deleteBlocked={downloading || !!uninstallingModelId} onDelete={requestUninstall} revision={hfRevision} onQueue={queueDownload} /></div>
 			{#if !hfDetailOpen && query.trim() && visibleCatalog.length === 0 && !hfHasResults && hfSettledQuery === query.trim()}
 				<div data-catalog-empty class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">{$i18n.t('No models found')}</div>
 			{/if}
@@ -855,7 +853,7 @@
 {#if embedded}
 	<div class="h-full min-h-0" class:hidden={!show}>{@render downloadHub()}</div>
 {:else}
-	<Modal bind:show mobileFullscreen animated={false} size="w-[44rem]" containerClassName="p-2 sm:p-3" className="bg-white dark:bg-gray-900 rounded-xl h-[min(640px,90dvh)] overflow-hidden">
+	<Modal bind:show onOutsideClick={closeRepository} mobileFullscreen animated={false} size="w-[44rem]" containerClassName="p-2 sm:p-3" className="bg-white dark:bg-gray-900 rounded-xl h-[min(640px,90dvh)] overflow-hidden">
 		{@render downloadHub()}
 	</Modal>
 {/if}
@@ -874,7 +872,9 @@
 />
 
 <style>
-	.catalog-section-scroll::-webkit-scrollbar-track { margin-top: 2.5rem; }
+	.catalog-section-scroll { --catalog-heading-height: round(up, 2.5rem, 4px); }
+	.catalog-section-scroll :global([data-catalog-section-heading]) { height: var(--catalog-heading-height, 2.5rem); }
+	.catalog-section-scroll::-webkit-scrollbar-track { margin-top: var(--catalog-heading-height, 2.5rem); }
 	@media (max-width: 767px) {
 		.download-models-shell { height: 100%; max-height: 100%; }
 		.download-models-close { display: none; }

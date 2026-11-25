@@ -1,6 +1,11 @@
+<script context="module" lang="ts">
+	// Reuse a verified answer only while the relevant local files and sizes are unchanged.
+	const verifiedDisk = new Map<string, { signature: string; installed: boolean }>();
+</script>
+
 <script lang="ts">
 	import { getContext, onDestroy, tick } from 'svelte';
-	import { searchHFModels, getHFModelFiles, type HFModel, type HFModelFile } from '$lib/apis/llamacpp';
+	import { searchHFModels, getHFModelFiles, type HFModel, type HFModelFile, type LocalModel, type NeveCatalogModel } from '$lib/apis/llamacpp';
 	import { hfDownloadKey, type ModelDownloadRequest } from '$lib/utils/modelDownloadRequest';
 	import { DropdownMenu } from 'bits-ui';
 	import Dropdown from '$lib/components/common/Dropdown.svelte';
@@ -19,6 +24,9 @@
 	import { downloadGridScroll } from '$lib/utils/downloadGridScroll';
 	const i18n = getContext<I18nStore>('i18n');
 	export let query = '';
+	export let localModels: LocalModel[] = [];
+	export let catalog: NeveCatalogModel[] = [];
+	export let verifiedRepos: Record<string, boolean> = {};
 	export let active = false;
 	export let detailOpen = false;
 	export let hasResults = false;
@@ -61,13 +69,54 @@
 	export let activeRequest: ModelDownloadRequest | undefined = undefined;
 	export let queuedRequests: ModelDownloadRequest[] = [];
 	let repoFiles: Record<string, HFModelFile[]> = {};
+	let badgeRequest: AbortController | undefined;
+	function setBadge(repo: string, installed: boolean) {
+		if (!!verifiedRepos[repo] !== installed) verifiedRepos = { ...verifiedRepos, [repo]: installed };
+	}
+	async function verifyBadges(hub: HFModel[], neve: NeveCatalogModel[], disk: LocalModel[], visible: boolean) {
+		badgeRequest?.abort();
+		if (!visible) return;
+		const controller = badgeRequest = new AbortController();
+		const curated = new Map(neve.map(item => [item.repo, item]));
+		const missing: [string, string][] = [];
+		for (const repo of new Set([...curated.keys(), ...hub.map(item => item.id)])) {
+			if (!repo) continue;
+			const entry = curated.get(repo);
+			if (entry?.installed) { setBadge(repo, true); continue; }
+			const prefix = repo.replace('/', '--') + '--';
+			const short = entry && repo.split('/')[1]?.toLowerCase().replace(/-gguf$/, '');
+			// The downloader uses a namespace, legacy curated names, or a hash for long paths.
+			// Names only identify candidates: the files endpoint checks exact sizes and every shard.
+			const candidates = disk.filter(({filename}) => filename.startsWith(prefix) ||
+				(short && filename.toLowerCase().includes(short)) || /^[a-f0-9]{16}--/.test(filename));
+			if (!candidates.length) { setBadge(repo, false); continue; }
+			const signature = JSON.stringify(candidates.map(f => [f.filename, f.file_size]).sort());
+			const cached = verifiedDisk.get(repo);
+			if (cached?.signature === signature) setBadge(repo, cached.installed);
+			else missing.push([repo, signature]);
+		}
+		for (const [repo, signature] of missing) {
+			if (controller.signal.aborted) return;
+			try {
+				const data = await getHFModelFiles(localStorage.token, repo, controller.signal);
+				if (controller.signal.aborted) return;
+				const installed = data.models.some(file => file.installed);
+				verifiedDisk.set(repo, { signature, installed });
+				if (verifiedDisk.size > 128) verifiedDisk.delete(verifiedDisk.keys().next().value!);
+				setBadge(repo, installed);
+			} catch { /* A metadata error is not evidence of an uninstall. */ }
+		}
+	}
 	export let queuedKeys: string[] = [];
 	export let blocked = false;
 	export let deleteBlocked = false;
 	export let onDelete: (repo: string, file: HFModelFile) => void;
 	export function markRemoved(repo: string, filename: string) {
+		badgeRequest?.abort();
+		verifiedDisk.delete(repo);
 		const next = (repoFiles[repo] ?? []).map(file => file.local_filename === filename ? { ...file, installed: false } : file);
 		repoFiles = { ...repoFiles, [repo]: next };
+		setBadge(repo, next.some(file => file.installed));
 		if (selectedRepo?.id === repo) {
 			files = next;
 			void open(selectedRepo);
@@ -94,6 +143,9 @@
 	let lastRevision = revision;
 	export function markInstalled(request: ModelDownloadRequest | undefined) {
 		if (request?.source !== 'hf') return;
+		badgeRequest?.abort();
+		verifiedDisk.delete(request.repo);
+		setBadge(request.repo, true);
 		const mark = (items: HFModelFile[]) => items.map(file => file.path === request.filename ? { ...file, installed: true } : file);
 		if (selectedRepo?.id === request.repo) {
 			// A pre-completion response must not overwrite the terminal download state.
@@ -104,6 +156,7 @@
 		repoFiles = { ...repoFiles, [request.repo]: mark(repoFiles[request.repo] ?? []) };
 	}
 	let expanded = true;
+	$: void verifyBadges(models, catalog, localModels, active);
 	$: if (!collapsible) expanded = true;
 	let unavailable = false;
 	let retryAttempt = 0;
@@ -165,18 +218,19 @@
 			files = data.models; encoders = data.encoders;
 			if (entering && repo.id === curatedRepo) encoder = encoders[0]?.path ?? '';
 			repoFiles = { ...repoFiles, [repo.id]: data.models };
+			setBadge(repo.id, data.models.some(file => file.installed));
 			if (encoder && !encoders.some(file => file.path === encoder)) encoder = '';
 		} catch { if (id === fileGeneration && !controller.signal.aborted) back(); }
 		finally { if (id === fileGeneration) filesLoading = false; }
 	}
-	function back() { fileRequest?.abort(); fileGeneration++; filesLoading = false; selectedRepo = null; curatedRepo = ''; }
+	export function back() { fileRequest?.abort(); fileGeneration++; filesLoading = false; selectedRepo = null; curatedRepo = ''; }
 	$: needsEncoder = encoders.some(file => file.path === encoder && !file.installed);
 	function start(file: HFModelFile) {
 		if (!selectedRepo || (file.installed && !needsEncoder) || blocked) return;
 		onQueue({ source: 'hf', repo: selectedRepo.id, filename: file.path, encoder: encoder || undefined, name: selectedRepo.id });
 	}
 	const size = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(2)} GB`;
-	onDestroy(() => { clearTimeout(timer); clearTimeout(retryTimer); request?.abort(); fileRequest?.abort(); });
+	onDestroy(() => { clearTimeout(timer); clearTimeout(retryTimer); request?.abort(); fileRequest?.abort(); badgeRequest?.abort(); });
 </script>
 
 <svelte:window on:online={() => { if (active) void load(query.trim()); }} />
@@ -214,7 +268,7 @@
 		{#if selectedRepo}
 			{#if filesLoading && !files.length}<div class="flex h-24 items-center justify-center"><OrbitingSpheres className="size-5" /></div>
 			{:else}
-				<div data-quantization-grid class="grid grid-cols-1 gap-2 md:grid-cols-2" aria-label={$i18n.t('Quantization')}>
+				<div data-quantization-grid class="quantization-grid grid grid-cols-1 gap-x-2 gap-y-[8px] md:grid-cols-2" aria-label={$i18n.t('Quantization')}>
 					{#each files as file (file.path)}
 						{@const key = hfDownloadKey(selectedRepo.id, file.path)}
 						{@const current = key === activeKey}
@@ -235,14 +289,14 @@
 				{#if !files.length}<p class="py-6 text-center text-sm text-gray-500">{$i18n.t('No GGUF files found')}</p>{/if}
 			{/if}
 		{:else}
-			<div class="grid grid-cols-1 gap-x-4 gap-y-2 md:grid-cols-2" data-hf-grid>
+			<div class="grid grid-cols-1 gap-x-4 gap-y-[8px] md:grid-cols-2" data-hf-grid>
 				{#each models as model (model.id)}
 					{@const current = activeRequest?.source === 'hf' && activeRequest.repo === model.id}
 					{@const queued = queuedRequests.some(request => request.source === 'hf' && request.repo === model.id)}
-					{@const installed = repoFiles[model.id]?.some(file => file.installed)}
+					{@const installed = verifiedRepos[model.id]}
 					<div class="flex h-[72px] min-w-0 items-center gap-3 rounded-lg border bg-gray-50 dark:bg-gray-850/50 px-3 text-left {current || queued ? 'border-gray-300 dark:border-gray-700' : 'border-transparent'}" data-hf-repo={model.id}>
-						<HuggingFace className="size-8 shrink-0 text-gray-500 dark:text-gray-400" />
-						<span class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">{model.id.split('/').slice(1).join('/')}</span><span class="block truncate text-xs text-gray-500">{model.id.split('/')[0]}</span></span>
+						<span class="grid size-9 shrink-0 place-items-center"><HuggingFace className="size-8 text-gray-500 dark:text-gray-400" /></span>
+						<span class="grid min-w-0 flex-1 gap-1"><span class="block truncate text-sm font-medium leading-5">{model.id.split('/').slice(1).join('/')}</span><span class="block truncate text-xs text-gray-500">{model.id.split('/')[0]}</span></span>
 						{#if current || queued || installed}<span data-download-status class="mr-1 shrink-0 text-xs font-medium whitespace-nowrap text-gray-500 dark:text-gray-400">{$i18n.t(current ? 'Downloading' : queued ? 'Queued' : 'Installed')}</span>{/if}
 						<button type="button" aria-label={model.id} class="grid size-7 shrink-0 place-items-center rounded-md text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" on:click={() => open(model)}><ChevronRight className="size-4" /></button>
 					</div>
@@ -261,3 +315,14 @@
 	{/if}
 </div>
 {/if}
+
+<style>
+	/* Land each wheel step on the same pixel grid, including at larger text sizes. */
+	.quantization-grid {
+		grid-auto-rows: 72px;
+		grid-auto-rows: max(64px, round(up, 3.875rem, 4px));
+	}
+	@media (max-width: 767px) {
+		[data-hf-repo] { gap: 14px; padding-inline: 8px; }
+	}
+</style>

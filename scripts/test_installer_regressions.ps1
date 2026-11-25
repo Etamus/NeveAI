@@ -18,6 +18,35 @@ function Parse-TestSource([string]$Text) {
 try {
     $source = [IO.File]::ReadAllText((Join-Path $repo 'launchers\instalar.ps1'))
     $ast = Parse-TestSource $source
+    & {
+        Add-Type -AssemblyName WindowsBase
+        $ROOT = Join-Path $testRoot 'install with spaces'
+        $STATE_FILE = Join-Path $ROOT 'state.txt'
+        Write-Fixture $STATE_FILE 'running'
+        function Test-InstallCancelled {}
+        function Set-InstallState($state) { [IO.File]::WriteAllText($STATE_FILE, $state) }
+        function P($percent,$phase) {}
+        $script:Ctl = @{}
+        foreach ($name in @('InstallPanel','DonePanel','LblSummary','LblDoneTitle','LblDoneSub','BtnCancel','BtnPrimary','BtnClose')) { $script:Ctl[$name] = @{} }
+        $script:Window = @{ Dispatcher = [Windows.Threading.Dispatcher]::CurrentDispatcher }
+        $window | Add-Member ScriptMethod Close { $this.Closed = $true }
+        foreach ($name in @('Complete-Installation','Start-NeveInstalledApplication')) {
+            $fn = $ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name}, $true)
+            . ([scriptblock]::Create($fn.Extent.Text))
+        }
+        Complete-Installation @('test') @('missing package')
+        Assert-Test ($ctl.BtnPrimary.Tag -ne 'launch' -and [IO.File]::ReadAllText($STATE_FILE) -eq 'incomplete') 'incomplete install cannot launch'
+        Complete-Installation @('test') @()
+        Assert-Test ($ctl.BtnPrimary.Tag -eq 'launch' -and $ctl.BtnPrimary.Content -eq 'Iniciar' -and [IO.File]::ReadAllText($STATE_FILE) -eq 'done') 'verified install offers Start'
+        $click = $ast.Find({param($n) $n -is [Management.Automation.Language.InvokeMemberExpressionAst] -and $n.Member.Value -eq 'Add_Click' -and $n.Expression.Extent.Text -eq '$ctl.BtnPrimary' -and $n.Extent.Text.Contains('Start-NeveInstalledApplication $ROOT')}, $true)
+        $launchDir = Join-Path $ROOT 'launchers'
+        Write-Fixture (Join-Path $launchDir 'iniciar.ps1') '[IO.File]::WriteAllText((Join-Path $PSScriptRoot "opened.txt"), "ready")'
+        Copy-Item -LiteralPath (Join-Path $repo 'launchers\iniciar.vbs') -Destination $launchDir
+        & ($click.Arguments[0].ScriptBlock.GetScriptBlock())
+        $markerPath = Join-Path $launchDir 'opened.txt'
+        for ($i=0; $i -lt 100 -and -not (Test-Path -LiteralPath $markerPath); $i++) { [Threading.Thread]::Sleep(50) }
+        Assert-Test ($window.Closed -and -not $ctl.BtnPrimary.IsEnabled -and (Test-Path -LiteralPath $markerPath)) 'Start closes installer and invokes standard launcher in a path with spaces'
+    }
     $updateAst = Parse-TestSource ([IO.File]::ReadAllText((Join-Path $repo 'launchers/update-core.ps1')))
     . (Join-Path $repo 'launchers/update-core.ps1')
     . (Join-Path $repo 'launchers\runtime-validation.ps1')

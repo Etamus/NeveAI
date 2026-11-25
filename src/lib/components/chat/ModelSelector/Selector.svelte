@@ -13,6 +13,7 @@
 	import { cubicOut } from 'svelte/easing';
 	import { createEventDispatcher, onDestroy, onMount, getContext, tick } from 'svelte';
 	import { onChatDropdownDismiss } from '$lib/utils/chatDropdownDismissal';
+	import { modelGridWheel } from '$lib/utils/modelGridWheel';
 
 
 	import { user, models, mobile, settings, config } from '$lib/stores';
@@ -498,7 +499,7 @@
 						placeholder={searchPlaceholder}
 						autocomplete="off"
 						aria-label={$i18n.t('Search In Models')}
-						on:keydown={(e) => {
+						on:keydown={async (e) => {
 							if (e.code === 'Enter' && filteredItems.length > 0) {
 								value = filteredItems[selectedModelIdx].value;
 								show = false;
@@ -514,10 +515,13 @@
 							} else {
 								// if the user types something, reset to the top selection.
 								selectedModelIdx = 0;
+								return;
 							}
 
-							const item = document.querySelector(`[data-arrow-selected="true"]`);
-							item?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+							e.preventDefault();
+							await tick();
+							listContainer?.querySelector('[data-arrow-selected="true"]')
+								?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
 						}}
 					/>
 					</div>
@@ -556,12 +560,14 @@
 				{:else}
 					<!-- svelte-ignore a11y-no-static-element-interactions -->
 					<div
-						class="flex flex-col gap-1 max-h-[14.75rem] overflow-y-auto pr-2"
+						class="model-selector-list flex flex-col gap-1 max-h-[14.75rem] overflow-y-auto overscroll-contain pr-2"
+						data-model-grid
 						role="listbox"
 						tabindex="-1"
 						aria-label={$i18n.t('Available models')}
 						bind:this={listContainer}
 						use:fitModelRows
+						use:modelGridWheel
 						on:mousemove={() => { keyboardNavigation = false; }}
 					>
 						{#each filteredItems as item, index (item.value)}
@@ -603,6 +609,9 @@
 </DropdownMenu.Root>
 
 <style>
+	.model-selector-list:not(:has(:global(.model-selector-drag-chosen))) { scroll-snap-type: y mandatory; }
+	.model-selector-list > :global([data-model-selector-row]) { scroll-snap-align: start; }
+
 	:global(.model-selector-drag-fallback) {
 		opacity: 0 !important;
 		pointer-events: none !important;

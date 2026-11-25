@@ -630,7 +630,7 @@
 							<div use:observeModelNameWidth class="relative flex flex-col w-full max-w-full min-w-0">
 								<span
 									bind:this={modelNameSizerElement}
-									class="pointer-events-none absolute left-0 top-0 invisible whitespace-pre text-[1.5625rem] font-semibold leading-none"
+									class="pointer-events-none absolute left-0 top-0 invisible whitespace-pre text-[1.4375rem] font-semibold leading-none"
 									aria-hidden="true"
 								>
 									{modelNameMeasureText}
@@ -638,7 +638,7 @@
 								<input
 									bind:this={modelNameInputElement}
 									data-model-editable-name
-									class="text-[1.5625rem] font-semibold leading-none min-w-0 max-w-full bg-transparent outline-hidden p-0 disabled:cursor-default disabled:opacity-100"
+									class="text-[1.4375rem] font-semibold leading-none min-w-0 max-w-full bg-transparent outline-hidden p-0 disabled:cursor-default disabled:opacity-100"
 									style="width: {modelNameFieldWidth}; padding-right: 4px; transform: translateX(-2px);"
 									placeholder={$i18n.t('Model Name')}
 									value={modelNameDisplayValue}

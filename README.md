@@ -76,6 +76,8 @@ O `instalar.bat` continua responsável por instalar, reparar e publicar builds; 
 
 ## Iniciando a NeveAI
 
+Ao terminar a instalação no Windows, clique em **Iniciar** para abrir o NeveAI diretamente. Nas próximas vezes, use:
+
 ```bat
 iniciar.bat
 ```

@@ -504,7 +504,7 @@ if (-not (Test-Path $LOGO_PATH)) {
                                 <TextBlock Text="OK" FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                             <TextBlock x:Name="LblDoneTitle" Text="Tudo pronto!" FontSize="22" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                            <TextBlock x:Name="LblDoneSub" Text="Use iniciar.bat para iniciar o NeveAI." FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="0,6,0,18"/>
+                            <TextBlock x:Name="LblDoneSub" Text="O NeveAI está pronto para iniciar." FontSize="13" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="0,6,0,18"/>
                             <Border Background="Transparent" CornerRadius="7" Padding="15,13">
                                 <TextBlock x:Name="LblSummary" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}"/>
                             </Border>
@@ -585,6 +585,9 @@ $script:InstallerPtToEn = [ordered]@{
     'Cancelar' = 'Cancel'
     'Cancelando...' = 'Cancelling...'
     'Concluir' = 'Finish'
+    'Iniciar' = 'Start'
+    'O NeveAI está pronto para iniciar.' = 'NeveAI is ready to start.'
+    'Não foi possível iniciar o NeveAI.' = 'Could not start NeveAI.'
     'Fechar' = 'Close'
     'Minimizar' = 'Minimize'
     'Maximizar' = 'Maximize'
@@ -1535,47 +1538,28 @@ function ConvertTo-ProcessArgument([string]$arg) {
     return '"' + $escaped + '"'
 }
 
-function New-NeveDesktopShortcut([string]$RootPath, [string]$LogPath) {
-    try {
-        $launcherPath = Join-Path $RootPath 'launchers\iniciar.vbs'
-        if (-not (Test-Path -LiteralPath $launcherPath)) { throw "launchers\iniciar.vbs não encontrado em $RootPath" }
-
-        $iconPath = Join-Path $RootPath 'static\static\favicon.ico'
-        if (-not (Test-Path -LiteralPath $iconPath)) {
-            $iconPath = Join-Path $RootPath 'static\favicon.ico'
-        }
-
-        $desktopPath = [Environment]::GetFolderPath([Environment+SpecialFolder]::DesktopDirectory)
-        if ([string]::IsNullOrWhiteSpace($desktopPath)) {
-            $desktopPath = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop)
-        }
-        if ([string]::IsNullOrWhiteSpace($desktopPath) -or -not (Test-Path -LiteralPath $desktopPath)) {
-            throw 'Não foi possível localizar a área de trabalho do usuário.'
-        }
-
-        $shortcutPath = Join-Path $desktopPath 'NeveAI.lnk'
-        $shell = New-Object -ComObject WScript.Shell
-        $shortcut = $shell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath = $launcherPath
-        $shortcut.Arguments = ''
-        $shortcut.WorkingDirectory = $RootPath
-        $shortcut.Description = 'NeveAI'
-        $shortcut.WindowStyle = 1
-        if (Test-Path -LiteralPath $iconPath) { $shortcut.IconLocation = $iconPath }
-        $shortcut.Save()
-
-        try { Add-Content -LiteralPath $LogPath -Value "[OK] Atalho criado na área de trabalho: $shortcutPath" -Encoding UTF8 } catch {}
-        return $shortcutPath
-    } catch {
-        try { Add-Content -LiteralPath $LogPath -Value "[!] Não foi possível criar o atalho na área de trabalho: $($_.Exception.Message)" -Encoding UTF8 } catch {}
-        return $null
-    }
-}
 
 # =============================================================================
 # Worker - executa em runspace separado
 # =============================================================================
+function Start-NeveInstalledApplication([string]$ProjectRoot) {
+    $launcher = Join-Path $ProjectRoot 'launchers\iniciar.vbs'
+    if (-not (Test-Path -LiteralPath $launcher -PathType Leaf)) { throw $launcher }
+    Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\wscript.exe') -ArgumentList @('//nologo', ('"{0}"' -f $launcher)) -WorkingDirectory $ProjectRoot -WindowStyle Hidden -ErrorAction Stop
+}
+
 $ctl.BtnPrimary.Add_Click({
+    if ($ctl.BtnPrimary.Tag -eq 'launch') {
+        $ctl.BtnPrimary.IsEnabled = $false
+        try {
+            Start-NeveInstalledApplication $ROOT
+            $window.Close()
+        } catch {
+            $ctl.BtnPrimary.IsEnabled = $true
+            [System.Windows.MessageBox]::Show((Convert-InstallerText 'Não foi possível iniciar o NeveAI.') + "`n`n" + $_.Exception.Message, 'NeveAI', 'OK', 'Error') | Out-Null
+        }
+        return
+    }
     if ($ctl.BtnPrimary.Tag -eq 'done') {
         $ctl.DonePanel.Visibility = 'Collapsed'
         $ctl.InstallPanel.Visibility = 'Collapsed'
@@ -1626,7 +1610,7 @@ $ctl.BtnPrimary.Add_Click({
     # Mapeia indice -> torchIndex / llamaAsset / cudaVer / useOnnxGpu
     $cfg = switch ($backendIdx) {
         0 { @{ torchIndex='https://download.pytorch.org/whl/cpu'; llamaAsset='cpu';        cudaVer='CPU';                 useOnnxGpu=$false; vendor='CPU'    } }
-        1 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-13.4'; cudaVer='CUDA 13.4 (Blackwell)'; useOnnxGpu=$true;  vendor='NVIDIA' } }
+        1 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-13.5'; cudaVer='CUDA 13.5 (Blackwell)'; useOnnxGpu=$true;  vendor='NVIDIA' } }
         2 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.8 (Ada)';        useOnnxGpu=$true;  vendor='NVIDIA' } }
         3 { @{ torchIndex='https://download.pytorch.org/whl/cu128'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.8 (Ampere)';     useOnnxGpu=$true;  vendor='NVIDIA' } }
         4 { @{ torchIndex='https://download.pytorch.org/whl/cu126'; llamaAsset='cuda-12.4'; cudaVer='CUDA 12.6 (Turing)';     useOnnxGpu=$true;  vendor='NVIDIA' } }
@@ -1638,7 +1622,7 @@ $ctl.BtnPrimary.Add_Click({
         default { @{ torchIndex='https://download.pytorch.org/whl/cpu'; llamaAsset='cpu'; cudaVer='CPU'; useOnnxGpu=$false; vendor='CPU' } }
     }
 
-    $stateBeforeAttempt = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -EA SilentlyContinue)).Trim()
+    $cfg.previousState = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -EA SilentlyContinue)).Trim()
     # Trocar para a tela de instalacao
     $window.Tag = 'installing'
     $script:InstallControl.CancelRequested = $false
@@ -1654,68 +1638,6 @@ $ctl.BtnPrimary.Add_Click({
 
     Stop-NeveRunningApp 'Instalar'
 
-    # ---- Atalho: se TUDO ja esta instalado, marca como concluido
-    $venvOk     = Test-Path $VENV_PY
-    $torchOk    = $false
-    if ($venvOk) {
-        try {
-            & $VENV_PY -c "import torch, fastapi, transformers" 2>&1 | Out-Null
-            $torchOk = ($LASTEXITCODE -eq 0)
-        } catch { $torchOk = $false }
-    }
-    $llamaOk    = Test-Path -LiteralPath (Join-Path $ROOT 'llamacpp-server\bin\llama-server.exe')
-    $nodeModsOk = Test-Path -LiteralPath (Join-Path $ROOT 'node_modules\vite\bin\vite.js')
-    $officeCliOk = Test-Path -LiteralPath (Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe')
-    $frontendIndex = Join-Path $BACKEND 'neveai\frontend\index.html'
-    $frontendOk = (Test-Path -LiteralPath $frontendIndex) -and (Get-Item -LiteralPath $frontendIndex).Length -gt 0
-    $envOk      = Test-Path (Join-Path $ROOT '.env')
-    $python311Target = Join-Path $env:LocalAppData 'Programs\Python\Python311\python.exe'
-    $needsPython311Install = $installPython311 -and -not (Test-PythonLaunch $python311Target)
-	. (Join-Path $LAUNCHER_DIR 'runtime-validation.ps1')
-	$runtimeOk = (Get-NeveRuntimeHealth $ROOT).Ok
-
-    if ($stateBeforeAttempt -in @('done', 'idle') -and $runtimeOk -and $venvOk -and $torchOk -and $llamaOk -and $nodeModsOk -and $officeCliOk -and $frontendOk -and $envOk -and -not $needsPython311Install) {
-        $ctl.LogBox.AppendText("[OK] Tudo já está instalado. Nada a fazer.`r`n")
-        if ($createDesktopShortcut) {
-            $shortcutPath = New-NeveDesktopShortcut $ROOT $LOG
-            if ($shortcutPath) { $ctl.LogBox.AppendText("[OK] Atalho criado na área de trabalho.`r`n") }
-        }
-        $ctl.Progress.Value      = 100
-        $ctl.LblProgressTxt.Text = '100%'
-        $ctl.LblPhase.Text       = 'Concluído'
-        $ctl.LblStep.Text        = 'Concluído'
-
-        $summary = @()
-        if (-not [string]::IsNullOrWhiteSpace($PYTHON_EXE) -and (Test-Path -LiteralPath $PYTHON_EXE)) {
-            $summary += "Python:      $((& $PYTHON_EXE --version 2>&1))"
-        } else {
-            $summary += "Python:      venv existente"
-        }
-        if (-not [string]::IsNullOrWhiteSpace($NODE_EXE) -and (Test-Path -LiteralPath $NODE_EXE)) {
-            $summary += "Node.js:     $((& $NODE_EXE --version 2>&1))"
-        } else {
-            $summary += "Node.js:     não verificado"
-        }
-        try {
-            $tOut = & $VENV_PY -c "import torch; v=torch.__version__; cuda='(CUDA '+torch.version.cuda+')' if torch.cuda.is_available() else '(CPU)'; print('PyTorch '+v+' '+cuda)" 2>$null
-            if ($tOut) { $summary += "PyTorch:     $tOut" }
-        } catch {}
-        if ($vramGb -gt 0) { $summary += "VRAM:        ${vramGb} GB ($($detected.Name))" }
-
-        $ctl.InstallPanel.Visibility = 'Collapsed'
-        $ctl.DonePanel.Visibility    = 'Visible'
-        $ctl.LblDoneTitle.Text       = 'Já está tudo pronto!'
-        $ctl.LblDoneSub.Text         = 'Nenhuma pendência detectada. Use iniciar.bat para iniciar o NeveAI.'
-        $ctl.LblSummary.Text         = ($summary -join "`r`n")
-        $ctl.BtnCancel.Visibility    = 'Collapsed'
-        $ctl.BtnPrimary.IsEnabled    = $true
-        $ctl.BtnPrimary.Content      = 'Concluir'
-        $ctl.BtnPrimary.Tag          = 'done'
-        $ctl.BtnClose.IsEnabled      = $true
-        $window.Tag = 'done'
-        try { [System.IO.File]::WriteAllText($STATE_FILE, 'done', [System.Text.UTF8Encoding]::new($false)) } catch {}
-        return
-    }
 
     # Worker em runspace separado, usando as funcoes UI-* via $window
     $worker = {
@@ -2308,24 +2230,50 @@ $ctl.BtnPrimary.Add_Click({
             $name = ($name -replace '\[.*?\]', '').Trim()
             return $name
         }
-        function Get-UnpinnedRequirementSpec([string]$spec) {
-            if ([string]::IsNullOrWhiteSpace($spec)) { return '' }
-            $text = ([string]$spec).Trim()
-            if (-not $text -or $text.StartsWith('-')) { return '' }
-
-            $parts = $text -split ';', 2
-            $requirement = $parts[0].Trim()
-            if (-not $requirement -or $requirement.StartsWith('-')) { return '' }
-            if ($requirement -match '\s@\s') { return '' }
-
-            $base = ($requirement -split '\s*(===|==|~=|!=|>=|<=|>|<)\s*', 2)[0].Trim()
-            if (-not $base -or $base -eq $requirement) { return '' }
-
-            if ($parts.Count -gt 1) {
-                $marker = $parts[1].Trim()
-                if ($marker) { return ("{0}; {1}" -f $base, $marker) }
+        function Test-StableDiffusionCppReady([string]$expectedBackend = '') {
+            $sdDir = Join-Path $BACKEND 'bin\stable-diffusion-cpp'
+            $sdCli = Join-Path $sdDir 'sd-cli.exe'
+            $sdDll = Join-Path $sdDir 'stable-diffusion.dll'
+            if (-not ((Test-Path -LiteralPath $sdCli) -and (Test-Path -LiteralPath $sdDll))) { return $false }
+            if (-not $expectedBackend) { return $true }
+            $versionFile = Join-Path $sdDir 'version.txt'
+            if (-not (Test-Path -LiteralPath $versionFile)) { return $false }
+            $installedBackend = @(Get-Content -LiteralPath $versionFile -EA SilentlyContinue | Where-Object { $_ }) | Select-Object -Last 1
+            return ([string]$installedBackend).Trim().ToLowerInvariant() -eq $expectedBackend.ToLowerInvariant()
+        }
+        function Complete-Installation([string[]]$summary, [string[]]$pythonDependencyFailures) {
+            Test-InstallCancelled
+            $finalInstallState = if ($pythonDependencyFailures.Count -eq 0) { 'done' } else { 'incomplete' }
+            Set-InstallState $finalInstallState
+            $recordedInstallState = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -ErrorAction SilentlyContinue)).Trim()
+            if ($recordedInstallState -ne $finalInstallState) {
+                throw 'Não foi possível confirmar o estado final da instalação. Verifique o acesso à pasta logs e retome pelo instalar.bat.'
             }
-            return $base
+            P 100 'Concluído'
+            if ($createDesktopShortcut) { [void](New-NeveDesktopShortcut $ROOT) }
+
+            if ($pythonDependencyFailures.Count -gt 0) {
+                $summary += "Pendências:  $($pythonDependencyFailures.Count) dependência(s) Python; rode instalar.bat novamente para tentar só o que faltou."
+            }
+
+            $script:Window.Dispatcher.Invoke([Action]{
+                $script:Ctl.InstallPanel.Visibility = 'Collapsed'
+                $script:Ctl.DonePanel.Visibility    = 'Visible'
+                $script:Ctl.LblSummary.Text         = ($summary -join "`r`n")
+                if ($pythonDependencyFailures.Count -gt 0) {
+                    $script:Ctl.LblDoneTitle.Text = 'Concluído com pendências'
+                    $script:Ctl.LblDoneSub.Text = 'O NeveAI tentou todas as dependências e registrou as pendências para retry incremental.'
+                } else {
+                    $script:Ctl.LblDoneTitle.Text = 'Tudo pronto!'
+                    $script:Ctl.LblDoneSub.Text = 'O NeveAI está pronto para iniciar.'
+                }
+                $script:Ctl.BtnCancel.Visibility    = 'Collapsed'
+                $script:Ctl.BtnPrimary.IsEnabled    = $true
+                $script:Ctl.BtnPrimary.Content      = if ($finalInstallState -eq 'done') { 'Iniciar' } else { 'Retomar' }
+                $script:Ctl.BtnPrimary.Tag          = if ($finalInstallState -eq 'done') { 'launch' } else { 'done' }
+                $script:Ctl.BtnClose.IsEnabled      = $true
+                $script:Window.Tag = 'done'
+            })
         }
         function Get-RequirementEntries([string]$path) {
             $entries = @()
@@ -2371,8 +2319,18 @@ $ctl.BtnPrimary.Add_Click({
 
             $requiredAppFiles = @(
                 'package.json',
+                'package-lock.json',
+                'iniciar.bat',
+                'launchers\iniciar.vbs',
+                'launchers\iniciar.ps1',
+                'backend\check_install_requirements.py',
+                'backend\prepare_video_edit.py',
                 'backend\requirements-runtime.txt',
                 'backend\neveai\main.py',
+                'backend\neveai\routers\image_fast_generation.py',
+                'backend\neveai\routers\image_quality_generation.py',
+                'backend\neveai\routers\model3d_generation.py',
+                'backend\neveai\routers\video_edit.py',
                 'backend\neveai\routers\music_generation.py',
                 'backend\neveai\routers\video_generation.py',
                 'backend\neveai\routers\haru_voice.py',
@@ -2404,15 +2362,49 @@ $ctl.BtnPrimary.Add_Click({
             }
             Log "[OK] Arquivos essenciais do app validados"
 
+            $useFullReq = @('1','true','yes','sim') -contains ([string]$env:NEVE_INSTALL_FULL_REQUIREMENTS).ToLowerInvariant()
+            $req = Join-Path $BACKEND $(if ($useFullReq) { 'requirements.txt' } else { 'requirements-runtime.txt' })
+            $reqChecker = Join-Path $BACKEND 'check_install_requirements.py'
+            $videoEditSetup = Join-Path $BACKEND 'prepare_video_edit.py'
+            $sdBackend = if ($cfg.vendor -eq 'NVIDIA') { 'cuda12' } elseif ($cfg.vendor -eq 'AMD') { 'vulkan' } else { '' }
+            $officeCli = Join-Path $ROOT 'node_modules\@officecli\officecli\vendor\officecli.exe'
+            $installOnnxGpu = $cfg.useOnnxGpu -and (@('1','true','yes','sim') -contains ([string]$env:NEVE_INSTALL_ONNXRUNTIME_GPU).ToLowerInvariant())
+            $installedAsset = @(Get-Content -LiteralPath (Join-Path $ROOT 'llamacpp-server\version.txt') -EA SilentlyContinue)
+            $npmReadyPath = Join-Path (Split-Path -Parent $LOG) 'npm-dependencies.sha256'
+            $lockHash = (Get-FileHash -LiteralPath (Join-Path $ROOT 'package-lock.json') -Algorithm SHA256).Hash
+            $installedLockHash = ([string](Get-Content -LiteralPath $npmReadyPath -Raw -EA SilentlyContinue)).Trim()
+            if ($cfg.previousState -in @('done','idle') -and
+                $lockHash -eq $installedLockHash -and
+                -not $installOnnxGpu -and $installedAsset.Count -ge 2 -and $installedAsset[1] -eq $cfg.llamaAsset -and
+                (Test-Path -LiteralPath $VENV_PY) -and (Test-Path -LiteralPath $officeCli) -and
+                (Test-Path -LiteralPath (Join-Path $ROOT 'node_modules\vite\bin\vite.js')) -and
+                (-not $sdBackend -or (Test-StableDiffusionCppReady $sdBackend))) {
+                . (Join-Path $ROOT 'launchers\runtime-validation.ps1')
+                if ((Get-NeveRuntimeHealth $ROOT).Ok -and
+                    (Run $VENV_PY @($reqChecker, $req) 'validar versões instaladas') -eq 0 -and
+                    (Run $VENV_PY @('-m','pip','check') 'pip check') -eq 0 -and
+                    (Run $VENV_PY @('-c','import torch, torchvision, fastapi, transformers; import sys; sys.exit(int(sys.argv[1] == "NVIDIA" and not torch.cuda.is_available()))',$cfg.vendor) 'validar runtime Python') -eq 0 -and
+                    (Run (Join-Path $ROOT 'llamacpp-server\bin\llama-server.exe') @('--version') 'validar llama.cpp') -eq 0 -and
+                    (Run $VENV_PY @($videoEditSetup,'--check') 'validar Neve Studio offline') -eq 0 -and
+                    (Run $officeCli @('--version') 'validar OfficeCLI') -eq 0) {
+                    Log '[OK] Tudo já está instalado. Nada a fazer.'
+                    Complete-Installation @("Python:      $(& $VENV_PY --version)", "llama.cpp:   $($cfg.llamaAsset)") @()
+                    return
+                }
+            }
+
             # ---- 3. .env padrao
             $envPath = Join-Path $ROOT '.env'
             if (-not (Test-Path -LiteralPath $envPath)) {
+                $secret = New-Object byte[] 32
+                $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+                try { $rng.GetBytes($secret) } finally { $rng.Dispose() }
                 $envText = @"
 VITE_RELATIVE_CONFIG=True
 VITE_NEVEAI_BACKEND_URL=http://localhost:8080
 ENV=dev
 PORT=8080
-NEVE_SECRET_KEY=troque-esta-chave-por-algo-seguro
+NEVE_SECRET_KEY=$([Convert]::ToBase64String($secret))
 NEVE_NAME=NeveAI
 ENABLE_VIDEO_GENERATION=True
 ENABLE_WEBSOCKET_SUPPORT=True
@@ -2436,7 +2428,9 @@ USER_AGENT=NeveAI
             $llamaVersionPath = Join-Path (Split-Path $llamaDir -Parent) 'version.txt'
             $llamaInstalled = $false
             try {
-                $attempts = @($cfg.llamaAsset, 'cpu') | Where-Object { $_ } | Select-Object -Unique
+                $attempts = @($cfg.llamaAsset)
+                if ($cfg.llamaAsset -eq 'hip-radeon') { $attempts += 'vulkan' }
+                if ($cfg.llamaAsset -ne 'cpu') { $attempts += 'cpu' }
                 $releases = @((Invoke-RestMethod 'https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30' -Headers @{ 'User-Agent' = 'Neve-Installer/3.0'; 'Accept' = 'application/vnd.github+json' } -TimeoutSec 60))
                 $rel = $releases | Where-Object {
                     if ($_.draft -or -not $_.tag_name) { return $false }
@@ -2502,7 +2496,6 @@ USER_AGENT=NeveAI
                         Get-ChildItem $llamaDir -Force -EA SilentlyContinue | ForEach-Object { Copy-Item $_.FullName $backupDir -Recurse -Force }
 
                         try {
-                            Get-Process llama-server -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue
                             Get-ChildItem $llamaDir -File -EA SilentlyContinue | Where-Object { $_.Extension -in '.exe','.dll','.pdb' } | Remove-Item -Force -EA Stop
                             foreach ($file in $stagedFiles) { Copy-Item $file.FullName $llamaDir -Force -EA Stop }
                             if (-not (Test-Path -LiteralPath $llamaServer)) { throw 'llama-server.exe não ficou disponível após a cópia.' }
@@ -2535,6 +2528,7 @@ USER_AGENT=NeveAI
                 throw 'Não foi possível instalar o llama.cpp e nenhum llama-server.exe existente foi encontrado. Verifique a conexão com a internet e tente novamente.'
             }
             if (-not $llamaInstalled) { Log '[!] Usando llama.cpp existente porque o download novo não pôde ser concluído.' 'warn' }
+            if ((Run $llamaServer @('--version') 'validar llama.cpp') -ne 0) { throw 'llama-server.exe não passou na validação.' }
 
             # ---- 5. Preparar venv
             P 25 'Preparando ambiente Python'
@@ -2727,17 +2721,6 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 $rc = Run $VENV_PY @('-I','-c',$code,$cudaRequired) 'validar PyTorch existente'
                 return ($rc -eq 0)
             }
-            function Test-StableDiffusionCppReady([string]$expectedBackend = '') {
-                $sdDir = Join-Path $BACKEND 'bin\stable-diffusion-cpp'
-                $sdCli = Join-Path $sdDir 'sd-cli.exe'
-                $sdDll = Join-Path $sdDir 'stable-diffusion.dll'
-                if (-not ((Test-Path -LiteralPath $sdCli) -and (Test-Path -LiteralPath $sdDll))) { return $false }
-                if (-not $expectedBackend) { return $true }
-                $versionFile = Join-Path $sdDir 'version.txt'
-                if (-not (Test-Path -LiteralPath $versionFile)) { return $false }
-                $installedBackend = @(Get-Content -LiteralPath $versionFile -EA SilentlyContinue | Where-Object { $_ }) | Select-Object -Last 1
-                return ([string]$installedBackend).Trim().ToLowerInvariant() -eq $expectedBackend.ToLowerInvariant()
-            }
 
             function Install-StableDiffusionCpp {
                 $sdBackend = if ($cfg.vendor -eq 'NVIDIA') { 'cuda12' } elseif ($cfg.vendor -eq 'AMD') { 'vulkan' } else { 'cpu' }
@@ -2855,7 +2838,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             if ($cfg.vendor -in @('NVIDIA','AMD')) {
                 P 55 'Preparando geração de imagem local'
                 Set-InstallState 'installing_stable_diffusion_cpp'
-                [void](Install-StableDiffusionCpp)
+                if (-not (Install-StableDiffusionCpp)) { throw 'Não foi possível preparar stable-diffusion.cpp. Execute Reparar.' }
             } else {
                 P 55 'Otimizando instalação para o hardware'
                 Log "[OK] stable-diffusion.cpp ignorado para $($cfg.vendor)."
@@ -2864,15 +2847,10 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             # ---- 8. requirements do backend
             P 60 'Instalando dependências do backend (~5-15 min)'
             Set-InstallState 'installing_backend_requirements'
-            $runtimeReq = Join-Path $BACKEND 'requirements-runtime.txt'
-            $fullReq = Join-Path $BACKEND 'requirements.txt'
-            $useFullReq = @('1','true','yes','sim') -contains ([string]$env:NEVE_INSTALL_FULL_REQUIREMENTS).ToLowerInvariant()
-            if ((-not $useFullReq) -and (Test-Path -LiteralPath $runtimeReq)) {
-                $req = $runtimeReq
+            if (-not $useFullReq) {
                 Log "[OK] Usando requirements-runtime.txt (dependências essenciais do NeveAI)"
                 Log "    Para instalar a lista completa antiga, defina NEVE_INSTALL_FULL_REQUIREMENTS=1 antes de abrir o instalador."
             } else {
-                $req = $fullReq
                 Log "[OK] Usando requirements.txt completo"
             }
             if (-not (Test-Path -LiteralPath $req)) {
@@ -2891,7 +2869,8 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 Log "[OK] $reqName instalado em uma única resolução pip"
             } else {
                 Log "[!] Instalação em lote falhou (exit $batchRc). Ativando recuperação incremental apenas para os pacotes pendentes." 'warn'
-                [void](Refresh-InstalledPackageCache)
+                $unmet = @(& $VENV_PY $reqChecker $req)
+                $knownUnmet = $LASTEXITCODE -eq 1 -and $unmet.Count -gt 0
                 for ($i = 0; $i -lt $reqEntries.Count; $i++) {
                 $entry = $reqEntries[$i]
                 $index = $i + 1
@@ -2900,26 +2879,13 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 Set-InstallState ("installing_requirement_{0}_of_{1}" -f $index, $reqCount)
                 Log ("==> {0} [{1}/{2}] linha {3}: {4}" -f $reqName, $index, $reqCount, $entry.Line, $entry.Spec)
 
-                if ($entry.Package -and (Test-PythonPackageInstalled $entry.Package)) {
+                if ($knownUnmet -and $entry.Spec -notin $unmet) {
                     Log ("[OK] {0} já instalado; pulando" -f $entry.Package)
                     continue
                 }
 
                 $rc = Invoke-PipInstall -InstallArgs @($entry.Spec) -Desc ("{0} {1}/{2}: {3}" -f $reqName, $index, $reqCount, $entry.Spec)
                 if ($rc -ne 0) {
-                    $fallbackSpec = Get-UnpinnedRequirementSpec $entry.Spec
-                    if ($fallbackSpec) {
-                        Log ("[!] Falha em {0} linha {1}: {2} (exit {3}); tentando sem versão: {4}" -f $reqName, $entry.Line, $entry.Spec, $rc, $fallbackSpec) 'warn'
-                        $fallbackRc = Invoke-PipInstall -InstallArgs @($fallbackSpec) -Desc ("{0} {1}/{2} fallback sem versão: {3}" -f $reqName, $index, $reqCount, $fallbackSpec)
-                        if ($fallbackRc -eq 0) {
-                            Log ("[OK] Fallback sem versão instalado para linha {0}: {1}" -f $entry.Line, $fallbackSpec)
-                            if ($entry.Package) { Mark-PythonPackageInstalled $entry.Package }
-                            continue
-                        }
-                        $failedRequirements += ("linha {0}: {1} (exit {2}); fallback {3} (exit {4})" -f $entry.Line, $entry.Spec, $rc, $fallbackSpec, $fallbackRc)
-                        Log ("[!] Fallback sem versão também falhou em {0} linha {1}: {2} (exit {3}); continuando com as demais" -f $reqName, $entry.Line, $fallbackSpec, $fallbackRc) 'warn'
-                        continue
-                    }
 
                     $failedRequirements += ("linha {0}: {1} (exit {2})" -f $entry.Line, $entry.Spec, $rc)
                     Log ("[!] Falha em {0} linha {1}: {2} (exit {3}); sem fallback aplicável, continuando com as demais" -f $reqName, $entry.Line, $entry.Spec, $rc) 'warn'
@@ -2949,39 +2915,37 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             $rc = Run $VENV_PY @($desktopSetup) 'WebView2 Fixed e janela nativa'
             if ($rc -ne 0) { throw "Falha ao preparar WebView2 Fixed (exit $rc)." }
 
-            P 77 'Validando dependências Python'
-            Set-InstallState 'pip_check'
-            $rc = Invoke-PipCommand -PipArgs @('check') -Desc 'pip check'
-            if ($rc -eq 0) { Log "[OK] pip check sem conflitos" } else { Log "[!] pip check encontrou conflitos; verifique o log acima se algo falhar ao iniciar" 'warn' }
-
             # ---- 9. onnxruntime-gpu (opcional)
-            $installOnnxGpu = $cfg.useOnnxGpu -and (@('1','true','yes','sim') -contains ([string]$env:NEVE_INSTALL_ONNXRUNTIME_GPU).ToLowerInvariant())
             if ($installOnnxGpu) {
                 P 78 'Instalando onnxruntime-gpu opcional'
                 Set-InstallState 'installing_onnxruntime_gpu'
-                if (Test-PythonPackageInstalled 'onnxruntime-gpu') {
+                $ortVersion = (& $VENV_PY -c "from importlib.metadata import version; print(version('onnxruntime'))")
+                if ($LASTEXITCODE -ne 0 -or $ortVersion -notmatch '^[0-9]+(\.[0-9]+)+$') { throw 'onnxruntime ausente no ambiente virtual.' }
+                $gpuDir = Join-Path $VENV_DIR "neve-onnx-gpu\$ortVersion"
+                $probe = 'import sys; sys.path.insert(0,sys.argv[1]); import onnxruntime as o; sys.exit(int(o.__version__ != sys.argv[2] or "CUDAExecutionProvider" not in o.get_available_providers()))'
+                if ((Test-Path -LiteralPath $gpuDir) -and (Run $VENV_PY @('-c',$probe,$gpuDir,$ortVersion) 'validar ONNX GPU') -eq 0) {
                     Log "[OK] onnxruntime-gpu já instalado; pulando"
                 } else {
-                    [void](Invoke-PipCommand -PipArgs @('uninstall','onnxruntime','-y') -Desc 'remover onnxruntime CPU')
-                    $rc = Invoke-PipInstall -InstallArgs @('onnxruntime-gpu') -Desc 'onnxruntime-gpu'
-                    if ($rc -eq 0) {
-                        Mark-PythonPackageInstalled 'onnxruntime-gpu'
-                        Log "[OK] onnxruntime-gpu instalado"
-                    } else {
-                        Log "[!] onnxruntime-gpu falhou (exit $rc). Etapa opcional ignorada; sem fallback CPU silencioso." 'warn'
-                    }
+                    # Both wheels own the same files. Keep the required CPU wheel intact.
+                    $rc = Invoke-PipInstall -InstallArgs @('--no-deps','--upgrade','--target',$gpuDir,"onnxruntime-gpu==$ortVersion") -Desc 'onnxruntime-gpu'
+                    if ($rc -ne 0 -or (Run $VENV_PY @('-c',$probe,$gpuDir,$ortVersion) 'validar ONNX GPU') -ne 0) { throw 'Não foi possível preparar o ONNX GPU solicitado. O runtime CPU foi preservado.' }
                 }
+                $pth = Join-Path $VENV_DIR 'Lib\site-packages\neve-onnx-gpu.pth'
+                [IO.File]::WriteAllText($pth, "import os,sys; sys.path.insert(0,os.path.join(sys.prefix,'neve-onnx-gpu','$ortVersion'))`n", [Text.Encoding]::ASCII)
             } elseif ($cfg.useOnnxGpu) {
                 Log "[OK] onnxruntime-gpu opcional ignorado no runtime mínimo. Defina NEVE_INSTALL_ONNXRUNTIME_GPU=1 para instalar."
             }
 
             # ---- 10. npm install
-            $videoEditSetup = Join-Path $BACKEND 'prepare_video_edit.py'
-            if (Test-Path -LiteralPath $videoEditSetup -PathType Leaf) {
-                P 82 'Preparando os modelos locais do Neve Studio'
-                $videoEditRc = Run $VENV_PY @($videoEditSetup) 'Preparar os modelos locais do Neve Studio' 2400
-                if ($videoEditRc -ne 0) { Log '[!] Modelos locais do Neve Studio não preparados. Use Reparar para concluir.' 'warn' }
-            }
+            P 79 'Validando dependências Python'
+            Set-InstallState 'pip_check'
+            $rc = Invoke-PipCommand -PipArgs @('check') -Desc 'pip check'
+            if ($rc -ne 0) { throw 'pip check encontrou conflitos. Verifique as dependências do ambiente virtual e execute Reparar.' }
+            $unmet = @(& $VENV_PY $reqChecker $req)
+            if ($LASTEXITCODE -ne 0) { throw "Dependências não validadas ($reqName): $($unmet -join ', ')." }
+            P 82 'Preparando os modelos locais do Neve Studio'
+            $videoEditRc = Run $VENV_PY @($videoEditSetup) 'Preparar os modelos locais do Neve Studio' 2400
+            if ($videoEditRc -ne 0) { throw 'Modelos locais do Neve Studio não preparados. Use Reparar para concluir.' }
             Set-InstallState 'installing_frontend'
             P 84 'Instalando pacotes npm'
             Set-Location -LiteralPath $ROOT
@@ -2995,11 +2959,7 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             $script:FrontendNodeDir = $frontendNode.NodeDir
             Log "[OK] Node.js do frontend: $($frontendNode.NodeVersion) / npm $($frontendNode.NpmVersion) em $($frontendNode.NodeDir)"
 
-            $packageLockPath = Join-Path $ROOT 'package-lock.json'
             $nodeModulesPath = Join-Path $ROOT 'node_modules'
-            $npmReadyPath = Join-Path (Split-Path -Parent $LOG) 'npm-dependencies.sha256'
-            $lockHash = if (Test-Path -LiteralPath $packageLockPath) { (Get-FileHash -LiteralPath $packageLockPath -Algorithm SHA256).Hash } else { '' }
-            $installedLockHash = if (Test-Path -LiteralPath $npmReadyPath) { ([string](Get-Content -LiteralPath $npmReadyPath -Raw -EA SilentlyContinue)).Trim() } else { '' }
             if ($lockHash -and ($installedLockHash -ne $lockHash -or -not (Test-Path -LiteralPath (Join-Path $nodeModulesPath 'vite\bin\vite.js')))) {
                 $rc = Run $NPM_EXE @('ci','--no-audit','--no-fund','--prefer-offline','--progress=false') 'npm ci'
                 if ($rc -ne 0) {
@@ -3082,16 +3042,6 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
             $validator = Join-Path $ROOT 'launchers\runtime-validation.ps1'
             $rc = Run (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') @('-NoProfile','-ExecutionPolicy','Bypass','-File',$validator,'-Root',$ROOT,'-Check') 'validar inicializacao'
             if ($rc -ne 0) { throw 'A validacao final de inicializacao falhou. A instalacao nao sera marcada como concluida.' }
-            $finalInstallState = if ($pythonDependencyFailures.Count -eq 0) { 'done' } else { 'incomplete' }
-            Set-InstallState $finalInstallState
-            $recordedInstallState = ([string](Get-Content -LiteralPath $STATE_FILE -Raw -ErrorAction SilentlyContinue)).Trim()
-            if ($recordedInstallState -ne $finalInstallState) {
-                throw 'Não foi possível confirmar o estado final da instalação. Verifique o acesso à pasta logs e retome pelo instalar.bat.'
-            }
-            P 100 'Concluído'
-            if ($createDesktopShortcut) { [void](New-NeveDesktopShortcut $ROOT) }
-
-            # Resumo
             $summary = @()
             $summary += "Python:      $((& $PYTHON_EXE --version 2>&1))"
             $summary += "Node.js:     $((& $NODE_EXE --version 2>&1))"
@@ -3099,31 +3049,14 @@ with open(sys.argv[1], 'w', encoding='utf-8') as file:
                 $tOut = & $VENV_PY -c "import torch; v=torch.__version__; cuda='(CUDA '+torch.version.cuda+')' if torch.cuda.is_available() else '(CPU)'; print('PyTorch '+v+' '+cuda)" 2>$null
                 if ($tOut) { $summary += "PyTorch:     $tOut" }
             } catch {}
-            $summary += "llama.cpp:   $($cfg.llamaAsset)"
+            $llamaInfo = @(Get-Content -LiteralPath $llamaVersionPath -EA SilentlyContinue)
+            if ($llamaInfo.Count -ge 2) { $summary += "llama.cpp:   $($llamaInfo[1])" }
             if (Test-StableDiffusionCppReady) {
                 $sdBackendSummary = if ($cfg.vendor -eq 'AMD') { 'Vulkan' } elseif ($cfg.vendor -eq 'NVIDIA') { 'CUDA 12' } else { 'CPU' }
                 $summary += "sd.cpp:      Qwen Image $sdBackendSummary"
             }
             if ($vramGb -gt 0) { $summary += "VRAM:        ${vramGb} GB ($($detected.Name))" }
-            if ($pythonDependencyFailures.Count -gt 0) {
-                $summary += "Pendências:  $($pythonDependencyFailures.Count) dependência(s) Python; rode instalar.bat novamente para tentar só o que faltou."
-            }
-
-            $script:Window.Dispatcher.Invoke([Action]{
-                $script:Ctl.InstallPanel.Visibility = 'Collapsed'
-                $script:Ctl.DonePanel.Visibility    = 'Visible'
-                $script:Ctl.LblSummary.Text         = ($summary -join "`r`n")
-                if ($pythonDependencyFailures.Count -gt 0) {
-                    $script:Ctl.LblDoneTitle.Text = 'Concluído com pendências'
-                    $script:Ctl.LblDoneSub.Text = 'O NeveAI tentou todas as dependências e registrou as pendências para retry incremental.'
-                }
-                $script:Ctl.BtnCancel.Visibility    = 'Collapsed'
-                $script:Ctl.BtnPrimary.IsEnabled    = $true
-                $script:Ctl.BtnPrimary.Content      = 'Concluir'
-                $script:Ctl.BtnPrimary.Tag          = 'done'
-                $script:Ctl.BtnClose.IsEnabled      = $true
-                $script:Window.Tag = 'done'
-            })
+            Complete-Installation $summary $pythonDependencyFailures
         } catch {
             if (($INSTALL_CONTROL -and $INSTALL_CONTROL.CancelRequested) -or ($_.Exception -is [System.OperationCanceledException])) {
                 Set-InstallState 'cancelled'
@@ -4153,7 +4086,7 @@ function Update-HubActionButtonStyles {
 			$label = [string]$button.Content
 			$targetStyle = if ($label -in @('Instalar', 'Reparar', 'Retomar', 'Atualizar', 'Publicar', 'Install', 'Repair', 'Resume', 'Update', 'Publish')) {
 				$accentStyle
-			} elseif ($label -in @('Cancelar', 'Concluir', 'Fechar', 'Cancel', 'Finish', 'Close')) {
+			} elseif ($label -in @('Iniciar', 'Start', 'Cancelar', 'Concluir', 'Fechar', 'Cancel', 'Finish', 'Close')) {
 				$completionStyle
 			} else {
 				$regularStyle
